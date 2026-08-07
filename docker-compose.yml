@@ -1,0 +1,151 @@
+# Private Data Cloud — Proposed Docker Compose Service Map (Phase 0)
+#
+# STATUS: PROPOSAL / NOT YET FUNCTIONAL.
+# `apps/backend` and `apps/frontend` do not contain application code yet
+# (Phase 0 only produces architecture/planning docs, per the engineering
+# master prompt). This file documents the target service topology from
+# ARCHITECTURE.md / LOCAL_DEPLOYMENT.md so infrastructure and application
+# work in later phases build toward the same shape. `build:` contexts will
+# start resolving once Phase 1 adds Dockerfiles.
+#
+# Design rules encoded here (see docs/security/THREAT_MODEL.md and
+# docs/architecture/ARCHITECTURE.md Section 4):
+#   - Only `proxy` publishes a port on the host.
+#   - postgres-control, postgres-tenant, redis, and object-storage are
+#     reachable only on the internal "data" network.
+#   - backend/worker/beat/frontend sit on the internal "app" network and
+#     talk to `proxy` for host-facing traffic.
+
+networks:
+  edge:
+    driver: bridge
+  app:
+    driver: bridge
+    internal: false
+  data:
+    driver: bridge
+    internal: true
+
+volumes:
+  pg_control_data:
+  pg_tenant_data:
+  object_storage_data:
+  redis_data:
+
+services:
+  proxy:
+    image: caddy:latest # or nginx — final choice recorded via ADR in Phase 1
+    ports:
+      # Bind to the host's specific LAN interface IP (set via PROXY_BIND_ADDRESS),
+      # not 0.0.0.0, so the service is reachable from the private network but not
+      # accidentally exposed if the host also has a public interface. For a
+      # single-NIC dev machine reachable only on a private LAN/VPN, set
+      # PROXY_BIND_ADDRESS to that host's LAN IP (or 127.0.0.1 for local-only access).
+      - "${PROXY_BIND_ADDRESS:-127.0.0.1}:8443:443"
+    volumes:
+      - ./infrastructure/proxy:/etc/caddy:ro
+    networks:
+      - edge
+      - app
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./apps/frontend
+    env_file: .env
+    networks:
+      - app
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./apps/backend
+    env_file: .env
+    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000
+    networks:
+      - app
+      - data
+    depends_on:
+      - postgres-control
+      - postgres-tenant
+      - redis
+      - object-storage
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./apps/backend
+    env_file: .env
+    command: celery -A config worker -l info
+    networks:
+      - app
+      - data
+    depends_on:
+      - postgres-control
+      - postgres-tenant
+      - redis
+      - object-storage
+    restart: unless-stopped
+
+  beat:
+    build:
+      context: ./apps/backend
+    env_file: .env
+    command: celery -A config beat -l info
+    networks:
+      - app
+      - data
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  postgres-control:
+    image: postgres:16 # version confirmed against current LTS at Phase 1 implementation time, see Section 27 version policy
+    environment:
+      POSTGRES_DB: ${CONTROL_DB_NAME}
+      POSTGRES_USER: ${CONTROL_DB_USER}
+      POSTGRES_PASSWORD: ${CONTROL_DB_PASSWORD}
+    volumes:
+      - pg_control_data:/var/lib/postgresql/data
+    networks:
+      - data
+    restart: unless-stopped
+
+  postgres-tenant:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${TENANT_DB_NAME}
+      POSTGRES_USER: ${TENANT_DB_USER}
+      POSTGRES_PASSWORD: ${TENANT_DB_PASSWORD}
+    volumes:
+      - pg_tenant_data:/var/lib/postgresql/data
+    networks:
+      - data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    volumes:
+      - redis_data:/data
+    networks:
+      - data
+    restart: unless-stopped
+
+  object-storage:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${OBJECT_STORAGE_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_ROOT_PASSWORD}
+    volumes:
+      - object_storage_data:/data
+    networks:
+      - data
+    restart: unless-stopped
+    # Console (port 9001) is intentionally not published to the host here;
+    # access it via an SSH tunnel or a LAN-only admin route if needed.
