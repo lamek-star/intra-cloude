@@ -14,18 +14,25 @@ WORKDIR /app
 FROM base AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
     && rm -rf /var/lib/apt/lists/*
+# A venv (rather than `pip install --user`) makes the runtime stage's
+# package availability independent of the `app` user's HOME resolution —
+# `--user` installs turned out not to be importable across the stage/user
+# boundary when this was actually run (see
+# docs/architecture/DEPENDENCY_VERSIONS.md), so don't reintroduce it.
+RUN python -m venv /opt/venv
+ENV PATH=/opt/venv/bin:$PATH
 COPY requirements/prod.txt /app/requirements/prod.txt
-RUN pip install --no-cache-dir --user -r /app/requirements/prod.txt
+RUN pip install --no-cache-dir -r /app/requirements/prod.txt
 
 FROM base AS runtime
-COPY --from=builder /root/.local /home/app/.local
-ENV PATH=/home/app/.local/bin:$PATH \
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH=/opt/venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DJANGO_SETTINGS_MODULE=config.settings.prod
 
 COPY . /app
-RUN chown -R app:app /app /home/app/.local
+RUN chown -R app:app /app /opt/venv
 
 USER app
 

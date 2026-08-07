@@ -35,14 +35,38 @@ questions explicitly logged. Met.
   [ADR-0011](adr/0011-valkey-over-redis.md).
 
 Exit criteria and actual verification status:
-- `docker compose up` brings up a healthy, empty stack — **NOT YET
-  VERIFIED**; this development environment has no Docker installed. The
-  compose file is internally consistent (env vars, health check commands,
-  service dependencies) and `docker-compose.yml` parses as valid YAML, but
-  has not been run. **First step of Phase 2: run it for real and fix
-  forward from whatever breaks.**
-- `/healthz` responds — verified via Django's test client
-  (`system/tests/test_health.py`), not yet via a running container.
+- `docker compose up` brings up a healthy, empty stack — **VERIFIED.**
+  Docker Desktop was installed and the full stack (all 9 services) was
+  actually built and run. This surfaced and fixed three real bugs the
+  paper review in the first Phase 1 pass missed:
+  1. PostgreSQL 18's official image expects its volume mounted at
+     `/var/lib/postgresql`, not `.../data` (18+ changed to a
+     pg_ctlcluster-style layout) — both `postgres-control` and
+     `postgres-tenant` crash-looped until fixed.
+  2. `pip install --user` in the backend/worker/beat Dockerfile builder
+     stage didn't produce importable packages in the runtime stage (the
+     `app` user's HOME didn't resolve to where `--user` installed them) —
+     switched to a venv copied between stages instead.
+  3. `SECURE_SSL_REDIRECT=True` in prod settings redirected the internal
+     Docker healthcheck (plain HTTP, no `X-Forwarded-Proto` header, since
+     it bypasses the proxy) to HTTPS, which gunicorn doesn't serve —
+     the healthcheck hung until a TLS handshake timeout. Fixed via
+     `SECURE_REDIRECT_EXEMPT` for `/healthz` and `/readyz`.
+  4. (Caddy config, not `docker-compose.yml` itself) `tls internal` on a
+     bare `:443` catch-all address never issues a certificate for anything,
+     so every TLS handshake failed with `internal_error`. Fixed by naming
+     explicit hostnames (`PROXY_TLS_HOSTNAMES`, space-separated per Caddy's
+     site-address syntax — comma-separated was tried first and rejected).
+  All fixes are in the committed `docker-compose.yml` / Dockerfiles /
+  Caddyfile / `prod.py` — this list exists so nobody reintroduces the same
+  bugs, not because they're still open.
+- `/healthz` and `/readyz` respond — **VERIFIED** both via Django's test
+  client (`system/tests/test_health.py`) and for real, through the Caddy
+  proxy, over TLS, from outside the Docker network: `GET
+  https://localhost:8443/healthz` → 200, `GET https://localhost:8443/readyz`
+  → 200 with `{"database:default": "ok", "database:tenant": "ok", "valkey":
+  "ok"}`. The frontend landing page was also confirmed reachable through
+  the same proxy (`GET https://localhost:8443/` → 200).
 - CI pipeline runs on push — the workflow file is written and each job's
   commands were run manually against the real scaffold and passed; the
   workflow itself has not yet executed on GitHub Actions (first push will

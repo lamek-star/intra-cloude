@@ -15,16 +15,21 @@ and the original product brief folded into that document.
 
 ## Current Status
 
-**Phase 1 complete: development environment & infrastructure foundation.**
-Django backend skeleton (bounded apps, settings split, health endpoints)
-and Next.js frontend skeleton exist and have been verified with their real
-toolchains (ruff/mypy/pytest; tsc/eslint/next build). `docker-compose.yml`
-and the Caddy proxy config exist but have NOT been run end-to-end — this
-development environment has no Docker. Verify `docker compose up` +
-`manage.py migrate` + a real request round-trip as the first step of Phase
-2. No product features exist yet (no models beyond Django's built-ins). Do
-not jump ahead to later implementation phases without explicit
-instruction — see "Development Process" below.
+**Phase 1 complete and verified end-to-end: development environment &
+infrastructure foundation.** Django backend skeleton (bounded apps,
+settings split, health endpoints) and Next.js frontend skeleton exist and
+have been verified with their real toolchains (ruff/mypy/pytest;
+tsc/eslint/next build). Docker Desktop was installed and the full
+`docker-compose.yml` stack (9 services) was actually built, migrated, and
+run — `/healthz`, `/readyz`, and the frontend all confirmed reachable
+through the Caddy proxy over real TLS. Three real bugs surfaced and were
+fixed in the process (Postgres 18 volume-mount path, `pip install --user`
+not surviving the Docker multi-stage build, `SECURE_SSL_REDIRECT` hanging
+the internal healthcheck) plus a Caddy TLS config bug — see
+`docs/architecture/ROADMAP.md` Phase 1 for details. No product features
+exist yet (no models beyond Django's built-ins). Do not jump ahead to
+later implementation phases without explicit instruction — see
+"Development Process" below.
 
 ## Non-Negotiable Architectural Rules
 

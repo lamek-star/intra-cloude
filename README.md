@@ -8,15 +8,17 @@ AWS, Azure, or GCP.
 
 ## Status
 
-**Phase 1 — Development Environment & Infrastructure Foundation, complete.**
-Phase 0 (architecture/threat model) is done; Phase 1 adds the actual Django
-and Next.js project skeletons, Docker Compose service map, CI, and pinned
-dependency versions — still no product features (those start Phase 2). See
+**Phase 1 — Development Environment & Infrastructure Foundation, complete
+and verified end-to-end.** Phase 0 (architecture/threat model) is done;
+Phase 1 adds the actual Django and Next.js project skeletons, Docker
+Compose service map, and CI. The full stack has been built and run for
+real (`docker compose up`, migrations, and a live request through the
+Caddy proxy over TLS all succeeded) — still no product features (those
+start Phase 2). See
 [docs/architecture/ROADMAP.md](docs/architecture/ROADMAP.md) for the full
 phase plan and exit criteria, and
 [docs/architecture/DEPENDENCY_VERSIONS.md](docs/architecture/DEPENDENCY_VERSIONS.md)
-for what's actually been installed and verified vs. what still needs a
-Docker-enabled environment to confirm end-to-end.
+for exactly what's been verified and the bugs that surfaced along the way.
 
 ## Start Here
 
@@ -63,7 +65,7 @@ private-data-cloud/
         operations/              # BACKUP_RESTORE.md
         development/               # CONTRIBUTING.md
     tests/                   # Cross-cutting/security/E2E tests
-    docker-compose.yml       # Service map, not yet verified end-to-end (no Docker in this dev env)
+    docker-compose.yml       # Service map — built and run end-to-end, verified
     .env.example
     README.md
     CLAUDE.md

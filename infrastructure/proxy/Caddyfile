@@ -1,11 +1,19 @@
 # Private Data Cloud — reverse proxy (Phase 1)
 #
 # TLS: `tls internal` uses Caddy's own local CA to issue a certificate for
-# whatever address this is reached on (LAN IP or hostname) — appropriate
-# for a local/LAN-first deployment per docs/deployment/LOCAL_DEPLOYMENT.md
-# Section 6. Trust Caddy's local CA root on client machines, or replace
-# this directive with a real internal-CA/ACME config for Phase 10
-# (internet gateway).
+# the hostname(s) listed below — appropriate for a local/LAN-first
+# deployment per docs/deployment/LOCAL_DEPLOYMENT.md Section 6. Trust
+# Caddy's local CA root on client machines, or replace this directive with
+# a real internal-CA/ACME config for Phase 10 (internet gateway).
+#
+# The site address MUST name specific hostnames — a bare `:443` catch-all
+# gives `tls internal` nothing to eagerly issue a certificate for, and every
+# connection fails the TLS handshake with an `internal_error` alert (this
+# was confirmed by actually running the stack; see
+# docs/architecture/DEPENDENCY_VERSIONS.md). Add your LAN IP/hostname to
+# PROXY_TLS_HOSTNAMES in .env (space-separated — Caddy site addresses use
+# spaces, not commas) if accessing from another machine — the default only
+# covers same-machine access.
 #
 # Routing: API and infrastructure endpoints go to the Django backend;
 # everything else goes to the Next.js frontend. Only this proxy is
@@ -17,7 +25,7 @@
 	admin off
 }
 
-:443 {
+{$PROXY_TLS_HOSTNAMES:localhost 127.0.0.1} {
 	tls internal
 
 	encode zstd gzip

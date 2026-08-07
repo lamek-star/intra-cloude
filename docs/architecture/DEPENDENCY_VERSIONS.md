@@ -38,11 +38,19 @@ Phase 1 backend scaffold — all passed. Frontend: scaffolded with
 `create-next-app@latest` against the live npm registry on 2026-08-08,
 which resolved the exact versions above; `npx tsc --noEmit`, `npm run
 lint`, and `npm run build` (including the `output: "standalone"` Docker
-target) were all run against the real scaffold and passed. Infrastructure
-image tags (PostgreSQL/Valkey/MinIO/Caddy) were checked via web search on
-the same dates but not locally pulled/run, since this development
-environment does not have Docker available — verify `docker compose build`
-end-to-end as an early Phase 2 step.
+target) were all run against the real scaffold and passed.
+
+Infrastructure (PostgreSQL 18, Valkey 9, MinIO, Caddy): Docker Desktop was
+installed and the full `docker-compose.yml` stack was actually built and
+run end-to-end on 2026-08-08 — all 9 services reached a healthy state, and
+`/healthz` / `/readyz` / the frontend landing page were confirmed reachable
+through the Caddy proxy over real TLS from outside the Docker network. This
+run surfaced three real bugs (Postgres 18's changed volume-mount
+expectation, `pip install --user` not being importable across Docker build
+stages, and `SECURE_SSL_REDIRECT` hanging the internal healthcheck) plus
+one Caddy config bug (a bare `:443` address never gets a certificate under
+`tls internal`) — all fixed, see the verification note in
+[ROADMAP.md](ROADMAP.md) Phase 1 for details so they aren't reintroduced.
 
 ## Process for Future Version Decisions
 

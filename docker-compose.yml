@@ -43,6 +43,10 @@ services:
       # single-NIC dev machine reachable only on a private LAN/VPN, set
       # PROXY_BIND_ADDRESS to that host's LAN IP (or 127.0.0.1 for local-only access).
       - "${PROXY_BIND_ADDRESS:-127.0.0.1}:8443:443"
+    environment:
+      # Hostnames the internal CA issues a cert for — must include however
+      # you actually address this host (see infrastructure/proxy/Caddyfile).
+      PROXY_TLS_HOSTNAMES: ${PROXY_TLS_HOSTNAMES:-localhost 127.0.0.1}
     volumes:
       - ./infrastructure/proxy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -141,7 +145,12 @@ services:
       timeout: 5s
       retries: 10
     volumes:
-      - pg_control_data:/var/lib/postgresql/data
+      # PostgreSQL 18+ official images store data using version-specific
+      # subdirectories under /var/lib/postgresql itself (pg_ctlcluster-style
+      # layout) — mounting a volume at the old .../data path causes the
+      # entrypoint to refuse to start. Confirmed by actually running this
+      # stack; see docs/architecture/DEPENDENCY_VERSIONS.md.
+      - pg_control_data:/var/lib/postgresql
     networks:
       - data
     restart: unless-stopped
@@ -158,7 +167,7 @@ services:
       timeout: 5s
       retries: 10
     volumes:
-      - pg_tenant_data:/var/lib/postgresql/data
+      - pg_tenant_data:/var/lib/postgresql
     networks:
       - data
     restart: unless-stopped

@@ -1,12 +1,11 @@
 # Local Deployment Guide — Private Data Cloud
 
-Status: DRAFT (Phase 1 — the backend/frontend skeletons, `docker-compose.yml`,
-and `infrastructure/proxy/Caddyfile` referenced below now exist, but the
-full bring-up sequence has not been run end-to-end: this development
-environment has no Docker installed. Treat this as a specification to
-verify, not yet a confirmed runbook — see
-`docs/architecture/DEPENDENCY_VERSIONS.md` for exactly what has and hasn't
-been run.)
+Status: VERIFIED (Phase 1 — the full bring-up sequence below (build,
+migrate, `docker compose up`, request through the proxy over TLS) was
+actually run end-to-end on 2026-08-08 and works. See
+`docs/architecture/DEPENDENCY_VERSIONS.md` and
+`docs/architecture/ROADMAP.md` Phase 1 for the bugs that surfaced and were
+fixed along the way — the steps below already reflect the fixes.)
 Last updated: 2026-08-08
 
 ## 1. Scope
@@ -50,11 +49,14 @@ No service other than `proxy` publishes a port on the host's non-loopback
 interface. `postgres-*`, `valkey`, and `object-storage` are reachable only
 on the internal Docker network.
 
-## 4. Bring-Up Sequence (target)
+## 4. Bring-Up Sequence (verified — this is exactly what was run)
 
 1. Copy `.env.example` to `.env` and fill in secrets (DB passwords, Django
    `SECRET_KEY`, object storage root credentials, credential-encryption
-   key). Never commit `.env`.
+   key). If reaching the proxy from anywhere other than `localhost`/
+   `127.0.0.1`, add that hostname/IP to `PROXY_TLS_HOSTNAMES` too (space-
+   separated) — Caddy's internal CA only issues certificates for names
+   listed there. Never commit `.env`.
 2. `docker compose build`
 3. `docker compose up -d postgres-control postgres-tenant valkey
    object-storage`
@@ -63,8 +65,12 @@ on the internal Docker network.
 6. `docker compose run --rm backend python manage.py createsuperuser`
    (or a scripted bootstrap command for the first Super Administrator).
 7. `docker compose up -d backend worker beat frontend proxy`
-8. Visit `https://<host-or-LAN-ip>/` (self-signed or internal CA certificate
-   for local-only use; document trust steps separately in Section 6).
+8. Visit `https://<host-or-LAN-ip>:8443/` — Caddy's internal CA issues a
+   locally-trusted-once-imported certificate; browsers will warn until you
+   trust that CA root (`docker compose exec proxy cat
+   /data/caddy/pki/authorities/local/root.crt` to export it), which is
+   expected and fine for local-only use. `curl -k` or an accepted browser
+   warning is sufficient to confirm connectivity without importing the CA.
 
 ## 5. Storage Volume Layout (target)
 
