@@ -1,7 +1,7 @@
 # Roadmap — Private Data Cloud
 
-Status: DRAFT (Phase 0)
-Last updated: 2026-08-07
+Status: Phase 0 and Phase 1 complete; Phase 2 not started
+Last updated: 2026-08-08
 
 Phases are sequential and gated: a phase is not "done" until its tests,
 linters/type checks, security review, and documentation updates are
@@ -9,29 +9,44 @@ complete, per the master prompt's development process. Later phases must
 not force a redesign of earlier ones — if one would, that's a signal the
 architecture doc needs revisiting first.
 
-## Phase 0 — Architecture & Threat Model (this phase)
+## Phase 0 — Architecture & Threat Model — COMPLETE
 
 Deliverables: ARCHITECTURE.md, DATA_MODEL.md, THREAT_MODEL.md,
 PERMISSIONS.md, LOCAL_DEPLOYMENT.md, BACKUP_RESTORE.md, ROADMAP.md, ADRs,
 repository skeleton, proposed Docker Compose service map.
 Exit criteria: no unresolved contradictions between documents; open
-questions explicitly logged.
+questions explicitly logged. Met.
 
-## Phase 1 — Development Environment & Infrastructure Foundation
+## Phase 1 — Development Environment & Infrastructure Foundation — COMPLETE
 
-- Repository scaffolding: `apps/backend` (Django project + module skeleton),
-  `apps/frontend` (Next.js skeleton), `infrastructure/docker/*`.
-- `docker-compose.yml` implementing the Phase 0 service map, with health
-  checks and internal-only networking for data-plane services.
-- Base Django settings split (`base`/`dev`/`prod`) driven by environment
-  variables; `.env.example` finalized.
-- CI skeleton: lint (ruff/eslint), type check (mypy/tsc), test runner wiring
-  (even with few tests initially).
-- Concrete dependency version selection per Section 27 of the master prompt
-  (checked against currently supported/LTS releases at implementation
-  time, not hardcoded from this document).
-Exit criteria: `docker compose up` brings up a healthy, empty stack;
-`/healthz` responds; CI pipeline runs (even if trivial) on push.
+- Repository scaffolding: `apps/backend` (Django project + bounded-app
+  skeleton for all 12 modules), `apps/frontend` (Next.js 16 app via
+  `create-next-app`).
+- `docker-compose.yml` implementing the service map, with health checks and
+  internal-only networking for data-plane services, plus
+  `infrastructure/proxy/Caddyfile`.
+- Base Django settings split (`base`/`dev`/`prod`/`test`) driven by
+  environment variables; `.env.example` finalized.
+- CI: `.github/workflows/ci.yml` — ruff/mypy/pytest for backend (against
+  real Postgres + Valkey service containers), tsc/eslint/build for frontend.
+- Concrete dependency version selection per Section 27 of the master
+  prompt, verified live (not assumed) — see
+  [DEPENDENCY_VERSIONS.md](DEPENDENCY_VERSIONS.md) and
+  [ADR-0011](adr/0011-valkey-over-redis.md).
+
+Exit criteria and actual verification status:
+- `docker compose up` brings up a healthy, empty stack — **NOT YET
+  VERIFIED**; this development environment has no Docker installed. The
+  compose file is internally consistent (env vars, health check commands,
+  service dependencies) and `docker-compose.yml` parses as valid YAML, but
+  has not been run. **First step of Phase 2: run it for real and fix
+  forward from whatever breaks.**
+- `/healthz` responds — verified via Django's test client
+  (`system/tests/test_health.py`), not yet via a running container.
+- CI pipeline runs on push — the workflow file is written and each job's
+  commands were run manually against the real scaffold and passed; the
+  workflow itself has not yet executed on GitHub Actions (first push will
+  confirm).
 
 ## Phase 2 — Authentication, Organizations, Teams, Permissions
 

@@ -195,7 +195,7 @@ erDiagram
   verified-restorable flag) — the artifacts themselves live in the backup
   storage target, not the DB.
 - `HealthCheckResult` / metrics: short-lived operational data, may live in
-  Redis/metrics store rather than Postgres.
+  Valkey/metrics store rather than Postgres.
 
 ## 4. Tenant-Isolation Invariant (applies to every table above marked
    tenant-owned)

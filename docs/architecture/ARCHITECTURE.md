@@ -65,7 +65,7 @@ flowchart TB
     subgraph DataPlane["Data Plane"]
         PG_Control[("Control-Plane PostgreSQL\n(metadata: users, orgs, permissions,\nfile index, schema catalog, audit)")]
         PG_Tenant[("Tenant PostgreSQL\n(user-created relational data,\nrow-level org scoping)")]
-        Redis[("Redis\n(broker + cache + rate limiting)")]
+        Redis[("Valkey\n(Redis-protocol broker + cache + rate limiting)")]
         Object[("S3-compatible Object Storage\n(MinIO locally / AWS S3 later)")]
     end
 
@@ -92,7 +92,7 @@ flowchart TB
 ```
 
 Key point: the browser and registered applications **never** talk to
-PostgreSQL, Redis, or object storage directly. Everything is mediated by the
+PostgreSQL, Valkey, or object storage directly. Everything is mediated by the
 Django API, which enforces authorization and produces audit records.
 
 ## 4. Network Architecture
@@ -116,7 +116,7 @@ flowchart LR
 
     subgraph DataNet["Data Network (internal-only, no ingress from AppNet's public side)"]
         Pg[("PostgreSQL (control + tenant)")]
-        Rd[("Redis")]
+        Rd[("Valkey")]
         Obj[("Object Storage (MinIO)")]
     end
 
@@ -143,7 +143,7 @@ flowchart LR
 Rules:
 
 - Only the reverse proxy is reachable from outside the host/LAN edge.
-- PostgreSQL, Redis, object storage admin console, and the Docker socket are
+- PostgreSQL, Valkey, object storage admin console, and the Docker socket are
   bound to the internal Docker network only — never published to the host's
   public interface.
 - Management/monitoring tooling sits on a separate network segment reachable
@@ -167,7 +167,7 @@ flowchart TB
         VPGControl["pg_control_data"]
         VPGTenant["pg_tenant_data"]
         VObj["minio_data"]
-        VRedis["redis_data (cache only, non-critical)"]
+        VRedis["valkey_data (cache only, non-critical)"]
     end
 
     NVMe --> VPGControl
@@ -185,7 +185,7 @@ Notes:
   accidental deletion, corruption, or ransomware — backups are a distinct,
   independently tested process (see
   [BACKUP_RESTORE.md](../operations/BACKUP_RESTORE.md)).
-- Redis holds only rebuildable state (broker queue, cache, rate-limit
+- Valkey holds only rebuildable state (broker queue, cache, rate-limit
   counters) and is not part of the durability guarantee.
 - Object storage uses content-addressed or UUID-based keys generated
   server-side; the physical filesystem path is never exposed to clients.
@@ -231,7 +231,7 @@ individual views.
 | Control-plane PostgreSQL | Users, orgs, permissions, file index, schema catalog, jobs, audit | Store tenant business data rows |
 | Tenant PostgreSQL | User-created database schemas/tables/rows | Be reachable directly by browsers or external apps |
 | Object storage (S3-compatible) | Durable blob storage for uploaded files | Be reachable directly by browsers without a presigned URL |
-| Redis | Celery broker, cache, rate limiting | Be a system of record for anything durable |
+| Valkey (Redis-protocol) | Celery broker, cache, rate limiting | Be a system of record for anything durable |
 | Reverse proxy | TLS termination, routing, basic rate limiting, security headers | Perform business authorization |
 
 ## 8. Data Plane: One Tenant Postgres, Row-Scoped — Rationale
@@ -254,7 +254,7 @@ column alone."
 - **Idempotency / request IDs**: every API request is tagged with a request
   ID, propagated to logs, audit records, and error responses.
 - **Observability**: structured JSON logs, `/healthz` (liveness),
-  `/readyz` (dependency checks: DB, Redis, object storage), Celery queue
+  `/readyz` (dependency checks: DB, Valkey, object storage), Celery queue
   depth metrics — see ROADMAP Phase 11.
 - **Configuration**: all environment-specific values via environment
   variables (`.env`, never committed); see `.env.example`.

@@ -9,11 +9,13 @@
 __pycache__/
 *.pyc
 .venv/
+.venv-bootstrap/
 venv/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
 
 # Node / frontend
 node_modules/
@@ -22,6 +24,7 @@ out/
 dist/
 build/
 coverage/
+*.tsbuildinfo
 
 # Editor / OS
 .vscode/

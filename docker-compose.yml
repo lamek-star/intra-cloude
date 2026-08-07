@@ -1,27 +1,27 @@
-# Private Data Cloud — Proposed Docker Compose Service Map (Phase 0)
+# Private Data Cloud — Docker Compose Service Map (Phase 1)
 #
-# STATUS: PROPOSAL / NOT YET FUNCTIONAL.
-# `apps/backend` and `apps/frontend` do not contain application code yet
-# (Phase 0 only produces architecture/planning docs, per the engineering
-# master prompt). This file documents the target service topology from
-# ARCHITECTURE.md / LOCAL_DEPLOYMENT.md so infrastructure and application
-# work in later phases build toward the same shape. `build:` contexts will
-# start resolving once Phase 1 adds Dockerfiles.
+# Exact image/runtime versions and the reasoning behind each are recorded
+# in docs/architecture/DEPENDENCY_VERSIONS.md — update both together.
 #
 # Design rules encoded here (see docs/security/THREAT_MODEL.md and
 # docs/architecture/ARCHITECTURE.md Section 4):
 #   - Only `proxy` publishes a port on the host.
-#   - postgres-control, postgres-tenant, redis, and object-storage are
-#     reachable only on the internal "data" network.
+#   - postgres-control, postgres-tenant, redis (Valkey), and object-storage
+#     are reachable only on the internal "data" network.
 #   - backend/worker/beat/frontend sit on the internal "app" network and
 #     talk to `proxy` for host-facing traffic.
+#
+# NOT YET VERIFIED end-to-end (`docker compose up`) — this development
+# environment does not have Docker installed. Each image/build has been
+# checked for internal consistency (env vars, health check commands,
+# dependency ordering) but not run together. Verify as an early Phase 2
+# step; fix forward from whatever `docker compose up` surfaces.
 
 networks:
   edge:
     driver: bridge
   app:
     driver: bridge
-    internal: false
   data:
     driver: bridge
     internal: true
@@ -30,11 +30,12 @@ volumes:
   pg_control_data:
   pg_tenant_data:
   object_storage_data:
-  redis_data:
+  valkey_data:
+  caddy_data:
 
 services:
   proxy:
-    image: caddy:latest # or nginx — final choice recorded via ADR in Phase 1
+    image: caddy:2-alpine
     ports:
       # Bind to the host's specific LAN interface IP (set via PROXY_BIND_ADDRESS),
       # not 0.0.0.0, so the service is reachable from the private network but not
@@ -43,19 +44,23 @@ services:
       # PROXY_BIND_ADDRESS to that host's LAN IP (or 127.0.0.1 for local-only access).
       - "${PROXY_BIND_ADDRESS:-127.0.0.1}:8443:443"
     volumes:
-      - ./infrastructure/proxy:/etc/caddy:ro
+      - ./infrastructure/proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
     networks:
       - edge
       - app
     depends_on:
-      - backend
-      - frontend
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
     restart: unless-stopped
 
   frontend:
     build:
       context: ./apps/frontend
-    env_file: .env
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
     networks:
       - app
     depends_on:
@@ -66,50 +71,75 @@ services:
     build:
       context: ./apps/backend
     env_file: .env
-    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - app
       - data
     depends_on:
-      - postgres-control
-      - postgres-tenant
-      - redis
-      - object-storage
+      postgres-control:
+        condition: service_healthy
+      postgres-tenant:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      object-storage:
+        condition: service_healthy
     restart: unless-stopped
 
   worker:
     build:
       context: ./apps/backend
     env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
     command: celery -A config worker -l info
     networks:
       - app
       - data
     depends_on:
-      - postgres-control
-      - postgres-tenant
-      - redis
-      - object-storage
+      postgres-control:
+        condition: service_healthy
+      postgres-tenant:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      object-storage:
+        condition: service_healthy
     restart: unless-stopped
 
   beat:
     build:
       context: ./apps/backend
     env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
     command: celery -A config beat -l info
     networks:
       - app
       - data
     depends_on:
-      - redis
+      valkey:
+        condition: service_healthy
     restart: unless-stopped
 
   postgres-control:
-    image: postgres:16 # version confirmed against current LTS at Phase 1 implementation time, see Section 27 version policy
+    image: postgres:18
     environment:
       POSTGRES_DB: ${CONTROL_DB_NAME}
       POSTGRES_USER: ${CONTROL_DB_USER}
       POSTGRES_PASSWORD: ${CONTROL_DB_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     volumes:
       - pg_control_data:/var/lib/postgresql/data
     networks:
@@ -117,31 +147,49 @@ services:
     restart: unless-stopped
 
   postgres-tenant:
-    image: postgres:16
+    image: postgres:18
     environment:
       POSTGRES_DB: ${TENANT_DB_NAME}
       POSTGRES_USER: ${TENANT_DB_USER}
       POSTGRES_PASSWORD: ${TENANT_DB_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     volumes:
       - pg_tenant_data:/var/lib/postgresql/data
     networks:
       - data
     restart: unless-stopped
 
-  redis:
-    image: redis:7
+  # Valkey (BSD-licensed, Redis-protocol-compatible) — see ADR-0011.
+  # Service name kept as `valkey`; REDIS_URL env var name kept for client
+  # library familiarity.
+  valkey:
+    image: valkey/valkey:9-alpine
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     volumes:
-      - redis_data:/data
+      - valkey_data:/data
     networks:
       - data
     restart: unless-stopped
 
   object-storage:
-    image: minio/minio:latest
+    image: minio/minio:latest # pin to a specific digest before production use — see docs/architecture/DEPENDENCY_VERSIONS.md
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${OBJECT_STORAGE_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_ROOT_PASSWORD}
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     volumes:
       - object_storage_data:/data
     networks:

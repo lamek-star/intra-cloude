@@ -72,11 +72,11 @@ assumed to hold on the other.
 | Information disclosure (public bucket misconfiguration) | Buckets default private; public/external sharing is an explicit, separately audited opt-in (Phase 9), disabled by default in local-only installs |
 | Malware upload | Antivirus/malware scan hook point in the upload pipeline (stub in early phases, wired to ClamAV or similar before external sharing is enabled) |
 
-### TB5 — API → Celery Workers (via Redis)
+### TB5 — API → Celery Workers (via Valkey)
 
 | Threat | Mitigation |
 |---|---|
-| Tampering (task payload injection) | Redis not exposed outside the internal network; tasks reference resource IDs and re-check authorization at execution time rather than trusting the enqueueing context blindly |
+| Tampering (task payload injection) | Valkey not exposed outside the internal network; tasks reference resource IDs and re-check authorization at execution time rather than trusting the enqueueing context blindly |
 | Denial of service (queue flooding) | Per-org job rate limits/quotas on import/export job creation |
 
 ### TB6 — API → External Connected Databases

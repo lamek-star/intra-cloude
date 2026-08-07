@@ -1,0 +1,35 @@
+[project]
+name = "private-data-cloud-backend"
+version = "0.1.0"
+description = "Private Data Cloud control-plane backend (Django + DRF)"
+requires-python = ">=3.13"
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+exclude = [".venv-bootstrap", "migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "BLE", "C4", "DJ", "UP"]
+ignore = ["DJ001"]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "accounts", "organizations", "permissions", "workspaces", "storage",
+    "databases", "datasets", "imports", "applications", "sharing", "audit",
+    "system", "config",
+]
+
+[tool.mypy]
+python_version = "3.13"
+plugins = ["mypy_django_plugin.main"]
+exclude = ["migrations/", ".venv-bootstrap/"]
+ignore_missing_imports = true
+
+[tool.django-stubs]
+django_settings_module = "config.settings.test"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["test_*.py"]
+addopts = "--reuse-db"

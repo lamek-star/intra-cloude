@@ -15,9 +15,16 @@ and the original product brief folded into that document.
 
 ## Current Status
 
-**Phase 0 complete: architecture and planning foundation only.** No
-application code exists yet. Do not jump ahead to implementation phases
-without explicit instruction — see "Development Process" below.
+**Phase 1 complete: development environment & infrastructure foundation.**
+Django backend skeleton (bounded apps, settings split, health endpoints)
+and Next.js frontend skeleton exist and have been verified with their real
+toolchains (ruff/mypy/pytest; tsc/eslint/next build). `docker-compose.yml`
+and the Caddy proxy config exist but have NOT been run end-to-end — this
+development environment has no Docker. Verify `docker compose up` +
+`manage.py migrate` + a real request round-trip as the first step of Phase
+2. No product features exist yet (no models beyond Django's built-ins). Do
+not jump ahead to later implementation phases without explicit
+instruction — see "Development Process" below.
 
 ## Non-Negotiable Architectural Rules
 

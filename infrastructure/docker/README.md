@@ -1,5 +1,12 @@
 # Docker Build Contexts
 
-Not yet implemented. Phase 1 will add Dockerfiles for `backend` and
-`frontend` referenced by the root `docker-compose.yml`, plus any shared
-base images (e.g. a common Python base with system dependencies).
+The backend and frontend each own their `Dockerfile` and `.dockerignore`
+directly (`apps/backend/Dockerfile`, `apps/frontend/Dockerfile`) since
+`docker-compose.yml` builds each with its own directory as build context —
+keeping a Dockerfile next to the code it packages avoids an extra layer of
+indirection for what are, so far, two independent single-stage-per-service
+builds.
+
+This directory is reserved for infrastructure that's genuinely shared
+across build contexts (e.g. a common base image, if one becomes justified)
+— nothing here yet, and nothing should be added here speculatively.

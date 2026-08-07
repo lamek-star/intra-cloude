@@ -12,6 +12,7 @@
 | [0008](0008-permission-model-capability-based.md) | Capability/permission-based authorization, not hard-coded roles | Accepted |
 | [0009](0009-external-database-connector-modes.md) | External database integration — distinct connected vs imported modes | Accepted |
 | [0010](0010-async-job-processing-celery-redis.md) | Asynchronous job processing — Celery + Redis | Accepted |
+| [0011](0011-valkey-over-redis.md) | Use Valkey instead of Redis for the broker/cache (licensing) | Accepted |
 
 New architecturally significant decisions get a new numbered ADR here
 rather than silently changing behavior described in an existing one.

@@ -1,0 +1,40 @@
+# Private Data Cloud — reverse proxy (Phase 1)
+#
+# TLS: `tls internal` uses Caddy's own local CA to issue a certificate for
+# whatever address this is reached on (LAN IP or hostname) — appropriate
+# for a local/LAN-first deployment per docs/deployment/LOCAL_DEPLOYMENT.md
+# Section 6. Trust Caddy's local CA root on client machines, or replace
+# this directive with a real internal-CA/ACME config for Phase 10
+# (internet gateway).
+#
+# Routing: API and infrastructure endpoints go to the Django backend;
+# everything else goes to the Next.js frontend. Only this proxy is
+# published to the host (docker-compose.yml) — backend/frontend/postgres/
+# valkey/object-storage stay on the internal Docker network
+# (docs/architecture/ARCHITECTURE.md Section 4).
+
+{
+	admin off
+}
+
+:443 {
+	tls internal
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "same-origin"
+	}
+
+	@backend path /api/* /healthz /readyz
+	handle @backend {
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

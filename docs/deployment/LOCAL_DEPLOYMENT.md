@@ -1,9 +1,13 @@
 # Local Deployment Guide — Private Data Cloud
 
-Status: DRAFT (Phase 0 — describes the target Phase 1 environment; no
-application code exists yet, so this is a forward-looking specification,
-not a verified runbook)
-Last updated: 2026-08-07
+Status: DRAFT (Phase 1 — the backend/frontend skeletons, `docker-compose.yml`,
+and `infrastructure/proxy/Caddyfile` referenced below now exist, but the
+full bring-up sequence has not been run end-to-end: this development
+environment has no Docker installed. Treat this as a specification to
+verify, not yet a confirmed runbook — see
+`docs/architecture/DEPENDENCY_VERSIONS.md` for exactly what has and hasn't
+been run.)
+Last updated: 2026-08-08
 
 ## 1. Scope
 
@@ -29,18 +33,21 @@ Docker Compose. It assumes no internet exposure by default.
 
 | Service | Image basis | Exposed to host? | Notes |
 |---|---|---|---|
-| `proxy` | nginx or Caddy | Yes (80/443 on LAN interface only) | TLS termination, routing to `frontend`/`backend` |
-| `frontend` | Node/Next.js | No (via proxy only) | |
-| `backend` | Python/Django (gunicorn/uvicorn) | No (via proxy only) | Runs migrations on startup via entrypoint, not automatically in prod without review |
+| `proxy` | Caddy | Yes (LAN interface only, via `PROXY_BIND_ADDRESS`) | TLS termination, routing to `frontend`/`backend` |
+| `frontend` | Node 24 / Next.js 16 | No (via proxy only) | |
+| `backend` | Python 3.13 / Django 5.2 LTS (gunicorn) | No (via proxy only) | Runs migrations on startup via entrypoint, not automatically in prod without review |
 | `worker` | same image as backend, `celery worker` | No | |
 | `beat` | same image as backend, `celery beat` | No | |
-| `postgres-control` | postgres (current stable) | No | Control-plane metadata DB |
-| `postgres-tenant` | postgres (current stable) | No | Tenant relational data; may be split into multiple instances later |
-| `redis` | redis (current stable) | No | Broker + cache |
+| `postgres-control` | postgres:18 | No | Control-plane metadata DB |
+| `postgres-tenant` | postgres:18 | No | Tenant relational data; may be split into multiple instances later |
+| `valkey` | valkey/valkey — see [ADR-0011](../architecture/adr/0011-valkey-over-redis.md) | No | Broker + cache; the `REDIS_URL` env var name is kept for client-library familiarity, but the compose service/image is Valkey |
 | `object-storage` | MinIO (S3-compatible) | No (internal only; console gated separately, LAN/VPN only if enabled) | Local S3-compatible backend |
 
+Exact major-version rationale for every dependency above is tracked in
+[docs/architecture/DEPENDENCY_VERSIONS.md](../architecture/DEPENDENCY_VERSIONS.md).
+
 No service other than `proxy` publishes a port on the host's non-loopback
-interface. `postgres-*`, `redis`, and `object-storage` are reachable only
+interface. `postgres-*`, `valkey`, and `object-storage` are reachable only
 on the internal Docker network.
 
 ## 4. Bring-Up Sequence (target)
@@ -49,7 +56,7 @@ on the internal Docker network.
    `SECRET_KEY`, object storage root credentials, credential-encryption
    key). Never commit `.env`.
 2. `docker compose build`
-3. `docker compose up -d postgres-control postgres-tenant redis
+3. `docker compose up -d postgres-control postgres-tenant valkey
    object-storage`
 4. Wait for health checks to pass (`docker compose ps`).
 5. `docker compose run --rm backend python manage.py migrate`
@@ -93,7 +100,8 @@ environment variables, never hardcoded. Categories:
   `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`.
 - Database: separate connection settings for control-plane vs tenant
   Postgres.
-- Redis: connection URL.
+- Valkey (Redis-protocol): connection URL, environment variable name kept
+  as `REDIS_URL` for client-library familiarity — see ADR-0011.
 - Object storage: endpoint, region (dummy for MinIO), access/secret key,
   bucket naming prefix.
 - Secrets: a dedicated symmetric key for encrypting `ConnectedDatabase`

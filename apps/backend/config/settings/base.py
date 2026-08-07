@@ -1,0 +1,244 @@
+"""
+Base Django settings shared by every environment.
+
+Nothing environment-specific (DEBUG, ALLOWED_HOSTS defaults, etc.) is
+hardcoded here beyond safe-by-default values — see dev.py / prod.py for
+environment overrides, and .env.example for the full variable list.
+"""
+
+import os
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+
+def env(name, default=None, required=False):
+    value = os.environ.get(name, default)
+    if required and value is None:
+        raise RuntimeError(f"Required environment variable {name!r} is not set")
+    return value
+
+
+def env_bool(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+def env_list(name, default=""):
+    value = os.environ.get(name, default)
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+SECRET_KEY = env("SECRET_KEY", required=True)
+
+# Safe default: no hosts allowed until explicitly configured per environment.
+ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "")
+CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", "")
+
+# --- Applications ---
+# Django admin is deliberately NOT installed at this phase (ADR-0002):
+# it is a bypass of the capability-based permission model and will only be
+# added later, explicitly gated to Super Administrators, if ever.
+DJANGO_APPS = [
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.staticfiles",
+]
+
+THIRD_PARTY_APPS = [
+    "rest_framework",
+    "corsheaders",
+]
+
+# Bounded Django apps per docs/architecture/DATA_MODEL.md Section 1.
+# Each owns its own models/services/serializers/tests; no giant shared app.
+LOCAL_APPS = [
+    "accounts",
+    "organizations",
+    "permissions",
+    "workspaces",
+    "storage",
+    "databases",
+    "datasets",
+    "imports",
+    "applications",
+    "sharing",
+    "audit",
+    "system",
+]
+
+INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
+
+MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "system.middleware.RequestIDMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+]
+
+ROOT_URLCONF = "config.urls"
+
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.debug",
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+            ],
+        },
+    },
+]
+
+WSGI_APPLICATION = "config.wsgi.application"
+ASGI_APPLICATION = "config.asgi.application"
+
+# --- Databases ---
+# Per ADR-0001 / ADR-0005: `default` is the control-plane database (users,
+# orgs, permissions, catalog, audit) and is the only alias Django migrates.
+# `tenant` is a *connection* to the tenant PostgreSQL cluster used by the
+# `databases` app's service layer to execute validated, schema-scoped DDL/DML
+# directly (see docs/architecture/DATA_MODEL.md Section 5) — Django's ORM/
+# migration framework never manages tenant schemas.
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": env("CONTROL_DB_NAME", required=True),
+        "USER": env("CONTROL_DB_USER", required=True),
+        "PASSWORD": env("CONTROL_DB_PASSWORD", required=True),
+        "HOST": env("CONTROL_DB_HOST", "localhost"),
+        "PORT": env("CONTROL_DB_PORT", "5432"),
+        "CONN_MAX_AGE": 60,
+    },
+    "tenant": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": env("TENANT_DB_NAME", required=True),
+        "USER": env("TENANT_DB_USER", required=True),
+        "PASSWORD": env("TENANT_DB_PASSWORD", required=True),
+        "HOST": env("TENANT_DB_HOST", "localhost"),
+        "PORT": env("TENANT_DB_PORT", "5432"),
+        "CONN_MAX_AGE": 60,
+    },
+}
+
+# Only the `default` (control-plane) database is migrated; the `tenant`
+# connection is never a migration target (see comment above DATABASES).
+DATABASE_ROUTERS = ["config.db_routers.TenantConnectionRouter"]
+
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 12}},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
+
+LANGUAGE_CODE = "en-us"
+TIME_ZONE = "UTC"
+USE_I18N = True
+USE_TZ = True
+
+STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# --- Security defaults (secure by default; environments may tighten further,
+# never loosen, without an explicit documented reason) ---
+SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_HTTPONLY = False  # frontend JS needs to read it to set the header
+CSRF_COOKIE_SAMESITE = "Lax"
+X_FRAME_OPTIONS = "DENY"
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+
+# CORS: deny by default; explicit allowlist only, never a wildcard
+# (Section 24 / Section 17 of the master prompt).
+CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "")
+CORS_ALLOW_CREDENTIALS = True
+
+# --- Django REST Framework ---
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    # Deny by default: every view requires authentication unless it
+    # explicitly opts out (e.g. /healthz).
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.LimitOffsetPagination",
+    "PAGE_SIZE": 50,
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "30/minute",
+        "user": "300/minute",
+    },
+    "EXCEPTION_HANDLER": "system.exceptions.structured_exception_handler",
+}
+
+# --- Celery (broker/result backend: Valkey, Redis-protocol — see ADR-0011) ---
+CELERY_BROKER_URL = env("REDIS_URL", "redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = env("REDIS_URL", "redis://localhost:6379/0")
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60
+
+# --- Object storage (S3-compatible; MinIO locally — ADR-0004) ---
+OBJECT_STORAGE_ENDPOINT = env("OBJECT_STORAGE_ENDPOINT", "")
+OBJECT_STORAGE_REGION = env("OBJECT_STORAGE_REGION", "us-east-1")
+OBJECT_STORAGE_ACCESS_KEY = env("OBJECT_STORAGE_ROOT_USER", "")
+OBJECT_STORAGE_SECRET_KEY = env("OBJECT_STORAGE_ROOT_PASSWORD", "")
+OBJECT_STORAGE_BUCKET_PREFIX = env("OBJECT_STORAGE_BUCKET_PREFIX", "pdc")
+
+# Dedicated key for encrypting ConnectedDatabase credentials at rest
+# (Section 15 of the master prompt) — distinct from SECRET_KEY.
+CREDENTIAL_ENCRYPTION_KEY = env("CREDENTIAL_ENCRYPTION_KEY", required=True)
+
+# --- Feature flags (secure defaults: off) ---
+FEATURE_EXTERNAL_SHARING_ENABLED = env_bool("FEATURE_EXTERNAL_SHARING_ENABLED", False)
+FEATURE_INTERNET_GATEWAY_ENABLED = env_bool("FEATURE_INTERNET_GATEWAY_ENABLED", False)
+
+# --- Logging: structured, request-ID-aware (Section 20) ---
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "structured": {
+            "format": (
+                '{"time": "%(asctime)s", "level": "%(levelname)s", '
+                '"logger": "%(name)s", "message": "%(message)s"}'
+            ),
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "structured",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO",
+    },
+    "loggers": {
+        "django": {"handlers": ["console"], "level": "INFO", "propagate": False},
+    },
+}

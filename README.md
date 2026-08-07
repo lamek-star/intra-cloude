@@ -8,11 +8,15 @@ AWS, Azure, or GCP.
 
 ## Status
 
-**Phase 0 — Architecture & Threat Model.** No application code exists yet.
-This repository currently contains the architecture, security, and
-operational planning foundation that later implementation phases build on.
-See [docs/architecture/ROADMAP.md](docs/architecture/ROADMAP.md) for the
-full phase plan.
+**Phase 1 — Development Environment & Infrastructure Foundation, complete.**
+Phase 0 (architecture/threat model) is done; Phase 1 adds the actual Django
+and Next.js project skeletons, Docker Compose service map, CI, and pinned
+dependency versions — still no product features (those start Phase 2). See
+[docs/architecture/ROADMAP.md](docs/architecture/ROADMAP.md) for the full
+phase plan and exit criteria, and
+[docs/architecture/DEPENDENCY_VERSIONS.md](docs/architecture/DEPENDENCY_VERSIONS.md)
+for what's actually been installed and verified vs. what still needs a
+Docker-enabled environment to confirm end-to-end.
 
 ## Start Here
 
@@ -24,6 +28,7 @@ full phase plan.
 - [docs/operations/BACKUP_RESTORE.md](docs/operations/BACKUP_RESTORE.md) — backup, retention, and disaster recovery strategy
 - [docs/architecture/ROADMAP.md](docs/architecture/ROADMAP.md) — phase-by-phase delivery plan
 - [docs/architecture/adr/](docs/architecture/adr/README.md) — architecture decision records
+- [docs/architecture/DEPENDENCY_VERSIONS.md](docs/architecture/DEPENDENCY_VERSIONS.md) — pinned major versions and why
 
 ## Core Principles
 
@@ -58,7 +63,7 @@ private-data-cloud/
         operations/              # BACKUP_RESTORE.md
         development/               # CONTRIBUTING.md
     tests/                   # Cross-cutting/security/E2E tests
-    docker-compose.yml       # Proposed service map (Phase 0 draft)
+    docker-compose.yml       # Service map, not yet verified end-to-end (no Docker in this dev env)
     .env.example
     README.md
     CLAUDE.md
@@ -67,7 +72,7 @@ private-data-cloud/
 ## Technology Stack (target — see ADRs for rationale)
 
 Backend: Python, Django, Django REST Framework, PostgreSQL, psycopg,
-Celery, Redis.
+Celery, Valkey (Redis-protocol-compatible broker/cache — see ADR-0011).
 Frontend: TypeScript, React, Next.js.
 Storage: S3-compatible abstraction (MinIO locally, AWS S3 or other
 compatible providers later).
