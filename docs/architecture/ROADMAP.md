@@ -72,18 +72,52 @@ Exit criteria and actual verification status:
   workflow itself has not yet executed on GitHub Actions (first push will
   confirm).
 
-## Phase 2 — Authentication, Organizations, Teams, Permissions
+## Phase 2 — Authentication, Organizations, Teams, Permissions — COMPLETE
 
-- `accounts`, `organizations`, `permissions` Django apps.
-- Session-based auth for the web app; groundwork for token auth (service
-  accounts come in Phase 7, but the credential model is designed now).
-- Role/Permission/RoleAssignment/ResourceGrant models + service layer per
-  PERMISSIONS.md.
-- Tenant isolation test harness (`tests/security/test_tenant_isolation.py`)
-  established here and reused by every subsequent phase.
-Exit criteria: a user can register/log in, create/join an organization,
-be assigned a role, and permission checks are enforced and tested,
-including a cross-org IDOR test.
+- `accounts` app: custom `User` model (UUID pk, email as `USERNAME_FIELD`,
+  no `is_staff`/`is_superuser` — see the ADR-0008 note in PERMISSIONS.md),
+  register/login/logout/me session-auth API.
+- `organizations` app: `Organization`, `Team` (model only, no API yet —
+  not required for this phase's exit criteria), `Membership`; org
+  create/list/detail + membership list/add/role-assign API.
+- `permissions` app: `Permission`, `Role`, `RoleAssignment` (nullable
+  `organization` for platform-wide Super Administrator grants — see the
+  PERMISSIONS.md implementation note), `ResourceGrant`; the single shared
+  `has_permission` service (ADR-0008); `seed_permissions` and
+  `bootstrap_super_administrator` management commands.
+- Tenant isolation test harness: `tests/security/test_tenant_isolation.py`,
+  proving org A cannot read/list/modify org B's organization, membership,
+  or role-assignment resources by ID substitution.
+- Root `pytest.ini` added so `tests/security/` (which spans multiple
+  backend apps and lives outside `apps/backend`) is collected alongside
+  each app's own tests in one `pytest` run from the repo root; CI's
+  backend job updated to run pytest from the root accordingly.
+
+Exit criteria — all verified for real (migrations applied, permissions
+seeded, and the full test suite run against actual Postgres containers,
+not sqlite/mocks): a user can register/log in (34 tests, including 9
+dedicated to auth), create an organization and is automatically made an
+active member + Organization Administrator, another user can be added and
+assigned a role, and `permissions.services.has_permission` plus 5
+dedicated cross-org tests confirm isolation holds.
+
+**Bugs found and fixed while actually running this against Postgres
+(not just reviewed on paper):**
+- `makemigrations` hung indefinitely on this Windows dev machine whenever
+  a model used `UniqueConstraint(condition=...)` (needed for `Role`'s
+  partial-unique system/custom-role-slug constraint) — it opens a real DB
+  connection to check partial-index support, and TCP connects to an
+  unlistened `localhost` port hung instead of failing fast in this
+  environment (worse: Docker Desktop's engine had silently stopped
+  between sessions, which was the proximate cause). Worked around by
+  generating migrations inside a container on the Docker network instead
+  of via the host Python venv — see `docs/architecture/DEPENDENCY_VERSIONS.md`.
+- `system.tests.test_health.ReadyzTests` started failing once `/readyz`
+  had a real `tenant` connection to check — Django's per-test database
+  isolation blocks queries to any alias not declared on the test class.
+  Fixed by adding `databases = {"default", "tenant"}`.
+
+## Phase 3 — File / Object Storage
 
 ## Phase 3 — File / Object Storage
 

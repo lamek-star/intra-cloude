@@ -65,6 +65,21 @@ System roles are seeded, cannot be deleted, and cannot be renamed (to keep
 documentation and support processes stable); organizations may additionally
 define custom roles that combine the same underlying permissions.
 
+**Implementation note (Phase 2):** every other role's `RoleAssignment` is
+scoped to exactly one Organization, but Super Administrator is a genuine
+platform-wide operator, not tied to any single org. Rather than adding a
+separate `User.is_superuser`-style flag (which would violate ADR-0008 —
+authorization living in exactly one mechanism), `RoleAssignment.organization`
+is nullable: `organization=None` means "platform-wide," and the service
+layer (`permissions.services.assign_role`) rejects a null-organization
+assignment for any role other than `super-administrator`. `has_permission`
+checks both the org-scoped and platform-wide assignments for a user in one
+query. See `apps/backend/permissions/models.py` and
+`apps/backend/accounts/management/commands/bootstrap_super_administrator.py`
+(the only supported way to create the first platform-wide operator; plain
+`manage.py createsuperuser` only creates a `User` row and grants no
+privilege in this permission model).
+
 ## 4. Resource Grants (Fine-Grained Exceptions)
 
 A `ResourceGrant` grants exactly one permission, on exactly one resource, to

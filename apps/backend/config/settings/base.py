@@ -152,6 +152,8 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+AUTH_USER_MODEL = "accounts.User"
+
 # --- Security defaults (secure by default; environments may tighten further,
 # never loosen, without an explicit documented reason) ---
 SESSION_COOKIE_SECURE = True

@@ -62,10 +62,19 @@ on the internal Docker network.
    object-storage`
 4. Wait for health checks to pass (`docker compose ps`).
 5. `docker compose run --rm backend python manage.py migrate`
-6. `docker compose run --rm backend python manage.py createsuperuser`
-   (or a scripted bootstrap command for the first Super Administrator).
-7. `docker compose up -d backend worker beat frontend proxy`
-8. Visit `https://<host-or-LAN-ip>:8443/` — Caddy's internal CA issues a
+6. `docker compose run --rm backend python manage.py seed_permissions`
+   (loads the permission catalog and system roles — required before the
+   next step, and safe to re-run any time).
+7. `docker compose run --rm backend python manage.py
+   bootstrap_super_administrator you@example.com` — creates the user (if
+   it doesn't exist) and grants the platform-wide Super Administrator
+   role. Plain `manage.py createsuperuser` also works to create a bare
+   user account, but grants no privilege by itself in this project's
+   capability-based permission model (see ADR-0008/permissions/models.py)
+   — use `bootstrap_super_administrator` to actually get an operator
+   account with platform-wide access.
+8. `docker compose up -d backend worker beat frontend proxy`
+9. Visit `https://<host-or-LAN-ip>:8443/` — Caddy's internal CA issues a
    locally-trusted-once-imported certificate; browsers will warn until you
    trust that CA root (`docker compose exec proxy cat
    /data/caddy/pki/authorities/local/root.crt` to export it), which is

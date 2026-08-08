@@ -15,20 +15,31 @@ and the original product brief folded into that document.
 
 ## Current Status
 
-**Phase 1 complete and verified end-to-end: development environment &
-infrastructure foundation.** Django backend skeleton (bounded apps,
-settings split, health endpoints) and Next.js frontend skeleton exist and
-have been verified with their real toolchains (ruff/mypy/pytest;
-tsc/eslint/next build). Docker Desktop was installed and the full
-`docker-compose.yml` stack (9 services) was actually built, migrated, and
-run — `/healthz`, `/readyz`, and the frontend all confirmed reachable
-through the Caddy proxy over real TLS. Three real bugs surfaced and were
-fixed in the process (Postgres 18 volume-mount path, `pip install --user`
-not surviving the Docker multi-stage build, `SECURE_SSL_REDIRECT` hanging
-the internal healthcheck) plus a Caddy TLS config bug — see
-`docs/architecture/ROADMAP.md` Phase 1 for details. No product features
-exist yet (no models beyond Django's built-ins). Do not jump ahead to
-later implementation phases without explicit instruction — see
+**Phase 2 complete and verified end-to-end: authentication, organizations,
+permissions.** Phase 1 (dev environment/infrastructure, Docker Compose
+stack built and run for real, three real bugs found and fixed — see
+`docs/architecture/ROADMAP.md` Phase 1) is done. Phase 2 adds the first
+real product code:
+
+- `accounts`: custom `User` model (email-based, UUID pk), register/login/
+  logout/me session-auth API.
+- `organizations`: `Organization`/`Team`/`Membership`, create/list/detail
+  + membership add/role-assign API. Creating an org auto-grants the
+  creator Organization Administrator.
+- `permissions`: capability-based authorization (ADR-0008) —
+  `Permission`/`Role`/`RoleAssignment`/`ResourceGrant`, one shared
+  `has_permission` service, `seed_permissions` +
+  `bootstrap_super_administrator` management commands.
+
+All migrated and tested against real PostgreSQL containers (not sqlite):
+34 tests pass, including `tests/security/test_tenant_isolation.py` — 5
+dedicated cross-organization IDOR/BOLA regression tests proving org A
+cannot read/list/modify org B's data by ID substitution. Two real bugs
+surfaced while actually running this (a `makemigrations` hang tied to a
+Windows-local networking quirk, and a Django test-isolation gap on the
+tenant DB connection) — both fixed, see `docs/architecture/ROADMAP.md`
+Phase 2. Do not jump ahead to later implementation phases without
+explicit instruction — see
 "Development Process" below.
 
 ## Non-Negotiable Architectural Rules

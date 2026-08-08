@@ -9,9 +9,6 @@ jobs:
   backend:
     name: Backend (lint, typecheck, test)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/backend
     services:
       postgres-control:
         image: postgres:18
@@ -56,16 +53,21 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: pip install -r requirements/dev.txt
+        run: pip install -r apps/backend/requirements/dev.txt
 
       - name: Ruff
+        working-directory: apps/backend
         run: ruff check .
 
       - name: Mypy
+        working-directory: apps/backend
         run: mypy .
 
       - name: Pytest
-        run: pytest --cov=. --cov-report=term-missing
+        # Run from the repo root (not apps/backend) so tests/security/
+        # (cross-app tenant-isolation tests) are collected alongside each
+        # app's own tests/ — see pytest.ini at the repo root.
+        run: pytest --cov=apps/backend --cov-report=term-missing
 
   frontend:
     name: Frontend (lint, typecheck, build)

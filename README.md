@@ -8,13 +8,14 @@ AWS, Azure, or GCP.
 
 ## Status
 
-**Phase 1 — Development Environment & Infrastructure Foundation, complete
-and verified end-to-end.** Phase 0 (architecture/threat model) is done;
-Phase 1 adds the actual Django and Next.js project skeletons, Docker
-Compose service map, and CI. The full stack has been built and run for
-real (`docker compose up`, migrations, and a live request through the
-Caddy proxy over TLS all succeeded) — still no product features (those
-start Phase 2). See
+**Phase 2 — Authentication, Organizations, Permissions, complete and
+verified end-to-end.** Phases 0 (architecture) and 1 (infrastructure
+foundation, Docker Compose stack built and run for real) are done. Phase 2
+adds the first real product code: user registration/login, organizations
+and membership, and a capability-based permission system (roles, resource
+grants, platform-wide Super Administrator) — all backed by real API
+endpoints, 34 passing tests (including dedicated cross-organization
+IDOR/BOLA regression tests) run against actual PostgreSQL, not mocks. See
 [docs/architecture/ROADMAP.md](docs/architecture/ROADMAP.md) for the full
 phase plan and exit criteria, and
 [docs/architecture/DEPENDENCY_VERSIONS.md](docs/architecture/DEPENDENCY_VERSIONS.md)

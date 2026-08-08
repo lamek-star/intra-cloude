@@ -52,6 +52,20 @@ one Caddy config bug (a bare `:443` address never gets a certificate under
 `tls internal`) — all fixed, see the verification note in
 [ROADMAP.md](ROADMAP.md) Phase 1 for details so they aren't reintroduced.
 
+**Local Windows dev-machine networking quirk (found in Phase 2):** on this
+machine, a plain TCP connect from the host to a `localhost` port nothing
+is listening on doesn't fail fast — it hangs (bounded only by
+`connect_timeout` when one is set, unbounded otherwise), apparently worse
+when Docker Desktop's engine itself isn't running. This broke
+`manage.py makemigrations` (which opens a real DB connection to check
+partial-index support for `UniqueConstraint(condition=...)`) when run via
+the host Python venv. Workaround: run Django management commands that
+touch the database inside a container on the Docker network instead of
+via the host venv — DNS names like `postgres-control` resolve and connect
+instantly there. `manage.py check`, `ruff`, `mypy`, `pytest --collect-only`
+(nothing that opens a DB connection) are unaffected and still fine to run
+from the host venv directly.
+
 ## Process for Future Version Decisions
 
 1. Before adopting or upgrading a major dependency, check its actual
