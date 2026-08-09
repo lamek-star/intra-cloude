@@ -35,8 +35,8 @@ Docker Compose. It assumes no internet exposure by default.
 | `proxy` | Caddy | Yes (LAN interface only, via `PROXY_BIND_ADDRESS`) | TLS termination, routing to `frontend`/`backend` |
 | `frontend` | Node 24 / Next.js 16 | No (via proxy only) | |
 | `backend` | Python 3.13 / Django 5.2 LTS (gunicorn) | No (via proxy only) | Runs migrations on startup via entrypoint, not automatically in prod without review |
-| `worker` | same image as backend, `celery worker` | No | |
-| `beat` | same image as backend, `celery beat` | No | |
+| `worker` | same image as backend (`image: pdc-backend:latest`, shared explicitly), `celery worker` | No | |
+| `beat` | same image as backend (same shared tag), `celery beat` | No | |
 | `postgres-control` | postgres:18 | No | Control-plane metadata DB |
 | `postgres-tenant` | postgres:18 | No | Tenant relational data; may be split into multiple instances later |
 | `valkey` | valkey/valkey — see [ADR-0011](../architecture/adr/0011-valkey-over-redis.md) | No | Broker + cache; the `REDIS_URL` env var name is kept for client-library familiarity, but the compose service/image is Valkey |

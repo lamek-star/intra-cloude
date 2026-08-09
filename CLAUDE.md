@@ -15,48 +15,28 @@ and the original product brief folded into that document.
 
 ## Current Status
 
-**Phase 4 complete and verified end-to-end: database builder.**
-Phases 1–3 (infrastructure; authentication/organizations/permissions;
-file/object storage — see `docs/architecture/ROADMAP.md` for the bugs
-found and fixed in each) are done. Phase 4 adds:
+**Phase 5 complete and verified end-to-end: CSV import.** Phases 0–4 are
+done (architecture; infrastructure; authentication/organizations/
+permissions; file/object storage; database builder). Full history, bugs
+found and fixed, and exact verification method for every phase lives in
+`docs/architecture/ROADMAP.md` — this section stays a short pointer, not a
+running log, so it doesn't grow without bound as phases continue.
 
-- `audit` (prerequisite): `AuditEvent` model, one shared
-  `audit.services.record()` helper, minimal `audit.read`-gated list API.
-- `databases`: `TenantDatabase`/`DBTable`/`DBColumn`/`DBForeignKey`/
-  `DBIndex` catalog (no separate `DBSchema` — one Postgres schema per
-  `TenantDatabase` already, per ADR-0005). The schema-change service
-  (`databases/services.py`) does validate-permission → validate-schema →
-  DDL-on-`tenant` → catalog-write-on-`default` → audit, for every
-  operation — with a documented compensating-DROP fallback for the (rare)
-  case where the catalog write fails after DDL already succeeded, since
-  there's no distributed transaction across the two connections
-  (ADR-0001). Identifiers get two independent layers of defense before
-  reaching DDL: strict regex validation (`databases/identifiers.py`) and
-  `psycopg.sql.Identifier`/`sql.Literal` safe quoting
-  (`databases/ddl.py`) — neither trusted alone.
-
-All migrated and tested against real PostgreSQL containers (not sqlite,
-not mocks) — including direct `information_schema` queries proving the
-actual Postgres objects exist correctly, and dedicated SQL-injection-
-attempt tests on every identifier and default-value input: 97 tests pass,
-including 6 new cross-org IDOR tests. Three real bugs surfaced while
-actually running this against Postgres — see `docs/architecture/ROADMAP.md`
-Phase 4 for detail:
-1. The identifier regex's bare `$` anchor let `"customers\n"` (trailing
-   newline) slip past validation — Python's `$` matches just before a
-   final `\n`, not only true end-of-string. Fixed with `\Z`.
-2. `length = max_length or 255` silently replaced an explicit
-   `max_length=0` with the default instead of rejecting it — a real
-   validation bypass from Python's falsy-zero, not a style nit.
-3. An auto-generated index name overflowed both Django's `max_length=63`
-   and Postgres's own identifier limit on the very first unique-column
-   test.
+Implemented so far, by app: `accounts` (auth), `organizations`/`permissions`
+(capability-based authz, ADR-0008), `workspaces` (Workspace/Project),
+`storage` (Bucket/Folder/FileObject/FileVersion, MinIO), `databases`
+(visual schema builder — real DDL, two-layer injection defense per
+Section 5 of the master prompt), `audit` (AuditEvent), `imports` (CSV
+preview + async Celery bulk insert). 124 tests pass against real
+PostgreSQL/MinIO/Celery (not mocks); every phase's exit criteria was
+confirmed live against the running Docker stack, not just via the
+automated suite.
 
 Known, disclosed gap (not a regression — never implemented): the tenant
 Postgres role the app connects as is not yet a scoped least-privilege
-role, so schema isolation between organizations is currently enforced
-only at the application layer, not also at the database-grant layer ADR-
-0005 assumes. See docs/security/THREAT_MODEL.md TB3; tracked for Phase 11.
+role, so schema isolation between organizations is enforced only at the
+application layer today, not also at the database-grant layer ADR-0005
+assumes. See docs/security/THREAT_MODEL.md TB3; tracked for Phase 11.
 
 Do not jump ahead to later implementation phases without explicit
 instruction — see

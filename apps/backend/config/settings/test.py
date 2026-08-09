@@ -19,3 +19,10 @@ SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False
 
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]  # fast hashing for tests only
+
+# Runs Celery tasks synchronously, in-process, instead of enqueueing to
+# Valkey and needing a live worker — the standard pattern for testing
+# task logic. Real worker/broker mechanics are verified separately
+# against an actual running worker container, not by this test suite.
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_TASK_EAGER_PROPAGATES = True

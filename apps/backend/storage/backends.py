@@ -80,6 +80,14 @@ class ObjectStorageClient:
         """Returns a botocore `StreamingBody` for chunked reading."""
         return self._client.get_object(Bucket=self._bucket, Key=key)["Body"]
 
+    def get_prefix(self, key: str, num_bytes: int) -> bytes:
+        """Fetches only the first `num_bytes` of an object via an HTTP
+        Range request — used for bounded-sample inspection (CSV preview,
+        imports/inspect.py) so previewing a multi-gigabyte file doesn't
+        require opening a stream for the whole thing."""
+        response = self._client.get_object(Bucket=self._bucket, Key=key, Range=f"bytes=0-{num_bytes - 1}")
+        return response["Body"].read()
+
     def delete(self, key: str) -> None:
         self._client.delete_object(Bucket=self._bucket, Key=key)
 

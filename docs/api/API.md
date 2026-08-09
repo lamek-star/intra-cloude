@@ -1,10 +1,21 @@
 # API Documentation — Private Data Cloud
 
-Status: Phase 4 — accounts, organizations, permissions, workspaces,
-storage, the database builder, and audit endpoints exist and are covered
-by tests (`apps/backend/*/tests`, `tests/security/`). No auto-generated
-OpenAPI schema yet (see "Open Items" below) — this is a hand-maintained
-summary of what actually exists, kept in sync with the code.
+Status: Phase 5 — accounts, organizations, permissions, workspaces,
+storage, the database builder, audit, and CSV import endpoints exist and
+are covered by tests (`apps/backend/*/tests`, `tests/security/`). No
+auto-generated OpenAPI schema yet (see "Open Items" below) — this is a
+hand-maintained summary of what actually exists, kept in sync with the
+code.
+
+## Authentication Note: CSRF on HTTPS
+
+For any authenticated (session-cookie-bearing) state-changing request over
+HTTPS, Django additionally requires a `Referer` header matching a trusted
+origin (`CSRF_TRUSTED_ORIGINS`) — this is standard Django CSRF hardening,
+not specific to this API. Real browsers send `Referer` automatically; a
+bare `curl`/script client must set it explicitly, or the request gets
+`403 CSRF Failed: Referer checking failed - no Referer.` (confirmed
+directly against the live stack — see ROADMAP.md Phase 5).
 
 ## Base Path and Versioning
 
@@ -122,6 +133,26 @@ accepted.
 |---|---|---|---|---|
 | GET | `/api/v1/organizations/{id}/audit/` | active membership | `audit.read` | Most recent 200 events for the org, newest first. Every schema-change operation above records one, including on permission denial (Section 18 of the master prompt). |
 
+### CSV Import (`imports/urls.py`)
+
+| Method | Path | Auth | Required permission | Notes |
+|---|---|---|---|---|
+| GET | `/api/v1/files/{file_id}/import-preview/` | active membership | `dataset.import` | Reads only a 64KB prefix of the file (via an S3 Range request) — never the whole file, even for a preview. Returns detected `encoding`/`delimiter`, `headers`, up to 50 `sample_rows`, and a per-column `inferred_type` (one of the Phase 4 column types). Nothing is applied yet — this is a preview. |
+| GET/POST | `/api/v1/tables/{table_id}/imports/` | active membership | `dataset.import` (POST only) | POST body: `{"file_id", "encoding", "delimiter", "column_mapping": [{"csv_column", "target_column", "target_type"}, ...]}` — the client sends back its confirmed (possibly corrected) version of the preview. Rejects a mapping that targets the generated `id` column, targets the same column twice, or claims a `target_type` that doesn't match the target column's actual type. Enqueues a Celery task and returns immediately (`status: "pending"`). |
+| GET | `/api/v1/imports/{id}/` | active membership | — | Status/progress: `status`, `total_rows`, `imported_rows`, `rejected_rows`. |
+| GET | `/api/v1/imports/{id}/errors/` | active membership | — | Up to 200 `{"row_number", "message", "raw_row"}` entries for rows that failed conversion — the job keeps going past a bad row rather than aborting the whole import. |
+
+The import task streams the file from S3 (`iter_lines()`) rather than
+downloading it whole, reusing the encoding/delimiter confirmed at preview
+time (a streamed body can't be rewound to re-sniff them). Rows are
+inserted in chunks of 1000 via one parameterized `INSERT` per row, with
+identifiers safely quoted the same way the database builder does
+(`psycopg.sql.Identifier`) — there's no new identifier-injection surface
+here since target table/column names always come from already-validated
+Phase 4 catalog rows, never straight from the CSV. Progress is
+checkpointed every chunk (`last_processed_row`), so retrying a failed job
+resumes rather than re-importing already-committed rows.
+
 ## Authorization Model in Practice
 
 Every org-scoped view (and, transitively, every workspace/project/bucket/
@@ -131,15 +162,15 @@ queryset filtered by the caller's active membership —
 `workspaces.views.get_member_workspace`/`get_member_project`,
 `storage.services.get_member_bucket`/`get_member_file`,
 `databases.services.get_member_tenant_database`/`get_member_table`/
-`get_member_column`. This is the IDOR/BOLA defense, not a decorative
-permission check on top of an unfiltered lookup
-(docs/security/THREAT_MODEL.md Section 4). Fine-grained actions
-(`users.manage`, `permissions.manage`, `storage.*`, `database.*`,
-`audit.read`) go through the single shared
+`get_member_column`, `imports.services.get_member_import_job`. This is the
+IDOR/BOLA defense, not a decorative permission check on top of an
+unfiltered lookup (docs/security/THREAT_MODEL.md Section 4). Fine-grained
+actions (`users.manage`, `permissions.manage`, `storage.*`, `database.*`,
+`audit.read`, `dataset.import`) go through the single shared
 `permissions.services.has_permission` entry point (ADR-0008).
 `tests/security/test_tenant_isolation.py` proves org A cannot read, list,
 or modify org B's organizations, memberships, role assignments, buckets,
-files, tenant databases, or tables by ID substitution.
+files, tenant databases, tables, or import jobs by ID substitution.
 
 ## Open Items
 
@@ -168,3 +199,13 @@ files, tenant databases, or tables by ID substitution.
   relationship visualization (Section 10 of the master prompt) — the data
   model supports being extended with these; not built because Phase 4's
   exit criteria didn't require them, not because of a blocker.
+- No "retry a failed import job" endpoint yet — `ImportJob` already tracks
+  `last_processed_row` so resuming is possible, but nothing currently
+  re-enqueues the task; a failed job just sits at `status: "failed"`.
+- No progress percentage/ETA on `ImportJob` — only raw row counts. Fine at
+  current scale.
+- CSV import supports only comma/semicolon/tab/pipe delimiters (whatever
+  stdlib `csv.Sniffer` detects) and three text encodings tried in order
+  (`utf-8-sig`, `utf-8`, `latin-1`, the last of which never fails to
+  decode) — not full charset auto-detection (`chardet`/
+  `charset-normalizer` were deliberately not added; Section 24).

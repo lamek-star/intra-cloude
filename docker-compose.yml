@@ -74,6 +74,13 @@ services:
   backend:
     build:
       context: ./apps/backend
+    # backend/worker/beat all build from the identical Dockerfile/context
+    # but Compose gives each service its own image tag by default — a
+    # rebuild of one silently left the others stale (found by actually
+    # running the worker: it had no tasks registered because its image
+    # predated apps/imports/tasks.py). Sharing one explicit tag means
+    # building any one of the three refreshes what all three run.
+    image: pdc-backend:latest
     env_file: .env
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
@@ -100,6 +107,7 @@ services:
   worker:
     build:
       context: ./apps/backend
+    image: pdc-backend:latest
     env_file: .env
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
@@ -121,6 +129,7 @@ services:
   beat:
     build:
       context: ./apps/backend
+    image: pdc-backend:latest
     env_file: .env
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod

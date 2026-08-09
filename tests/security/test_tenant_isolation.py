@@ -198,3 +198,87 @@ class CrossOrganizationDatabaseIsolationTests(APITestCase):
     def test_cannot_delete_another_orgs_database(self):
         response = self.client.delete(reverse("tenant-database-detail", args=[self.tenant_database_a_id]))
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class CrossOrganizationImportIsolationTests(APITestCase):
+    """Extends the suite to the CSV-import resources introduced in
+    Phase 5: ImportJob."""
+
+    databases = {"default", "tenant"}
+
+    def setUp(self):
+        SeedPermissionsCommand().handle()
+
+        self.org_a_admin = User.objects.create_user(email="import-a-admin@example.com", password="x")
+        self.client.force_login(self.org_a_admin)
+        org_a = self.client.post(reverse("organization-list-create"), {"name": "Import Org A"})
+        ws_a = self.client.post(reverse("workspace-list-create", args=[org_a.data["id"]]), {"name": "WS"})
+        proj_a = self.client.post(reverse("project-list-create", args=[ws_a.data["id"]]), {"name": "Proj"})
+        bucket_a = self.client.post(
+            reverse("bucket-list-create", args=[proj_a.data["id"]]), {"name": "uploads"}
+        )
+        db_a = self.client.post(
+            reverse("tenant-database-list-create", args=[proj_a.data["id"]]), {"name": "AppDB"}
+        )
+        table_a = self.client.post(
+            reverse("table-list-create", args=[db_a.data["id"]]), {"name": "people"}
+        )
+        self.table_a_id = table_a.data["id"]
+        self.client.post(
+            reverse("column-create", args=[self.table_a_id]),
+            {"name": "name", "data_type": "text"},
+            format="json",
+        )
+        upload = self.client.post(
+            reverse("file-list-create", args=[bucket_a.data["id"]]),
+            {"file": SimpleUploadedFile("people.csv", b"name\nalice\n", content_type="text/csv")},
+            format="multipart",
+        )
+        self.file_a_id = upload.data["id"]
+        job = self.client.post(
+            reverse("import-job-list-create", args=[self.table_a_id]),
+            {
+                "file_id": self.file_a_id,
+                "encoding": "utf-8",
+                "delimiter": ",",
+                "column_mapping": [{"csv_column": "name", "target_column": "name", "target_type": "text"}],
+            },
+            format="json",
+        )
+        self.job_a_id = job.data["id"]
+
+        self.org_b_admin = User.objects.create_user(email="import-b-admin@example.com", password="x")
+        self.client.force_login(self.org_b_admin)
+        self.client.post(reverse("organization-list-create"), {"name": "Import Org B"})
+
+        # Act as Org B's admin — no legitimate access to anything under Org A.
+        self.client.force_login(self.org_b_admin)
+
+    def test_cannot_preview_another_orgs_file(self):
+        response = self.client.get(reverse("import-preview", args=[self.file_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_list_another_orgs_import_jobs(self):
+        response = self.client.get(reverse("import-job-list-create", args=[self.table_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_read_another_orgs_import_job(self):
+        response = self.client.get(reverse("import-job-detail", args=[self.job_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_read_another_orgs_import_errors(self):
+        response = self.client.get(reverse("import-job-error-list", args=[self.job_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_start_an_import_against_another_orgs_table(self):
+        response = self.client.post(
+            reverse("import-job-list-create", args=[self.table_a_id]),
+            {
+                "file_id": self.file_a_id,
+                "encoding": "utf-8",
+                "delimiter": ",",
+                "column_mapping": [{"csv_column": "name", "target_column": "name", "target_type": "text"}],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

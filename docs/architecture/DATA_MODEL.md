@@ -171,15 +171,23 @@ erDiagram
   Section 15 of the master prompt and ADR-0009. Not yet implemented
   (Phase 8).
 
-### 3.6 Imports
+### 3.6 Imports — implemented Phase 5
 
 - `ImportJob`: one CSV import attempt — source `FileObject`, target
-  `DBTable`, column mapping, inferred vs confirmed types, status, row
-  counts (total/succeeded/rejected), timestamps.
-- `ImportJobError`: per-row or per-batch error detail, capped and
-  paginated — not an unbounded blob.
-- `ColumnMapping`: CSV column → target `DBColumn` (or "create new column"),
-  plus the user-confirmed type.
+  `DBTable`, confirmed `encoding`/`delimiter` (captured once at preview
+  time, never re-sniffed mid-stream — a streamed S3 body can't be
+  rewound), `column_mapping` (JSON, not a separate model — see below),
+  status, row counts (total/imported/rejected), `last_processed_row` (a
+  retried job resumes rather than re-importing), timestamps.
+- `ImportJobError`: per-row error detail, capped at 1000 stored rows per
+  job — not an unbounded blob.
+- No separate `ColumnMapping` model — it's a JSON list on `ImportJob`
+  (`[{"csv_column", "target_column", "target_type"}, ...]`), validated
+  against the target table's real `DBColumn` rows at job-creation time
+  (`imports/services.py:validate_column_mapping`) rather than being its
+  own set of catalog rows with their own lifecycle. A mapping only ever
+  matters for the one job it was confirmed for; a separate model would add
+  a table with no independent identity worth tracking.
 
 ### 3.7 Applications
 

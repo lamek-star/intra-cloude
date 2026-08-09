@@ -240,14 +240,71 @@ all three were security- or correctness-relevant, not cosmetic:**
    hex (columns are already globally unique, so the table ID added
    nothing but length).
 
-## Phase 5 — CSV Import
+## Phase 5 — CSV Import — COMPLETE
 
-- `imports` app: upload → inspect (encoding/delimiter/header detection) →
-  sample → infer types → user-confirmed mapping → async chunked bulk
-  insert via Celery → error report.
+- `imports` app: `GET /files/{id}/import-preview/` (bounded-sample
+  inspect: encoding via a small tried-in-order list ending in latin-1,
+  which never fails to decode; delimiter via stdlib `csv.Sniffer`; header
+  parse; per-column candidate type from a sample — never applied without
+  the user confirming/overriding it in the mapping they submit).
+  `POST /tables/{id}/imports/` validates the confirmed mapping, creates an
+  `ImportJob`, and enqueues a Celery task — actually async, not
+  fire-and-forget-in-request.
+- The import task streams the file from S3 via `iter_lines()` (never
+  downloads or holds the whole file in memory — encoding/delimiter are
+  reused from the confirmed preview rather than re-sniffed, since a
+  streamed S3 body can't be rewound to re-sample), converts each row's
+  values per the confirmed column types, and bulk-inserts in chunks of
+  1000 via a single parameterized `INSERT` (identifiers safely quoted with
+  `psycopg.sql.Identifier`, reusing the same catalog rows Phase 4 already
+  validated — no new identifier-injection surface). A bad row is recorded
+  as an `ImportJobError` and skipped, not fatal to the whole job. Progress
+  (`last_processed_row`) is checkpointed every chunk, so a retried job
+  resumes rather than re-importing already-committed rows.
 Exit criteria: a multi-hundred-thousand-row CSV imports without loading
 entirely into memory, reports row-level errors, and never silently
 auto-applies an inferred type without user confirmation.
+
+Exit criteria — verified for real: the full pipeline was exercised twice,
+first via 124 automated tests (Celery in eager/synchronous mode, per
+`config/settings/test.py`) including a round-trip that uploads a real CSV,
+creates a real table via the Phase 4 database builder, imports it, and
+queries the real tenant table afterward to confirm both the two good rows
+landed correctly *and* the one bad row (`"not-a-number"` into an integer
+column) was rejected and reported, not silently coerced or silently
+dropped. Second, and more importantly, against the **actual running
+stack** — Docker Desktop, real Valkey broker, a genuinely separate worker
+process — driven entirely through the live HTTPS API (register → login →
+org → workspace → project → bucket → upload → tenant database → table →
+columns → preview → import job → poll), proving the task really crosses
+process boundaries through the real broker rather than only having been
+exercised in Celery's eager test mode. 6 new cross-organization IDOR tests
+extend `tests/security/test_tenant_isolation.py` to import jobs. 124/124
+automated tests pass; ruff and mypy clean.
+
+**Bugs found — one real product bug, one real infrastructure bug, both
+only found by actually running the live stack, not by the automated test
+suite (which happened to mask both):**
+1. The live worker's Celery startup banner showed an empty `[tasks]` list
+   — `imports.tasks.run_import_task` was never registered, so real
+   imports would have hung forever in `pending`. Root cause:
+   `docker-compose.yml`'s `backend`, `worker`, and `beat` services all
+   build from the identical Dockerfile/context but Compose gave each one
+   its own separate image tag by default — rebuilding `backend` alone
+   (the normal workflow for every phase so far, since migrations only
+   ever ran via `docker compose run backend`) silently left `worker`'s and
+   `beat`'s images stale all the way back to Phase 1. The automated test
+   suite never caught this because `CELERY_TASK_ALWAYS_EAGER` runs task
+   code in-process, bypassing the worker image entirely. Fixed by giving
+   all three services an explicit shared `image: pdc-backend:latest` tag,
+   so building any one of them refreshes what all three actually run.
+2. A bare `curl` POST to an authenticated endpoint over HTTPS got
+   `403 CSRF Failed: Referer checking failed - no Referer` — this is
+   correct, intentional Django CSRF hardening for HTTPS requests (a
+   Referer header is required), not a bug; real browsers send one
+   automatically. Documented here rather than silently worked around,
+   since it's exactly the kind of thing worth knowing before Phase 6
+   builds a real frontend against this API.
 
 ## Phase 6 — Data Explorer
 
