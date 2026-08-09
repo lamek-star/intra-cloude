@@ -1,9 +1,10 @@
 # Backend (Django + DRF)
 
-Phase 7. Implemented so far: authentication, organizations/permissions,
+Phase 8. Implemented so far: authentication, organizations/permissions,
 workspaces/projects, file/object storage, audit logging, database
 builder (schema + row-level data explorer), CSV import, application/
-service-account integrations. See
+service-account integrations, external database connectors (read-only
+connected-mode PostgreSQL). See
 `docs/architecture/DATA_MODEL.md` Section 1 for the module boundaries and
 `docs/architecture/adr/` for the reasoning behind the framework, database,
 and broker choices.
@@ -31,6 +32,9 @@ apps/backend/
     databases/         # TenantDatabase/DBTable/DBColumn/DBForeignKey/DBIndex,
                        # schema-change service (identifiers.py + ddl.py safe DDL),
                        # data explorer row API (rows.py + values.py), formats.py
+                       # ConnectedDatabase (Phase 8): crypto.py (Fernet at rest),
+                       # connectors.py (external connector interface), connections.py
+                       # (service layer — separate from the TenantDatabase DDL path)
     audit/             # AuditEvent, record() helper, minimal audit.read API
     imports/           # ImportJob/ImportJobError, CSV preview + async Celery bulk insert
     applications/       # Application/ServiceAccount/ApplicationCredential, bearer-token auth,

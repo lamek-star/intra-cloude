@@ -10,12 +10,16 @@ from rest_framework.views import APIView
 from permissions.services import has_permission
 from workspaces.views import get_member_project
 
+from . import connections as connection_ops
 from . import rows as row_ops
 from . import services
+from .connectors import ConnectionFailed
 from .models import DBTable
 from .serializers import (
     ColumnCreateSerializer,
     ColumnSerializer,
+    ConnectedDatabaseCreateSerializer,
+    ConnectedDatabaseSerializer,
     ForeignKeyCreateSerializer,
     ForeignKeySerializer,
     TableCreateSerializer,
@@ -328,3 +332,140 @@ class RowExportView(APIView):
         response = StreamingHttpResponse(generate(), content_type="text/csv")
         response["Content-Disposition"] = f'attachment; filename="{table.name}.csv"'
         return response
+
+
+# --- External database connectors, connected mode (Section 15 of the
+# master prompt; Phase 8; ADR-0009) --- read-only; nothing here ever
+# writes to the external database.
+
+
+def _handle_connection(fn):
+    try:
+        return fn(), None
+    except connection_ops.ConnectionPermissionDenied:
+        return None, Response(status=status.HTTP_403_FORBIDDEN)
+    except connection_ops.ConnectionValidationError as exc:
+        return None, Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    except ConnectionFailed as exc:
+        return None, Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+
+
+class ConnectedDatabaseListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, project_id):
+        project = get_member_project(request.user, project_id)
+        connected_databases = project.connected_databases.all()
+        return Response(ConnectedDatabaseSerializer(connected_databases, many=True).data)
+
+    def post(self, request, project_id):
+        project = get_member_project(request.user, project_id)
+        serializer = ConnectedDatabaseCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        result, error = _handle_connection(
+            lambda: connection_ops.create_connected_database(
+                actor=request.user,
+                project=project,
+                name=data["name"],
+                engine=data["engine"],
+                host=data["host"],
+                port=data["port"],
+                database_name=data["database_name"],
+                username=data["username"],
+                password=data["password"],
+                sslmode=data["sslmode"],
+                request_id=_request_id(request),
+            )
+        )
+        if error:
+            return error
+        return Response(ConnectedDatabaseSerializer(result).data, status=status.HTTP_201_CREATED)
+
+
+class ConnectedDatabaseDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, connected_database_id):
+        connected_database = connection_ops.get_member_connected_database(
+            request.user, connected_database_id
+        )
+        return Response(ConnectedDatabaseSerializer(connected_database).data)
+
+    def delete(self, request, connected_database_id):
+        connected_database = connection_ops.get_member_connected_database(
+            request.user, connected_database_id
+        )
+        _, error = _handle_connection(
+            lambda: connection_ops.delete_connected_database(
+                actor=request.user, connected_database=connected_database, request_id=_request_id(request)
+            )
+        )
+        if error:
+            return error
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ConnectedDatabaseTestView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, connected_database_id):
+        connected_database = connection_ops.get_member_connected_database(
+            request.user, connected_database_id
+        )
+        result, error = _handle_connection(
+            lambda: connection_ops.test_connected_database(
+                actor=request.user, connected_database=connected_database, request_id=_request_id(request)
+            )
+        )
+        if error:
+            return error
+        return Response(ConnectedDatabaseSerializer(result).data)
+
+
+class ConnectedDatabaseSchemaView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, connected_database_id):
+        connected_database = connection_ops.get_member_connected_database(
+            request.user, connected_database_id
+        )
+        result, error = _handle_connection(
+            lambda: connection_ops.get_connected_database_schema(
+                actor=request.user, connected_database=connected_database, request_id=_request_id(request)
+            )
+        )
+        if error:
+            return error
+        return Response(
+            [{"name": t.name, "columns": [c.__dict__ for c in t.columns]} for t in result]
+        )
+
+
+class ConnectedDatabaseTableRowsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, connected_database_id, table_name):
+        connected_database = connection_ops.get_member_connected_database(
+            request.user, connected_database_id
+        )
+        try:
+            limit = int(request.query_params.get("limit", 50))
+            offset = int(request.query_params.get("offset", 0))
+        except ValueError:
+            return Response({"detail": "limit/offset must be integers"}, status=status.HTTP_400_BAD_REQUEST)
+
+        result, error = _handle_connection(
+            lambda: connection_ops.list_connected_database_rows(
+                actor=request.user,
+                connected_database=connected_database,
+                table_name=table_name,
+                limit=limit,
+                offset=offset,
+                request_id=_request_id(request),
+            )
+        )
+        if error:
+            return error
+        return Response(result)

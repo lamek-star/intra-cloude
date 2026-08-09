@@ -1,11 +1,12 @@
 # API Documentation — Private Data Cloud
 
-Status: Phase 7 — accounts, organizations, permissions, workspaces,
+Status: Phase 8 — accounts, organizations, permissions, workspaces,
 storage, the database builder (schema *and* row data), audit, CSV
-import, and application/service-account endpoints exist and are covered
-by tests (`apps/backend/*/tests`, `tests/security/`). No auto-generated
-OpenAPI schema yet (see "Open Items" below) — this is a hand-maintained
-summary of what actually exists, kept in sync with the code.
+import, application/service-account, and external database connector
+(connected mode) endpoints exist and are covered by tests
+(`apps/backend/*/tests`, `tests/security/`). No auto-generated OpenAPI
+schema yet (see "Open Items" below) — this is a hand-maintained summary
+of what actually exists, kept in sync with the code.
 
 ## Authentication Note: CSRF on HTTPS
 
@@ -152,6 +153,29 @@ content — table/column identifiers themselves are never taken from the
 request at all here, only from the already-validated `DBTable`/`DBColumn`
 catalog rows Phase 4 created.
 
+### External Database Connectors (`databases/urls.py`, connected mode)
+
+| Method | Path | Auth | Required permission | Notes |
+|---|---|---|---|---|
+| GET/POST | `/api/v1/projects/{project_id}/connected-databases/` | active membership | `connection.manage` (POST only) | POST body: `{"name", "engine", "host", "port", "database_name", "username", "password", "sslmode"?}`. `engine` is `postgresql` only for now. The connection is tested with the submitted credentials **before anything is saved** — a failed test returns 400 and persists nothing (ADR-0009). |
+| GET/DELETE | `/api/v1/connected-databases/{id}/` | active membership | `connection.manage` (DELETE only) | Response never includes the password or its encrypted form. |
+| POST | `/api/v1/connected-databases/{id}/test/` | active membership | `connection.manage` | Re-tests the existing stored credentials; updates `status` (`untested`/`connected`/`unreachable`), `last_tested_at`, `last_test_error`. |
+| GET | `/api/v1/connected-databases/{id}/schema/` | active membership | `database.read` | Introspected `[{"name", "columns": [{"name", "data_type", "is_nullable"}, ...]}, ...]` for every table in the external database's `public` schema. |
+| GET | `/api/v1/connected-databases/{id}/tables/{table_name}/rows/` | active membership | `database.read` | Paginated (`?limit=`, hard-capped at 500; `?offset=`), read-only. `table_name` is re-checked against a fresh schema introspection on every call, not a cached list. |
+
+`ConnectedDatabase` is a distinct model from `TenantDatabase` on purpose
+(ADR-0009) — the source data stays external and is never copied; every
+read here proxies a live query to the actual external PostgreSQL server
+via its own independent connection
+(`databases/connectors.py:PostgresConnector`), not Django's own ORM
+connection pool. Passwords are Fernet-encrypted at rest
+(`databases/crypto.py`, keyed by `CREDENTIAL_ENCRYPTION_KEY`) and never
+appear in any API response, audit event, or log line — driver errors are
+always replaced with a fixed, sanitized message before leaving
+`connectors.py` (docs/security/THREAT_MODEL.md TB6). Write pass-through
+is out of scope for this phase (ADR-0009 Final Recommendation); `GET`
+only.
+
 ### Audit (`audit/urls.py`)
 
 | Method | Path | Auth | Required permission | Notes |
@@ -192,10 +216,13 @@ resumes rather than re-importing already-committed rows.
 An application's effective access is exactly the union of its
 `ResourceGrant`s, checked the same way as any other principal's through
 `permissions.services.has_permission`'s `resource=` parameter — currently
-wired into storage endpoints (bucket-scoped) and row-data endpoints
-(tenant-database-scoped). Schema-management endpoints (create/drop
-database or table, add column, add foreign key) are not resource-scoped;
-an application needs an organization-wide grant for those.
+wired into storage endpoints (bucket-scoped), row-data endpoints
+(tenant-database-scoped), and connected-database schema/row endpoints
+(connected-database-scoped). Schema-management endpoints (create/drop
+database or table, add column, add foreign key) and connection
+management endpoints (create/test/delete a `ConnectedDatabase`) are not
+resource-scoped; an application needs an organization-wide grant for
+those.
 
 ## Authorization Model in Practice
 
@@ -207,21 +234,24 @@ queryset filtered by the caller's active membership —
 `storage.services.get_member_bucket`/`get_member_file`,
 `databases.services.get_member_tenant_database`/`get_member_table`/
 `get_member_column`, `imports.services.get_member_import_job`,
-`applications.views.get_member_application`. This is the IDOR/BOLA
-defense, not a decorative permission check on top of an unfiltered lookup
-(docs/security/THREAT_MODEL.md Section 4). Fine-grained actions
-(`users.manage`, `permissions.manage`, `storage.*`, `database.*`,
-`audit.read`, `dataset.import`, `dataset.export`, `application.*`) go
-through the single shared `permissions.services.has_permission` entry
-point (ADR-0008), which as of Phase 7 also accepts an optional
-`resource=(resource_type, resource_id)` to check a `ResourceGrant` scoped
-to one specific resource rather than the whole organization — this is
-what lets an Application be restricted to, e.g., a single bucket.
+`applications.views.get_member_application`,
+`databases.connections.get_member_connected_database`. This is the
+IDOR/BOLA defense, not a decorative permission check on top of an
+unfiltered lookup (docs/security/THREAT_MODEL.md Section 4). Fine-grained
+actions (`users.manage`, `permissions.manage`, `storage.*`, `database.*`,
+`audit.read`, `dataset.import`, `dataset.export`, `application.*`,
+`connection.manage`) go through the single shared
+`permissions.services.has_permission` entry point (ADR-0008), which as of
+Phase 7 also accepts an optional `resource=(resource_type, resource_id)`
+to check a `ResourceGrant` scoped to one specific resource rather than
+the whole organization — this is what lets an Application be restricted
+to, e.g., a single bucket or a single `ConnectedDatabase`.
 `tests/security/test_tenant_isolation.py` proves org A cannot read, list,
 or modify org B's organizations, memberships, role assignments, buckets,
-files, tenant databases, tables, rows, import jobs, or applications
+files, tenant databases, tables, rows, import jobs, applications
 (including issuing/revoking their credentials or granting them resource
-access) by ID substitution.
+access), or connected databases (including testing, reading schema/rows,
+or deleting them) by ID substitution.
 
 ## Open Items
 
@@ -245,6 +275,10 @@ access) by ID substitution.
   docs/security/THREAT_MODEL.md TB3. Tracked for Phase 11 hardening.
 - No "create an arbitrary index" endpoint yet — `DBIndex` rows are only
   ever created automatically alongside a unique column.
+- `ConnectedDatabase` is read-only (connected-mode write pass-through is
+  explicitly deferred per ADR-0009's Final Recommendation) and
+  PostgreSQL-only — MySQL/MariaDB/SQL Server/SQLite connectors are future
+  work behind the same `databases/connectors.py` interface.
 - No table/column rename, no dropping a single column, no ERD-style
   relationship visualization (Section 10 of the master prompt) — the data
   model supports being extended with these; not built because Phase 4's

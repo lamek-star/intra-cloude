@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import DBColumn, DBForeignKey, DBTable, TenantDatabase
+from .models import ConnectedDatabase, DBColumn, DBForeignKey, DBTable, TenantDatabase
 
 
 class TenantDatabaseSerializer(serializers.ModelSerializer):
@@ -74,4 +74,43 @@ class ForeignKeyCreateSerializer(serializers.Serializer):
     references_column_id = serializers.UUIDField()
     on_delete = serializers.ChoiceField(
         choices=DBForeignKey.OnDelete.choices, required=False, default=DBForeignKey.OnDelete.RESTRICT
+    )
+
+
+class ConnectedDatabaseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ConnectedDatabase
+        # Never the password or its encrypted form — this is the only
+        # serializer connected-database views ever return.
+        fields = [
+            "id",
+            "project",
+            "name",
+            "engine",
+            "host",
+            "port",
+            "database_name",
+            "username",
+            "sslmode",
+            "status",
+            "last_tested_at",
+            "last_test_error",
+            "created_at",
+            "created_by",
+        ]
+        read_only_fields = fields
+
+
+class ConnectedDatabaseCreateSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=200)
+    engine = serializers.ChoiceField(
+        choices=ConnectedDatabase.Engine.choices, default=ConnectedDatabase.Engine.POSTGRESQL
+    )
+    host = serializers.CharField(max_length=255)
+    port = serializers.IntegerField(min_value=1, max_value=65535, default=5432)
+    database_name = serializers.CharField(max_length=200)
+    username = serializers.CharField(max_length=200)
+    password = serializers.CharField(write_only=True, trim_whitespace=False)
+    sslmode = serializers.ChoiceField(
+        choices=ConnectedDatabase.SSLMode.choices, default=ConnectedDatabase.SSLMode.REQUIRE
     )

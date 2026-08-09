@@ -8,18 +8,18 @@ AWS, Azure, or GCP.
 
 ## Status
 
-**Phase 7 — Application/Service-Account Integrations, complete and
-verified end-to-end.** Phases 0–6 are done: architecture, infrastructure,
+**Phase 8 — External Database Connectors, complete and verified
+end-to-end.** Phases 0–7 are done: architecture, infrastructure,
 authentication/organizations/permissions, file storage, the visual
-database builder, CSV import, and the spreadsheet-style data explorer.
-Phase 7 adds registered Applications that authenticate via bearer-token
-service-account credentials and can be scoped down to individual
-resources (e.g. one bucket, not the whole org) through the same
-fine-grained authorization mechanism every other principal uses. 162
-tests pass against real PostgreSQL, MinIO, and Celery — not mocks —
-including cross-organization IDOR/BOLA regression tests for every
-resource type introduced so far. Every phase's exit criteria has been
-confirmed against the actual running Docker stack, not only the
+database builder, CSV import, the spreadsheet-style data explorer, and
+application/service-account integrations. Phase 8 adds `ConnectedDatabase`
+— read-only, connected-mode access to an externally-hosted PostgreSQL
+database (query pass-through, nothing copied in), with credentials
+encrypted at rest and a connection test required before anything is
+persisted. 178 tests pass against real PostgreSQL, MinIO, and Celery —
+not mocks — including cross-organization IDOR/BOLA regression tests for
+every resource type introduced so far. Every phase's exit criteria has
+been confirmed against the actual running Docker stack, not only the
 automated suite. Full phase history — what was built, how it was
 verified, and every real bug found along the way — lives in
 [docs/architecture/ROADMAP.md](docs/architecture/ROADMAP.md); this section

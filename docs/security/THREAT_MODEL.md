@@ -60,7 +60,7 @@ assumed to hold on the other.
 |---|---|
 | Tampering (SQL injection via dynamic schema/table/column names or default values) | **Implemented, Phase 4.** Strict identifier regex validation (`databases/identifiers.py`) as a first pass, independent of and prior to `psycopg.sql.Identifier` safe quoting (`databases/ddl.py`) as a second — never raw string interpolation. Constant values (column defaults) are embedded via `psycopg.sql.Literal`, never concatenated. Verified with dedicated tests that attempt injection through every identifier and default-value input and confirm the target objects survive. |
 | Elevation of privilege (tenant DB role escaping its schema) | **Not yet implemented — known gap.** The design intent (schema-per-`TenantDatabase`, ADR-0005) assumes the application's tenant Postgres role is granted only `USAGE`/`CREATE` on schemas it owns, not superuser. As actually deployed (`docker-compose.yml`), the app connects as the container's bootstrap `POSTGRES_USER`, which *is* effectively a superuser within that Postgres instance — so today, isolation between tenant schemas is enforced only by the application layer (identifier validation + membership-scoped catalog lookups), not by a second, independent database-level privilege boundary. Tracked for Phase 11 hardening; called out explicitly here rather than left implied by the ADR. |
-| Information disclosure (connection string / credentials leakage) | Secrets via environment/secret store, never logged; `ConnectedDatabase` credentials encrypted at rest with a key outside the DB itself (Phase 8, not yet implemented) |
+| Information disclosure (connection string / credentials leakage) | **Implemented, Phase 8.** Secrets via environment/secret store, never logged; `ConnectedDatabase` credentials encrypted at rest with `CREDENTIAL_ENCRYPTION_KEY`, a key outside the row itself and distinct from `SECRET_KEY` (`databases/crypto.py`) |
 | Denial of service (runaway query from CSV import or data explorer) | Query timeouts, statement timeouts, server-side pagination caps, async processing for bulk operations — not yet implemented (Phase 5/6) |
 
 ### TB4 — API/Workers → Object Storage
@@ -83,9 +83,9 @@ assumed to hold on the other.
 
 | Threat | Mitigation |
 |---|---|
-| Spoofing / MITM | TLS required for external DB connections where the target supports it; certificate validation not disabled |
-| Tampering (credential exposure in logs/errors) | Connection strings never logged; errors from external DB drivers sanitized before returning to the client |
-| Elevation of privilege (connected DB used to reach unintended tenant data) | Connection tested and scoped at configuration time; recommend least-privilege DB role on the customer's external database; documented in LOCAL_DEPLOYMENT/connector docs |
+| Spoofing / MITM | **Implemented, Phase 8.** `sslmode` is configurable per `ConnectedDatabase` (`disable`/`prefer`/`require`/`verify-full`), defaulting to `require`; certificate validation is never silently disabled by the platform. |
+| Tampering (credential exposure in logs/errors) | **Implemented, Phase 8.** `databases/connectors.py` catches every driver exception (`psycopg.Error`/`OperationalError`) and re-raises a fixed, sanitized `ConnectionFailed` message — the raw exception text, which can embed host/credential detail, never reaches a response, an audit event, or a log line. Verified by a test asserting a failed-connection response never contains the host or password. |
+| Elevation of privilege (connected DB used to reach unintended tenant data) | **Implemented, Phase 8, application-layer only.** Connection tested before any credential is persisted (ADR-0009); recommending a least-privilege DB role on the customer's external database is documented but not (and cannot be) enforced by the platform — that privilege boundary lives entirely on the external system. |
 
 ## 4. Multi-Tenancy / IDOR-BOLA Deep Dive
 

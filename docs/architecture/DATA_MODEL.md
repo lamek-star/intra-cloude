@@ -165,11 +165,17 @@ erDiagram
   column — there is no user-facing "create an arbitrary index" endpoint
   yet. It still mirrors something real: Postgres's implicit index backing
   the `UNIQUE` constraint on that column.
-- `ConnectedDatabase`: metadata + encrypted credentials for an
-  externally-hosted database in **connected mode** (query pass-through,
-  nothing copied). Distinct model from `TenantDatabase` on purpose — see
-  Section 15 of the master prompt and ADR-0009. Not yet implemented
-  (Phase 8).
+- `ConnectedDatabase` — implemented Phase 8: metadata + Fernet-encrypted
+  credentials (`databases/crypto.py`) for an externally-hosted database
+  in **connected mode** (query pass-through, nothing copied). Distinct
+  model from `TenantDatabase` on purpose — see Section 15 of the master
+  prompt and ADR-0009. `engine` is currently `postgresql` only
+  (`databases/connectors.py`'s `Connector` protocol is engine-agnostic;
+  MySQL/MariaDB/SQL Server/SQLite are future work behind the same
+  interface). Read-only: schema introspection and paginated row
+  browsing, both re-verified against the *live* external schema on every
+  call rather than a cache. Write pass-through is explicitly out of
+  scope for this phase (ADR-0009 Final Recommendation).
 
 **Data Explorer (Phase 6):** no new models — row browsing/editing
 (`databases/rows.py`, `databases/values.py`) is pure query/mutation logic

@@ -428,14 +428,86 @@ were deliberately left organization-scoped only, matching the master
 prompt's own example scope granularity (`database:read` — a database,
 not an individual DDL operation).
 
-## Phase 8 — External Database Connectors
+## Phase 8 — External Database Connectors — COMPLETE
 
-- Connector interface; PostgreSQL connector first (connected mode).
-- Encrypted credential storage, connection testing before save, clear
-  separation from "imported" (copied) mode.
-Exit crieria: connecting an external Postgres database works read-only
-first, with credentials verifiably encrypted at rest and never appearing
-in logs.
+- `ConnectedDatabase` model added to the `databases` app (per Section 1's
+  module-boundary table), distinct from `TenantDatabase` per ADR-0009 —
+  a connection is never simultaneously "connected" (query pass-through)
+  and "imported" (copied). Host/port/database/username/`sslmode` stored
+  in the clear; `encrypted_password` is a Fernet token
+  (`databases/crypto.py`), keyed by `CREDENTIAL_ENCRYPTION_KEY` (distinct
+  from `SECRET_KEY`, provisioned since Phase 0's `.env.example`). The key
+  itself is derived via SHA-256 from the operator-supplied env value
+  rather than requiring it to already be a valid 32-byte Fernet key —
+  keeps the `.env.example` guidance ("generate a long random value")
+  correct for any length/format of input.
+- `databases/connectors.py`: the shared connector interface ADR-0009
+  calls for (`test_connection`, `introspect_schema`, `list_rows`) —
+  `PostgresConnector` is the only implementation (ADR-0009 Final
+  Recommendation: PostgreSQL first, read operations before write
+  pass-through or import-mode copying). Every operation opens its own
+  short-timeout (5s) psycopg connection, independent of Django's own
+  ORM connections — this is a proxy to something genuinely external, so
+  it never reuses the platform's own database connection pool. Driver
+  exceptions are always caught and replaced with a fixed, sanitized
+  `ConnectionFailed` message before reaching a response or an audit
+  log entry (`docs/security/THREAT_MODEL.md` TB6) — the raw exception
+  text, which can embed host/credential detail, never leaves
+  `connectors.py`.
+- `databases/connections.py`: service layer, deliberately separate from
+  `databases/services.py` (the TenantDatabase DDL pipeline) since this
+  module never issues DDL/DML against anything the platform owns.
+  `create_connected_database` tests the connection with the submitted
+  credentials *before* persisting anything (ADR-0009 Security
+  Considerations) — a failed test saves nothing at all, verified by a
+  test asserting the row count is unchanged. Row/schema reads go through
+  `has_permission`'s `resource=` scoping (Phase 7's mechanism), so an
+  Application can be granted read access to one specific
+  `ConnectedDatabase` the same way it can be scoped to one bucket.
+- API: `GET/POST /projects/{id}/connected-databases/`, `GET/DELETE
+  /connected-databases/{id}/`, `POST .../test/` (re-test, updates
+  `status`/`last_tested_at`/`last_test_error`), `GET .../schema/`
+  (introspected table/column list), `GET
+  .../tables/{table_name}/rows/` (paginated, hard-capped at 500 like
+  the native row API). `list_rows` re-introspects and cross-checks
+  `table_name` against the *live* external schema on every call rather
+  than trusting a cached list or the client-supplied path segment —
+  `sql.Identifier` quoting in `connectors.py` is defense in depth on top
+  of that, not the only check, matching `databases/ddl.py`'s two-layer
+  discipline for platform-native tables.
+Exit criteria — verified for real: a `ConnectedDatabase` was pointed at
+the same live PostgreSQL server the test suite's own "tenant" connection
+uses (a genuinely separate physical psycopg connection, real network
+round-trip inside the Docker test container — not a mock) and correctly
+introspected a real table and returned real row content created via a
+raw cursor; a bad-password attempt was rejected with nothing persisted;
+the stored `encrypted_password` bytes were confirmed to never contain
+the plaintext, and round-tripped correctly through `decrypt_credential`;
+a re-test against a since-unreachable host flipped `status` to
+`unreachable` without the plaintext password appearing anywhere in the
+response. 17 new tests (11 in
+`databases/tests/test_connected_databases.py`, 6 cross-org IDOR tests
+extending `tests/security/test_tenant_isolation.py`) bring the suite to
+178/178; ruff and mypy clean against the real Docker image.
+
+**One real bug, found while writing the schema/row-browsing tests, not
+by inspection:** the connector opens its own independent psycopg
+connection (correct — it's proxying to something external, not reusing
+Django's ORM pool), but the first version of these tests created their
+"external" fixture table via `connections["tenant"].cursor()` inside the
+*default* `APITestCase`, which wraps each test in an outer transaction
+that's rolled back, never committed. A separate physical connection can
+never see another transaction's uncommitted rows under Postgres's
+read-committed isolation, so the connector correctly found nothing —
+both the schema-introspection and row-browsing tests failed with the
+fixture table simply absent from the connector's view. This wasn't a
+connector bug; it meant the *test's* premise (that fixture data would be
+visible to an independently-opened connection) was wrong under
+`APITestCase`. Fixed by switching the whole file to
+`APITransactionTestCase`, which commits for real instead of wrapping in
+an outer rollback — with an explicit `tearDown` dropping the raw-SQL
+fixture table, since `APITransactionTestCase`'s flush-based cleanup only
+knows about Django-migration-tracked tables.
 
 ## Phase 9 — Sharing
 

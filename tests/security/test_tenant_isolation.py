@@ -10,6 +10,7 @@ under apps/backend, so it needs the root config's `pythonpath`).
 """
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connections
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -408,5 +409,79 @@ class CrossOrganizationApplicationIsolationTests(APITestCase):
             reverse("application-resource-grant-list-create", args=[self.application_a_id]),
             {"permission_code": "storage.read", "resource_type": "storage.bucket", "resource_id": "x"},
             format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class CrossOrganizationConnectedDatabaseIsolationTests(APITestCase):
+    """Extends the suite to the external-database-connector resources
+    introduced in Phase 8: ConnectedDatabase."""
+
+    databases = {"default", "tenant"}
+
+    def setUp(self):
+        SeedPermissionsCommand().handle()
+
+        tenant_settings = connections["tenant"].settings_dict
+        self.real_host = tenant_settings["HOST"] or "localhost"
+        self.real_port = int(tenant_settings["PORT"] or 5432)
+        self.real_database = tenant_settings["NAME"]
+        self.real_user = tenant_settings["USER"]
+        self.real_password = tenant_settings["PASSWORD"]
+
+        self.org_a_admin = User.objects.create_user(email="conn-a-admin@example.com", password="x")
+        self.client.force_login(self.org_a_admin)
+        org_a = self.client.post(reverse("organization-list-create"), {"name": "Conn Org A"})
+        ws_a = self.client.post(reverse("workspace-list-create", args=[org_a.data["id"]]), {"name": "WS"})
+        proj_a = self.client.post(reverse("project-list-create", args=[ws_a.data["id"]]), {"name": "Proj"})
+        self.project_a_id = proj_a.data["id"]
+        connection_a = self.client.post(
+            reverse("connected-database-list-create", args=[self.project_a_id]),
+            {
+                "name": "Warehouse",
+                "engine": "postgresql",
+                "host": self.real_host,
+                "port": self.real_port,
+                "database_name": self.real_database,
+                "username": self.real_user,
+                "password": self.real_password,
+                "sslmode": "prefer",
+            },
+            format="json",
+        )
+        self.connected_database_a_id = connection_a.data["id"]
+
+        self.org_b_admin = User.objects.create_user(email="conn-b-admin@example.com", password="x")
+        self.client.force_login(self.org_b_admin)
+        self.client.post(reverse("organization-list-create"), {"name": "Conn Org B"})
+
+        # Act as Org B's admin — no legitimate access to anything under Org A.
+        self.client.force_login(self.org_b_admin)
+
+    def test_cannot_list_another_orgs_connected_databases(self):
+        response = self.client.get(reverse("connected-database-list-create", args=[self.project_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_read_another_orgs_connected_database(self):
+        response = self.client.get(reverse("connected-database-detail", args=[self.connected_database_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_test_another_orgs_connected_database(self):
+        response = self.client.post(reverse("connected-database-test", args=[self.connected_database_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_read_another_orgs_connected_database_schema(self):
+        response = self.client.get(reverse("connected-database-schema", args=[self.connected_database_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_read_another_orgs_connected_database_rows(self):
+        response = self.client.get(
+            reverse("connected-database-table-rows", args=[self.connected_database_a_id, "whatever"])
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_delete_another_orgs_connected_database(self):
+        response = self.client.delete(
+            reverse("connected-database-detail", args=[self.connected_database_a_id])
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

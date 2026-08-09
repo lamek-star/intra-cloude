@@ -127,6 +127,66 @@ class DBForeignKey(models.Model):
         return f"{self.column} -> {self.references_table}.{self.references_column}"
 
 
+class ConnectedDatabase(models.Model):
+    """An externally-hosted database reached in **connected mode**: the
+    platform proxies authenticated read queries to it; nothing is copied
+    in. Deliberately a distinct model from `TenantDatabase` — a single
+    connection is never simultaneously "connected" and "imported"
+    (docs/architecture/adr/0009-external-database-connector-modes.md).
+    `encrypted_password` is a Fernet token (`databases/crypto.py`); the
+    plaintext password is never stored and never returned by any API
+    response."""
+
+    class Engine(models.TextChoices):
+        POSTGRESQL = "postgresql", "PostgreSQL"
+
+    class SSLMode(models.TextChoices):
+        DISABLE = "disable", "Disable"
+        PREFER = "prefer", "Prefer"
+        REQUIRE = "require", "Require"
+        VERIFY_FULL = "verify-full", "Verify Full"
+
+    class Status(models.TextChoices):
+        UNTESTED = "untested", "Untested"
+        CONNECTED = "connected", "Connected"
+        UNREACHABLE = "unreachable", "Unreachable"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(
+        "workspaces.Project", on_delete=models.CASCADE, related_name="connected_databases"
+    )
+    name = models.CharField(max_length=200)
+    engine = models.CharField(max_length=20, choices=Engine.choices, default=Engine.POSTGRESQL)
+    host = models.CharField(max_length=255)
+    port = models.PositiveIntegerField(default=5432)
+    database_name = models.CharField(max_length=200)
+    username = models.CharField(max_length=200)
+    encrypted_password = models.BinaryField()
+    sslmode = models.CharField(max_length=20, choices=SSLMode.choices, default=SSLMode.REQUIRE)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.UNTESTED)
+    last_tested_at = models.DateTimeField(null=True, blank=True)
+    last_test_error = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="connected_databases_created"
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project", "name"], name="unique_connected_database_name_per_project"
+            ),
+        ]
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def organization_id(self):
+        return self.project.workspace.organization_id
+
+
 class DBIndex(models.Model):
     """Created automatically alongside unique columns and primary keys —
     not (yet) a user-facing "create an arbitrary index" feature; still a

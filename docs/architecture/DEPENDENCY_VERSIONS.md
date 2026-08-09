@@ -27,6 +27,7 @@ files are refreshed; this table tracks the deliberate major-version calls.
 | MinIO | latest stable (pin exact tag before production use) | S3-compatible local object storage per ADR-0004; storage code now exists (Phase 3) and was verified against this image, but `docker-compose.yml` still uses a floating tag — pin before production use. |
 | Caddy | latest stable (pin exact tag before production use) | Reverse proxy; automatic HTTPS support is convenient for the internet-gateway phase (Phase 10) even though local/LAN use starts with internal/self-signed certs. |
 | boto3 | `~=1.35` constraint, resolved to 1.43.67 at lock time | AWS SDK for Python — the S3 client used against MinIO (and, unchanged, against real AWS S3 or another S3-compatible provider later per ADR-0004). No S3-compatible alternative library offered a meaningful advantage; this is the de facto standard. |
+| cryptography | `~=44.0` constraint, resolved to 44.0.3 at lock time (added Phase 8) | `Fernet` symmetric encryption for `ConnectedDatabase` credentials at rest (Section 15 of the master prompt; ADR-0009) — the standard, actively-maintained Python cryptography library; no justification for hand-rolling this. |
 
 ## Verification
 
