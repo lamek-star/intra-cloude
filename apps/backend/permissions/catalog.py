@@ -88,3 +88,13 @@ SYSTEM_ROLES: dict[str, tuple[str, list[str]]] = {
 # Only this role may be assigned with organization=None (platform-wide) —
 # enforced in permissions.services.assign_role.
 PLATFORM_WIDE_ROLE_SLUG = "super-administrator"
+
+# A role granting any of these is "administrative" for Phase 10's MFA
+# enforcement (docs/architecture/ROADMAP.md Phase 10): when
+# FEATURE_INTERNET_GATEWAY_ENABLED is on, assigning a role that includes
+# one of these permissions requires the target user to already have MFA
+# enabled (permissions.services.assign_role). Not enforced for
+# already-existing assignments made before the gateway was enabled —
+# see ROADMAP.md Phase 10 for why that's a deliberate, documented scope
+# limit, not an oversight.
+ADMIN_PERMISSION_CODES = {"permissions.manage", "system.admin"}

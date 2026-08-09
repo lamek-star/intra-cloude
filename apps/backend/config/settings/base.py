@@ -191,6 +191,10 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "anon": "30/minute",
         "user": "300/minute",
+        # Tighter budget for login/register/MFA-verify specifically —
+        # the endpoints a credential-stuffing or brute-force attempt
+        # would actually hit (Phase 10; docs/deployment/INTERNET_GATEWAY.md).
+        "auth": "10/minute",
     },
     "EXCEPTION_HANDLER": "system.exceptions.structured_exception_handler",
 }

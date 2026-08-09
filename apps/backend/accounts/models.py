@@ -43,6 +43,15 @@ class User(AbstractBaseUser):
     )
     date_joined = models.DateTimeField(auto_now_add=True)
 
+    # MFA (TOTP, Phase 10 — docs/architecture/ROADMAP.md). `mfa_secret_encrypted`
+    # is set as soon as enrollment starts (`accounts/services.py:start_mfa_enrollment`)
+    # but `mfa_enabled` only flips True once the user proves they can
+    # actually generate a valid code (`confirm_mfa_enrollment`) — never
+    # enabled from possession of the secret alone.
+    mfa_enabled = models.BooleanField(default=False)
+    mfa_secret_encrypted = models.BinaryField(null=True, blank=True)
+    mfa_confirmed_at = models.DateTimeField(null=True, blank=True)
+
     objects = UserManager()
 
     USERNAME_FIELD = "email"

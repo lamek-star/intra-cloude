@@ -1,13 +1,15 @@
 # API Documentation — Private Data Cloud
 
-Status: Phase 9 — accounts, organizations (including Teams), permissions,
-workspaces, storage, the database builder (schema *and* row data),
-audit, CSV import, application/service-account, external database
-connector (connected mode), and internal sharing endpoints exist and are
-covered by tests (`apps/backend/*/tests`, `tests/security/`). No
-auto-generated OpenAPI schema yet (see "Open Items" below) — this is a
-hand-maintained summary of what actually exists, kept in sync with the
-code.
+Status: Phase 10 — accounts (including TOTP MFA), organizations
+(including Teams), permissions, workspaces, storage, the database
+builder (schema *and* row data), audit, CSV import,
+application/service-account, external database connector (connected
+mode), internal sharing, and internet-gateway hardening (auth-endpoint
+rate limiting, gateway-mode MFA enforcement for new admin role grants)
+exist and are covered by tests (`apps/backend/*/tests`,
+`tests/security/`). No auto-generated OpenAPI schema yet (see "Open
+Items" below) — this is a hand-maintained summary of what actually
+exists, kept in sync with the code.
 
 ## Authentication Note: CSRF on HTTPS
 
@@ -42,6 +44,17 @@ cross-site request to ride). A service account's access is governed by
 whatever `ResourceGrant`s it was explicitly issued — Membership alone
 grants nothing (see "Application Integrations" below).
 
+As of Phase 10, if the authenticating user has TOTP MFA enabled
+(`mfa_enabled` on their profile — see "MFA" below), `POST
+/auth/login/` does not establish a session by itself: a correct
+password returns `{"mfa_required": true}` and the session gains only a
+pending-login marker, not `django.contrib.auth`'s own session key, so no
+`IsAuthenticated` endpoint is reachable yet. `POST /auth/mfa/verify/`
+with a valid current code completes the login. `/auth/login/`,
+`/auth/register/`, and `/auth/mfa/verify/` all carry a tighter `10/minute`
+throttle scope than the rest of the API (`config/settings/base.py`'s
+`"auth"` scope) — see docs/deployment/INTERNET_GATEWAY.md.
+
 ## Error Shape
 
 Every non-2xx response has the shape (see
@@ -62,10 +75,14 @@ trace to the client (Section 14 of the master prompt).
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
-| POST | `/api/v1/auth/register/` | none | Creates a user, starts a session. Password validated via Django's configured validators. |
-| POST | `/api/v1/auth/login/` | none | 401 on bad credentials or inactive account. |
+| POST | `/api/v1/auth/register/` | none | Creates a user, starts a session. Password validated via Django's configured validators. `"auth"` throttle scope (10/minute). |
+| POST | `/api/v1/auth/login/` | none | 401 on bad credentials or inactive account. If the account has MFA enabled, returns `{"mfa_required": true}` instead of establishing a session — see `POST .../mfa/verify/` below. `"auth"` throttle scope. |
 | POST | `/api/v1/auth/logout/` | session | 204, ends the session. |
-| GET | `/api/v1/auth/me/` | session | Current user's profile. |
+| GET | `/api/v1/auth/me/` | session | Current user's profile, including `mfa_enabled`. |
+| POST | `/api/v1/auth/mfa/enroll/` | session | Generates a new TOTP secret and stores it (Fernet-encrypted, `accounts/crypto.py`) but does **not** enable MFA yet. Response: `{"secret", "provisioning_uri"}` — render `provisioning_uri` as a QR code for an authenticator app, or use `secret` for manual entry. Calling again before confirming discards the prior unconfirmed secret. |
+| POST | `/api/v1/auth/mfa/confirm/` | session | `{"code"}` — a valid current TOTP code against the pending secret. Only this call flips `mfa_enabled` to `true`; possessing the secret alone is never sufficient. |
+| POST | `/api/v1/auth/mfa/disable/` | session | `{"code"}` — requires a currently-valid code (not just an authenticated session) so a hijacked session can't silently strip MFA off an account. |
+| POST | `/api/v1/auth/mfa/verify/` | session (pending-login only) | `{"code"}` — completes a login that returned `mfa_required`. 400 if there's no pending MFA login in this session; 401 on a wrong code. `"auth"` throttle scope. |
 
 ### Organizations (`organizations/urls.py`)
 
@@ -76,7 +93,7 @@ trace to the client (Section 14 of the master prompt).
 | GET | `/api/v1/organizations/{id}/` | session | active membership | 404 (not 403) if the caller isn't a member — existence isn't leaked to non-members. |
 | GET | `/api/v1/organizations/{id}/members/` | session | active membership | Lists memberships. |
 | POST | `/api/v1/organizations/{id}/members/` | session | `users.manage` | Adds an **existing** user (by email) as an active member. 404 if no such user, 409 if already a member. |
-| POST | `/api/v1/organizations/{id}/members/{membership_id}/role/` | session | `permissions.manage` | Assigns a system role (`{"role_slug": "..."}`) to that member within the org. |
+| POST | `/api/v1/organizations/{id}/members/{membership_id}/role/` | session | `permissions.manage` | Assigns a system role (`{"role_slug": "..."}`) to that member within the org. If `FEATURE_INTERNET_GATEWAY_ENABLED` is on, assigning a role that includes `permissions.manage`/`system.admin` to a member without `mfa_enabled=True` is rejected (400) — Phase 10, docs/deployment/INTERNET_GATEWAY.md. |
 | GET/POST | `/api/v1/organizations/{id}/teams/` | active membership | `users.manage` (POST only) | 409 on a duplicate team name within the org. |
 | POST | `/api/v1/teams/{id}/members/` | active membership | `users.manage` | `{"user_id"}` — the target must already be an active member of the team's organization (404 if not); a `Membership` holds at most one `team` at a time, so adding replaces any previous team. |
 | DELETE | `/api/v1/teams/{id}/members/{user_id}/` | active membership | `users.manage` | Clears the membership's `team` (404 if that user isn't currently on this team). |
@@ -287,8 +304,9 @@ substitution.
   they're needed); add it when the API surface is large enough that
   hand-maintaining this doc becomes the bottleneck.
 - Rate limiting is configured at the DRF layer (`AnonRateThrottle`/
-  `UserRateThrottle`, see `config/settings/base.py`) but not yet
-  exercised by a test.
+  `UserRateThrottle`, plus a tighter `"auth"` scope on login/register/
+  MFA-verify — Phase 10) and is now exercised by a test
+  (`accounts/tests/test_mfa.py`).
 - Malware scanning on upload is not implemented — no antivirus service
   exists to hook into yet (see docs/security/THREAT_MODEL.md Section 6);
   the upload pipeline has a natural hook point
@@ -312,6 +330,10 @@ substitution.
   per-org enable/disable toggle; no endpoint yet creates an actual
   external share (expiring link, password, IP restriction) — deferred
   per DATA_MODEL.md Section 3.8.
+- MFA is TOTP-only (no backup/recovery codes, no SSO/OIDC); gateway-mode
+  admin-role MFA enforcement applies only to *new* role grants, not
+  retroactively to administrators assigned before the flag was enabled
+  — see docs/deployment/INTERNET_GATEWAY.md Section 3, step 4.
 - No table/column rename, no dropping a single column, no ERD-style
   relationship visualization (Section 10 of the master prompt) — the data
   model supports being extended with these; not built because Phase 4's

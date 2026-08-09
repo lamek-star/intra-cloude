@@ -7,7 +7,7 @@ from .models import User
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ["id", "email", "first_name", "last_name", "date_joined"]
+        fields = ["id", "email", "first_name", "last_name", "date_joined", "mfa_enabled"]
         read_only_fields = fields
 
 
@@ -35,3 +35,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(trim_whitespace=False)
+
+
+class MFACodeSerializer(serializers.Serializer):
+    code = serializers.CharField(min_length=6, max_length=6)

@@ -6,10 +6,11 @@ check in the codebase — view, service, background task — goes through
 
 from __future__ import annotations
 
+from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 
-from .catalog import PLATFORM_WIDE_ROLE_SLUG
+from .catalog import ADMIN_PERMISSION_CODES, PLATFORM_WIDE_ROLE_SLUG
 from .models import Permission, ResourceGrant, Role, RoleAssignment
 
 
@@ -87,6 +88,25 @@ def assign_role(*, user, role_slug: str, organization=None, granted_by=None) -> 
     if organization is None and role.slug != PLATFORM_WIDE_ROLE_SLUG:
         raise PermissionError_(
             f"Only the {PLATFORM_WIDE_ROLE_SLUG!r} role may be assigned platform-wide (organization=None)."
+        )
+    # Only guards one *authenticated web actor* granting *another* user an
+    # administrative role — CLI bootstrap (granted_by=None, an operator
+    # with server access, trusted out-of-band) and a user's own
+    # org-creation self-assignment (granted_by == user, the standard
+    # "create an org, become its administrator" bootstrap flow) are both
+    # deliberately exempt, or gateway mode would deadlock: a brand-new
+    # user can't have MFA enabled before they even have an organization
+    # to enroll for MFA within. See docs/architecture/ROADMAP.md Phase 10.
+    if (
+        settings.FEATURE_INTERNET_GATEWAY_ENABLED
+        and granted_by is not None
+        and granted_by.id != user.id
+        and not user.mfa_enabled
+        and role.permissions.filter(code__in=ADMIN_PERMISSION_CODES).exists()
+    ):
+        raise PermissionError_(
+            f"Cannot assign {role_slug!r}: internet gateway mode requires the target user to "
+            "have MFA enabled before an administrative role can be granted."
         )
     return RoleAssignment.objects.create(
         user=user, role=role, organization=organization, granted_by=granted_by

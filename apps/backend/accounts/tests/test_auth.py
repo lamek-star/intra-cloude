@@ -1,3 +1,4 @@
+from django.core.cache import cache
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -6,6 +7,12 @@ from accounts.models import User
 
 
 class RegisterTests(APITestCase):
+    def setUp(self):
+        # /auth/register/ carries a tight "auth" throttle scope (Phase 10)
+        # keyed by client IP in the shared test-process cache — clear it
+        # so this class's request count never depends on what ran before it.
+        cache.clear()
+
     def test_register_creates_user_and_starts_a_session(self):
         response = self.client.post(
             reverse("auth-register"),
@@ -34,6 +41,7 @@ class RegisterTests(APITestCase):
 
 class LoginLogoutTests(APITestCase):
     def setUp(self):
+        cache.clear()
         self.user = User.objects.create_user(email="user@example.com", password="a-strong-passw0rd!")
 
     def test_login_with_correct_credentials(self):

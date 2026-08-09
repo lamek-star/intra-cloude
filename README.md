@@ -8,23 +8,23 @@ AWS, Azure, or GCP.
 
 ## Status
 
-**Phase 9 — Sharing, complete and verified end-to-end.** Phases 0–8 are
-done: architecture, infrastructure, authentication/organizations/
-permissions, file storage, the visual database builder, CSV import, the
-spreadsheet-style data explorer, application/service-account
-integrations, and external database connectors. Phase 9 adds internal
-resource sharing — grant a user, team, or the whole organization
-read/write/admin-level access to one specific bucket, database, or
-connected database, enforced through the exact same fine-grained
-mechanism Phase 7 uses to scope Applications — plus a per-organization,
-audited toggle for external sharing (off by default, gated behind a
-deployment-wide flag; the external-link mechanism itself is future
-work). 203 tests pass against real PostgreSQL, MinIO, and Celery — not
-mocks — including cross-organization IDOR/BOLA regression tests for
-every resource type introduced so far. Every phase's exit criteria has
-been confirmed against the actual running Docker stack, not only the
-automated suite. Full phase history — what was built, how it was
-verified, and every real bug found along the way — lives in
+**Phase 10 — Optional Secure Internet Gateway, complete and verified
+end-to-end.** Phases 0–9 are done: architecture, infrastructure,
+authentication/organizations/permissions, file storage, the visual
+database builder, CSV import, the spreadsheet-style data explorer,
+application/service-account integrations, external database connectors,
+and internal sharing. Phase 10 adds TOTP-based MFA
+(`docs/deployment/INTERNET_GATEWAY.md`), a tighter rate-limit scope on
+login/register/MFA-verify, and a documented, opt-in add-on path (never
+a default-config change) for exposing the platform to the internet
+behind real ACME TLS — with MFA required before an admin role can be
+granted to someone else while that mode is on. 216 tests pass against
+real PostgreSQL, MinIO, and Celery — not mocks — including
+cross-organization IDOR/BOLA regression tests for every resource type
+introduced so far. Every phase's exit criteria has been confirmed
+against the actual running Docker stack, not only the automated suite.
+Full phase history — what was built, how it was verified, and every
+real bug found along the way — lives in
 [docs/architecture/ROADMAP.md](docs/architecture/ROADMAP.md); this section
 intentionally stays short rather than growing with every phase. See also
 [docs/architecture/DEPENDENCY_VERSIONS.md](docs/architecture/DEPENDENCY_VERSIONS.md)
@@ -37,6 +37,7 @@ for dependency/version rationale.
 - [docs/security/THREAT_MODEL.md](docs/security/THREAT_MODEL.md) — STRIDE analysis, multi-tenancy/IDOR deep dive
 - [docs/security/PERMISSIONS.md](docs/security/PERMISSIONS.md) — capability/permission and role model
 - [docs/deployment/LOCAL_DEPLOYMENT.md](docs/deployment/LOCAL_DEPLOYMENT.md) — target local/LAN deployment (Docker Compose)
+- [docs/deployment/INTERNET_GATEWAY.md](docs/deployment/INTERNET_GATEWAY.md) — optional internet-facing exposure (opt-in, off by default)
 - [docs/operations/BACKUP_RESTORE.md](docs/operations/BACKUP_RESTORE.md) — backup, retention, and disaster recovery strategy
 - [docs/architecture/ROADMAP.md](docs/architecture/ROADMAP.md) — phase-by-phase delivery plan
 - [docs/architecture/adr/](docs/architecture/adr/README.md) — architecture decision records

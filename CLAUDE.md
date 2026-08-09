@@ -15,36 +15,42 @@ and the original product brief folded into that document.
 
 ## Current Status
 
-**Phase 9 complete and verified end-to-end: sharing.** Phases 0–8 are
-done (architecture; infrastructure; authentication/organizations/
-permissions; file/object storage; database builder; CSV import; data
-explorer; application/service-account integrations; external database
-connectors). Full history, bugs found and fixed, and exact verification
-method for every phase lives in `docs/architecture/ROADMAP.md` — this
-section stays a short pointer, not a running log, so it doesn't grow
-without bound as phases continue.
+**Phase 10 complete and verified end-to-end: optional secure internet
+gateway.** Phases 0–9 are done (architecture; infrastructure;
+authentication/organizations/permissions; file/object storage; database
+builder; CSV import; data explorer; application/service-account
+integrations; external database connectors; sharing). Full history,
+bugs found and fixed, and exact verification method for every phase
+lives in `docs/architecture/ROADMAP.md` — this section stays a short
+pointer, not a running log, so it doesn't grow without bound as phases
+continue.
 
-Implemented so far, by app: `accounts` (auth), `organizations`/`permissions`
-(capability-based authz, ADR-0008, *plus* Team CRUD — Phase 9), `workspaces`
-(Workspace/Project), `storage` (Bucket/Folder/FileObject/FileVersion,
-MinIO), `databases` (visual schema builder with real DDL and two-layer
-injection defense per Section 5 of the master prompt, row-level
-browse/edit/export — Phase 6 added to this app rather than a new one,
-since the master prompt's module list has no separate "explorer" app —
-*plus* `ConnectedDatabase`: read-only, connected-mode access to an
-external PostgreSQL database via its own independent connection,
-Fernet-encrypted credentials, connection tested before persisting —
-Phase 8), `audit` (AuditEvent), `imports` (CSV preview + async Celery
-bulk insert), `applications` (Application/ServiceAccount backed by a
-real `User`/ApplicationCredential bearer-token auth/ResourceGrant-scoped
-access — Phase 7 also fixed a latent bug where fine-grained
-`ResourceGrant` scoping had never actually been wired into any view
-since Phase 3), `sharing` (`ShareGrant` — Phase 9; compiles down to the
-exact same `ResourceGrant` mechanism Phase 7 uses, not a second
-enforcement path; per-org audited external-sharing toggle lives on
-`Organization`). 203 tests pass against real PostgreSQL/MinIO/Celery
-(not mocks); every phase's exit criteria was confirmed live against the
-running Docker stack, not just via the automated suite.
+Implemented so far, by app: `accounts` (auth, *plus* RFC 6238 TOTP MFA —
+enroll/confirm/disable/login-verify, `accounts/totp.py` — Phase 10),
+`organizations`/`permissions` (capability-based authz, ADR-0008, *plus*
+Team CRUD — Phase 9, *plus* gateway-mode MFA requirement on new
+administrative role grants — Phase 10), `workspaces` (Workspace/Project),
+`storage` (Bucket/Folder/FileObject/FileVersion, MinIO), `databases`
+(visual schema builder with real DDL and two-layer injection defense per
+Section 5 of the master prompt, row-level browse/edit/export — Phase 6
+added to this app rather than a new one, since the master prompt's
+module list has no separate "explorer" app — *plus* `ConnectedDatabase`:
+read-only, connected-mode access to an external PostgreSQL database via
+its own independent connection, Fernet-encrypted credentials, connection
+tested before persisting — Phase 8), `audit` (AuditEvent), `imports`
+(CSV preview + async Celery bulk insert), `applications`
+(Application/ServiceAccount backed by a real `User`/ApplicationCredential
+bearer-token auth/ResourceGrant-scoped access — Phase 7 also fixed a
+latent bug where fine-grained `ResourceGrant` scoping had never actually
+been wired into any view since Phase 3), `sharing` (`ShareGrant` — Phase
+9; compiles down to the exact same `ResourceGrant` mechanism Phase 7
+uses, not a second enforcement path; per-org audited external-sharing
+toggle lives on `Organization`). Internet-gateway mode itself
+(`docs/deployment/INTERNET_GATEWAY.md`) is an opt-in Caddyfile swap plus
+a tighter `"auth"` DRF throttle scope — no new app. 216 tests pass
+against real PostgreSQL/MinIO/Celery (not mocks); every phase's exit
+criteria was confirmed live against the running Docker stack, not just
+via the automated suite.
 
 Known, disclosed gap (not a regression — never implemented): the tenant
 Postgres role the app connects as is not yet a scoped least-privilege

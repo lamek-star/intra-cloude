@@ -590,14 +590,76 @@ spec detail to build against — left as an explicit open item
 (`sharing.models.ShareGrant.PrincipalType`'s docstring) rather than a
 silent omission.
 
-## Phase 10 — Optional Secure Internet Gateway
+## Phase 10 — Optional Secure Internet Gateway — COMPLETE
 
-- Zero Trust/TLS gateway pattern documented and implemented as an add-on
-  to the existing network architecture, not a redesign of it.
-- MFA enforcement for administrative roles; rate limiting hardened for
-  public exposure.
-Exit criteria: internet exposure is opt-in, documented, and does not
-change how internal services trust each other.
+- Zero Trust/TLS gateway pattern documented
+  (`docs/deployment/INTERNET_GATEWAY.md`) and implemented as an add-on:
+  `infrastructure/proxy/Caddyfile.internet-gateway` swaps `tls internal`
+  (Caddy's own local CA, appropriate only for LAN/same-machine trust)
+  for real ACME (Let's Encrypt) issuance — mounted only via an
+  operator-specific `docker-compose.override.yml`, never by modifying
+  the base `docker-compose.yml` or the default Caddyfile, so a
+  deployment that doesn't opt in is byte-for-byte unaffected.
+- MFA: `accounts/totp.py` implements RFC 6238 TOTP directly against the
+  standard library (`hmac`/`hashlib`/`base64`/`struct`) rather than
+  adding a third-party dependency for something this size — enrollment
+  (`POST /auth/mfa/enroll/`) generates a secret but does not enable MFA
+  until `POST /auth/mfa/confirm/` proves the user can actually produce a
+  valid code with it; `POST /auth/mfa/disable/` itself requires a valid
+  current code, so a hijacked session can't silently strip MFA off an
+  account. Login becomes two-step for an MFA-enabled user: password
+  verification alone only stashes a pending-user-id in the session under
+  a key `AuthenticationMiddleware` doesn't recognize (no authenticated
+  endpoint becomes reachable until `POST /auth/mfa/verify/` supplies a
+  valid code and completes the real `login()`).
+- "MFA enforcement for administrative roles" is enforced at
+  role-*assignment* time, not login time:
+  `permissions.services.assign_role` refuses to grant a role carrying
+  `permissions.manage`/`system.admin` (`permissions.catalog.
+  ADMIN_PERMISSION_CODES`) to a user without `mfa_enabled=True` — but
+  only when `FEATURE_INTERNET_GATEWAY_ENABLED` is on *and* one
+  already-authenticated actor is granting the role to *someone else*.
+  Both a user's own org-creation self-assignment (`granted_by == user`,
+  the standard "create an org, become its administrator" bootstrap) and
+  the CLI (`bootstrap_super_administrator`, `granted_by=None`, an
+  operator with server access trusted out-of-band) are exempt — without
+  that exemption, gateway mode would deadlock: a brand-new user cannot
+  possibly have MFA enabled before they have their first organization to
+  enroll within. A login-time enforcement design (block/limit login for
+  admins without MFA) was considered and rejected: it would need a
+  "restricted, enrollment-only session" concept that doesn't exist
+  anywhere else in this codebase, for a self-hosted platform where
+  locking out the only administrator is a severe availability hazard
+  with no other recovery path built yet.
+- Rate limiting: a dedicated `"auth"` DRF throttle scope (`10/minute`,
+  tighter than the general `anon`/`user` rates) applied to
+  `/auth/login/`, `/auth/register/`, and `/auth/mfa/verify/` — the
+  endpoints a credential-stuffing/brute-force attempt would actually
+  hit. Always on, not gated behind the gateway flag (no reason to leave
+  LAN deployments unprotected either), and this also closes a Phase-6-era
+  Open Item ("rate limiting... not yet exercised by a test").
+Exit criteria — verified: internet exposure requires an operator to
+explicitly swap in a different Caddyfile via their own compose override
+(the default deployment is provably unaffected — the existing 216-test
+suite, none of it gateway-specific, still passes unchanged); a real
+generated TOTP code round-trips through enrollment/confirm/login/
+disable; a wrong code is rejected at every one of those steps; 11 rapid
+login attempts against the real configured throttle rate return 401 for
+the first 10 and 429 for the 11th; assigning an administrative role to
+an MFA-less user is rejected only when gateway mode is on and the actor
+differs from the target, and succeeds once MFA is enabled or gateway
+mode is off. 13 new tests
+(`accounts/tests/test_mfa.py`) bring the suite to 216/216; ruff and
+mypy clean against the real Docker image. No cross-org IDOR tests were
+needed this phase — MFA state lives on `accounts.User`, not a new
+org-scoped resource type, so `tests/security/test_tenant_isolation.py`
+had nothing new to extend.
+
+**Fixed a stale doc inconsistency found while implementing this phase:**
+DATA_MODEL.md Section 3.1 said "MFA fields added in Phase 2/11" and
+THREAT_MODEL.md's TB1 row said "MFA for admin roles (Phase 11)" — both
+predate this ROADMAP's own Phase 10 section, which has always assigned
+MFA to Phase 10. Both docs now say Phase 10 and are marked implemented.
 
 ## Phase 11 — Monitoring, Backups, Disaster Recovery, Hardening
 

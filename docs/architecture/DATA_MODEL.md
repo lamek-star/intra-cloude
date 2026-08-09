@@ -85,7 +85,9 @@ erDiagram
 ### 3.1 Identity & Tenancy
 
 - `User`: authentication identity. Never stores plaintext passwords (Django's
-  hashed password field); MFA fields added in Phase 2/11.
+  hashed password field). MFA fields (`mfa_enabled`, `mfa_secret_encrypted`
+  — Fernet, `accounts/crypto.py` — `mfa_confirmed_at`) — implemented
+  Phase 10, RFC 6238 TOTP (`accounts/totp.py`).
 - `Organization`: top of the tenancy tree. **Every** tenant-owned model below
   carries a direct or indirect `organization_id` foreign key — never
   inferred solely from a parent chain in application code without a

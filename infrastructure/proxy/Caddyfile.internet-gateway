@@ -1,0 +1,48 @@
+# Private Data Cloud — reverse proxy, INTERNET-FACING variant (Phase 10)
+#
+# Not a redesign of infrastructure/proxy/Caddyfile — an add-on swapped in
+# only when the deployment operator deliberately opts into internet
+# exposure. Routing, headers, and the internal-network topology (only this
+# proxy is published; backend/frontend/postgres/valkey/object-storage stay
+# on the internal Docker network) are identical. The one real difference is
+# TLS issuance: `tls internal` (Caddy's own local CA, appropriate only for
+# LAN/same-machine trust) is replaced with real ACME (Let's Encrypt),
+# because a certificate only a LAN client already trusts is worthless to an
+# internet-facing browser. See docs/deployment/INTERNET_GATEWAY.md for the
+# full checklist (env vars, DNS, firewall, MFA) before using this file.
+#
+# To use: set PROXY_DOMAIN and PROXY_ACME_EMAIL in .env, set
+# FEATURE_INTERNET_GATEWAY_ENABLED=True, and mount this file instead of the
+# default Caddyfile (see docs/deployment/INTERNET_GATEWAY.md for the
+# docker-compose.override.yml snippet — the base docker-compose.yml is not
+# modified, so the default LAN posture is completely unaffected for anyone
+# who doesn't opt in).
+
+{
+	admin off
+	email {$PROXY_ACME_EMAIL}
+}
+
+{$PROXY_DOMAIN} {
+	# Real, publicly-trusted certificate via ACME (Let's Encrypt) —
+	# requires PROXY_DOMAIN to resolve to this host and port 80/443 to be
+	# reachable from the internet for the ACME HTTP-01 challenge.
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "same-origin"
+		Content-Security-Policy "frame-ancestors 'none'"
+	}
+
+	@backend path /api/* /healthz /readyz
+	handle @backend {
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+}
