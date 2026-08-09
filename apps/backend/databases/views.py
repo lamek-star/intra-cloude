@@ -1,11 +1,16 @@
-from django.http import Http404
+import csv
+import io
+
+from django.http import Http404, StreamingHttpResponse
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from permissions.services import has_permission
 from workspaces.views import get_member_project
 
+from . import rows as row_ops
 from . import services
 from .models import DBTable
 from .serializers import (
@@ -18,6 +23,7 @@ from .serializers import (
     TenantDatabaseCreateSerializer,
     TenantDatabaseSerializer,
 )
+from .values import RowValueError
 
 
 def _request_id(request) -> str:
@@ -188,3 +194,111 @@ class ForeignKeyCreateView(APIView):
         if error:
             return error
         return Response(ForeignKeySerializer(result).data, status=status.HTTP_201_CREATED)
+
+
+# --- Data explorer: row-level browse/edit (Section 12 of the master
+# prompt) --- server-side pagination/filtering only; never a queryset the
+# client could turn into "fetch everything."
+
+_FILTER_PREFIX = "f_"
+_RESERVED_QUERY_PARAMS = {"limit", "offset", "ordering", "search"}
+
+
+def _parse_filters(query_params) -> dict:
+    return {
+        key[len(_FILTER_PREFIX) :]: value
+        for key, value in query_params.items()
+        if key.startswith(_FILTER_PREFIX)
+    }
+
+
+class RowListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, table_id):
+        table = services.get_member_table(request.user, table_id)
+        if not has_permission(request.user, "database.read", organization_id=table.organization_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            limit = int(request.query_params.get("limit", row_ops.DEFAULT_LIMIT))
+            offset = int(request.query_params.get("offset", 0))
+        except ValueError:
+            return Response({"detail": "limit/offset must be integers"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            result = row_ops.list_rows(
+                table=table,
+                limit=limit,
+                offset=offset,
+                ordering=request.query_params.get("ordering"),
+                filters=_parse_filters(request.query_params),
+                search=request.query_params.get("search"),
+            )
+        except RowValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result)
+
+    def post(self, request, table_id):
+        table = services.get_member_table(request.user, table_id)
+        if not has_permission(request.user, "database.write", organization_id=table.organization_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            row = row_ops.insert_row(table, request.data)
+        except RowValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(row, status=status.HTTP_201_CREATED)
+
+
+class RowDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, table_id, row_id):
+        table = services.get_member_table(request.user, table_id)
+        if not has_permission(request.user, "database.read", organization_id=table.organization_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        try:
+            return Response(row_ops.get_row(table, row_id))
+        except row_ops.RowNotFound as exc:
+            raise Http404 from exc
+
+    def patch(self, request, table_id, row_id):
+        table = services.get_member_table(request.user, table_id)
+        if not has_permission(request.user, "database.write", organization_id=table.organization_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        try:
+            return Response(row_ops.update_row(table, row_id, request.data))
+        except row_ops.RowNotFound as exc:
+            raise Http404 from exc
+        except RowValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, table_id, row_id):
+        table = services.get_member_table(request.user, table_id)
+        if not has_permission(request.user, "database.write", organization_id=table.organization_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        try:
+            row_ops.delete_row(table, row_id)
+        except row_ops.RowNotFound as exc:
+            raise Http404 from exc
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class RowExportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, table_id):
+        table = services.get_member_table(request.user, table_id)
+        if not has_permission(request.user, "dataset.export", organization_id=table.organization_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+
+        def generate():
+            for row in row_ops.iter_export_rows(table):
+                buf = io.StringIO()
+                csv.writer(buf).writerow(row)
+                yield buf.getvalue()
+
+        response = StreamingHttpResponse(generate(), content_type="text/csv")
+        response["Content-Disposition"] = f'attachment; filename="{table.name}.csv"'
+        return response

@@ -306,14 +306,52 @@ suite (which happened to mask both):**
    since it's exactly the kind of thing worth knowing before Phase 6
    builds a real frontend against this API.
 
-## Phase 6 — Data Explorer
+## Phase 6 — Data Explorer — COMPLETE
 
-- Spreadsheet-style browsing UI: server-side pagination, sorting,
-  filtering, search, column visibility, permitted inline edit/insert/delete,
-  authorized CSV export.
+- Added to the `databases` app (`rows.py`/`values.py`) rather than a new
+  Django app — the master prompt's Section 23 module list has no separate
+  "explorer" app, and this is fundamentally row-level operations on
+  resources `databases` already owns. Raw, safely-quoted SQL against the
+  `tenant` connection, since Django's ORM can't model runtime-defined
+  tables.
+- API: `GET/POST /tables/{id}/rows/` (list with `?limit=`/`?offset=`
+  pagination — hard-capped at 500 regardless of what's requested,
+  `?ordering=col`/`-col`, `?search=` across text/varchar columns via
+  `ILIKE`, `?f_<column>=<value>` equality filters), `GET/PATCH/DELETE
+  /tables/{id}/rows/{row_id}/`, `GET /tables/{id}/rows/export/` (streamed
+  CSV, `dataset.export`).
+- `databases/values.py`: validates a JSON-native request value against the
+  target column's actual type before it reaches a query parameter — the
+  row-API counterpart to `imports/services.py`'s CSV-string converter.
+  Both now share date/boolean parsing rules via `databases/formats.py`
+  (moved there from `imports/formats.py` this phase, since format rules
+  are a property of column types, which `databases` owns, not of CSV
+  import specifically).
 Exit criteria: browsing a large table never fetches more than one page's
 worth of rows to the client; edits respect `database.write` and
 row/column-level constraints.
+
+Exit criteria — verified for real against live PostgreSQL: insert → list
+→ get → update → delete round-trip against a real tenant table; ordering,
+search, and equality-filter results checked against actual query output,
+not just HTTP status; a dedicated test sends `search=`
+`"'; DROP TABLE people; --"` and confirms zero results *and* that all
+three existing rows are still there afterward — proving it's treated as
+data via the parameterized `ILIKE`, not concatenated; CSV export streamed
+and its header/row content checked byte-for-byte. 23 new tests (including
+6 cross-org IDOR tests extending `tests/security/test_tenant_isolation.py`
+to rows) bring the suite to 147/147; ruff and mypy clean.
+
+**One real bug, found by a test asserting an actual expected column
+order, not by inspection:** `DBColumn`'s default model ordering is
+alphabetical by name (a reasonable default for schema-browsing UI, e.g.
+finding a specific column in a long list) — but `databases/rows.py` was
+relying on that same default ordering for *row data* column order, so a
+table built as `id, name, age, active` came back from the row API as
+`active, age, id, name`. Confusing for anyone looking at their own data.
+Fixed by explicitly ordering columns by `created_at` in the row-query
+path, independent of whatever `DBColumn.Meta.ordering` is used for
+elsewhere.
 
 ## Phase 7 — Application / Service-Account Integrations
 

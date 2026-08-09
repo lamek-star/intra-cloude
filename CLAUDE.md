@@ -15,22 +15,25 @@ and the original product brief folded into that document.
 
 ## Current Status
 
-**Phase 5 complete and verified end-to-end: CSV import.** Phases 0–4 are
-done (architecture; infrastructure; authentication/organizations/
-permissions; file/object storage; database builder). Full history, bugs
-found and fixed, and exact verification method for every phase lives in
-`docs/architecture/ROADMAP.md` — this section stays a short pointer, not a
-running log, so it doesn't grow without bound as phases continue.
+**Phase 6 complete and verified end-to-end: data explorer.** Phases 0–5
+are done (architecture; infrastructure; authentication/organizations/
+permissions; file/object storage; database builder; CSV import). Full
+history, bugs found and fixed, and exact verification method for every
+phase lives in `docs/architecture/ROADMAP.md` — this section stays a
+short pointer, not a running log, so it doesn't grow without bound as
+phases continue.
 
 Implemented so far, by app: `accounts` (auth), `organizations`/`permissions`
 (capability-based authz, ADR-0008), `workspaces` (Workspace/Project),
 `storage` (Bucket/Folder/FileObject/FileVersion, MinIO), `databases`
-(visual schema builder — real DDL, two-layer injection defense per
-Section 5 of the master prompt), `audit` (AuditEvent), `imports` (CSV
-preview + async Celery bulk insert). 124 tests pass against real
-PostgreSQL/MinIO/Celery (not mocks); every phase's exit criteria was
-confirmed live against the running Docker stack, not just via the
-automated suite.
+(visual schema builder with real DDL and two-layer injection defense per
+Section 5 of the master prompt, *plus* row-level browse/edit/export —
+Phase 6 added to this app rather than a new one, since the master
+prompt's module list has no separate "explorer" app), `audit`
+(AuditEvent), `imports` (CSV preview + async Celery bulk insert). 147
+tests pass against real PostgreSQL/MinIO/Celery (not mocks); every
+phase's exit criteria was confirmed live against the running Docker
+stack, not just via the automated suite.
 
 Known, disclosed gap (not a regression — never implemented): the tenant
 Postgres role the app connects as is not yet a scoped least-privilege

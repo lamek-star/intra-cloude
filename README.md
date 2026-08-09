@@ -8,26 +8,23 @@ AWS, Azure, or GCP.
 
 ## Status
 
-**Phase 5 — CSV Import, complete and verified end-to-end.** Phases 0–4
-(architecture, infrastructure, auth/orgs/permissions, file storage,
-database builder) are done. Phase 5 adds the CSV import pipeline: preview
-a file (bounded-sample encoding/delimiter detection, per-column type
-inference — never applied without confirmation), then a real async import
-via Celery that streams the file from object storage in chunks, bulk-
-inserts rows into the real tenant table, and reports row-level errors
-without aborting the whole job. Verified against the actual running
-stack — not just automated tests — by driving the full pipeline through
-the live HTTPS API and confirming a genuinely separate worker process
-picked up and completed the job over the real broker; that live check
-also caught a real infrastructure bug (see ROADMAP.md Phase 5) where
-`worker`/`beat` had been silently running stale images since Phase 1.
-124 passing tests (including cross-organization IDOR/BOLA regression
-tests for every resource type introduced so far) run against actual
-PostgreSQL and MinIO, not mocks. See
-[docs/architecture/ROADMAP.md](docs/architecture/ROADMAP.md) for the full
-phase plan and exit criteria, and
+**Phase 6 — Data Explorer, complete and verified end-to-end.** Phases 0–5
+are done: architecture, infrastructure, authentication/organizations/
+permissions, file storage, the visual database builder, and CSV import.
+Phase 6 adds spreadsheet-style browsing and editing of the data inside
+tables the database builder creates — server-side paginated/filtered/
+sorted row listing (hard-capped page size, never "fetch everything"),
+row insert/update/delete, and streamed CSV export. 147 tests pass against
+real PostgreSQL, MinIO, and Celery — not mocks — including
+cross-organization IDOR/BOLA regression tests for every resource type
+introduced so far. Every phase's exit criteria has been confirmed against
+the actual running Docker stack, not only the automated suite. Full phase
+history — what was built, how it was verified, and every real bug found
+along the way — lives in
+[docs/architecture/ROADMAP.md](docs/architecture/ROADMAP.md); this section
+intentionally stays short rather than growing with every phase. See also
 [docs/architecture/DEPENDENCY_VERSIONS.md](docs/architecture/DEPENDENCY_VERSIONS.md)
-for exactly what's been verified and the bugs that surfaced along the way.
+for dependency/version rationale.
 
 ## Start Here
 

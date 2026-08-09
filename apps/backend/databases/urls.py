@@ -25,4 +25,7 @@ urlpatterns = [
         views.ForeignKeyCreateView.as_view(),
         name="foreign-key-create",
     ),
+    path("tables/<uuid:table_id>/rows/export/", views.RowExportView.as_view(), name="row-export"),
+    path("tables/<uuid:table_id>/rows/", views.RowListCreateView.as_view(), name="row-list-create"),
+    path("tables/<uuid:table_id>/rows/<uuid:row_id>/", views.RowDetailView.as_view(), name="row-detail"),
 ]

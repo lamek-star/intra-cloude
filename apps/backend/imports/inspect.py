@@ -10,9 +10,8 @@ import csv
 import io
 from datetime import datetime
 
+from databases.formats import BOOLEAN_VALUES, DATE_FORMAT, DATETIME_FORMATS
 from databases.models import DBColumn
-
-from .formats import BOOLEAN_VALUES, DATE_FORMAT, DATETIME_FORMATS
 
 SAMPLE_BYTES = 65536
 SAMPLE_ROWS = 50

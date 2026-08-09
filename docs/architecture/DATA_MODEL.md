@@ -171,6 +171,13 @@ erDiagram
   Section 15 of the master prompt and ADR-0009. Not yet implemented
   (Phase 8).
 
+**Data Explorer (Phase 6):** no new models — row browsing/editing
+(`databases/rows.py`, `databases/values.py`) is pure query/mutation logic
+against the real tenant table, reusing the `DBTable`/`DBColumn` catalog
+that already exists. There was never a separate "row" catalog entity to
+add; the whole point of the catalog is that it's the only source of truth
+needed to safely construct row-level SQL at runtime.
+
 ### 3.6 Imports — implemented Phase 5
 
 - `ImportJob`: one CSV import attempt — source `FileObject`, target

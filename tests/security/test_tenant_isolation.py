@@ -282,3 +282,72 @@ class CrossOrganizationImportIsolationTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class CrossOrganizationRowIsolationTests(APITestCase):
+    """Extends the suite to the data-explorer row resources introduced in
+    Phase 6."""
+
+    databases = {"default", "tenant"}
+
+    def setUp(self):
+        SeedPermissionsCommand().handle()
+
+        self.org_a_admin = User.objects.create_user(email="rows-a-admin@example.com", password="x")
+        self.client.force_login(self.org_a_admin)
+        org_a = self.client.post(reverse("organization-list-create"), {"name": "Rows Org A"})
+        ws_a = self.client.post(reverse("workspace-list-create", args=[org_a.data["id"]]), {"name": "WS"})
+        proj_a = self.client.post(reverse("project-list-create", args=[ws_a.data["id"]]), {"name": "Proj"})
+        db_a = self.client.post(
+            reverse("tenant-database-list-create", args=[proj_a.data["id"]]), {"name": "AppDB"}
+        )
+        table_a = self.client.post(
+            reverse("table-list-create", args=[db_a.data["id"]]), {"name": "secrets"}
+        )
+        self.table_a_id = table_a.data["id"]
+        self.client.post(
+            reverse("column-create", args=[self.table_a_id]),
+            {"name": "value", "data_type": "text"},
+            format="json",
+        )
+        row_a = self.client.post(
+            reverse("row-list-create", args=[self.table_a_id]), {"value": "org a secret"}, format="json"
+        )
+        self.row_a_id = row_a.data["id"]
+
+        self.org_b_admin = User.objects.create_user(email="rows-b-admin@example.com", password="x")
+        self.client.force_login(self.org_b_admin)
+        self.client.post(reverse("organization-list-create"), {"name": "Rows Org B"})
+
+        # Act as Org B's admin — no legitimate access to anything under Org A.
+        self.client.force_login(self.org_b_admin)
+
+    def test_cannot_list_another_orgs_rows(self):
+        response = self.client.get(reverse("row-list-create", args=[self.table_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_read_another_orgs_row(self):
+        response = self.client.get(reverse("row-detail", args=[self.table_a_id, self.row_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_insert_into_another_orgs_table(self):
+        response = self.client.post(
+            reverse("row-list-create", args=[self.table_a_id]), {"value": "intrusion"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_update_another_orgs_row(self):
+        response = self.client.patch(
+            reverse("row-detail", args=[self.table_a_id, self.row_a_id]),
+            {"value": "overwritten"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_delete_another_orgs_row(self):
+        response = self.client.delete(reverse("row-detail", args=[self.table_a_id, self.row_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_export_another_orgs_table(self):
+        response = self.client.get(reverse("row-export", args=[self.table_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

@@ -1,11 +1,11 @@
 # API Documentation — Private Data Cloud
 
-Status: Phase 5 — accounts, organizations, permissions, workspaces,
-storage, the database builder, audit, and CSV import endpoints exist and
-are covered by tests (`apps/backend/*/tests`, `tests/security/`). No
-auto-generated OpenAPI schema yet (see "Open Items" below) — this is a
-hand-maintained summary of what actually exists, kept in sync with the
-code.
+Status: Phase 6 — accounts, organizations, permissions, workspaces,
+storage, the database builder (schema *and* row data), audit, and CSV
+import endpoints exist and are covered by tests (`apps/backend/*/tests`,
+`tests/security/`). No auto-generated OpenAPI schema yet (see "Open
+Items" below) — this is a hand-maintained summary of what actually
+exists, kept in sync with the code.
 
 ## Authentication Note: CSRF on HTTPS
 
@@ -127,6 +127,24 @@ bigint/decimal/boolean/json, or exactly the literal strings
 `gen_random_uuid()`/`now()` for uuid/datetime columns — nothing else is
 accepted.
 
+### Data Explorer (`databases/urls.py`, row endpoints)
+
+| Method | Path | Auth | Required permission | Notes |
+|---|---|---|---|---|
+| GET/POST | `/api/v1/tables/{table_id}/rows/` | active membership | `database.read` (GET) / `database.write` (POST) | GET query params: `?limit=` (default 50, **hard-capped at 500** regardless of what's requested — Section 12 of the master prompt), `?offset=`, `?ordering=column` or `-column`, `?search=term` (ILIKE across every text/varchar column, OR'd together), `?f_<column>=value` (equality filter, repeatable). POST body is `{"<column>": <value>, ...}` — omit a column to use its default/null; the generated `id` can't be set. |
+| GET/PATCH/DELETE | `/api/v1/tables/{table_id}/rows/{row_id}/` | active membership | `database.read` (GET) / `database.write` (PATCH, DELETE) | PATCH body only needs the fields being changed. |
+| GET | `/api/v1/tables/{table_id}/rows/export/` | active membership | `dataset.export` | Streamed CSV (`Content-Disposition: attachment`), all columns, ordered by `id`. Reads the tenant table in batches of 1000 — never materializes the whole result set in memory even for a large table. |
+
+Values in request bodies are validated against the target column's actual
+type (`databases/values.py`) before being used as a query parameter —
+integers must be JSON numbers (not numeric strings), dates/datetimes must
+be ISO-formatted strings, JSON columns accept any JSON-serializable value.
+Row identifiers and search/filter values are always sent as query
+parameters to psycopg, never concatenated into SQL text, regardless of
+content — table/column identifiers themselves are never taken from the
+request at all here, only from the already-validated `DBTable`/`DBColumn`
+catalog rows Phase 4 created.
+
 ### Audit (`audit/urls.py`)
 
 | Method | Path | Auth | Required permission | Notes |
@@ -166,11 +184,11 @@ queryset filtered by the caller's active membership —
 IDOR/BOLA defense, not a decorative permission check on top of an
 unfiltered lookup (docs/security/THREAT_MODEL.md Section 4). Fine-grained
 actions (`users.manage`, `permissions.manage`, `storage.*`, `database.*`,
-`audit.read`, `dataset.import`) go through the single shared
-`permissions.services.has_permission` entry point (ADR-0008).
+`audit.read`, `dataset.import`, `dataset.export`) go through the single
+shared `permissions.services.has_permission` entry point (ADR-0008).
 `tests/security/test_tenant_isolation.py` proves org A cannot read, list,
 or modify org B's organizations, memberships, role assignments, buckets,
-files, tenant databases, tables, or import jobs by ID substitution.
+files, tenant databases, tables, rows, or import jobs by ID substitution.
 
 ## Open Items
 
@@ -209,3 +227,16 @@ files, tenant databases, tables, or import jobs by ID substitution.
   (`utf-8-sig`, `utf-8`, `latin-1`, the last of which never fails to
   decode) — not full charset auto-detection (`chardet`/
   `charset-normalizer` were deliberately not added; Section 24).
+- Row `?f_<column>=value` equality filters pass the query-string value
+  through as-is (always a string, since that's what a query string is) —
+  Postgres coerces it for numeric/date comparisons, but a boolean filter
+  like `?f_active=false` compares the string `"false"` against a boolean
+  column, which behaves correctly for the obvious `true`/`false` cases via
+  Postgres's own text-to-boolean cast but isn't validated/normalized the
+  way insert/update values are (`databases/values.py`). No incorrect
+  results observed in testing, but not given the same type-safety
+  treatment as writes; revisit if it becomes a real footgun.
+- No column-visibility persistence (which columns a user chose to hide)
+  — `?fields=` style server-side column selection isn't implemented
+  either; the client currently gets every column and does visibility
+  client-side.
