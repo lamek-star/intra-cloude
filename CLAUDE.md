@@ -15,13 +15,13 @@ and the original product brief folded into that document.
 
 ## Current Status
 
-**Phase 6 complete and verified end-to-end: data explorer.** Phases 0–5
-are done (architecture; infrastructure; authentication/organizations/
-permissions; file/object storage; database builder; CSV import). Full
-history, bugs found and fixed, and exact verification method for every
-phase lives in `docs/architecture/ROADMAP.md` — this section stays a
-short pointer, not a running log, so it doesn't grow without bound as
-phases continue.
+**Phase 7 complete and verified end-to-end: application/service-account
+integrations.** Phases 0–6 are done (architecture; infrastructure;
+authentication/organizations/permissions; file/object storage; database
+builder; CSV import; data explorer). Full history, bugs found and fixed,
+and exact verification method for every phase lives in
+`docs/architecture/ROADMAP.md` — this section stays a short pointer, not
+a running log, so it doesn't grow without bound as phases continue.
 
 Implemented so far, by app: `accounts` (auth), `organizations`/`permissions`
 (capability-based authz, ADR-0008), `workspaces` (Workspace/Project),
@@ -30,7 +30,11 @@ Implemented so far, by app: `accounts` (auth), `organizations`/`permissions`
 Section 5 of the master prompt, *plus* row-level browse/edit/export —
 Phase 6 added to this app rather than a new one, since the master
 prompt's module list has no separate "explorer" app), `audit`
-(AuditEvent), `imports` (CSV preview + async Celery bulk insert). 147
+(AuditEvent), `imports` (CSV preview + async Celery bulk insert),
+`applications` (Application/ServiceAccount backed by a real `User`/
+ApplicationCredential bearer-token auth/ResourceGrant-scoped access —
+Phase 7 also fixed a latent bug where fine-grained `ResourceGrant`
+scoping had never actually been wired into any view since Phase 3). 162
 tests pass against real PostgreSQL/MinIO/Celery (not mocks); every
 phase's exit criteria was confirmed live against the running Docker
 stack, not just via the automated suite.

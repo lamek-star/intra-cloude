@@ -202,6 +202,14 @@ class ForeignKeyCreateView(APIView):
 
 _FILTER_PREFIX = "f_"
 _RESERVED_QUERY_PARAMS = {"limit", "offset", "ordering", "search"}
+# Fine-grained ResourceGrants (Phase 7) for row data are scoped at the
+# TenantDatabase level, matching the master prompt's own example scope
+# granularity ("database:read" — a database, not an individual table).
+RESOURCE_TYPE_TENANT_DATABASE = "databases.tenant_database"
+
+
+def _database_resource(table: DBTable):
+    return (RESOURCE_TYPE_TENANT_DATABASE, table.tenant_database_id)
 
 
 def _parse_filters(query_params) -> dict:
@@ -217,7 +225,10 @@ class RowListCreateView(APIView):
 
     def get(self, request, table_id):
         table = services.get_member_table(request.user, table_id)
-        if not has_permission(request.user, "database.read", organization_id=table.organization_id):
+        resource = _database_resource(table)
+        if not has_permission(
+            request.user, "database.read", organization_id=table.organization_id, resource=resource
+        ):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
         try:
@@ -241,7 +252,10 @@ class RowListCreateView(APIView):
 
     def post(self, request, table_id):
         table = services.get_member_table(request.user, table_id)
-        if not has_permission(request.user, "database.write", organization_id=table.organization_id):
+        resource = _database_resource(table)
+        if not has_permission(
+            request.user, "database.write", organization_id=table.organization_id, resource=resource
+        ):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
         try:
@@ -256,7 +270,10 @@ class RowDetailView(APIView):
 
     def get(self, request, table_id, row_id):
         table = services.get_member_table(request.user, table_id)
-        if not has_permission(request.user, "database.read", organization_id=table.organization_id):
+        resource = _database_resource(table)
+        if not has_permission(
+            request.user, "database.read", organization_id=table.organization_id, resource=resource
+        ):
             return Response(status=status.HTTP_403_FORBIDDEN)
         try:
             return Response(row_ops.get_row(table, row_id))
@@ -265,7 +282,10 @@ class RowDetailView(APIView):
 
     def patch(self, request, table_id, row_id):
         table = services.get_member_table(request.user, table_id)
-        if not has_permission(request.user, "database.write", organization_id=table.organization_id):
+        resource = _database_resource(table)
+        if not has_permission(
+            request.user, "database.write", organization_id=table.organization_id, resource=resource
+        ):
             return Response(status=status.HTTP_403_FORBIDDEN)
         try:
             return Response(row_ops.update_row(table, row_id, request.data))
@@ -276,7 +296,10 @@ class RowDetailView(APIView):
 
     def delete(self, request, table_id, row_id):
         table = services.get_member_table(request.user, table_id)
-        if not has_permission(request.user, "database.write", organization_id=table.organization_id):
+        resource = _database_resource(table)
+        if not has_permission(
+            request.user, "database.write", organization_id=table.organization_id, resource=resource
+        ):
             return Response(status=status.HTTP_403_FORBIDDEN)
         try:
             row_ops.delete_row(table, row_id)
@@ -290,7 +313,10 @@ class RowExportView(APIView):
 
     def get(self, request, table_id):
         table = services.get_member_table(request.user, table_id)
-        if not has_permission(request.user, "dataset.export", organization_id=table.organization_id):
+        resource = _database_resource(table)
+        if not has_permission(
+            request.user, "dataset.export", organization_id=table.organization_id, resource=resource
+        ):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
         def generate():

@@ -353,15 +353,80 @@ Fixed by explicitly ordering columns by `created_at` in the row-query
 path, independent of whatever `DBColumn.Meta.ordering` is used for
 elsewhere.
 
-## Phase 7 — Application / Service-Account Integrations
+## Phase 7 — Application / Service-Account Integrations — COMPLETE
 
-- `applications` app: Application, ServiceAccount, ApplicationCredential
-  (hashed secrets), scopes bound to ResourceGrants.
-- API authentication for service accounts; credential issuance/rotation/
-  revocation flows.
-Exit criteria: a registered application can authenticate and access only
-the specific resources it was granted, proven by a test that a broad scope
-without a ResourceGrant yields no access.
+- `applications` app: `Application` (org-owned, one per registered
+  integration), `ServiceAccount` (one-to-one with a real `accounts.User`
+  created with `set_unusable_password()` rather than a parallel principal
+  type — every existing Membership/RoleAssignment/ResourceGrant/
+  permission-check code path works on it unchanged, so tenant-isolation
+  guarantees don't need to be re-proven for a second kind of actor), and
+  `ApplicationCredential` (SHA-256-hashed bearer secrets — a fast hash is
+  correct here since the input is a 32-byte `secrets.token_urlsafe`
+  value, not a low-entropy user password; compared with
+  `hmac.compare_digest`).
+- Token format: `pdc_sk_{credential_uuid.hex}.{secret}` — the UUID makes
+  lookup an indexed point query instead of a hash-everything scan;
+  splitting on the last `.` keeps the format extensible.
+- `applications/authentication.py`: `ServiceAccountAuthentication`, a DRF
+  `BaseAuthentication` added alongside `SessionAuthentication` in
+  `DEFAULT_AUTHENTICATION_CLASSES`. Resolves `Authorization: Bearer
+  <token>` to `(credential.service_account.identity_user, credential)`;
+  rejects unknown format, unknown credential, revoked, and expired tokens
+  uniformly as 403 (no oracle for which reason).
+- `applications/services.py`: `register_application` (creates
+  Application + User + ServiceAccount + Membership transactionally,
+  audited), `issue_credential`/`revoke_credential`/`rotate_credential`
+  (rotate = revoke-then-issue in one transaction), `resolve_credential`.
+  The plaintext token exists only inside `issue_credential`'s return
+  value and the one HTTP response that hands it back — never logged,
+  never persisted.
+- API: `POST /organizations/{id}/applications/` (register),
+  `GET/DELETE /applications/{id}/`, `GET/POST
+  /applications/{id}/credentials/` (issue — response includes `secret`
+  exactly once), `POST .../credentials/{id}/revoke/`, `POST
+  .../credentials/{id}/rotate/`, `GET/POST
+  /applications/{id}/resource-grants/` (scope the application to one
+  resource at a time via `permissions.manage`).
+Exit criteria — verified: a registered application can authenticate
+(valid bearer token resolves to its service account via `GET /auth/me/`)
+and access only the specific resources it was granted, proven by
+`test_service_account_with_no_grants_cannot_read_any_bucket` (broad org
+membership, zero ResourceGrants → 403 on every bucket) and
+`test_resource_grant_restricts_access_to_exactly_that_bucket` (grant
+`storage.read` scoped to bucket A only → 200 on bucket A, 403 on bucket
+B in the same org). 15 new tests (8 in
+`applications/tests/test_applications.py` covering registration,
+issue/list/revoke/rotate, scope enforcement, and permission checks on
+issuing; 7 in `tests/security/test_tenant_isolation.py`'s new
+`CrossOrganizationApplicationIsolationTests` covering read/list/
+issue-credential/revoke-credential/grant-resource IDOR across orgs)
+bring the suite to 162/162; ruff and mypy clean against the real
+Docker image.
+
+**One real bug, found while writing this phase's own exit-criteria
+test, not by an automated failure:** `has_permission()` has accepted a
+`resource=(resource_type, resource_id)` parameter for fine-grained
+`ResourceGrant` scoping since Phase 3 (ADR-0008, documented in
+PERMISSIONS.md as *the* mechanism for restricting an application's
+access to specific resources), but no view anywhere in the codebase —
+`storage` or `databases` — was ever passing it. Every permission check
+was organization-scoped only, so a `ResourceGrant` limited to one bucket
+was silently equivalent to a grant on every bucket in the org: fine-
+grained scoping had been completely inert since it was introduced,
+without a single test exercising the gap. This directly blocked Phase
+7's exit criteria (an application scoped to one bucket would have been
+able to read every bucket in the org) and would have been a real
+authorization bypass in production. Fixed by threading
+`resource=(resource_type, resource_id)` through `storage/views.py`
+(bucket-scoped — 10 call sites: folder create, file list/create/detail/
+patch/delete/restore/version-upload/download) and
+`databases/views.py`'s row endpoints (tenant-database-scoped — 6 call
+sites: row list/create/detail/patch/delete/export). Schema-management
+operations (create/drop database or table, add column, add foreign key)
+were deliberately left organization-scoped only, matching the master
+prompt's own example scope granularity (`database:read` — a database,
+not an individual DDL operation).
 
 ## Phase 8 — External Database Connectors
 

@@ -196,19 +196,33 @@ needed to safely construct row-level SQL at runtime.
   matters for the one job it was confirmed for; a separate model would add
   a table with no independent identity worth tracking.
 
-### 3.7 Applications
+### 3.7 Applications — implemented Phase 7
 
 - `Application`: registered piece of software, owned by an Organization,
   with an owning `User`.
-- `ServiceAccount`: the identity an `Application` authenticates as; can hold
-  `RoleAssignment`s and `ResourceGrant`s exactly like a `User`, but cannot
-  log into the web UI.
-- `ApplicationCredential`: stores a hash (not the plaintext secret) plus
-  metadata (created_at, last_used_at, expires_at, revoked_at). Plaintext
-  secret is returned exactly once, at creation/rotation time, in the API
-  response only.
-- `ApplicationScopeGrant`: restricts a Scope (e.g. `database:read`) to
-  specific resources — enforced as `ResourceGrant`s under the hood.
+- `ServiceAccount`: the identity an `Application` authenticates as.
+  Implemented as a one-to-one wrapper around a real `accounts.User`
+  (`identity_user`, created with `set_unusable_password()`) rather than a
+  parallel principal type, so it holds `RoleAssignment`s, `Membership`s,
+  and `ResourceGrant`s through the exact same tables and permission-check
+  path a human `User` does — no second tenant-isolation implementation to
+  keep in sync. It cannot log into the web UI because it has no usable
+  password and `ServiceAccountAuthentication` is the only auth backend
+  that will ever resolve to it.
+- `ApplicationCredential`: stores a SHA-256 hash (not the plaintext
+  secret) plus metadata (created_by, created_at, last_used_at,
+  expires_at, revoked_at). Plaintext secret (`pdc_sk_{uuid}.{random}`) is
+  returned exactly once, at creation/rotation time, in the API response
+  only, and is never logged or persisted anywhere as a whole string.
+- No separate `ApplicationScopeGrant`/`Scope` model: an application's
+  access is restricted directly through the existing `ResourceGrant`
+  model, using the same `Permission` catalog codes (e.g. `storage.read`,
+  `database.write`) every other principal uses — consistent with
+  ADR-0008's single-authorization-mechanism rule. `has_permission()`'s
+  `resource=(resource_type, resource_id)` parameter, which existed since
+  Phase 3 but was never wired into any view until this phase, is what
+  makes that scoping actually effective (see ROADMAP.md Phase 7 for the
+  bug this uncovered).
 
 ### 3.8 Sharing
 

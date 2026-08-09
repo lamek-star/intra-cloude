@@ -351,3 +351,62 @@ class CrossOrganizationRowIsolationTests(APITestCase):
     def test_cannot_export_another_orgs_table(self):
         response = self.client.get(reverse("row-export", args=[self.table_a_id]))
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class CrossOrganizationApplicationIsolationTests(APITestCase):
+    """Extends the suite to the application/service-account resources
+    introduced in Phase 7."""
+
+    databases = {"default", "tenant"}
+
+    def setUp(self):
+        SeedPermissionsCommand().handle()
+
+        self.org_a_admin = User.objects.create_user(email="apps-a-admin@example.com", password="x")
+        self.client.force_login(self.org_a_admin)
+        org_a = self.client.post(reverse("organization-list-create"), {"name": "Apps Org A"})
+        app_a = self.client.post(
+            reverse("application-list-create", args=[org_a.data["id"]]), {"name": "Bot A"}
+        )
+        self.application_a_id = app_a.data["id"]
+        credential_a = self.client.post(
+            reverse("application-credential-list-create", args=[self.application_a_id])
+        )
+        self.credential_a_id = credential_a.data["id"]
+
+        self.org_b_admin = User.objects.create_user(email="apps-b-admin@example.com", password="x")
+        self.client.force_login(self.org_b_admin)
+        self.client.post(reverse("organization-list-create"), {"name": "Apps Org B"})
+
+        # Act as Org B's admin — no legitimate access to anything under Org A.
+        self.client.force_login(self.org_b_admin)
+
+    def test_cannot_read_another_orgs_application(self):
+        response = self.client.get(reverse("application-detail", args=[self.application_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_list_another_orgs_application_credentials(self):
+        response = self.client.get(
+            reverse("application-credential-list-create", args=[self.application_a_id])
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_issue_a_credential_for_another_orgs_application(self):
+        response = self.client.post(
+            reverse("application-credential-list-create", args=[self.application_a_id])
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_revoke_another_orgs_credential(self):
+        response = self.client.post(
+            reverse("application-credential-revoke", args=[self.application_a_id, self.credential_a_id])
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_grant_resource_access_to_another_orgs_application(self):
+        response = self.client.post(
+            reverse("application-resource-grant-list-create", args=[self.application_a_id]),
+            {"permission_code": "storage.read", "resource_type": "storage.bucket", "resource_id": "x"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

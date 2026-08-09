@@ -25,8 +25,19 @@ from .services import get_member_bucket, get_member_file, upload_file, upload_ne
 _UPLOAD_PARSERS = [MultiPartParser, FormParser]
 
 
-def _require(request, permission_code, organization_id):
-    return has_permission(request.user, permission_code, organization_id=organization_id)
+# Fine-grained ResourceGrants (Phase 7) are scoped at the bucket level —
+# granting access to a bucket covers every folder/file inside it, rather
+# than requiring a grant per individual file (impractical) or only ever
+# working at the whole-organization level (defeats the point of Section
+# 13 of the master prompt: "a database:read scope must not automatically
+# authorize reading every organizational database" — the storage
+# equivalent is buckets).
+RESOURCE_TYPE_BUCKET = "storage.bucket"
+
+
+def _require(request, permission_code, organization_id, *, bucket_id=None):
+    resource = (RESOURCE_TYPE_BUCKET, bucket_id) if bucket_id else None
+    return has_permission(request.user, permission_code, organization_id=organization_id, resource=resource)
 
 
 class BucketListCreateView(APIView):
@@ -64,7 +75,7 @@ class FolderListCreateView(APIView):
 
     def post(self, request, bucket_id):
         bucket = get_member_bucket(request.user, bucket_id)
-        if not _require(request, "storage.write", bucket.organization_id):
+        if not _require(request, "storage.write", bucket.organization_id, bucket_id=bucket.id):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
         serializer = FolderCreateSerializer(data=request.data)
@@ -93,7 +104,7 @@ class FileListCreateView(APIView):
 
     def get(self, request, bucket_id):
         bucket = get_member_bucket(request.user, bucket_id)
-        if not _require(request, "storage.read", bucket.organization_id):
+        if not _require(request, "storage.read", bucket.organization_id, bucket_id=bucket.id):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
         files = FileObject.objects.filter(bucket=bucket, status=FileObject.Status.ACTIVE)
@@ -113,7 +124,7 @@ class FileListCreateView(APIView):
 
     def post(self, request, bucket_id):
         bucket = get_member_bucket(request.user, bucket_id)
-        if not _require(request, "storage.write", bucket.organization_id):
+        if not _require(request, "storage.write", bucket.organization_id, bucket_id=bucket.id):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
         uploaded = request.FILES.get("file")
@@ -144,13 +155,13 @@ class FileDetailView(APIView):
 
     def get(self, request, file_id):
         file_obj = get_member_file(request.user, file_id)
-        if not _require(request, "storage.read", file_obj.organization_id):
+        if not _require(request, "storage.read", file_obj.organization_id, bucket_id=file_obj.bucket_id):
             return Response(status=status.HTTP_403_FORBIDDEN)
         return Response(FileObjectSerializer(file_obj).data)
 
     def patch(self, request, file_id):
         file_obj = get_member_file(request.user, file_id)
-        if not _require(request, "storage.write", file_obj.organization_id):
+        if not _require(request, "storage.write", file_obj.organization_id, bucket_id=file_obj.bucket_id):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
         serializer = FileUpdateSerializer(data=request.data)
@@ -172,7 +183,7 @@ class FileDetailView(APIView):
 
     def delete(self, request, file_id):
         file_obj = get_member_file(request.user, file_id)
-        if not _require(request, "storage.delete", file_obj.organization_id):
+        if not _require(request, "storage.delete", file_obj.organization_id, bucket_id=file_obj.bucket_id):
             return Response(status=status.HTTP_403_FORBIDDEN)
         file_obj.status = FileObject.Status.DELETED
         file_obj.save(update_fields=["status", "updated_at"])
@@ -184,7 +195,7 @@ class FileRestoreView(APIView):
 
     def post(self, request, file_id):
         file_obj = get_member_file(request.user, file_id)
-        if not _require(request, "storage.delete", file_obj.organization_id):
+        if not _require(request, "storage.delete", file_obj.organization_id, bucket_id=file_obj.bucket_id):
             return Response(status=status.HTTP_403_FORBIDDEN)
         file_obj.status = FileObject.Status.ACTIVE
         file_obj.save(update_fields=["status", "updated_at"])
@@ -197,7 +208,7 @@ class FileVersionUploadView(APIView):
 
     def post(self, request, file_id):
         file_obj = get_member_file(request.user, file_id)
-        if not _require(request, "storage.write", file_obj.organization_id):
+        if not _require(request, "storage.write", file_obj.organization_id, bucket_id=file_obj.bucket_id):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
         uploaded = request.FILES.get("file")
@@ -220,7 +231,7 @@ class FileDownloadView(APIView):
 
     def get(self, request, file_id):
         file_obj = get_member_file(request.user, file_id)
-        if not _require(request, "storage.read", file_obj.organization_id):
+        if not _require(request, "storage.read", file_obj.organization_id, bucket_id=file_obj.bucket_id):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
         body = get_client().get_stream(file_obj.object_key)

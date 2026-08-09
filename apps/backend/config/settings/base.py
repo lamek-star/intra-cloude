@@ -175,6 +175,7 @@ CORS_ALLOW_CREDENTIALS = True
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.SessionAuthentication",
+        "applications.authentication.ServiceAccountAuthentication",
     ],
     # Deny by default: every view requires authentication unless it
     # explicitly opts out (e.g. /healthz).

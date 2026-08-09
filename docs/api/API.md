@@ -1,11 +1,11 @@
 # API Documentation — Private Data Cloud
 
-Status: Phase 6 — accounts, organizations, permissions, workspaces,
-storage, the database builder (schema *and* row data), audit, and CSV
-import endpoints exist and are covered by tests (`apps/backend/*/tests`,
-`tests/security/`). No auto-generated OpenAPI schema yet (see "Open
-Items" below) — this is a hand-maintained summary of what actually
-exists, kept in sync with the code.
+Status: Phase 7 — accounts, organizations, permissions, workspaces,
+storage, the database builder (schema *and* row data), audit, CSV
+import, and application/service-account endpoints exist and are covered
+by tests (`apps/backend/*/tests`, `tests/security/`). No auto-generated
+OpenAPI schema yet (see "Open Items" below) — this is a hand-maintained
+summary of what actually exists, kept in sync with the code.
 
 ## Authentication Note: CSRF on HTTPS
 
@@ -30,8 +30,15 @@ Session-based (Django session cookie), per ADR-0003. Log in via
 `POST /api/v1/auth/login/`, then the session cookie authenticates
 subsequent requests. CSRF protection applies to unsafe methods once a
 session exists — send the `csrftoken` cookie's value back as an
-`X-CSRFToken` header. Service-account (application) credential
-authentication is Phase 7 work, not yet implemented.
+`X-CSRFToken` header.
+
+As of Phase 7, a request may instead authenticate as a registered
+Application's service account with `Authorization: Bearer
+pdc_sk_<credential-id>.<secret>` (`applications/authentication.py`). Bearer
+requests are not subject to CSRF (no ambient session cookie for a
+cross-site request to ride). A service account's access is governed by
+whatever `ResourceGrant`s it was explicitly issued — Membership alone
+grants nothing (see "Application Integrations" below).
 
 ## Error Shape
 
@@ -171,6 +178,25 @@ Phase 4 catalog rows, never straight from the CSV. Progress is
 checkpointed every chunk (`last_processed_row`), so retrying a failed job
 resumes rather than re-importing already-committed rows.
 
+### Application Integrations (`applications/urls.py`)
+
+| Method | Path | Auth | Required permission | Notes |
+|---|---|---|---|---|
+| GET/POST | `/api/v1/organizations/{org_id}/applications/` | session | `application.create` (POST only) | Registering creates the `Application`, a `ServiceAccount`, its backing `User` (unusable password), and an active `Membership` in one transaction. |
+| GET | `/api/v1/applications/{id}/` | session | active membership | |
+| GET/POST | `/api/v1/applications/{id}/credentials/` | session | `application.credentials.manage` (POST only) | POST response includes `secret` — the only time the plaintext bearer token is ever returned. `GET` lists metadata only (`id`, `created_at`, `last_used_at`, `expires_at`, `revoked_at`), never the hash. |
+| POST | `/api/v1/applications/{id}/credentials/{credential_id}/revoke/` | session | `application.credentials.manage` | Sets `revoked_at`; the token stops authenticating immediately. |
+| POST | `/api/v1/applications/{id}/credentials/{credential_id}/rotate/` | session | `application.credentials.manage` | Revokes the given credential and issues a new one atomically; response includes the new `secret`. |
+| GET/POST | `/api/v1/applications/{id}/resource-grants/` | session | `permissions.manage` | Grants the application's service account a `Permission` code scoped to one resource, e.g. `{"permission_code": "storage.read", "resource_type": "storage.bucket", "resource_id": "<uuid>"}`. Without at least one grant, a service account can authenticate but reads/writes nothing — org Membership by itself confers no access. |
+
+An application's effective access is exactly the union of its
+`ResourceGrant`s, checked the same way as any other principal's through
+`permissions.services.has_permission`'s `resource=` parameter — currently
+wired into storage endpoints (bucket-scoped) and row-data endpoints
+(tenant-database-scoped). Schema-management endpoints (create/drop
+database or table, add column, add foreign key) are not resource-scoped;
+an application needs an organization-wide grant for those.
+
 ## Authorization Model in Practice
 
 Every org-scoped view (and, transitively, every workspace/project/bucket/
@@ -180,15 +206,22 @@ queryset filtered by the caller's active membership —
 `workspaces.views.get_member_workspace`/`get_member_project`,
 `storage.services.get_member_bucket`/`get_member_file`,
 `databases.services.get_member_tenant_database`/`get_member_table`/
-`get_member_column`, `imports.services.get_member_import_job`. This is the
-IDOR/BOLA defense, not a decorative permission check on top of an
-unfiltered lookup (docs/security/THREAT_MODEL.md Section 4). Fine-grained
-actions (`users.manage`, `permissions.manage`, `storage.*`, `database.*`,
-`audit.read`, `dataset.import`, `dataset.export`) go through the single
-shared `permissions.services.has_permission` entry point (ADR-0008).
+`get_member_column`, `imports.services.get_member_import_job`,
+`applications.views.get_member_application`. This is the IDOR/BOLA
+defense, not a decorative permission check on top of an unfiltered lookup
+(docs/security/THREAT_MODEL.md Section 4). Fine-grained actions
+(`users.manage`, `permissions.manage`, `storage.*`, `database.*`,
+`audit.read`, `dataset.import`, `dataset.export`, `application.*`) go
+through the single shared `permissions.services.has_permission` entry
+point (ADR-0008), which as of Phase 7 also accepts an optional
+`resource=(resource_type, resource_id)` to check a `ResourceGrant` scoped
+to one specific resource rather than the whole organization — this is
+what lets an Application be restricted to, e.g., a single bucket.
 `tests/security/test_tenant_isolation.py` proves org A cannot read, list,
 or modify org B's organizations, memberships, role assignments, buckets,
-files, tenant databases, tables, rows, or import jobs by ID substitution.
+files, tenant databases, tables, rows, import jobs, or applications
+(including issuing/revoking their credentials or granting them resource
+access) by ID substitution.
 
 ## Open Items
 
@@ -197,7 +230,6 @@ files, tenant databases, tables, rows, or import jobs by ID substitution.
   not-yet-added dependency (Section 24: avoid adding dependencies before
   they're needed); add it when the API surface is large enough that
   hand-maintaining this doc becomes the bottleneck.
-- Service-account/application authentication — Phase 7.
 - Rate limiting is configured at the DRF layer (`AnonRateThrottle`/
   `UserRateThrottle`, see `config/settings/base.py`) but not yet
   exercised by a test.

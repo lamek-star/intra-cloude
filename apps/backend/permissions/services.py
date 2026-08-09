@@ -99,3 +99,30 @@ def get_role(slug: str) -> Role:
 
 def permission_exists(code: str) -> bool:
     return Permission.objects.filter(code=code).exists()
+
+
+def grant_resource_permission(
+    *,
+    user,
+    permission_code: str,
+    organization_id,
+    resource_type: str,
+    resource_id,
+    granted_by=None,
+    expires_at=None,
+) -> ResourceGrant:
+    """Central place fine-grained ResourceGrants are created — used by
+    Phase 7 (restricting an Application's scope to specific resources)
+    and reused by Phase 9 (sharing a single resource with a user/team).
+    Same validate-then-create discipline as `assign_role`."""
+    if not permission_exists(permission_code):
+        raise PermissionError_(f"Unknown permission: {permission_code!r}")
+    return ResourceGrant.objects.create(
+        user=user,
+        permission_id=permission_code,
+        organization_id=organization_id,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        granted_by=granted_by,
+        expires_at=expires_at,
+    )

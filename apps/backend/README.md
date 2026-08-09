@@ -1,8 +1,9 @@
 # Backend (Django + DRF)
 
-Phase 6. Implemented so far: authentication, organizations/permissions,
+Phase 7. Implemented so far: authentication, organizations/permissions,
 workspaces/projects, file/object storage, audit logging, database
-builder (schema + row-level data explorer), CSV import. See
+builder (schema + row-level data explorer), CSV import, application/
+service-account integrations. See
 `docs/architecture/DATA_MODEL.md` Section 1 for the module boundaries and
 `docs/architecture/adr/` for the reasoning behind the framework, database,
 and broker choices.
@@ -32,9 +33,11 @@ apps/backend/
                        # data explorer row API (rows.py + values.py), formats.py
     audit/             # AuditEvent, record() helper, minimal audit.read API
     imports/           # ImportJob/ImportJobError, CSV preview + async Celery bulk insert
-    datasets/ applications/ sharing/
+    applications/       # Application/ServiceAccount/ApplicationCredential, bearer-token auth,
+                       # credential lifecycle, ResourceGrant scoping (Phase 7)
+    datasets/ sharing/
         # still bounded-app skeletons (apps.py + migrations/ only, no models yet) —
-        # Phases 7+
+        # Phases 8+
     system/
         views.py    # HealthzView (liveness), ReadyzView (dependency checks)
         middleware.py  # request ID propagation

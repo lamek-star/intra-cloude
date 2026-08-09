@@ -8,19 +8,20 @@ AWS, Azure, or GCP.
 
 ## Status
 
-**Phase 6 — Data Explorer, complete and verified end-to-end.** Phases 0–5
-are done: architecture, infrastructure, authentication/organizations/
-permissions, file storage, the visual database builder, and CSV import.
-Phase 6 adds spreadsheet-style browsing and editing of the data inside
-tables the database builder creates — server-side paginated/filtered/
-sorted row listing (hard-capped page size, never "fetch everything"),
-row insert/update/delete, and streamed CSV export. 147 tests pass against
-real PostgreSQL, MinIO, and Celery — not mocks — including
-cross-organization IDOR/BOLA regression tests for every resource type
-introduced so far. Every phase's exit criteria has been confirmed against
-the actual running Docker stack, not only the automated suite. Full phase
-history — what was built, how it was verified, and every real bug found
-along the way — lives in
+**Phase 7 — Application/Service-Account Integrations, complete and
+verified end-to-end.** Phases 0–6 are done: architecture, infrastructure,
+authentication/organizations/permissions, file storage, the visual
+database builder, CSV import, and the spreadsheet-style data explorer.
+Phase 7 adds registered Applications that authenticate via bearer-token
+service-account credentials and can be scoped down to individual
+resources (e.g. one bucket, not the whole org) through the same
+fine-grained authorization mechanism every other principal uses. 162
+tests pass against real PostgreSQL, MinIO, and Celery — not mocks —
+including cross-organization IDOR/BOLA regression tests for every
+resource type introduced so far. Every phase's exit criteria has been
+confirmed against the actual running Docker stack, not only the
+automated suite. Full phase history — what was built, how it was
+verified, and every real bug found along the way — lives in
 [docs/architecture/ROADMAP.md](docs/architecture/ROADMAP.md); this section
 intentionally stays short rather than growing with every phase. See also
 [docs/architecture/DEPENDENCY_VERSIONS.md](docs/architecture/DEPENDENCY_VERSIONS.md)
