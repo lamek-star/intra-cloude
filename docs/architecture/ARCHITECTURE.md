@@ -254,8 +254,12 @@ column alone."
 - **Idempotency / request IDs**: every API request is tagged with a request
   ID, propagated to logs, audit records, and error responses.
 - **Observability**: structured JSON logs, `/healthz` (liveness),
-  `/readyz` (dependency checks: DB, Valkey, object storage), Celery queue
-  depth metrics — see ROADMAP Phase 11.
+  `/readyz` (dependency checks: control-plane DB, tenant DB, Valkey),
+  `/metrics` (Prometheus exposition format — dependency-up gauges
+  computed at scrape time; not request-count/latency histograms or
+  Celery queue depth, which would need a metrics registry shared across
+  gunicorn's worker processes that this deployment doesn't have) —
+  implemented Phase 11, see docs/architecture/ROADMAP.md.
 - **Configuration**: all environment-specific values via environment
   variables (`.env`, never committed); see `.env.example`.
 

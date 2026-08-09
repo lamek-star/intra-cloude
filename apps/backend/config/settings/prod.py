@@ -16,8 +16,13 @@ SECURE_SSL_REDIRECT = True
 # HTTPS port gunicorn doesn't serve, hanging until the TLS handshake times
 # out (confirmed by actually running this: the container healthcheck failed
 # with an SSL handshake timeout before this exemption was added). Real user
-# traffic still goes through the proxy and is unaffected.
-SECURE_REDIRECT_EXEMPT = [r"^healthz$", r"^readyz$"]
+# traffic still goes through the proxy and is unaffected. /metrics
+# (Phase 11) joins this list for the same reason — a Prometheus scraper on
+# the internal Docker network reaches it directly over plain HTTP too, and
+# is deliberately not routed through the public proxy at all (see
+# infrastructure/proxy/Caddyfile — no /metrics matcher — and
+# docs/architecture/ROADMAP.md Phase 11).
+SECURE_REDIRECT_EXEMPT = [r"^healthz$", r"^readyz$", r"^metrics$"]
 SECURE_HSTS_SECONDS = 31536000
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = False  # local/LAN-first deployments should opt in deliberately, not by default

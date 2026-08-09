@@ -1,7 +1,7 @@
 # Roadmap — Private Data Cloud
 
-Status: Phase 0 and Phase 1 complete; Phase 2 not started
-Last updated: 2026-08-08
+Status: All planned phases (0–11) complete and verified.
+Last updated: 2026-08-09
 
 Phases are sequential and gated: a phase is not "done" until its tests,
 linters/type checks, security review, and documentation updates are
@@ -661,15 +661,102 @@ THREAT_MODEL.md's TB1 row said "MFA for admin roles (Phase 11)" — both
 predate this ROADMAP's own Phase 10 section, which has always assigned
 MFA to Phase 10. Both docs now say Phase 10 and are marked implemented.
 
-## Phase 11 — Monitoring, Backups, Disaster Recovery, Hardening
+## Phase 11 — Monitoring, Backups, Disaster Recovery, Hardening — COMPLETE
 
-- Structured logging, health/readiness endpoints, metrics, Prometheus/
-  Grafana integration points.
-- Backup automation implementing BACKUP_RESTORE.md, including the
-  automated restoration test job.
-- Security hardening pass across all prior phases; dependency audit.
-Exit criteria: a scheduled restore test passes against a real backup;
-health/readiness endpoints are wired into the reverse proxy/monitoring.
+- Structured logging and health/readiness endpoints already existed
+  since Phase 1 (`system/middleware.py`, `/healthz`, `/readyz`). Phase 11
+  adds `GET /metrics` (Prometheus exposition format,
+  `system/views.py:MetricsView`) — dependency-up gauges
+  (`pdc_dependency_up{dependency="..."}`) computed at scrape time from
+  the exact same checks `/readyz` runs (`_dependency_checks()`, shared
+  by both, so they can never drift from each other). Deliberately does
+  **not** expose request-count/latency histograms: that needs a metrics
+  registry shared across gunicorn's multiple worker processes (e.g.
+  `django-prometheus`'s multiprocess mode), which this deployment
+  doesn't have — documented as an Open Item (API.md) rather than
+  silently omitted, not implemented as a fake/misleading metric.
+  `/metrics` is deliberately **not** routed through the public Caddy
+  proxy (no matcher added in `infrastructure/proxy/Caddyfile`) — it
+  reveals more granular internal state than `/healthz`/`/readyz` and
+  stays reachable only directly on the internal Docker network (where a
+  Prometheus server container would scrape it from), consistent with
+  Zero Trust framing. It does need the same `SECURE_REDIRECT_EXEMPT`
+  treatment `/healthz`/`/readyz` already had, for the same reason
+  (plain-HTTP internal traffic, no `X-Forwarded-Proto` header) — caught
+  by actually curling it internally and hitting an SSL error before the
+  exemption was added.
+- `system.BackupRecord` + `system/backups.py`: real `pg_dump`/
+  `pg_restore` automation implementing BACKUP_RESTORE.md — see that doc
+  and the "Real bugs found" note below for the full account, including
+  the PGDG-vs-Debian client-version mismatch and the Django-test-alias
+  gotcha this phase re-discovered from Phase 8. Nightly `pg_dump` for
+  both control-plane and tenant databases, weekly automated restoration
+  tests, both via `CELERY_BEAT_SCHEDULE` (`config/settings/base.py`) —
+  "a scheduled Celery Beat job, not a manual checklist item that
+  quietly stops happening" (BACKUP_RESTORE.md Section 7). Manual
+  triggers also exist as management commands (`run_backup`,
+  `verify_backup`) for ops use and CLI-level testability independent of
+  Celery.
+- Security hardening: `system/tenant_role.py` +
+  `provision_tenant_role` management command — a real, live-verified,
+  genuinely least-privileged PostgreSQL role for the tenant database
+  connection (`docs/security/THREAT_MODEL.md` TB3), opt-in (not wired
+  into `docker-compose.yml` — an operator adopts it explicitly by
+  changing `TENANT_DB_USER`/`TENANT_DB_PASSWORD` after verifying it
+  works, the same "add-on, not a default-breaking change" pattern as
+  Phase 9's external-sharing toggle and Phase 10's internet gateway). A
+  server-side `statement_timeout` (`DB_STATEMENT_TIMEOUT_MS`, default
+  60s) was added to both database connections as a DoS backstop
+  (`docs/security/THREAT_MODEL.md` TB3's "runaway query" row) — this
+  *is* on by default (unlike the tenant-role hardening above), verified
+  safe by confirming the full 229-test suite still passes unchanged with
+  it active.
+  Dependency audit: see `docs/architecture/DEPENDENCY_VERSIONS.md`
+  "Dependency Audit" section — `cryptography` bumped 44.0.3 → 50.0.0
+  (7 known CVEs closed, none actually reachable through this codebase's
+  Fernet-only usage, bumped anyway since the fix is free); `pytest`'s
+  one low-severity, dev-only, local-multi-user-required finding is
+  documented and deliberately deferred, not silently ignored.
+Exit criteria — verified for real against the live Docker stack, not
+just the automated suite: `python manage.py run_backup control_db` and
+`run_backup tenant_db` both produced real, non-empty `pg_dump` files in
+the `pdc_backups` volume; `python manage.py verify_backup control_db`/
+`tenant_db` both restored those real dumps into isolated, throwaway
+databases, validated them, and reported success — a real restore test
+passing against a real backup. `run_backup_task.delay(...)` was also
+driven through the actual live Celery worker (not eager/synchronous test
+mode) and completed successfully; the `CELERY_BEAT_SCHEDULE` entries
+were confirmed loaded correctly in the running `beat` container. `GET
+/metrics` and `GET /readyz` were both confirmed reachable over plain
+HTTP directly against the running `backend` container. 13 new tests
+(`system/tests/test_backups.py`, `test_tenant_role.py`, `test_metrics.py`)
+bring the suite to 229/229; ruff and mypy clean against the real Docker
+image.
+
+**Two real bugs found while implementing this phase, neither by an
+automated test failure:**
+1. `system/backups.py` and `system/tenant_role.py` originally read
+   database connection parameters from `django.conf.settings.DATABASES`
+   directly. Under the test runner, Django substitutes the real database
+   name with a `test_`-prefixed one only on the live connection wrapper
+   (`django.db.connections[alias].settings_dict`), not necessarily the
+   raw settings dict — the exact same gotcha Phase 8's connected-database
+   tests hit and fixed the same way. Caught before it ever ran (by
+   recalling the Phase 8 lesson while writing this phase's code), not by
+   a failing test — an early instance of applying a documented past
+   lesson instead of re-discovering it the expensive way.
+2. `CREATE ROLE ... PASSWORD %s` (a bind parameter in the password
+   clause) fails with `syntax error at or near "$1"` — confirmed by
+   actually running `provision_tenant_role` against the live tenant
+   Postgres server. PostgreSQL's `CREATE ROLE` grammar doesn't accept a
+   parameter placeholder there; fixed by embedding the password via
+   `psycopg.sql.Literal` instead (safe quoting, the same discipline
+   `databases/ddl.py` uses for column defaults) — never raw string
+   interpolation. A related test-only issue surfaced immediately after:
+   `DROP ROLE` failed with `DependentObjectsStillExist` because the test
+   role still held the `GRANT ... ON DATABASE` privilege
+   `provision_role()` had given it; fixed by explicitly revoking that
+   privilege before dropping the role in the test's own cleanup.
 
 ## Non-Negotiable Cross-Phase Rules
 

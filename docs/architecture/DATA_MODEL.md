@@ -271,14 +271,32 @@ needed to safely construct row-level SQL at runtime.
 
 ### 3.10 System
 
-- `Quota`: per-Organization/Project storage and database usage limits +
-  current usage counters (updated by workers, not computed live on every
-  request).
-- `BackupRecord`: metadata about completed backups (what, when, where,
-  verified-restorable flag) — the artifacts themselves live in the backup
-  storage target, not the DB.
-- `HealthCheckResult` / metrics: short-lived operational data, may live in
-  Valkey/metrics store rather than Postgres.
+- `BackupRecord` — implemented Phase 11: metadata about a `pg_dump`
+  attempt (`backup_type`, `status`, `file_path`, `size_bytes`,
+  `error_message`, timestamps) and, once independently checked, the
+  restoration-verification outcome (`verified_restorable`,
+  `verified_at`, `verification_error`) — `verified_restorable` is never
+  set by the backup step itself, only by a genuinely separate restore-
+  and-validate pass (`system/backups.py`, docs/operations/
+  BACKUP_RESTORE.md). The dump artifacts themselves live in
+  `BACKUP_DIR`/the `pdc_backups` volume, not the database.
+- `Quota` — not implemented. Per-Organization/Project storage and
+  database usage limits + current usage counters were planned here but
+  no phase's exit criteria ended up requiring enforcement of them;
+  remains an open item, not silently dropped.
+- `HealthCheckResult` — not implemented as a stored model.
+  `/healthz`/`/readyz` (Phase 1) and `/metrics` (Phase 11,
+  `system/views.py`) compute dependency status live, at request/scrape
+  time, rather than persisting a row per check — there was no concrete
+  need identified for a historical record of past check results beyond
+  what a real Prometheus/monitoring system scraping `/metrics` already
+  provides.
+- `Configuration` — not implemented as a generic model. Where a
+  persisted, per-organization setting was actually needed (external
+  sharing's enable/disable toggle, Phase 9), it was added as a concrete
+  field on `Organization` rather than a generic key-value store —
+  avoids building a speculative generic configuration system before a
+  second concrete use case exists to validate its shape.
 
 ## 4. Tenant-Isolation Invariant (applies to every table above marked
    tenant-owned)

@@ -1,15 +1,15 @@
 # API Documentation — Private Data Cloud
 
-Status: Phase 10 — accounts (including TOTP MFA), organizations
-(including Teams), permissions, workspaces, storage, the database
-builder (schema *and* row data), audit, CSV import,
-application/service-account, external database connector (connected
-mode), internal sharing, and internet-gateway hardening (auth-endpoint
-rate limiting, gateway-mode MFA enforcement for new admin role grants)
-exist and are covered by tests (`apps/backend/*/tests`,
-`tests/security/`). No auto-generated OpenAPI schema yet (see "Open
-Items" below) — this is a hand-maintained summary of what actually
-exists, kept in sync with the code.
+Status: Phase 11 (all planned phases complete) — accounts (including
+TOTP MFA), organizations (including Teams), permissions, workspaces,
+storage, the database builder (schema *and* row data), audit, CSV
+import, application/service-account, external database connector
+(connected mode), internal sharing, internet-gateway hardening
+(auth-endpoint rate limiting, gateway-mode MFA enforcement for new admin
+role grants), and monitoring/backup automation exist and are covered by
+tests (`apps/backend/*/tests`, `tests/security/`). No auto-generated
+OpenAPI schema yet (see "Open Items" below) — this is a hand-maintained
+summary of what actually exists, kept in sync with the code.
 
 ## Authentication Note: CSRF on HTTPS
 
@@ -25,8 +25,13 @@ directly against the live stack — see ROADMAP.md Phase 5).
 
 All API endpoints are mounted under `/api/v1/`, per
 `docs/architecture/ARCHITECTURE.md` and Section 14 of the master prompt.
-`/healthz` and `/readyz` are unversioned infrastructure endpoints (see
-`apps/backend/system/`), not part of the public API surface.
+`/healthz`, `/readyz`, and `/metrics` are unversioned infrastructure
+endpoints (see `apps/backend/system/`), not part of the public API
+surface. Unlike the other two, `/metrics` (Prometheus exposition
+format, Phase 11) is deliberately not routed through the public Caddy
+proxy at all (no matcher in `infrastructure/proxy/Caddyfile`) — it stays
+reachable only directly on the internal Docker network, where a
+Prometheus server would scrape it from.
 
 ## Authentication
 
@@ -314,9 +319,11 @@ substitution.
 - File search is a simple `icontains` on `display_filename` — fine at
   current scale, revisit (e.g. Postgres full-text search) if it becomes a
   bottleneck.
-- The tenant Postgres role the app connects as is not yet a scoped,
-  least-privilege role (grantable only on its own schemas) — see
-  docs/security/THREAT_MODEL.md TB3. Tracked for Phase 11 hardening.
+- The tenant Postgres role the app connects as by default is still the
+  bootstrap superuser — a genuinely least-privilege alternative exists
+  (`python manage.py provision_tenant_role`, Phase 11) but is opt-in, not
+  the default; see docs/security/THREAT_MODEL.md TB3 and
+  docs/deployment/LOCAL_DEPLOYMENT.md.
 - No "create an arbitrary index" endpoint yet — `DBIndex` rows are only
   ever created automatically alongside a unique column.
 - `ConnectedDatabase` is read-only (connected-mode write pass-through is
@@ -361,3 +368,12 @@ substitution.
   — `?fields=` style server-side column selection isn't implemented
   either; the client currently gets every column and does visibility
   client-side.
+- `/metrics` (Phase 11) exposes dependency-up gauges only — no request-
+  count/latency histograms, which would need a metrics registry shared
+  across gunicorn's multiple worker processes (e.g. `django-prometheus`'s
+  multiprocess mode); not added without a concrete need identified yet.
+- Backup dump files (`system/backups.py`, Phase 11) are not independently
+  encrypted at rest — they rely on filesystem/volume-level access
+  control. See docs/operations/BACKUP_RESTORE.md Section 9 for the full
+  disaster-recovery Open Items list (object storage backup tooling,
+  off-host shipping, backup file encryption).

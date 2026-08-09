@@ -26,8 +26,39 @@ files are refreshed; this table tracks the deliberate major-version calls.
 | TypeScript | `^5` per Next.js 16.3's own template (resolved 5.9.3) | TypeScript 7.0 (the new Go-based compiler) shipped only days before this decision (2026-08-05) — deliberately not force-upgraded to for a new production codebase until the broader tooling ecosystem (Next.js, ESLint plugins, editor integrations) confirms full compatibility. Deferred to `create-next-app`'s own judgment on the compatible 5.x line rather than overriding it. Revisit in a later phase. |
 | MinIO | latest stable (pin exact tag before production use) | S3-compatible local object storage per ADR-0004; storage code now exists (Phase 3) and was verified against this image, but `docker-compose.yml` still uses a floating tag — pin before production use. |
 | Caddy | latest stable (pin exact tag before production use) | Reverse proxy; automatic HTTPS support is convenient for the internet-gateway phase (Phase 10) even though local/LAN use starts with internal/self-signed certs. |
+| postgresql-client | 18.4, via the PGDG apt repo, not Debian's own (added Phase 11) | `pg_dump`/`pg_restore` for `system/backups.py`. Debian trixie's own repo only ships client v17; pg_dump is not guaranteed forward-compatible with a newer major server version, and this stack runs PostgreSQL 18 — confirmed by actually testing v17 against a live v18 server before switching to the version-matched PGDG package (`apps/backend/Dockerfile`). |
 | boto3 | `~=1.35` constraint, resolved to 1.43.67 at lock time | AWS SDK for Python — the S3 client used against MinIO (and, unchanged, against real AWS S3 or another S3-compatible provider later per ADR-0004). No S3-compatible alternative library offered a meaningful advantage; this is the de facto standard. |
-| cryptography | `~=44.0` constraint, resolved to 44.0.3 at lock time (added Phase 8) | `Fernet` symmetric encryption for `ConnectedDatabase` credentials at rest (Section 15 of the master prompt; ADR-0009) — the standard, actively-maintained Python cryptography library; no justification for hand-rolling this. |
+| cryptography | `~=50.0` constraint, resolved to 50.0.0 at lock time (added Phase 8, reused by Phase 10 for MFA secrets) | `Fernet` symmetric encryption for `ConnectedDatabase` credentials and TOTP MFA secrets at rest (Section 15 of the master prompt; ADR-0009) — the standard, actively-maintained Python cryptography library; no justification for hand-rolling this. Bumped from the original `~=44.0` during Phase 11's dependency audit — see "Dependency Audit" below. |
+
+## Dependency Audit (Phase 11)
+
+Run via `pip-audit` against the actual resolved lock files (not asserted
+from memory), per the master prompt's "security hardening pass...
+dependency audit" for this phase:
+
+- **`cryptography` 44.0.3 → 50.0.0.** `pip-audit` found 7 known
+  vulnerabilities across the 44.x/46.x line (PYSEC-2026-35/2141/3552/3553/
+  3554, GHSA-537c-gmf6-5ccf, CVE-2025-61727) — all in the library's X.509
+  certificate-chain-verification and PKCS#7 code paths. None are
+  reachable through this codebase's actual usage (`Fernet` symmetric
+  encryption only — `databases/crypto.py`, `accounts/crypto.py` — never
+  X.509/PKCS#7 verification), but there's no reason to stay on a flagged
+  version when the fix is a drop-in bump with an unchanged `Fernet` API.
+  Verified: the full 229-test suite (including every encrypt/decrypt
+  round-trip test) still passes unchanged after the bump.
+- **`pytest` 8.4.2 — flagged, deliberately not bumped yet.**
+  PYSEC-2026-1845 (fixed in 9.0.3): a local multi-user privilege/DoS
+  issue via predictable `/tmp/pytest-of-{user}` naming. Dev/CI-only (not
+  in `requirements/prod.txt`, never ships), and exploitation requires an
+  attacker already having local shell access on the same machine running
+  the test suite — not a threat model this project's self-hosted,
+  single-operator CI story is exposed to today. Bumping to pytest 9.x
+  pulls in a `pytest-django`/`pytest-cov` compatibility check this phase
+  didn't have budget to also verify; tracked as a follow-up rather than
+  bumped without that verification.
+- Everything else in `requirements/base.txt`/`prod.txt`/`dev.txt` (Django,
+  DRF, psycopg, celery, redis, django-cors-headers, boto3, gunicorn,
+  ruff, mypy, django-stubs, factory-boy) came back clean.
 
 ## Verification
 

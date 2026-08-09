@@ -1,10 +1,26 @@
 # syntax=docker/dockerfile:1
 FROM python:3.13-slim AS base
 
-# Runtime deps for psycopg[binary] wheels and general TLS/certs — nothing else.
+# Runtime deps for psycopg[binary] wheels, TLS/certs, and postgresql-client-18
+# (pg_dump/pg_restore for Phase 11 backup automation — system/backups.py).
+# Debian's own repo only ships client v17 (Debian trixie); pg_dump is not
+# guaranteed forward-compatible with a newer major server version, and the
+# stack runs PostgreSQL 18, so the PGDG apt repo is added to install a
+# version-matched client instead of relying on whatever Debian bundles —
+# confirmed by actually testing pg_dump 17 vs 18 during Phase 11.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libpq5 \
         ca-certificates \
+        curl \
+        gnupg \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+        -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    && . /etc/os-release \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update && apt-get install -y --no-install-recommends postgresql-client-18 \
+    && apt-get purge -y --auto-remove curl gnupg \
     && rm -rf /var/lib/apt/lists/*
 
 RUN addgroup --system app && adduser --system --ingroup app app
@@ -32,7 +48,12 @@ ENV PATH=/opt/venv/bin:$PATH \
     DJANGO_SETTINGS_MODULE=config.settings.prod
 
 COPY . /app
-RUN chown -R app:app /app /opt/venv
+# Created here (not left to be auto-created on first volume mount) so its
+# ownership is right from the start — a named volume mounted at a path
+# that already exists in the image inherits that path's ownership/content
+# on first run; one that doesn't would be created root-owned, unwritable
+# by the non-root `app` user backup jobs run as (system/backups.py).
+RUN mkdir -p /backups && chown -R app:app /app /opt/venv /backups
 
 USER app
 

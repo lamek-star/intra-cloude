@@ -1,13 +1,16 @@
 # Backend (Django + DRF)
 
-Phase 10. Implemented so far: authentication (including TOTP MFA),
-organizations/permissions (including Teams; gateway-mode MFA
+All 12 planned phases complete. Implemented: authentication (including
+TOTP MFA), organizations/permissions (including Teams; gateway-mode MFA
 enforcement for new admin role grants), workspaces/projects,
 file/object storage, audit logging, database builder (schema +
 row-level data explorer), CSV import, application/service-account
 integrations, external database connectors (read-only connected-mode
 PostgreSQL), internal sharing, optional internet-gateway hardening
-(auth-endpoint rate limiting, documented ACME TLS add-on). See
+(auth-endpoint rate limiting, documented ACME TLS add-on), and
+monitoring/backup automation (real `pg_dump`/restore-test cycles on a
+Celery Beat schedule, `/metrics`, an opt-in least-privilege tenant-DB
+role, a `statement_timeout` DoS backstop). See
 `docs/architecture/DATA_MODEL.md` Section 1 for the module boundaries and
 `docs/architecture/adr/` for the reasoning behind the framework, database,
 and broker choices.
@@ -24,7 +27,7 @@ apps/backend/
             test.py        # settings used by pytest/CI
         celery.py       # Celery app wiring
         db_routers.py     # keeps Django migrations off the tenant DB connection
-        urls.py             # root URLconf (/healthz, /readyz, /api/v1/*)
+        urls.py             # root URLconf (/healthz, /readyz, /metrics, /api/v1/*)
         api_urls.py           # aggregates each app's /api/v1 routes
         wsgi.py / asgi.py
     accounts/          # custom User model, register/login/logout/me,
@@ -48,11 +51,16 @@ apps/backend/
                        # organizations.Organization, not here
     datasets/
         # still a bounded-app skeleton (apps.py + migrations/ only, no models yet) —
-        # Phases 10+
+        # no phase's exit criteria ended up requiring it
     system/
-        views.py    # HealthzView (liveness), ReadyzView (dependency checks)
+        views.py    # HealthzView, ReadyzView (dependency checks), MetricsView (Phase 11)
         middleware.py  # request ID propagation
         exceptions.py    # structured, non-leaking API error responses
+        models.py    # BackupRecord (Phase 11)
+        backups.py    # pg_dump/pg_restore automation + restore-verification
+        tenant_role.py  # opt-in least-privilege tenant-DB role provisioning (TB3)
+        tasks.py     # Celery tasks wired into CELERY_BEAT_SCHEDULE
+        management/commands/  # run_backup, verify_backup, provision_tenant_role
         tests/
     manage.py
     pyproject.toml   # ruff / mypy / pytest configuration

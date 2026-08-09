@@ -94,7 +94,13 @@ on the internal Docker network.
 Bind mounts (rather than anonymous Docker volumes) are recommended in
 production so the operator has explicit control over which physical disk
 backs each path, matching the storage hardware assumptions in
-ARCHITECTURE.md Section 5.
+ARCHITECTURE.md Section 5. The `backups/` path is real as of Phase 11
+(`system/backups.py` writes `pg_dump` output there) — `docker-compose.yml`
+mounts it as the named volume `pdc_backups` on `backend`/`worker`/`beat`
+by default; bind-mount it explicitly (`docker-compose.override.yml`) to
+put it on the disk/pool you actually intend for backups, same pattern as
+the other paths here. A named volume alone is not an off-host backup —
+see `docs/operations/BACKUP_RESTORE.md` Section 4.
 
 ## 6. TLS for Local/LAN Use
 
@@ -124,14 +130,26 @@ environment variables, never hardcoded. Categories:
   environment variable or a mounted secret file — see
   `docs/operations/BACKUP_RESTORE.md` for how this key itself is backed up
   (losing it makes stored external-DB credentials unrecoverable, by design).
+- Optional hardening (Phase 11, not applied by default): run `python
+  manage.py provision_tenant_role <role_name>` once against a running
+  stack to create a least-privilege tenant-database role (`CONNECT`+
+  `CREATE` only, never superuser), then switch `TENANT_DB_USER`/
+  `TENANT_DB_PASSWORD` to it and restart `backend`/`worker`/`beat` — see
+  `docs/security/THREAT_MODEL.md` TB3.
 
 ## 8. What Is NOT Covered Here Yet
 
 - Kubernetes deployment (explicitly deferred; see ROADMAP.md and
   ADR-0006).
-- Public internet exposure / Zero Trust gateway (Phase 10).
-- Automated TLS certificate issuance for internet-facing deployments
-  (Phase 10; local/LAN uses manual or internal-CA certs).
+- Public internet exposure / Zero Trust gateway, and automated TLS
+  certificate issuance for internet-facing deployments — implemented
+  (Phase 10) but deliberately kept as a separate guide, not folded into
+  this one: see `docs/deployment/INTERNET_GATEWAY.md`. This document
+  stays scoped to the LAN-first default.
+- Off-host/off-machine backup shipping and object-storage backup tooling
+  choice — the platform automates local `pg_dump`/restore-testing
+  (Phase 11, `docs/operations/BACKUP_RESTORE.md`), but getting a copy off
+  this host is still an operator-configured step.
 
 This document will be replaced with verified, tested commands once Phase 1
 infrastructure work actually produces the Dockerfiles and compose file

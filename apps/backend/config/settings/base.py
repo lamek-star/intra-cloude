@@ -9,6 +9,8 @@ environment overrides, and .env.example for the full variable list.
 import os
 from pathlib import Path
 
+from celery.schedules import crontab
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 
@@ -110,6 +112,16 @@ ASGI_APPLICATION = "config.asgi.application"
 # `databases` app's service layer to execute validated, schema-scoped DDL/DML
 # directly (see docs/architecture/DATA_MODEL.md Section 5) — Django's ORM/
 # migration framework never manages tenant schemas.
+# A generous but real upper bound on any single statement — a server-side
+# backstop against a runaway/pathological query (Section 20 of the master
+# prompt; docs/security/THREAT_MODEL.md TB3 "Denial of service") on top of
+# the application-layer bounds that already exist (row API hard-capped at
+# 500 rows per page, CSV import chunked at 1000 rows per transaction).
+# Deliberately generous (not tight) since it applies to every statement on
+# both connections, including admin/DDL operations — Phase 11 hardening,
+# not meant to be the primary defense against slow individual queries.
+DB_STATEMENT_TIMEOUT_MS = env("DB_STATEMENT_TIMEOUT_MS", "60000")
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
@@ -119,6 +131,7 @@ DATABASES = {
         "HOST": env("CONTROL_DB_HOST", "localhost"),
         "PORT": env("CONTROL_DB_PORT", "5432"),
         "CONN_MAX_AGE": 60,
+        "OPTIONS": {"options": f"-c statement_timeout={DB_STATEMENT_TIMEOUT_MS}"},
     },
     "tenant": {
         "ENGINE": "django.db.backends.postgresql",
@@ -128,6 +141,7 @@ DATABASES = {
         "HOST": env("TENANT_DB_HOST", "localhost"),
         "PORT": env("TENANT_DB_PORT", "5432"),
         "CONN_MAX_AGE": 60,
+        "OPTIONS": {"options": f"-c statement_timeout={DB_STATEMENT_TIMEOUT_MS}"},
     },
 }
 
@@ -208,6 +222,34 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 
+# Nightly full backups, weekly automated restoration tests (Phase 11;
+# docs/operations/BACKUP_RESTORE.md Sections 3 and 7 — "a recurring job
+# restores the latest backup set... this is a scheduled Celery Beat job,
+# not a manual checklist item that quietly stops happening"). Only takes
+# effect for the `beat` service, which schedules these against `worker`.
+CELERY_BEAT_SCHEDULE = {
+    "backup-control-db-nightly": {
+        "task": "system.tasks.run_backup_task",
+        "schedule": crontab(hour=2, minute=0),
+        "args": ("control_db",),
+    },
+    "backup-tenant-db-nightly": {
+        "task": "system.tasks.run_backup_task",
+        "schedule": crontab(hour=2, minute=30),
+        "args": ("tenant_db",),
+    },
+    "verify-control-db-backup-weekly": {
+        "task": "system.tasks.verify_latest_backup_task",
+        "schedule": crontab(hour=3, minute=0, day_of_week=0),
+        "args": ("control_db",),
+    },
+    "verify-tenant-db-backup-weekly": {
+        "task": "system.tasks.verify_latest_backup_task",
+        "schedule": crontab(hour=3, minute=30, day_of_week=0),
+        "args": ("tenant_db",),
+    },
+}
+
 # --- Object storage (S3-compatible; MinIO locally — ADR-0004) ---
 OBJECT_STORAGE_ENDPOINT = env("OBJECT_STORAGE_ENDPOINT", "")
 OBJECT_STORAGE_REGION = env("OBJECT_STORAGE_REGION", "us-east-1")
@@ -218,6 +260,13 @@ OBJECT_STORAGE_BUCKET_PREFIX = env("OBJECT_STORAGE_BUCKET_PREFIX", "pdc")
 # Dedicated key for encrypting ConnectedDatabase credentials at rest
 # (Section 15 of the master prompt) — distinct from SECRET_KEY.
 CREDENTIAL_ENCRYPTION_KEY = env("CREDENTIAL_ENCRYPTION_KEY", required=True)
+
+# --- Backups (Phase 11; docs/operations/BACKUP_RESTORE.md) ---
+# Where pg_dump output is written (system/backups.py). Mounted as a named
+# Docker volume by default (docker-compose.yml) — an operator points its
+# backing storage at off-host/NAS media per BACKUP_RESTORE.md Section 4;
+# a local volume alone is not itself an off-host backup.
+BACKUP_DIR = env("BACKUP_DIR", "/backups")
 
 # --- Feature flags (secure defaults: off) ---
 FEATURE_EXTERNAL_SHARING_ENABLED = env_bool("FEATURE_EXTERNAL_SHARING_ENABLED", False)

@@ -8,23 +8,26 @@ AWS, Azure, or GCP.
 
 ## Status
 
-**Phase 10 — Optional Secure Internet Gateway, complete and verified
-end-to-end.** Phases 0–9 are done: architecture, infrastructure,
-authentication/organizations/permissions, file storage, the visual
-database builder, CSV import, the spreadsheet-style data explorer,
-application/service-account integrations, external database connectors,
-and internal sharing. Phase 10 adds TOTP-based MFA
-(`docs/deployment/INTERNET_GATEWAY.md`), a tighter rate-limit scope on
-login/register/MFA-verify, and a documented, opt-in add-on path (never
-a default-config change) for exposing the platform to the internet
-behind real ACME TLS — with MFA required before an admin role can be
-granted to someone else while that mode is on. 216 tests pass against
-real PostgreSQL, MinIO, and Celery — not mocks — including
-cross-organization IDOR/BOLA regression tests for every resource type
-introduced so far. Every phase's exit criteria has been confirmed
-against the actual running Docker stack, not only the automated suite.
-Full phase history — what was built, how it was verified, and every
-real bug found along the way — lives in
+**All 12 planned phases (0–11) are complete and verified end-to-end.**
+Architecture and threat modeling; infrastructure; authentication/
+organizations/permissions; file/object storage; the visual database
+builder; CSV import; the spreadsheet-style data explorer; application/
+service-account integrations; external database connectors (read-only
+connected-mode PostgreSQL); internal sharing; an optional, opt-in
+internet-gateway path (TOTP MFA, real ACME TLS, tightened rate limiting);
+and monitoring/backup automation (real `pg_dump`/restore-test cycles on
+a Celery Beat schedule, Prometheus metrics, a genuinely least-privilege
+tenant-database role available as an opt-in hardening step, a real
+dependency audit). 229 tests pass against real PostgreSQL, MinIO, and
+Celery — not mocks — including cross-organization IDOR/BOLA regression
+tests for every tenant-owned resource type in the platform. Every
+phase's exit criteria has been confirmed against the actual running
+Docker stack, not only the automated suite — including, in the final
+phase, driving a real backup through `pg_dump`, restoring it into an
+isolated database, and validating the restore, exactly as
+`docs/operations/BACKUP_RESTORE.md` specifies. Full phase-by-phase
+history — what was built, how it was verified, and every real bug found
+along the way — lives in
 [docs/architecture/ROADMAP.md](docs/architecture/ROADMAP.md); this section
 intentionally stays short rather than growing with every phase. See also
 [docs/architecture/DEPENDENCY_VERSIONS.md](docs/architecture/DEPENDENCY_VERSIONS.md)

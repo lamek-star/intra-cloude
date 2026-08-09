@@ -1,8 +1,14 @@
 # Backup & Restore Strategy — Private Data Cloud
 
-Status: DRAFT (Phase 0 — strategy defined ahead of implementation, to be
-built out starting Phase 1 and hardened in Phase 11)
-Last updated: 2026-08-07
+Status: IMPLEMENTED (Phase 11 — `pg_dump`/`pg_restore` automation and the
+automated restoration test job described in Sections 6/7 are real,
+scheduled via Celery Beat, and verified against the live Docker stack;
+see `system/backups.py`, `system/tasks.py`, and
+`docs/architecture/ROADMAP.md` Phase 11 for what was actually built and
+how it was verified). Object storage replication/`mc mirror` (Section 2)
+and off-host shipping (Section 4) remain deployment-time operator
+responsibilities, not automated by the platform itself — see Section 9.
+Last updated: 2026-08-09
 
 ## 1. Principle
 
@@ -52,31 +58,59 @@ scenarios and complement, but do not replace, `pg_dump`/object-storage
 backups (snapshots are not portable off-host on their own without being
 shipped elsewhere).
 
-## 6. Restoration Procedure (target outline — to be turned into a tested
-   script during Phase 1/11)
+## 6. Restoration Procedure
+
+Steps 2/3/7/8 below are implemented and automated (`system/backups.py`:
+`run_backup`/`verify_backup_restorable`); steps 1/4/5/6 are deployment-
+level operator responsibility, not something application code can safely
+automate (see Section 9).
 
 1. Provision a clean target environment (or a dedicated restore-test
-   environment — never restore-test against production).
-2. Restore control-plane PostgreSQL from the chosen backup point.
-3. Restore tenant PostgreSQL from the chosen backup point.
-4. Restore/replicate object storage data.
-5. Restore configuration and secrets from the encrypted secret backup.
-6. Bring the stack up pointed at restored data; run health checks.
+   environment — never restore-test against production). **Implemented,
+   scoped down for the automated job**: rather than a whole separate
+   environment, `verify_backup_restorable` creates a throwaway, isolated
+   database (`restore_test_<id>`) on the *same* Postgres server for each
+   verification run and drops it immediately after — genuinely isolated
+   from production data (a fresh database, not a copy touched by
+   anything else), without needing a second environment for the
+   automated check specifically. Full-environment restoration drills
+   (rebuilding onto new/different hardware) remain a manual/operator
+   exercise per Section 8.
+2. Restore control-plane PostgreSQL from the chosen backup point. **Implemented** (`pg_restore`, custom-format dump).
+3. Restore tenant PostgreSQL from the chosen backup point. **Implemented.**
+4. Restore/replicate object storage data. Not automated by the platform — MinIO replication/`mc mirror` is an operator-configured, infrastructure-level concern (Section 9).
+5. Restore configuration and secrets from the encrypted secret backup. Operator responsibility — secrets never pass through application code to be backed up by it (Section 2).
+6. Bring the stack up pointed at restored data; run health checks. Use `/readyz` (Phase 1) — already checks exactly this (control-plane DB, tenant DB, Valkey reachability).
 7. Run a scripted validation pass: can a known test user log in, can a
    known test file be downloaded and its checksum verified, can a known
    test table be queried and row counts compared against the pre-backup
-   snapshot's recorded counts.
+   snapshot's recorded counts. **Implemented, scoped to what a restored
+   database alone can prove**: the automated job queries known
+   control-plane tables (`organizations_organization`, `accounts_user`,
+   `permissions_permission`) or, for a tenant backup, the per-organization
+   schema catalog — proving the restore is a real, structurally intact,
+   *queryable* database, not exact-count comparison against a live
+   database whose data keeps changing after the dump is taken. File-
+   checksum and full end-to-end login checks would require also restoring
+   object storage and standing up the whole application stack against the
+   restored data — a heavier, environment-level drill (Section 8), not
+   part of the lightweight, frequent automated check.
 8. Record the restoration test result (`BackupRecord.verified_restorable`)
-   with timestamp and outcome.
+   with timestamp and outcome. **Implemented** — `verified_restorable`,
+   `verified_at`, `verification_error`.
 
-## 7. Automated Restoration Testing
+## 7. Automated Restoration Testing — IMPLEMENTED
 
-A recurring (e.g. weekly) job restores the latest backup set into an
-isolated, non-production environment and runs the validation pass in
-Section 6 automatically, alerting if it fails. This is the concrete
-mechanism that satisfies "a backup strategy is not complete until
-restoration is tested" — it is a scheduled Celery Beat / cron job, not a
-manual checklist item that quietly stops happening.
+`CELERY_BEAT_SCHEDULE` (`config/settings/base.py`) schedules
+`system.tasks.verify_latest_backup_task` weekly for both the
+control-plane and tenant backup types, restoring the latest successful
+backup of each into an isolated database and running the Section 6
+validation pass automatically — the concrete mechanism that satisfies "a
+backup strategy is not complete until restoration is tested." Manual
+triggers also exist (`python manage.py verify_backup <control_db|
+tenant_db>`) for ops use outside the schedule. Verified for real against
+the live Docker stack in Phase 11 (see `docs/architecture/ROADMAP.md`
+Phase 11) — not just unit-tested.
 
 ## 8. Disaster Recovery Scenarios to Document (Phase 11 deliverable,
    tracked here so it isn't forgotten)
@@ -94,11 +128,33 @@ manual checklist item that quietly stops happening.
   copy, rotate all credentials and the credential-encryption key, invalidate
   all sessions and application credentials.
 
-## 9. Open Items for Later Phases
+## 9. Open Items (post-Phase-11)
 
-- Choice of concrete backup tooling (e.g. `pgBackRest` vs plain
-  `pg_dump`/WAL scripts; `restic`/`borg` vs `mc mirror` for object storage)
-  is deferred to Phase 1 implementation and will be recorded as an ADR once
-  selected, per Section 27 of the master prompt (version/tooling policy).
-- Backup encryption-at-rest key management (where the encryption key for
-  backups themselves is stored) needs a concrete decision before Phase 11.
+- **Database backup tooling: decided.** Plain `pg_dump`/`pg_restore`
+  (custom format, `-Fc`) — "boring technology first" (CLAUDE.md); no
+  concrete requirement surfaced during implementation that plain
+  `pg_dump` couldn't satisfy. `pgBackRest`/WAL archiving remain a future
+  upgrade if continuous point-in-time recovery (rather than nightly full
+  dumps) becomes a real requirement — not needed to satisfy this phase's
+  exit criteria.
+- **Object storage backup tooling: not yet chosen.** MinIO server-side
+  replication vs `mc mirror` vs `restic`/`borg` — still an operator
+  decision, not automated by the platform. Object storage content is
+  already content-addressed/UUID-keyed (`storage/backends.py`), which
+  makes any of these viable; picking one is deferred until a concrete
+  deployment needs it, per "avoid adding dependencies/infrastructure
+  before they're needed."
+- **Backup file encryption at rest: not yet implemented.** `pg_dump`
+  output currently sits unencrypted in `BACKUP_DIR`/the `pdc_backups`
+  volume — relying on filesystem/volume-level access control, not
+  independent encryption. Encrypting backup files themselves (and
+  managing that key, distinct from `CREDENTIAL_ENCRYPTION_KEY`/
+  `SECRET_KEY`) is a real gap for the "ransomware/compromise" scenario in
+  Section 8 and is the most concrete remaining item in this document.
+- Off-host/off-machine shipping (Section 4) and object storage
+  replication remain manual operator setup — the platform produces
+  correct, verified local backups; getting a copy off-host is
+  infrastructure the operator wires up (rsync/NAS mount/cloud sync
+  pointed at the `pdc_backups` volume), matching "local-first... backups
+  don't require internet dependency for the platform itself to keep
+  operating."

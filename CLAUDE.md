@@ -15,52 +15,47 @@ and the original product brief folded into that document.
 
 ## Current Status
 
-**Phase 10 complete and verified end-to-end: optional secure internet
-gateway.** Phases 0–9 are done (architecture; infrastructure;
-authentication/organizations/permissions; file/object storage; database
-builder; CSV import; data explorer; application/service-account
-integrations; external database connectors; sharing). Full history,
-bugs found and fixed, and exact verification method for every phase
-lives in `docs/architecture/ROADMAP.md` — this section stays a short
-pointer, not a running log, so it doesn't grow without bound as phases
-continue.
+**All 12 planned phases (0–11) are complete and verified end-to-end.**
+Full history, bugs found and fixed, and exact verification method for
+every phase lives in `docs/architecture/ROADMAP.md` — this section stays
+a short pointer, not a running log.
 
-Implemented so far, by app: `accounts` (auth, *plus* RFC 6238 TOTP MFA —
-enroll/confirm/disable/login-verify, `accounts/totp.py` — Phase 10),
-`organizations`/`permissions` (capability-based authz, ADR-0008, *plus*
-Team CRUD — Phase 9, *plus* gateway-mode MFA requirement on new
-administrative role grants — Phase 10), `workspaces` (Workspace/Project),
-`storage` (Bucket/Folder/FileObject/FileVersion, MinIO), `databases`
-(visual schema builder with real DDL and two-layer injection defense per
+Implemented, by app: `accounts` (auth, RFC 6238 TOTP MFA — Phase 10),
+`organizations`/`permissions` (capability-based authz, ADR-0008, Team
+CRUD — Phase 9, gateway-mode MFA requirement on new administrative role
+grants — Phase 10), `workspaces` (Workspace/Project), `storage`
+(Bucket/Folder/FileObject/FileVersion, MinIO), `databases` (visual
+schema builder with real DDL and two-layer injection defense per
 Section 5 of the master prompt, row-level browse/edit/export — Phase 6
-added to this app rather than a new one, since the master prompt's
-module list has no separate "explorer" app — *plus* `ConnectedDatabase`:
-read-only, connected-mode access to an external PostgreSQL database via
-its own independent connection, Fernet-encrypted credentials, connection
-tested before persisting — Phase 8), `audit` (AuditEvent), `imports`
-(CSV preview + async Celery bulk insert), `applications`
-(Application/ServiceAccount backed by a real `User`/ApplicationCredential
-bearer-token auth/ResourceGrant-scoped access — Phase 7 also fixed a
-latent bug where fine-grained `ResourceGrant` scoping had never actually
-been wired into any view since Phase 3), `sharing` (`ShareGrant` — Phase
-9; compiles down to the exact same `ResourceGrant` mechanism Phase 7
-uses, not a second enforcement path; per-org audited external-sharing
-toggle lives on `Organization`). Internet-gateway mode itself
+— *plus* `ConnectedDatabase`: read-only, connected-mode access to an
+external PostgreSQL database, Fernet-encrypted credentials — Phase 8),
+`audit` (AuditEvent), `imports` (CSV preview + async Celery bulk
+insert), `applications` (Application/ServiceAccount backed by a real
+`User`/ApplicationCredential bearer-token auth/ResourceGrant-scoped
+access — Phase 7 also fixed a latent bug where fine-grained
+`ResourceGrant` scoping had never actually been wired into any view
+since Phase 3), `sharing` (`ShareGrant` — Phase 9; compiles down to the
+same `ResourceGrant` mechanism Phase 7 uses, not a second enforcement
+path), `system` (`/healthz`/`/readyz`/`/metrics`; `BackupRecord` + real
+`pg_dump`/`pg_restore` automation with a Celery-Beat-scheduled,
+live-verified restore-test cycle; an opt-in least-privilege tenant-DB
+role addressing THREAT_MODEL.md TB3 — Phase 11). Internet-gateway mode
 (`docs/deployment/INTERNET_GATEWAY.md`) is an opt-in Caddyfile swap plus
-a tighter `"auth"` DRF throttle scope — no new app. 216 tests pass
+a tighter `"auth"` DRF throttle scope, not a new app. 229 tests pass
 against real PostgreSQL/MinIO/Celery (not mocks); every phase's exit
 criteria was confirmed live against the running Docker stack, not just
-via the automated suite.
+via the automated suite — including, in Phase 11, driving a real backup
+through `pg_dump` and restoring it into an isolated database.
 
-Known, disclosed gap (not a regression — never implemented): the tenant
-Postgres role the app connects as is not yet a scoped least-privilege
-role, so schema isolation between organizations is enforced only at the
-application layer today, not also at the database-grant layer ADR-0005
-assumes. See docs/security/THREAT_MODEL.md TB3; tracked for Phase 11.
-
-Do not jump ahead to later implementation phases without explicit
-instruction — see
-"Development Process" below.
+No known, disclosed architectural gaps remain open from earlier phases:
+the tenant-Postgres-least-privilege gap tracked since Phase 2/3
+(THREAT_MODEL.md TB3) now has a real, live-verified mitigation
+(`provision_tenant_role`) — opt-in rather than the default, which is
+itself a documented, deliberate choice (see ROADMAP.md Phase 11), not an
+oversight. Remaining open items (MySQL/SQL-Server connectors, object-
+storage backup tooling choice, backup-file encryption at rest, and
+others) are tracked in each relevant doc's "Open Items" section, not
+here — this section stays a pointer.
 
 ## Non-Negotiable Architectural Rules
 

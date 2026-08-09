@@ -32,6 +32,7 @@ volumes:
   object_storage_data:
   valkey_data:
   caddy_data:
+  pdc_backups:
 
 services:
   proxy:
@@ -90,6 +91,12 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    volumes:
+      # Backup dumps (system/backups.py, Phase 11) — a named volume by
+      # default; point BACKUP_DIR-backing storage at an off-host/NAS mount
+      # in production per docs/operations/BACKUP_RESTORE.md Section 4
+      # (a Docker named volume alone is not off-host backup).
+      - pdc_backups:/backups
     networks:
       - app
       - data
@@ -112,6 +119,8 @@ services:
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
     command: celery -A config worker -l info
+    volumes:
+      - pdc_backups:/backups
     networks:
       - app
       - data
@@ -134,6 +143,8 @@ services:
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
     command: celery -A config beat -l info
+    volumes:
+      - pdc_backups:/backups
     networks:
       - app
       - data

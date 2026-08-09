@@ -2,6 +2,7 @@
 with throwaway values so `pytest` doesn't need a hand-authored `.env`."""
 
 import os
+import tempfile
 
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
 os.environ.setdefault("CREDENTIAL_ENCRYPTION_KEY", "test-credential-key-not-for-production")
@@ -26,3 +27,8 @@ PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]  # fast has
 # against an actual running worker container, not by this test suite.
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
+
+# A throwaway directory per test run, not the real /backups path — keeps
+# test-generated pg_dump files from accumulating anywhere meant for real
+# backups (system/backups.py, Phase 11).
+BACKUP_DIR = tempfile.mkdtemp(prefix="pdc-test-backups-")
