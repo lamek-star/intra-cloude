@@ -15,31 +15,36 @@ and the original product brief folded into that document.
 
 ## Current Status
 
-**Phase 2 complete and verified end-to-end: authentication, organizations,
-permissions.** Phase 1 (dev environment/infrastructure, Docker Compose
-stack built and run for real, three real bugs found and fixed — see
-`docs/architecture/ROADMAP.md` Phase 1) is done. Phase 2 adds the first
-real product code:
+**Phase 3 complete and verified end-to-end: file/object storage.**
+Phase 1 (infrastructure) and Phase 2 (authentication, organizations,
+permissions — three + two real bugs found and fixed respectively, see
+`docs/architecture/ROADMAP.md`) are done. Phase 3 adds:
 
-- `accounts`: custom `User` model (email-based, UUID pk), register/login/
-  logout/me session-auth API.
-- `organizations`: `Organization`/`Team`/`Membership`, create/list/detail
-  + membership add/role-assign API. Creating an org auto-grants the
-  creator Organization Administrator.
-- `permissions`: capability-based authorization (ADR-0008) —
-  `Permission`/`Role`/`RoleAssignment`/`ResourceGrant`, one shared
-  `has_permission` service, `seed_permissions` +
-  `bootstrap_super_administrator` management commands.
+- `workspaces` (prerequisite, not its own roadmap phase but structurally
+  required): `Workspace`/`Project`, member-gated create/list/detail API.
+- `storage`: `Bucket`/`Folder`/`FileObject`/`FileVersion`, an S3-compatible
+  abstraction over MinIO (`storage/backends.py`, ADR-0004) with chunked
+  upload/download (never loads a whole file into memory), server-side
+  content-sniffed MIME detection (never trusts the client), SHA-256
+  checksums, and versioning. Full API: bucket/folder create+list, file
+  upload/list/detail/rename/move/download/delete/restore/new-version.
 
-All migrated and tested against real PostgreSQL containers (not sqlite):
-34 tests pass, including `tests/security/test_tenant_isolation.py` — 5
-dedicated cross-organization IDOR/BOLA regression tests proving org A
-cannot read/list/modify org B's data by ID substitution. Two real bugs
-surfaced while actually running this (a `makemigrations` hang tied to a
-Windows-local networking quirk, and a Django test-isolation gap on the
-tenant DB connection) — both fixed, see `docs/architecture/ROADMAP.md`
-Phase 2. Do not jump ahead to later implementation phases without
-explicit instruction — see
+All migrated and tested against real PostgreSQL + MinIO containers (not
+sqlite, not mocks): 52 tests pass, including 5 new cross-organization
+IDOR/BOLA tests extending `tests/security/test_tenant_isolation.py` to
+buckets and files. Three real issues surfaced while actually running this
+— see `docs/architecture/ROADMAP.md` Phase 3 for detail:
+1. `permissions/catalog.py`'s Organization Administrator role (copied
+   from PERMISSIONS.md's "representative," i.e. non-exhaustive, list)
+   couldn't actually touch its own org's files — widened to everything
+   except `system.admin`, documented in PERMISSIONS.md Section 3.
+2. A serializer field named `parent` collided with DRF's internal
+   `Field.parent` — caught by mypy, renamed to `parent_id`.
+3. Two new test files forgot to seed the permission catalog before
+   creating an org (test bugs, not product bugs).
+
+Do not jump ahead to later implementation phases without explicit
+instruction — see
 "Development Process" below.
 
 ## Non-Negotiable Architectural Rules

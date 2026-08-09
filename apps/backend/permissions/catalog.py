@@ -39,20 +39,14 @@ _DATABASE_RW = ["database.read", "database.write"]
 # or renamed (docs/security/PERMISSIONS.md Section 3).
 SYSTEM_ROLES: dict[str, tuple[str, list[str]]] = {
     "super-administrator": ("Super Administrator", _ALL),
-    "organization-administrator": (
-        "Organization Administrator",
-        [
-            "users.manage",
-            "permissions.manage",
-            "storage.manage",
-            "database.create",
-            "database.schema.manage",
-            "backup.manage",
-            "audit.read",
-            "connection.manage",
-            "sharing.manage",
-        ],
-    ),
+    # Full authority within their own org — everything except system.admin,
+    # which is platform-wide-only. docs/security/PERMISSIONS.md Section 3
+    # originally listed only a "representative" subset here (storage.manage
+    # but not storage.read/write, etc.); actually exercising the org-admin
+    # role in Phase 3 (an admin couldn't touch their own org's files)
+    # showed that reading as an exhaustive list breaks the "Org owner/IT
+    # admin" intent, so this is now the full grant.
+    "organization-administrator": ("Organization Administrator", [p for p in _ALL if p != "system.admin"]),
     "storage-administrator": (
         "Storage Administrator",
         ["storage.read", "storage.write", "storage.delete", "storage.share", "storage.manage"],

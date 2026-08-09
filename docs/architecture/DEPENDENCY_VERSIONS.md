@@ -24,8 +24,9 @@ files are refreshed; this table tracks the deliberate major-version calls.
 | Next.js | 16.x (Active LTS branch), resolved 16.3.0 via `create-next-app@latest` at scaffold time | Current stable major, in Active LTS status since October 2025. |
 | React | 19.x, resolved 19.2.8 | Version Next.js 16.3 targets. |
 | TypeScript | `^5` per Next.js 16.3's own template (resolved 5.9.3) | TypeScript 7.0 (the new Go-based compiler) shipped only days before this decision (2026-08-05) — deliberately not force-upgraded to for a new production codebase until the broader tooling ecosystem (Next.js, ESLint plugins, editor integrations) confirms full compatibility. Deferred to `create-next-app`'s own judgment on the compatible 5.x line rather than overriding it. Revisit in a later phase. |
-| MinIO | latest stable (pin exact tag at Phase 3 implementation) | S3-compatible local object storage per ADR-0004; not yet pinned to a specific tag since object-storage code doesn't exist until Phase 3 — `docker-compose.yml` uses a floating tag with a note to pin before production use. |
+| MinIO | latest stable (pin exact tag before production use) | S3-compatible local object storage per ADR-0004; storage code now exists (Phase 3) and was verified against this image, but `docker-compose.yml` still uses a floating tag — pin before production use. |
 | Caddy | latest stable (pin exact tag before production use) | Reverse proxy; automatic HTTPS support is convenient for the internet-gateway phase (Phase 10) even though local/LAN use starts with internal/self-signed certs. |
+| boto3 | `~=1.35` constraint, resolved to 1.43.67 at lock time | AWS SDK for Python — the S3 client used against MinIO (and, unchanged, against real AWS S3 or another S3-compatible provider later per ADR-0004). No S3-compatible alternative library offered a meaningful advantage; this is the de facto standard. |
 
 ## Verification
 
@@ -65,6 +66,18 @@ via the host venv — DNS names like `postgres-control` resolve and connect
 instantly there. `manage.py check`, `ruff`, `mypy`, `pytest --collect-only`
 (nothing that opens a DB connection) are unaffected and still fine to run
 from the host venv directly.
+
+**Phase 3 verification method:** the same networking quirk applies to
+`pytest` itself once tests touch Postgres/MinIO, so the full suite
+(ruff + mypy + pytest, 52 tests) was run inside a throwaway container
+attached to the Docker Compose `data` network, with the whole repo bind-
+mounted in (`docker create -v <repo>:/repo ... private-data-cloud-backend
+sh -c "pip install -r apps/backend/requirements/dev.txt && ...; docker
+network connect private-data-cloud_data <container>; docker start
+--attach <container>`) rather than the host venv. Migrations were also
+verified against a completely fresh (volume-wiped) database, not just an
+incrementally-migrated one, to catch any migration-ordering issues a
+fresh clone would hit.
 
 ## Process for Future Version Decisions
 

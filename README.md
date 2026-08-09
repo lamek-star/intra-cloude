@@ -8,14 +8,16 @@ AWS, Azure, or GCP.
 
 ## Status
 
-**Phase 2 — Authentication, Organizations, Permissions, complete and
-verified end-to-end.** Phases 0 (architecture) and 1 (infrastructure
-foundation, Docker Compose stack built and run for real) are done. Phase 2
-adds the first real product code: user registration/login, organizations
-and membership, and a capability-based permission system (roles, resource
-grants, platform-wide Super Administrator) — all backed by real API
-endpoints, 34 passing tests (including dedicated cross-organization
-IDOR/BOLA regression tests) run against actual PostgreSQL, not mocks. See
+**Phase 3 — File / Object Storage, complete and verified end-to-end.**
+Phases 0 (architecture), 1 (infrastructure foundation), and 2
+(authentication, organizations, permissions) are done. Phase 3 adds
+workspaces/projects and a full file-storage feature: buckets, folders,
+upload/download/rename/move/delete/restore/versioning, server-side MIME
+sniffing and SHA-256 checksums, chunked streaming to/from MinIO (never
+loading a whole file into memory) — all backed by real API endpoints, 52
+passing tests (including cross-organization IDOR/BOLA regression tests
+for every resource type introduced so far) run against actual PostgreSQL
+and MinIO, not mocks. See
 [docs/architecture/ROADMAP.md](docs/architecture/ROADMAP.md) for the full
 phase plan and exit criteria, and
 [docs/architecture/DEPENDENCY_VERSIONS.md](docs/architecture/DEPENDENCY_VERSIONS.md)

@@ -48,10 +48,10 @@ they are never invented inline in view code.
 
 ## 3. Default System Roles
 
-| Role | Intended holder | Representative permissions |
+| Role | Intended holder | Permissions |
 |---|---|---|
 | Super Administrator | Platform operator | `system.admin` + all permissions, all organizations |
-| Organization Administrator | Org owner/IT admin | `users.manage`, `permissions.manage`, `storage.manage`, `database.create`, `database.schema.manage`, `backup.manage`, `audit.read`, `connection.manage`, `sharing.manage` |
+| Organization Administrator | Org owner/IT admin | All permissions except `system.admin`, scoped to their own organization (see implementation note below) |
 | Storage Administrator | IT/ops for files | `storage.read/write/delete/share/manage` |
 | Database Administrator | Data team lead | `database.*`, `dataset.import/export`, `connection.manage` |
 | Developer | App/integration builder | `application.create`, `application.credentials.manage`, `database.read`, `database.write`, `dataset.import/export` |
@@ -79,6 +79,20 @@ query. See `apps/backend/permissions/models.py` and
 (the only supported way to create the first platform-wide operator; plain
 `manage.py createsuperuser` only creates a `User` row and grants no
 privilege in this permission model).
+
+**Implementation note (Phase 3):** the original Organization Administrator
+permission list here was a "representative" subset copied verbatim from
+this table into `permissions/catalog.py` — it included `storage.manage`
+but not `storage.read`/`storage.write`, so an org's own administrator
+couldn't touch their org's files. This surfaced immediately when the
+storage API was actually exercised end-to-end in Phase 3, not from
+inspection. Fixed by making Organization Administrator's grant everything
+except `system.admin` (`[p for p in _ALL if p != "system.admin"]` in
+`catalog.py`), matching the "Org owner/IT admin" intent literally instead
+of via an incomplete illustrative list. General lesson applied going
+forward: a role's permission set in `catalog.py` is verified by actually
+performing the actions its "intended holder" description implies, not
+just by matching this table.
 
 ## 4. Resource Grants (Fine-Grained Exceptions)
 

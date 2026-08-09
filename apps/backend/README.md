@@ -1,10 +1,10 @@
 # Backend (Django + DRF)
 
-Phase 1 skeleton. No product features yet — this is the control-plane
-project structure, settings, health endpoints, and bounded-app layout that
-Phase 2+ builds on. See `docs/architecture/DATA_MODEL.md` Section 1 for the
-module boundaries and `docs/architecture/adr/` for the reasoning behind the
-framework, database, and broker choices.
+Phase 3. Implemented so far: authentication, organizations/permissions,
+workspaces/projects, file/object storage. See
+`docs/architecture/DATA_MODEL.md` Section 1 for the module boundaries and
+`docs/architecture/adr/` for the reasoning behind the framework, database,
+and broker choices.
 
 ## Layout
 
@@ -19,11 +19,16 @@ apps/backend/
         celery.py       # Celery app wiring
         db_routers.py     # keeps Django migrations off the tenant DB connection
         urls.py             # root URLconf (/healthz, /readyz, /api/v1/*)
-        api_urls.py           # aggregates each app's /api/v1 routes (empty until Phase 2)
+        api_urls.py           # aggregates each app's /api/v1 routes
         wsgi.py / asgi.py
-    accounts/ organizations/ permissions/ workspaces/ storage/
+    accounts/          # custom User model, register/login/logout/me
+    organizations/     # Organization/Team/Membership, membership + role-assignment API
+    permissions/       # capability-based authorization (ADR-0008), catalog.py, services.py
+    workspaces/        # Workspace/Project
+    storage/           # Bucket/Folder/FileObject/FileVersion, MinIO/S3 abstraction (ADR-0004)
     databases/ datasets/ imports/ applications/ sharing/ audit/
-        # bounded app skeletons (apps.py + migrations/ only, no models yet)
+        # still bounded-app skeletons (apps.py + migrations/ only, no models yet) —
+        # Phases 4+
     system/
         views.py    # HealthzView (liveness), ReadyzView (dependency checks)
         middleware.py  # request ID propagation
@@ -33,6 +38,11 @@ apps/backend/
     pyproject.toml   # ruff / mypy / pytest configuration
     requirements/
 ```
+
+See `docs/api/API.md` for the full endpoint reference and
+`tests/security/test_tenant_isolation.py` (repo root) for the
+cross-organization IDOR/BOLA regression suite that every new resource
+type gains a case in.
 
 ## Local Setup
 
@@ -58,17 +68,31 @@ DJANGO_SETTINGS_MODULE=config.settings.dev python manage.py runserver
 ## Testing & Linting
 
 ```
-pytest                 # uses config.settings.test automatically (pyproject.toml)
-ruff check .
-mypy .
+ruff check .    # from apps/backend — uses this dir's pyproject.toml
+mypy .          # from apps/backend — same, needed for the django-stubs plugin config
 ```
 
-`pytest`/`ruff`/`mypy` have been run against this scaffold and pass. Tests
-that touch a real database require PostgreSQL to be reachable (see
-`docker-compose.yml`); this has not yet been exercised end-to-end since the
-Phase 1 development machine used to write this scaffold does not have
-Docker available — verify `docker compose up` + `pytest` together as the
-first step of Phase 2 work.
+For `pytest`, run from the **repo root**, not this directory — the root
+`pytest.ini` adds `apps/backend` to `pythonpath` and includes the
+top-level `tests/` directory (cross-app tests like
+`tests/security/test_tenant_isolation.py`) in the same run:
+
+```
+cd <repo-root> && pytest --cov=apps/backend --cov-report=term-missing
+```
+
+Running `pytest` from inside `apps/backend` still works for module-local
+tests (it'll pick up this directory's `pyproject.toml` instead), but won't
+collect `tests/security/`.
+
+All of the above require PostgreSQL, Valkey, and MinIO to be reachable —
+in this dev environment (no Docker, and a local networking quirk that
+makes bare TCP connects to unlistened `localhost` ports hang instead of
+failing fast — see DEPENDENCY_VERSIONS.md), that means running inside a
+container attached to the Docker Compose network rather than a host venv;
+see the "Phase 3 verification method" note in
+`docs/architecture/DEPENDENCY_VERSIONS.md` for the exact command. On a
+normal Linux CI runner or dev machine, the host venv works fine directly.
 
 ## Regenerating Lock Files
 

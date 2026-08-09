@@ -9,6 +9,7 @@ Run from the repo root: `pytest` (see pytest.ini — this directory isn't
 under apps/backend, so it needs the root config's `pythonpath`).
 """
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -77,3 +78,62 @@ class CrossOrganizationIsolationTests(APITestCase):
                 has_permission(self.org_a_admin, code, organization_id=self.org_b_id),
                 f"Org A admin must not hold {code!r} in Org B",
             )
+
+
+class CrossOrganizationStorageIsolationTests(APITestCase):
+    """Extends the suite above to the storage resources introduced in
+    Phase 3: Workspace -> Project -> Bucket -> FileObject."""
+
+    def setUp(self):
+        SeedPermissionsCommand().handle()
+
+        self.org_a_admin = User.objects.create_user(email="storage-a-admin@example.com", password="x")
+        self.client.force_login(self.org_a_admin)
+        org_a = self.client.post(reverse("organization-list-create"), {"name": "Storage Org A"})
+        ws_a = self.client.post(
+            reverse("workspace-list-create", args=[org_a.data["id"]]), {"name": "WS"}
+        )
+        proj_a = self.client.post(
+            reverse("project-list-create", args=[ws_a.data["id"]]), {"name": "Proj"}
+        )
+        bucket_a = self.client.post(
+            reverse("bucket-list-create", args=[proj_a.data["id"]]), {"name": "bucket"}
+        )
+        self.bucket_a_id = bucket_a.data["id"]
+        upload = self.client.post(
+            reverse("file-list-create", args=[self.bucket_a_id]),
+            {"file": SimpleUploadedFile("secret.txt", b"org a secret", content_type="text/plain")},
+            format="multipart",
+        )
+        self.file_a_id = upload.data["id"]
+
+        self.org_b_admin = User.objects.create_user(email="storage-b-admin@example.com", password="x")
+        self.client.force_login(self.org_b_admin)
+        self.client.post(reverse("organization-list-create"), {"name": "Storage Org B"})
+
+        # Act as Org B's admin — no legitimate access to anything under Org A.
+        self.client.force_login(self.org_b_admin)
+
+    def test_cannot_list_another_orgs_bucket_files(self):
+        response = self.client.get(reverse("file-list-create", args=[self.bucket_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_read_another_orgs_file_metadata(self):
+        response = self.client.get(reverse("file-detail", args=[self.file_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_download_another_orgs_file(self):
+        response = self.client.get(reverse("file-download", args=[self.file_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_delete_another_orgs_file(self):
+        response = self.client.delete(reverse("file-detail", args=[self.file_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_upload_into_another_orgs_bucket(self):
+        response = self.client.post(
+            reverse("file-list-create", args=[self.bucket_a_id]),
+            {"file": SimpleUploadedFile("intrusion.txt", b"x", content_type="text/plain")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

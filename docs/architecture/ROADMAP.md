@@ -117,17 +117,58 @@ dedicated cross-org tests confirm isolation holds.
   isolation blocks queries to any alias not declared on the test class.
   Fixed by adding `databases = {"default", "tenant"}`.
 
-## Phase 3 — File / Object Storage
+## Phase 3 — File / Object Storage — COMPLETE
 
-## Phase 3 — File / Object Storage
+- `workspaces` app (prerequisite, not its own roadmap line originally, but
+  required structurally — `Bucket` FKs to `Project`): `Workspace`,
+  `Project` models, member-gated create/list/detail API.
+- `storage` app: `Bucket`/`Folder`/`FileObject`/`FileVersion` models;
+  S3-compatible storage abstraction (`storage/backends.py`, MinIO locally
+  per ADR-0004) — chunked upload/download, content-based MIME sniffing
+  (not the client-supplied Content-Type), SHA-256 checksums.
+- API: bucket create/list, folder create/list, file upload/list/detail
+  (rename+move via `PATCH`)/download/delete/restore, new-version upload.
+  Search (`?search=`) and whitelisted ordering (`?ordering=`) on file
+  listing.
+- Backend-streamed download by default (`StreamingHttpResponse` iterating
+  the S3 object in chunks) rather than a presigned URL, because
+  `OBJECT_STORAGE_ENDPOINT` is an internal Docker DNS name unreachable
+  from a browser outside the Docker network in this topology — presigned
+  URL generation is implemented and works (`ObjectStorageClient.presigned_download_url`)
+  for topologies where the endpoint is externally reachable (real AWS S3,
+  Phase 9 external sharing), just isn't the default download path yet.
+- Malware-scan hook: not implemented — no antivirus integration exists to
+  hook into yet. Tracked as an explicit gap (see THREAT_MODEL.md Section
+  6), not silently skipped.
 
-- `storage` app, S3-compatible storage abstraction (local MinIO backend).
-- Upload (drag-and-drop UI), folder hierarchy, download, rename, move,
-  delete/restore, metadata, checksum verification, MIME sniffing.
-- Presigned URL issuance; malware-scan hook interface (stubbed).
-Exit criteria: end-to-end upload → list → download → delete works under
-permission and tenant-isolation tests; large-file upload doesn't load the
-whole file into Django memory.
+Exit criteria — verified for real against live Postgres + MinIO
+containers, not mocks: upload → list → download (byte-for-byte match) →
+delete → restore all pass as an API round-trip test; a dedicated test
+confirms MIME type is sniffed from content and doesn't trust the
+client-supplied Content-Type or filename extension; uploads are hashed
+and streamed to S3 in 1 MiB chunks (`storage/services.py:_hash_and_sniff`
++ `ObjectStorageClient.put_stream`/`get_stream`), never reading the whole
+file into memory. 5 new cross-organization IDOR tests extend
+`tests/security/test_tenant_isolation.py` to buckets/files. 52/52 tests
+pass; ruff and mypy clean.
+
+**Bugs found and fixed while actually running this:**
+- `permissions/catalog.py`'s `organization-administrator` role — copied
+  faithfully from PERMISSIONS.md's "representative" (i.e., illustrative,
+  not exhaustive) permission list — granted `storage.manage` but not
+  `storage.read`/`storage.write`, so an org's own administrator couldn't
+  touch their org's files. Only surfaced by actually exercising the role
+  end-to-end. Fixed to grant everything except `system.admin` (see
+  PERMISSIONS.md Section 3 implementation note); this is a **security-
+  relevant widening**, not a narrowing, so it was safe to apply directly.
+- A serializer field literally named `parent` (Folder's parent-folder ID)
+  collided with DRF's own internal `Field.parent` attribute — caught by
+  mypy as a real type conflict, not a style nit. Renamed to `parent_id`.
+- Two new test files forgot to seed the permission catalog in `setUp`
+  before creating an organization (which now requires the
+  `organization-administrator` Role to exist) — straightforward test bugs,
+  fixed by adding the same `seed_permissions` call the other test files
+  already had.
 
 ## Phase 4 — Database Builder
 

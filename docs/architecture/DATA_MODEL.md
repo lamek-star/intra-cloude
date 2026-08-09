@@ -117,13 +117,16 @@ erDiagram
 
 ### 3.4 Storage
 
-- `Bucket`: logical container within a Project, maps to a physical prefix in
-  the S3-compatible backend (`org-<uuid>/project-<uuid>/bucket-<uuid>/...`).
-  Never a literal user-supplied path.
-- `Folder`: virtual hierarchy stored as metadata rows (materialized path or
-  adjacency list — decided during Phase 3 implementation), not a real
-  filesystem directory.
-- `FileObject`: one logical file. Stores UUID, org/project/bucket FK, object
+- `Bucket`: logical container within a Project. Object keys use a
+  server-generated prefix (`<org-uuid>/<project-uuid>/<bucket-uuid>/<file-uuid>/<content-uuid>`)
+  against one shared physical S3/MinIO bucket (`OBJECT_STORAGE_BUCKET_PREFIX`)
+  rather than one physical bucket per logical `Bucket` — simpler to operate
+  (no MinIO bucket-naming/proliferation concerns) while still giving every
+  file a unique, unguessable, server-generated key. Never a literal
+  user-supplied path.
+- `Folder`: virtual hierarchy stored as metadata rows — implemented as an
+  adjacency list (`parent` self-FK), not a real filesystem directory.
+- `FileObject`: one logical file. Stores UUID, bucket/folder FK, object
   key, original filename (untrusted, display-only), sanitized display name,
   detected MIME type (server-verified, not trusted from browser), size,
   checksum (sha256), status (`active`/`deleted`/`quarantined`), creator,

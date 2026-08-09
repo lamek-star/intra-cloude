@@ -17,22 +17,7 @@ from .serializers import (
     OrganizationSerializer,
 )
 from .services import create_organization
-
-
-def _get_member_organization(user, organization_id) -> Organization:
-    """Resolves an Organization only if the requester is an active member
-    of it — otherwise 404 (not 403), so org existence isn't leaked to
-    non-members (docs/security/THREAT_MODEL.md Section 4). This is the
-    query every org-scoped view goes through; it is the primary
-    tenant-isolation defense, not a convenience."""
-    try:
-        return Organization.objects.get(
-            id=organization_id,
-            memberships__user=user,
-            memberships__status=Membership.Status.ACTIVE,
-        )
-    except Organization.DoesNotExist as exc:
-        raise Http404 from exc
+from .services import get_member_organization as _get_member_organization
 
 
 class OrganizationListCreateView(APIView):
