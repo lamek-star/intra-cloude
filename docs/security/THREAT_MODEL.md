@@ -58,10 +58,10 @@ assumed to hold on the other.
 
 | Threat | Mitigation |
 |---|---|
-| Tampering (SQL injection via dynamic schema/table names) | Strict identifier allowlist/regex validation, parameterized queries for all data, `psycopg.sql.Identifier`-style safe quoting for any dynamic identifier, never raw string interpolation |
-| Elevation of privilege (tenant DB role escaping its schema) | Tenant Postgres role for the application is granted only `USAGE`/`CREATE` on its own `org_<uuid>` schemas, not superuser; per-org schema boundary enforced at the DB grant level in addition to the app layer |
-| Information disclosure (connection string / credentials leakage) | Secrets via environment/secret store, never logged; `ConnectedDatabase` credentials encrypted at rest with a key outside the DB itself |
-| Denial of service (runaway query from CSV import or data explorer) | Query timeouts, statement timeouts, server-side pagination caps, async processing for bulk operations |
+| Tampering (SQL injection via dynamic schema/table/column names or default values) | **Implemented, Phase 4.** Strict identifier regex validation (`databases/identifiers.py`) as a first pass, independent of and prior to `psycopg.sql.Identifier` safe quoting (`databases/ddl.py`) as a second — never raw string interpolation. Constant values (column defaults) are embedded via `psycopg.sql.Literal`, never concatenated. Verified with dedicated tests that attempt injection through every identifier and default-value input and confirm the target objects survive. |
+| Elevation of privilege (tenant DB role escaping its schema) | **Not yet implemented — known gap.** The design intent (schema-per-`TenantDatabase`, ADR-0005) assumes the application's tenant Postgres role is granted only `USAGE`/`CREATE` on schemas it owns, not superuser. As actually deployed (`docker-compose.yml`), the app connects as the container's bootstrap `POSTGRES_USER`, which *is* effectively a superuser within that Postgres instance — so today, isolation between tenant schemas is enforced only by the application layer (identifier validation + membership-scoped catalog lookups), not by a second, independent database-level privilege boundary. Tracked for Phase 11 hardening; called out explicitly here rather than left implied by the ADR. |
+| Information disclosure (connection string / credentials leakage) | Secrets via environment/secret store, never logged; `ConnectedDatabase` credentials encrypted at rest with a key outside the DB itself (Phase 8, not yet implemented) |
+| Denial of service (runaway query from CSV import or data explorer) | Query timeouts, statement timeouts, server-side pagination caps, async processing for bulk operations — not yet implemented (Phase 5/6) |
 
 ### TB4 — API/Workers → Object Storage
 

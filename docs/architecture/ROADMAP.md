@@ -170,18 +170,75 @@ pass; ruff and mypy clean.
   fixed by adding the same `seed_permissions` call the other test files
   already had.
 
-## Phase 4 — Database Builder
+## Phase 4 — Database Builder — COMPLETE
 
-- `databases` app: TenantDatabase/Schema/Table/Column/Index/ForeignKey
-  catalog + the schema-change service (validate → transaction → DDL →
-  catalog write → audit).
-- Visual table/column/relationship creation API + minimal UI.
-- Strict identifier validation and safe quoting; supported type whitelist
-  per Section 9 of the master prompt.
+- `audit` app (prerequisite — the schema-change service pipeline
+  literally ends in "audit," so this had to exist first): `AuditEvent`
+  model, a single `audit.services.record()` helper, and a minimal
+  `audit.read`-gated list endpoint.
+- `databases` app: `TenantDatabase`/`DBTable`/`DBColumn`/`DBForeignKey`/
+  `DBIndex` catalog. No separate `DBSchema` model — per ADR-0005 each
+  `TenantDatabase` already maps 1:1 to exactly one physical Postgres
+  schema, so a distinct schema-catalog layer would track nothing a
+  `TenantDatabase` row doesn't already record (see the DATA_MODEL.md
+  Section 3.5 note).
+- `databases/identifiers.py` + `databases/ddl.py`: the two-layer defense
+  Section 5 of the master prompt requires for anything that dynamically
+  creates schemas/tables — strict identifier regex validation *and*
+  `psycopg.sql.Identifier`/`sql.Literal` safe quoting, neither trusted
+  alone. A curated 10-type whitelist (not every Postgres type) with an
+  "approved safe set" of column defaults (literal values via `sql.Literal`,
+  or exactly `gen_random_uuid()`/`now()` for uuid/datetime — nothing else).
+- `databases/services.py`: the schema-change service pipeline (validate
+  permission → validate schema → transaction → DDL → catalog write →
+  audit) for create/drop database, create/drop table, add column, add
+  foreign key. DDL executes and commits on the `tenant` connection first;
+  the catalog write on `default` happens second, with a best-effort
+  compensating `DROP` if the catalog write fails after DDL already
+  succeeded — there is no distributed transaction across the two separate
+  connections (ADR-0001), so this is a documented compensating action, not
+  a guarantee.
+- API: tenant-database create/list/detail/drop, table create/list/detail/
+  drop, column add, foreign-key add.
 Exit criteria: a user can visually create a database, tables, columns,
 and a foreign-key relationship, with matching real Postgres DDL and
 catalog rows, all inside one org's tenant schema, verified isolated from
 another org's schema.
+
+Exit criteria — verified for real, including direct `information_schema`
+queries against the actual tenant Postgres connection (not just checking
+API responses): creating a `TenantDatabase` produces a real schema;
+creating a table produces a real table with a UUID primary key
+(`DEFAULT gen_random_uuid()`); adding a column produces a real column with
+the correct Postgres type, nullability, and default; adding a foreign key
+produces a real `FOREIGN KEY` constraint; dropping a table/database
+actually removes the Postgres objects. Dedicated tests attempt SQL
+injection through every identifier and default-value input (table names,
+column names, text defaults) and confirm the target objects survive
+untouched. 6 new cross-organization IDOR tests extend
+`tests/security/test_tenant_isolation.py` to tenant databases/tables. 97/97
+tests pass; ruff and mypy clean.
+
+**Bugs found and fixed while actually running this against Postgres —
+all three were security- or correctness-relevant, not cosmetic:**
+1. The identifier regex used a bare `$` end-anchor
+   (`^[a-z][a-z0-9_]{0,62}$`). Python's `re` module treats `$` as matching
+   either the true end of string *or* just before a single trailing `\n`
+   — so `"customers\n"` passed validation. Only caught by a test that
+   actually tried a newline-suffixed injection attempt, not by reading the
+   regex. Fixed by switching to `\Z` (strict end-of-string, no exception).
+2. `length = max_length or 255` in the varchar-type builder treated an
+   explicit `max_length=0` as falsy and silently substituted the default
+   instead of rejecting it — a real validation bypass, not just a style
+   issue. Fixed to check `is not None` explicitly (also fixed the
+   equivalent bug in the decimal-precision builder).
+3. The auto-generated unique-index catalog name
+   (`f"idx_{table.id.hex}_{column.id.hex}"`, 69 characters) overflowed
+   both `DBIndex.name`'s `max_length=63` and Postgres's own 63-byte
+   identifier limit — the very first test that created a unique column
+   hit a real database error. Fixed by using only the column's own UUID
+   hex (columns are already globally unique, so the table ID added
+   nothing but length).
 
 ## Phase 5 — CSV Import
 

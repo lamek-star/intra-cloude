@@ -1,10 +1,10 @@
 # API Documentation — Private Data Cloud
 
-Status: Phase 3 — accounts, organizations, permissions, workspaces, and
-storage endpoints exist and are covered by tests (`apps/backend/*/tests`,
-`tests/security/`). No auto-generated OpenAPI schema yet (see "Open Items"
-below) — this is a hand-maintained summary of what actually exists, kept
-in sync with the code.
+Status: Phase 4 — accounts, organizations, permissions, workspaces,
+storage, the database builder, and audit endpoints exist and are covered
+by tests (`apps/backend/*/tests`, `tests/security/`). No auto-generated
+OpenAPI schema yet (see "Open Items" below) — this is a hand-maintained
+summary of what actually exists, kept in sync with the code.
 
 ## Base Path and Versioning
 
@@ -95,20 +95,51 @@ URL generation exists and works
 topologies where the endpoint is externally reachable — not wired up as
 the default path yet.
 
+### Database Builder (`databases/urls.py`)
+
+| Method | Path | Auth | Required permission | Notes |
+|---|---|---|---|---|
+| GET/POST | `/api/v1/projects/{project_id}/tenant-databases/` | active membership | `database.create` (POST only) | Creates a real PostgreSQL schema (`databases/services.py:create_tenant_database`). |
+| GET/DELETE | `/api/v1/tenant-databases/{id}/` | active membership | `database.delete` (DELETE only) | `DELETE` is `DROP SCHEMA ... CASCADE` — a genuine "Drop Database," not a soft delete or archive (Section 21 of the master prompt); confirm explicitly on the client before calling it. |
+| GET/POST | `/api/v1/tenant-databases/{id}/tables/` | active membership | `database.schema.manage` (POST only) | New tables get a single `id UUID PRIMARY KEY DEFAULT gen_random_uuid()` column automatically; add further columns separately. |
+| GET/DELETE | `/api/v1/tables/{id}/` | active membership | `database.delete` (DELETE only) | `DELETE` is `DROP TABLE` (no CASCADE — fails if something still references it). |
+| POST | `/api/v1/tables/{id}/columns/` | active membership | `database.schema.manage` | `{"name", "data_type", "max_length"?, "precision"?, "scale"?, "is_nullable"?, "is_unique"?, "default_value"?}`. `data_type` is one of `text`, `varchar`, `integer`, `bigint`, `decimal`, `boolean`, `date`, `datetime`, `uuid`, `json` — not every Postgres type (Section 9 of the master prompt). A unique column gets an automatic `DBIndex` catalog row. |
+| POST | `/api/v1/tables/{id}/foreign-keys/` | active membership | `database.schema.manage` | `{"column_id", "references_table_id", "references_column_id", "on_delete"?}`. The referenced column must be a primary key or unique column of the same type, in the same `TenantDatabase`; `on_delete` is one of `cascade`, `restrict`, `set_null` (rejected if `set_null` and the column isn't nullable). |
+
+Every identifier (table/column names) is validated against a strict
+`^[a-z][a-z0-9_]{0,62}\Z` pattern *before* being safely quoted for DDL —
+two independent layers, neither trusted alone (Section 5 of the master
+prompt; `databases/identifiers.py` + `databases/ddl.py`). Column defaults
+come from an "approved safe set": literal values (safely embedded via
+`psycopg.sql.Literal`, which handles escaping) for text/varchar/integer/
+bigint/decimal/boolean/json, or exactly the literal strings
+`gen_random_uuid()`/`now()` for uuid/datetime columns — nothing else is
+accepted.
+
+### Audit (`audit/urls.py`)
+
+| Method | Path | Auth | Required permission | Notes |
+|---|---|---|---|---|
+| GET | `/api/v1/organizations/{id}/audit/` | active membership | `audit.read` | Most recent 200 events for the org, newest first. Every schema-change operation above records one, including on permission denial (Section 18 of the master prompt). |
+
 ## Authorization Model in Practice
 
 Every org-scoped view (and, transitively, every workspace/project/bucket/
-file view) resolves its target only through a queryset filtered by the
-caller's active membership — `organizations.services.get_member_organization`,
+file/tenant-database/table view) resolves its target only through a
+queryset filtered by the caller's active membership —
+`organizations.services.get_member_organization`,
 `workspaces.views.get_member_workspace`/`get_member_project`,
-`storage.services.get_member_bucket`/`get_member_file`. This is the
-IDOR/BOLA defense, not a decorative permission check on top of an
-unfiltered lookup (docs/security/THREAT_MODEL.md Section 4). Fine-grained
-actions (`users.manage`, `permissions.manage`, `storage.*`) go through the
-single shared `permissions.services.has_permission` entry point
-(ADR-0008). `tests/security/test_tenant_isolation.py` proves org A cannot
-read, list, or modify org B's organizations, memberships, role
-assignments, buckets, or files by ID substitution.
+`storage.services.get_member_bucket`/`get_member_file`,
+`databases.services.get_member_tenant_database`/`get_member_table`/
+`get_member_column`. This is the IDOR/BOLA defense, not a decorative
+permission check on top of an unfiltered lookup
+(docs/security/THREAT_MODEL.md Section 4). Fine-grained actions
+(`users.manage`, `permissions.manage`, `storage.*`, `database.*`,
+`audit.read`) go through the single shared
+`permissions.services.has_permission` entry point (ADR-0008).
+`tests/security/test_tenant_isolation.py` proves org A cannot read, list,
+or modify org B's organizations, memberships, role assignments, buckets,
+files, tenant databases, or tables by ID substitution.
 
 ## Open Items
 
@@ -128,3 +159,12 @@ assignments, buckets, or files by ID substitution.
 - File search is a simple `icontains` on `display_filename` — fine at
   current scale, revisit (e.g. Postgres full-text search) if it becomes a
   bottleneck.
+- The tenant Postgres role the app connects as is not yet a scoped,
+  least-privilege role (grantable only on its own schemas) — see
+  docs/security/THREAT_MODEL.md TB3. Tracked for Phase 11 hardening.
+- No "create an arbitrary index" endpoint yet — `DBIndex` rows are only
+  ever created automatically alongside a unique column.
+- No table/column rename, no dropping a single column, no ERD-style
+  relationship visualization (Section 10 of the master prompt) — the data
+  model supports being extended with these; not built because Phase 4's
+  exit criteria didn't require them, not because of a blocker.

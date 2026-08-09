@@ -134,21 +134,42 @@ erDiagram
 - `FileVersion`: append-only version history for a `FileObject` when
   versioning is enabled for a bucket.
 
-### 3.5 Databases (Tenant Data Plane Metadata)
+### 3.5 Databases (Tenant Data Plane Metadata) — implemented Phase 4
 
 - `TenantDatabase`: control-plane record describing a logical database the
-  platform manages for a Project. Points at which physical Postgres cluster
-  + schema name (`org_<uuid>__db_<uuid>`) actually stores the data (see
-  ADR-0005).
-- `DBSchema` / `DBTable` / `DBColumn` / `DBIndex` / `DBForeignKey`: the
-  control plane's **catalog** mirroring what was actually created in the
-  tenant Postgres schema. The catalog is written inside the same transaction
-  as the real DDL, by the schema service — never independently, to avoid
-  drift.
+  platform manages for a Project. `schema_name` is a server-generated
+  Postgres schema name — implemented as `db_<tenant-database-uuid-hex>`
+  (e.g. `db_3f9a...`, 35 characters), not the
+  `org_<uuid>__db_<uuid>` pattern ADR-0005 originally sketched: that
+  pattern is 73 characters, over Postgres's 63-byte identifier limit.
+  Uniqueness only needs the `TenantDatabase`'s own UUID — the
+  organization is already recoverable via
+  `project.workspace.organization` and doesn't need to be embedded in the
+  physical name too.
+- No separate `DBSchema` model. ADR-0005 settled on one physical Postgres
+  schema per `TenantDatabase` (not one schema per organization with
+  sub-namespacing), so a `DBSchema` catalog row would duplicate exactly
+  what `TenantDatabase` already records (its own `schema_name`) — cut as
+  redundant rather than implemented as a pass-through wrapper.
+- `DBTable` / `DBColumn` / `DBForeignKey` / `DBIndex`: the control plane's
+  **catalog** mirroring what was actually created in the tenant Postgres
+  schema. Catalog writes happen immediately after the real DDL succeeds,
+  each in their own `default`-connection transaction — not literally the
+  *same* transaction as the DDL, since `default` and `tenant` are
+  different physical connections with no distributed-transaction support
+  between them (ADR-0001). A failed catalog write after successful DDL
+  triggers a best-effort compensating `DROP`; see
+  `apps/backend/databases/services.py` and the Phase 4 note in
+  [ROADMAP.md](ROADMAP.md) for the honest limits of that guarantee.
+- `DBIndex` is currently created only automatically, alongside a unique
+  column — there is no user-facing "create an arbitrary index" endpoint
+  yet. It still mirrors something real: Postgres's implicit index backing
+  the `UNIQUE` constraint on that column.
 - `ConnectedDatabase`: metadata + encrypted credentials for an
   externally-hosted database in **connected mode** (query pass-through,
   nothing copied). Distinct model from `TenantDatabase` on purpose — see
-  Section 15 of the master prompt and ADR-0009.
+  Section 15 of the master prompt and ADR-0009. Not yet implemented
+  (Phase 8).
 
 ### 3.6 Imports
 
@@ -181,13 +202,18 @@ erDiagram
   external sharing (expiring links, passwords, IP restriction) is a later
   addition to the same table via nullable columns, not a parallel model.
 
-### 3.9 Audit
+### 3.9 Audit — implemented Phase 4
 
 - `AuditEvent`: append-mostly (no update, restricted delete) log:
   timestamp, actor (`User`/`ServiceAccount`/`system`), organization, action,
   resource_type, resource_id, request_id, source context (IP/user-agent
   where appropriate), result (`success`/`denied`/`error`). No secrets or
-  full personal data payloads.
+  full personal data payloads. Written via a single `audit.services.record()`
+  helper — every schema-change operation in `databases/services.py` calls
+  it, including on permission denial, so denied attempts are auditable too.
+  A minimal `audit.read`-gated list endpoint exists
+  (`GET /api/v1/organizations/{id}/audit/`); richer filtering/search is
+  deferred until there's enough real usage to know what's actually needed.
 
 ### 3.10 System
 

@@ -1,7 +1,8 @@
 # Backend (Django + DRF)
 
-Phase 3. Implemented so far: authentication, organizations/permissions,
-workspaces/projects, file/object storage. See
+Phase 4. Implemented so far: authentication, organizations/permissions,
+workspaces/projects, file/object storage, audit logging, database builder.
+See
 `docs/architecture/DATA_MODEL.md` Section 1 for the module boundaries and
 `docs/architecture/adr/` for the reasoning behind the framework, database,
 and broker choices.
@@ -26,9 +27,12 @@ apps/backend/
     permissions/       # capability-based authorization (ADR-0008), catalog.py, services.py
     workspaces/        # Workspace/Project
     storage/           # Bucket/Folder/FileObject/FileVersion, MinIO/S3 abstraction (ADR-0004)
-    databases/ datasets/ imports/ applications/ sharing/ audit/
+    databases/         # TenantDatabase/DBTable/DBColumn/DBForeignKey/DBIndex,
+                       # schema-change service (identifiers.py + ddl.py safe DDL)
+    audit/             # AuditEvent, record() helper, minimal audit.read API
+    datasets/ imports/ applications/ sharing/
         # still bounded-app skeletons (apps.py + migrations/ only, no models yet) —
-        # Phases 4+
+        # Phases 5+
     system/
         views.py    # HealthzView (liveness), ReadyzView (dependency checks)
         middleware.py  # request ID propagation

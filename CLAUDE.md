@@ -15,33 +15,48 @@ and the original product brief folded into that document.
 
 ## Current Status
 
-**Phase 3 complete and verified end-to-end: file/object storage.**
-Phase 1 (infrastructure) and Phase 2 (authentication, organizations,
-permissions — three + two real bugs found and fixed respectively, see
-`docs/architecture/ROADMAP.md`) are done. Phase 3 adds:
+**Phase 4 complete and verified end-to-end: database builder.**
+Phases 1–3 (infrastructure; authentication/organizations/permissions;
+file/object storage — see `docs/architecture/ROADMAP.md` for the bugs
+found and fixed in each) are done. Phase 4 adds:
 
-- `workspaces` (prerequisite, not its own roadmap phase but structurally
-  required): `Workspace`/`Project`, member-gated create/list/detail API.
-- `storage`: `Bucket`/`Folder`/`FileObject`/`FileVersion`, an S3-compatible
-  abstraction over MinIO (`storage/backends.py`, ADR-0004) with chunked
-  upload/download (never loads a whole file into memory), server-side
-  content-sniffed MIME detection (never trusts the client), SHA-256
-  checksums, and versioning. Full API: bucket/folder create+list, file
-  upload/list/detail/rename/move/download/delete/restore/new-version.
+- `audit` (prerequisite): `AuditEvent` model, one shared
+  `audit.services.record()` helper, minimal `audit.read`-gated list API.
+- `databases`: `TenantDatabase`/`DBTable`/`DBColumn`/`DBForeignKey`/
+  `DBIndex` catalog (no separate `DBSchema` — one Postgres schema per
+  `TenantDatabase` already, per ADR-0005). The schema-change service
+  (`databases/services.py`) does validate-permission → validate-schema →
+  DDL-on-`tenant` → catalog-write-on-`default` → audit, for every
+  operation — with a documented compensating-DROP fallback for the (rare)
+  case where the catalog write fails after DDL already succeeded, since
+  there's no distributed transaction across the two connections
+  (ADR-0001). Identifiers get two independent layers of defense before
+  reaching DDL: strict regex validation (`databases/identifiers.py`) and
+  `psycopg.sql.Identifier`/`sql.Literal` safe quoting
+  (`databases/ddl.py`) — neither trusted alone.
 
-All migrated and tested against real PostgreSQL + MinIO containers (not
-sqlite, not mocks): 52 tests pass, including 5 new cross-organization
-IDOR/BOLA tests extending `tests/security/test_tenant_isolation.py` to
-buckets and files. Three real issues surfaced while actually running this
-— see `docs/architecture/ROADMAP.md` Phase 3 for detail:
-1. `permissions/catalog.py`'s Organization Administrator role (copied
-   from PERMISSIONS.md's "representative," i.e. non-exhaustive, list)
-   couldn't actually touch its own org's files — widened to everything
-   except `system.admin`, documented in PERMISSIONS.md Section 3.
-2. A serializer field named `parent` collided with DRF's internal
-   `Field.parent` — caught by mypy, renamed to `parent_id`.
-3. Two new test files forgot to seed the permission catalog before
-   creating an org (test bugs, not product bugs).
+All migrated and tested against real PostgreSQL containers (not sqlite,
+not mocks) — including direct `information_schema` queries proving the
+actual Postgres objects exist correctly, and dedicated SQL-injection-
+attempt tests on every identifier and default-value input: 97 tests pass,
+including 6 new cross-org IDOR tests. Three real bugs surfaced while
+actually running this against Postgres — see `docs/architecture/ROADMAP.md`
+Phase 4 for detail:
+1. The identifier regex's bare `$` anchor let `"customers\n"` (trailing
+   newline) slip past validation — Python's `$` matches just before a
+   final `\n`, not only true end-of-string. Fixed with `\Z`.
+2. `length = max_length or 255` silently replaced an explicit
+   `max_length=0` with the default instead of rejecting it — a real
+   validation bypass from Python's falsy-zero, not a style nit.
+3. An auto-generated index name overflowed both Django's `max_length=63`
+   and Postgres's own identifier limit on the very first unique-column
+   test.
+
+Known, disclosed gap (not a regression — never implemented): the tenant
+Postgres role the app connects as is not yet a scoped least-privilege
+role, so schema isolation between organizations is currently enforced
+only at the application layer, not also at the database-grant layer ADR-
+0005 assumes. See docs/security/THREAT_MODEL.md TB3; tracked for Phase 11.
 
 Do not jump ahead to later implementation phases without explicit
 instruction — see

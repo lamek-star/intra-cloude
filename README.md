@@ -8,16 +8,18 @@ AWS, Azure, or GCP.
 
 ## Status
 
-**Phase 3 — File / Object Storage, complete and verified end-to-end.**
-Phases 0 (architecture), 1 (infrastructure foundation), and 2
-(authentication, organizations, permissions) are done. Phase 3 adds
-workspaces/projects and a full file-storage feature: buckets, folders,
-upload/download/rename/move/delete/restore/versioning, server-side MIME
-sniffing and SHA-256 checksums, chunked streaming to/from MinIO (never
-loading a whole file into memory) — all backed by real API endpoints, 52
-passing tests (including cross-organization IDOR/BOLA regression tests
-for every resource type introduced so far) run against actual PostgreSQL
-and MinIO, not mocks. See
+**Phase 4 — Database Builder, complete and verified end-to-end.**
+Phases 0–3 (architecture, infrastructure, auth/orgs/permissions, file
+storage) are done. Phase 4 adds a visual relational-database builder: an
+audit log, and a `databases` app where creating a database/table/column/
+foreign key through the API produces real PostgreSQL DDL — a real schema,
+a real table with a UUID primary key, a real typed column, a real foreign
+key constraint — safely, via a two-layer defense (strict identifier
+validation *and* `psycopg.sql` safe quoting, neither trusted alone) that
+dedicated tests attempt to defeat with SQL-injection-shaped input on every
+identifier and default value. 97 passing tests (including cross-
+organization IDOR/BOLA regression tests for every resource type introduced
+so far) run against actual PostgreSQL and MinIO, not mocks. See
 [docs/architecture/ROADMAP.md](docs/architecture/ROADMAP.md) for the full
 phase plan and exit criteria, and
 [docs/architecture/DEPENDENCY_VERSIONS.md](docs/architecture/DEPENDENCY_VERSIONS.md)

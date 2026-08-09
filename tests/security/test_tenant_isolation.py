@@ -137,3 +137,64 @@ class CrossOrganizationStorageIsolationTests(APITestCase):
             format="multipart",
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class CrossOrganizationDatabaseIsolationTests(APITestCase):
+    """Extends the suite to the database-builder resources introduced in
+    Phase 4: TenantDatabase -> DBTable -> DBColumn."""
+
+    databases = {"default", "tenant"}
+
+    def setUp(self):
+        SeedPermissionsCommand().handle()
+
+        self.org_a_admin = User.objects.create_user(email="db-a-admin@example.com", password="x")
+        self.client.force_login(self.org_a_admin)
+        org_a = self.client.post(reverse("organization-list-create"), {"name": "DB Org A"})
+        ws_a = self.client.post(reverse("workspace-list-create", args=[org_a.data["id"]]), {"name": "WS"})
+        proj_a = self.client.post(reverse("project-list-create", args=[ws_a.data["id"]]), {"name": "Proj"})
+        db_a = self.client.post(
+            reverse("tenant-database-list-create", args=[proj_a.data["id"]]), {"name": "AppDB"}
+        )
+        self.tenant_database_a_id = db_a.data["id"]
+        table_a = self.client.post(
+            reverse("table-list-create", args=[self.tenant_database_a_id]), {"name": "customers"}
+        )
+        self.table_a_id = table_a.data["id"]
+
+        self.org_b_admin = User.objects.create_user(email="db-b-admin@example.com", password="x")
+        self.client.force_login(self.org_b_admin)
+        self.client.post(reverse("organization-list-create"), {"name": "DB Org B"})
+
+        # Act as Org B's admin — no legitimate access to anything under Org A.
+        self.client.force_login(self.org_b_admin)
+
+    def test_cannot_read_another_orgs_tenant_database(self):
+        response = self.client.get(reverse("tenant-database-detail", args=[self.tenant_database_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_list_tables_in_another_orgs_database(self):
+        response = self.client.get(reverse("table-list-create", args=[self.tenant_database_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_create_table_in_another_orgs_database(self):
+        response = self.client.post(
+            reverse("table-list-create", args=[self.tenant_database_a_id]), {"name": "intrusion"}
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_read_another_orgs_table(self):
+        response = self.client.get(reverse("table-detail", args=[self.table_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_add_column_to_another_orgs_table(self):
+        response = self.client.post(
+            reverse("column-create", args=[self.table_a_id]),
+            {"name": "intrusion", "data_type": "text"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_delete_another_orgs_database(self):
+        response = self.client.delete(reverse("tenant-database-detail", args=[self.tenant_database_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
