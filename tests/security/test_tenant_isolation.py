@@ -485,3 +485,90 @@ class CrossOrganizationConnectedDatabaseIsolationTests(APITestCase):
             reverse("connected-database-detail", args=[self.connected_database_a_id])
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class CrossOrganizationSharingIsolationTests(APITestCase):
+    """Extends the suite to the sharing resources introduced in Phase 9:
+    ShareGrant and Team."""
+
+    databases = {"default", "tenant"}
+
+    def setUp(self):
+        SeedPermissionsCommand().handle()
+
+        self.org_a_admin = User.objects.create_user(email="share-a-admin@example.com", password="x")
+        self.client.force_login(self.org_a_admin)
+        org_a = self.client.post(reverse("organization-list-create"), {"name": "Share Org A"})
+        self.org_a_id = org_a.data["id"]
+        ws_a = self.client.post(reverse("workspace-list-create", args=[self.org_a_id]), {"name": "WS"})
+        proj_a = self.client.post(reverse("project-list-create", args=[ws_a.data["id"]]), {"name": "Proj"})
+        bucket_a = self.client.post(
+            reverse("bucket-list-create", args=[proj_a.data["id"]]), {"name": "docs"}
+        )
+        self.bucket_a_id = bucket_a.data["id"]
+
+        self.org_a_member = User.objects.create_user(email="share-a-member@example.com", password="x")
+        Membership.objects.create(
+            user=self.org_a_member, organization_id=self.org_a_id, status=Membership.Status.ACTIVE
+        )
+        share_a = self.client.post(
+            reverse("share-grant-list-create", args=[self.org_a_id]),
+            {
+                "resource_type": "storage.bucket",
+                "resource_id": self.bucket_a_id,
+                "principal_type": "user",
+                "user_id": str(self.org_a_member.id),
+                "level": "read",
+            },
+            format="json",
+        )
+        self.share_a_id = share_a.data["id"]
+
+        team_a = self.client.post(reverse("team-list-create", args=[self.org_a_id]), {"name": "Eng"})
+        self.team_a_id = team_a.data["id"]
+
+        self.org_b_admin = User.objects.create_user(email="share-b-admin@example.com", password="x")
+        self.client.force_login(self.org_b_admin)
+        self.client.post(reverse("organization-list-create"), {"name": "Share Org B"})
+
+        # Act as Org B's admin — no legitimate access to anything under Org A.
+        self.client.force_login(self.org_b_admin)
+
+    def test_cannot_list_another_orgs_shares(self):
+        response = self.client.get(reverse("share-grant-list-create", args=[self.org_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_read_another_orgs_share(self):
+        response = self.client.get(reverse("share-grant-detail", args=[self.share_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_revoke_another_orgs_share(self):
+        response = self.client.delete(reverse("share-grant-detail", args=[self.share_a_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_create_a_share_for_another_orgs_bucket(self):
+        response = self.client.post(
+            reverse("share-grant-list-create", args=[self.org_a_id]),
+            {
+                "resource_type": "storage.bucket",
+                "resource_id": self.bucket_a_id,
+                "principal_type": "user",
+                "user_id": str(self.org_a_member.id),
+                "level": "read",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_add_a_member_to_another_orgs_team(self):
+        response = self.client.post(
+            reverse("team-member-list-create", args=[self.team_a_id]),
+            {"user_id": str(self.org_a_member.id)},
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_toggle_another_orgs_external_sharing_setting(self):
+        response = self.client.patch(
+            reverse("external-sharing-setting", args=[self.org_a_id]), {"enabled": True}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

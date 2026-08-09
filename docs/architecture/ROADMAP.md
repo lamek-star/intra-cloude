@@ -509,14 +509,86 @@ an outer rollback — with an explicit `tearDown` dropping the raw-SQL
 fixture table, since `APITransactionTestCase`'s flush-based cleanup only
 knows about Django-migration-tracked tables.
 
-## Phase 9 — Sharing
+## Phase 9 — Sharing — COMPLETE
 
-- `sharing` app: internal sharing (user/team/org, expiry, read/write/admin).
-- External sharing scaffolding built but disabled by default; enabling it
-  requires an explicit org-level setting.
-Exit criteria: internal share grants are enforced identically to role-based
-access in the authorization service; external sharing remains off unless
-explicitly enabled, and enabling it is itself an audited action.
+- `sharing` app: `ShareGrant` (principal `user`/`team`/`organization` ×
+  resource × level `read`/`write`/`admin` × optional expiry), per
+  DATA_MODEL.md Section 3.8. **Not a second enforcement path** —
+  `sharing/services.py:create_share_grant` translates a `ShareGrant` into
+  one real `permissions.ResourceGrant` per (target user, permission code)
+  implied by `level`, reusing `grant_resource_permission()` exactly as
+  its docstring anticipated back in Phase 2 ("used by Phase 7 ... and
+  reused by Phase 9"). Enforcement is therefore checked through the
+  *exact same* `has_permission()` code path as Phase 7's Application
+  resource scoping — literally identical, not merely equivalent, which
+  is what the exit criteria asks for.
+- `level` → permission-code mapping (`sharing/services.py:LEVEL_PERMISSIONS`)
+  is defined per resource type: `storage.bucket` (read → `storage.read`;
+  write → adds `storage.write`; admin → adds `storage.delete`/
+  `storage.share`/`storage.manage`), `databases.tenant_database` (read →
+  `database.read`; write → adds `database.write`; admin → adds
+  `dataset.export`), `databases.connected_database` (read only —
+  connected mode has no write permission to grant, ADR-0009).
+- Team-principal prerequisite: `Team` existed as a model since Phase 2
+  but had no API — Phase 9 adds minimal CRUD
+  (`organizations`: `POST/GET .../teams/`, `POST .../teams/{id}/members/`,
+  `DELETE .../teams/{id}/members/{user_id}/`), the same "add a small
+  prerequisite for the app being built" pattern as Phase 3's workspaces
+  and Phase 4's audit.
+- Organization-principal and Team-principal shares materialize a
+  `ResourceGrant` per member active *at share-creation time* — see the
+  "known limitation" note below.
+- External sharing: `Organization.external_sharing_enabled`
+  (`organizations` app), off by default, a second gate on top of the
+  deployment-wide `FEATURE_EXTERNAL_SHARING_ENABLED` env flag that has
+  existed since Phase 0/1 — enabling requires *both* the deployment
+  operator to have allowed the feature at all *and* the organization to
+  opt in. Toggled via `PATCH /organizations/{id}/external-sharing/`
+  (`sharing.manage`), and every successful toggle is an audited
+  `sharing.external.enable`/`sharing.external.disable` event. The actual
+  external-link/expiry/password mechanism itself is **not built** — this
+  phase ships only the scaffolding (the toggle + the audit trail), per
+  the master prompt's own "External sharing scaffolding" wording;
+  DATA_MODEL.md Section 3.8 already calls for the real mechanism to be a
+  later, nullable-column addition to `ShareGrant`, not a parallel model.
+Exit criteria — verified: sharing a bucket at `read` level with a user
+who otherwise has zero access (no role, no prior grant) lets them list
+files but not upload one (403); the same share at `write` level allows
+both; revoking the share removes access immediately, confirmed by
+re-querying as the shared user, not just checking the API response of
+the revoke call itself. Enabling external sharing for an organization is
+rejected with the deployment flag off (`@override_settings` flips it on
+for a dedicated test) and produces an `AuditEvent` when it succeeds;
+disabling is always allowed regardless of the flag. 25 new tests (14 in
+`sharing/tests/test_sharing.py`, 4 in `organizations/tests/test_teams.py`,
+7 cross-org IDOR tests extending `tests/security/test_tenant_isolation.py`
+covering shares, teams, and the external-sharing toggle) bring the suite
+to 203/203; ruff and mypy clean against the real Docker image.
+
+**Known, deliberately documented limitation** (not a regression — an
+explicit scoping decision, analogous to `RoleAssignment` never being
+auto-revoked when a `Membership` is removed elsewhere in this codebase):
+sharing with a Team or "the organization" grants access to whoever is an
+active member *right now*; someone who joins later does not retroactively
+gain access, and revoking the share is best-effort against *current*
+membership — a member who already left before the share is revoked keeps
+their individually-materialized `ResourceGrant` until it expires or is
+cleaned up separately. A fully dynamic alternative (checking team/org
+membership live inside `has_permission()` itself) was considered and
+rejected for this phase: it would require the core `permissions` app to
+import the later-numbered `sharing` app's models, inverting this
+codebase's established dependency direction (core apps have no
+knowledge of feature apps built on top of them), for a correctness gain
+that doesn't clearly outweigh that coupling. Revisit if usage shows
+membership drift is a real problem in practice.
+
+**"role" is not an implemented principal type**, despite DATA_MODEL.md
+Section 3.8 listing "principal (User/Team/Organization/role)". Sharing a
+resource with an abstract Role (rather than a concrete user/team/org)
+has no precedent elsewhere in this authorization model and no further
+spec detail to build against — left as an explicit open item
+(`sharing.models.ShareGrant.PrincipalType`'s docstring) rather than a
+silent omission.
 
 ## Phase 10 — Optional Secure Internet Gateway
 

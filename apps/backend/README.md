@@ -1,10 +1,10 @@
 # Backend (Django + DRF)
 
-Phase 8. Implemented so far: authentication, organizations/permissions,
-workspaces/projects, file/object storage, audit logging, database
-builder (schema + row-level data explorer), CSV import, application/
-service-account integrations, external database connectors (read-only
-connected-mode PostgreSQL). See
+Phase 9. Implemented so far: authentication, organizations/permissions
+(including Teams), workspaces/projects, file/object storage, audit
+logging, database builder (schema + row-level data explorer), CSV
+import, application/service-account integrations, external database
+connectors (read-only connected-mode PostgreSQL), internal sharing. See
 `docs/architecture/DATA_MODEL.md` Section 1 for the module boundaries and
 `docs/architecture/adr/` for the reasoning behind the framework, database,
 and broker choices.
@@ -25,7 +25,7 @@ apps/backend/
         api_urls.py           # aggregates each app's /api/v1 routes
         wsgi.py / asgi.py
     accounts/          # custom User model, register/login/logout/me
-    organizations/     # Organization/Team/Membership, membership + role-assignment API
+    organizations/     # Organization/Team/Membership, membership + role-assignment + team API
     permissions/       # capability-based authorization (ADR-0008), catalog.py, services.py
     workspaces/        # Workspace/Project
     storage/           # Bucket/Folder/FileObject/FileVersion, MinIO/S3 abstraction (ADR-0004)
@@ -39,9 +39,12 @@ apps/backend/
     imports/           # ImportJob/ImportJobError, CSV preview + async Celery bulk insert
     applications/       # Application/ServiceAccount/ApplicationCredential, bearer-token auth,
                        # credential lifecycle, ResourceGrant scoping (Phase 7)
-    datasets/ sharing/
-        # still bounded-app skeletons (apps.py + migrations/ only, no models yet) —
-        # Phases 8+
+    sharing/           # ShareGrant (Phase 9) — compiles to ResourceGrant rows, not a
+                       # second enforcement path; external-sharing org toggle lives on
+                       # organizations.Organization, not here
+    datasets/
+        # still a bounded-app skeleton (apps.py + migrations/ only, no models yet) —
+        # Phases 10+
     system/
         views.py    # HealthzView (liveness), ReadyzView (dependency checks)
         middleware.py  # request ID propagation

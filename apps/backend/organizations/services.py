@@ -4,7 +4,7 @@ from django.utils.text import slugify
 
 from permissions.services import assign_role
 
-from .models import Membership, Organization
+from .models import Membership, Organization, Team
 
 
 def get_member_organization(user, organization_id) -> Organization:
@@ -41,3 +41,40 @@ def create_organization(*, name: str, created_by, slug: str | None = None) -> Or
             granted_by=created_by,
         )
     return org
+
+
+def get_member_team(user, team_id) -> Team:
+    """Same isolation discipline as get_member_organization: 404, not 403,
+    if the requester isn't an active member of the owning organization."""
+    try:
+        return Team.objects.select_related("organization").get(
+            id=team_id,
+            organization__memberships__user=user,
+            organization__memberships__status=Membership.Status.ACTIVE,
+        )
+    except Team.DoesNotExist as exc:
+        raise Http404 from exc
+
+
+def add_team_member(*, team: Team, user) -> Membership:
+    """A user's Team is a single field on their (user, organization)
+    Membership row (one team per membership — see organizations/models.py)
+    rather than a many-to-many, so "adding" someone to a team is a
+    membership update, not a new row."""
+    try:
+        membership = Membership.objects.get(user=user, organization=team.organization)
+    except Membership.DoesNotExist as exc:
+        raise Http404 from exc
+    membership.team = team
+    membership.save(update_fields=["team"])
+    return membership
+
+
+def remove_team_member(*, team: Team, user) -> Membership:
+    try:
+        membership = Membership.objects.get(user=user, organization=team.organization, team=team)
+    except Membership.DoesNotExist as exc:
+        raise Http404 from exc
+    membership.team = None
+    membership.save(update_fields=["team"])
+    return membership

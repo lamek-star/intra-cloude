@@ -1,12 +1,13 @@
 # API Documentation — Private Data Cloud
 
-Status: Phase 8 — accounts, organizations, permissions, workspaces,
-storage, the database builder (schema *and* row data), audit, CSV
-import, application/service-account, and external database connector
-(connected mode) endpoints exist and are covered by tests
-(`apps/backend/*/tests`, `tests/security/`). No auto-generated OpenAPI
-schema yet (see "Open Items" below) — this is a hand-maintained summary
-of what actually exists, kept in sync with the code.
+Status: Phase 9 — accounts, organizations (including Teams), permissions,
+workspaces, storage, the database builder (schema *and* row data),
+audit, CSV import, application/service-account, external database
+connector (connected mode), and internal sharing endpoints exist and are
+covered by tests (`apps/backend/*/tests`, `tests/security/`). No
+auto-generated OpenAPI schema yet (see "Open Items" below) — this is a
+hand-maintained summary of what actually exists, kept in sync with the
+code.
 
 ## Authentication Note: CSRF on HTTPS
 
@@ -76,6 +77,9 @@ trace to the client (Section 14 of the master prompt).
 | GET | `/api/v1/organizations/{id}/members/` | session | active membership | Lists memberships. |
 | POST | `/api/v1/organizations/{id}/members/` | session | `users.manage` | Adds an **existing** user (by email) as an active member. 404 if no such user, 409 if already a member. |
 | POST | `/api/v1/organizations/{id}/members/{membership_id}/role/` | session | `permissions.manage` | Assigns a system role (`{"role_slug": "..."}`) to that member within the org. |
+| GET/POST | `/api/v1/organizations/{id}/teams/` | active membership | `users.manage` (POST only) | 409 on a duplicate team name within the org. |
+| POST | `/api/v1/teams/{id}/members/` | active membership | `users.manage` | `{"user_id"}` — the target must already be an active member of the team's organization (404 if not); a `Membership` holds at most one `team` at a time, so adding replaces any previous team. |
+| DELETE | `/api/v1/teams/{id}/members/{user_id}/` | active membership | `users.manage` | Clears the membership's `team` (404 if that user isn't currently on this team). |
 
 ### Workspaces & Projects (`workspaces/urls.py`)
 
@@ -224,6 +228,24 @@ management endpoints (create/test/delete a `ConnectedDatabase`) are not
 resource-scoped; an application needs an organization-wide grant for
 those.
 
+### Sharing (`sharing/urls.py`)
+
+| Method | Path | Auth | Required permission | Notes |
+|---|---|---|---|---|
+| GET/POST | `/api/v1/organizations/{id}/shares/` | active membership | `sharing.manage` | POST body: `{"resource_type", "resource_id", "principal_type", "level", "user_id"?, "team_id"?, "expires_at"?}`. `resource_type` is one of `storage.bucket`, `databases.tenant_database`, `databases.connected_database` (the same resource types Phase 7's fine-grained scoping already covers); `principal_type` is `user`/`team`/`organization` (`user_id`/`team_id` required accordingly — sharing with `organization` needs neither). 400 if the resource doesn't belong to this org, or `level` isn't supported for that `resource_type` (e.g. `write` on a `databases.connected_database`, which is read-only). |
+| GET/DELETE | `/api/v1/shares/{id}/` | active membership | `sharing.manage` | `DELETE` revokes: removes the underlying `ResourceGrant`(s) and stamps `revoked_at` — access is gone immediately, not just marked. |
+| PATCH | `/api/v1/organizations/{id}/external-sharing/` | active membership | `sharing.manage` | `{"enabled": true\|false}`. Enabling is rejected (400) unless the deployment-wide `FEATURE_EXTERNAL_SHARING_ENABLED` setting is also on; disabling is always allowed. A successful toggle is an audited `sharing.external.enable`/`sharing.external.disable` event. No endpoint yet creates an actual external share — only this readiness toggle exists (Phase 9 scaffolding; see ROADMAP.md Phase 9). |
+
+A `ShareGrant` is a record, not a second enforcement path: creating one
+immediately creates real `permissions.ResourceGrant` rows (one per
+permission code the chosen `level` implies for that `resource_type` —
+`sharing/services.py:LEVEL_PERMISSIONS`), so access is checked through
+the exact same `has_permission()` path as everything else in "Sharing"
+above. Known, documented limitation: sharing with a `team` or
+`organization` grants access to members active *at share-creation time*
+only — someone who joins later isn't retroactively covered, and revoking
+is best-effort against *current* membership (see ROADMAP.md Phase 9).
+
 ## Authorization Model in Practice
 
 Every org-scoped view (and, transitively, every workspace/project/bucket/
@@ -235,23 +257,27 @@ queryset filtered by the caller's active membership —
 `databases.services.get_member_tenant_database`/`get_member_table`/
 `get_member_column`, `imports.services.get_member_import_job`,
 `applications.views.get_member_application`,
-`databases.connections.get_member_connected_database`. This is the
-IDOR/BOLA defense, not a decorative permission check on top of an
-unfiltered lookup (docs/security/THREAT_MODEL.md Section 4). Fine-grained
-actions (`users.manage`, `permissions.manage`, `storage.*`, `database.*`,
+`databases.connections.get_member_connected_database`,
+`organizations.services.get_member_team`,
+`sharing.services.get_member_share`. This is the IDOR/BOLA defense, not
+a decorative permission check on top of an unfiltered lookup
+(docs/security/THREAT_MODEL.md Section 4). Fine-grained actions
+(`users.manage`, `permissions.manage`, `storage.*`, `database.*`,
 `audit.read`, `dataset.import`, `dataset.export`, `application.*`,
-`connection.manage`) go through the single shared
+`connection.manage`, `sharing.manage`) go through the single shared
 `permissions.services.has_permission` entry point (ADR-0008), which as of
 Phase 7 also accepts an optional `resource=(resource_type, resource_id)`
 to check a `ResourceGrant` scoped to one specific resource rather than
 the whole organization — this is what lets an Application be restricted
-to, e.g., a single bucket or a single `ConnectedDatabase`.
+to, e.g., a single bucket or a single `ConnectedDatabase`, and what
+Phase 9's `ShareGrant` itself compiles down to.
 `tests/security/test_tenant_isolation.py` proves org A cannot read, list,
 or modify org B's organizations, memberships, role assignments, buckets,
 files, tenant databases, tables, rows, import jobs, applications
 (including issuing/revoking their credentials or granting them resource
-access), or connected databases (including testing, reading schema/rows,
-or deleting them) by ID substitution.
+access), connected databases (including testing, reading schema/rows, or
+deleting them), teams, shares, or the external-sharing setting by ID
+substitution.
 
 ## Open Items
 
@@ -279,6 +305,13 @@ or deleting them) by ID substitution.
   explicitly deferred per ADR-0009's Final Recommendation) and
   PostgreSQL-only — MySQL/MariaDB/SQL Server/SQLite connectors are future
   work behind the same `databases/connectors.py` interface.
+- `ShareGrant`'s "role" principal type (DATA_MODEL.md Section 3.8) is not
+  implemented — only `user`/`team`/`organization`. Team/organization
+  shares don't dynamically track membership changes after creation (see
+  the "Sharing" endpoint table above). External sharing has only its
+  per-org enable/disable toggle; no endpoint yet creates an actual
+  external share (expiring link, password, IP restriction) — deferred
+  per DATA_MODEL.md Section 3.8.
 - No table/column rename, no dropping a single column, no ERD-style
   relationship visualization (Section 10 of the master prompt) — the data
   model supports being extended with these; not built because Phase 4's

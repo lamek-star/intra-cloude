@@ -8,6 +8,13 @@ class Organization(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200)
     slug = models.SlugField(max_length=200, unique=True)
+    # Off by default (Phase 9; docs/architecture/adr — sharing). A second,
+    # per-organization gate on top of the deployment-wide
+    # FEATURE_EXTERNAL_SHARING_ENABLED env flag (config/settings/base.py):
+    # the operator must allow the feature for the whole deployment *and*
+    # each organization must separately opt in. Toggling this is itself
+    # an audited action (sharing/services.py:set_external_sharing_enabled).
+    external_sharing_enabled = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="organizations_created"

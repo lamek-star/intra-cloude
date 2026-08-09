@@ -230,12 +230,29 @@ needed to safely construct row-level SQL at runtime.
   makes that scoping actually effective (see ROADMAP.md Phase 7 for the
   bug this uncovered).
 
-### 3.8 Sharing
+### 3.8 Sharing — implemented Phase 9 (internal only)
 
-- `ShareGrant`: principal (`User`/`Team`/`Organization`/role) × resource ×
-  level (`read`/`write`/`admin`) × optional expiry. Internal-only in Phase 9;
-  external sharing (expiring links, passwords, IP restriction) is a later
-  addition to the same table via nullable columns, not a parallel model.
+- `ShareGrant`: principal (`User`/`Team`/`Organization` — "role" is an
+  explicit, documented open item, not implemented) × resource × level
+  (`read`/`write`/`admin`) × optional expiry. It is a human-facing record
+  ("who shared what with whom"), not a second enforcement mechanism:
+  creating one materializes real `permissions.ResourceGrant` rows (one
+  per permission code `level` implies for the resource's type,
+  `sharing/services.py:LEVEL_PERMISSIONS`), so `has_permission()` never
+  needs to know `ShareGrant` exists at all — this is exactly what its
+  own docstring anticipated in Phase 2 ("Used for internal sharing
+  (Phase 9) and for restricting an Application's scope to specific
+  resources (Phase 7) — the same mechanism, per ADR-0008"). External
+  sharing (expiring links, passwords, IP restriction) is still a later
+  addition to this same table via nullable columns, not a parallel
+  model — Phase 9 ships only `Organization.external_sharing_enabled`
+  (a per-org, audited, off-by-default toggle gated behind the
+  deployment-wide `FEATURE_EXTERNAL_SHARING_ENABLED` flag) as
+  scaffolding for it.
+- `Team` (module boundary: `organizations`, existed since Phase 2 as a
+  model with no API) gained minimal CRUD this phase, as a prerequisite
+  for team-principal sharing — same "prerequisite alongside the app
+  being built" pattern as Phase 3's workspaces or Phase 4's audit.
 
 ### 3.9 Audit — implemented Phase 4
 

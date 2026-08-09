@@ -8,16 +8,20 @@ from accounts.models import User
 from permissions.catalog import SYSTEM_ROLES
 from permissions.services import assign_role, has_permission
 
-from .models import Membership, Organization
+from .models import Membership, Organization, Team
 from .serializers import (
     AddMemberSerializer,
     AssignRoleSerializer,
     MembershipSerializer,
     OrganizationCreateSerializer,
     OrganizationSerializer,
+    TeamCreateSerializer,
+    TeamMemberSerializer,
+    TeamSerializer,
 )
-from .services import create_organization
+from .services import add_team_member, create_organization, remove_team_member
 from .services import get_member_organization as _get_member_organization
+from .services import get_member_team as _get_member_team
 
 
 class OrganizationListCreateView(APIView):
@@ -101,3 +105,63 @@ class MembershipRoleAssignView(APIView):
             user=membership.user, role_slug=role_slug, organization=org, granted_by=request.user
         )
         return Response({"id": assignment.id, "role": role_slug}, status=status.HTTP_201_CREATED)
+
+
+class TeamListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, organization_id):
+        org = _get_member_organization(request.user, organization_id)
+        teams = Team.objects.filter(organization=org)
+        return Response(TeamSerializer(teams, many=True).data)
+
+    def post(self, request, organization_id):
+        org = _get_member_organization(request.user, organization_id)
+        if not has_permission(request.user, "users.manage", organization_id=org.id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+
+        serializer = TeamCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        name = serializer.validated_data["name"]
+        if Team.objects.filter(organization=org, name=name).exists():
+            return Response(
+                {"detail": "A team with this name already exists."}, status=status.HTTP_409_CONFLICT
+            )
+        team = Team.objects.create(organization=org, name=name)
+        return Response(TeamSerializer(team).data, status=status.HTTP_201_CREATED)
+
+
+class TeamMemberListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, team_id):
+        team = _get_member_team(request.user, team_id)
+        if not has_permission(request.user, "users.manage", organization_id=team.organization_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+
+        serializer = TeamMemberSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            target_user = User.objects.get(id=serializer.validated_data["user_id"])
+        except User.DoesNotExist as exc:
+            raise Http404 from exc
+
+        membership = add_team_member(team=team, user=target_user)
+        return Response(MembershipSerializer(membership).data, status=status.HTTP_201_CREATED)
+
+
+class TeamMemberDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, team_id, user_id):
+        team = _get_member_team(request.user, team_id)
+        if not has_permission(request.user, "users.manage", organization_id=team.organization_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            target_user = User.objects.get(id=user_id)
+        except User.DoesNotExist as exc:
+            raise Http404 from exc
+
+        remove_team_member(team=team, user=target_user)
+        return Response(status=status.HTTP_204_NO_CONTENT)
