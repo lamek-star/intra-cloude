@@ -57,6 +57,18 @@ storage backup tooling choice, backup-file encryption at rest, and
 others) are tracked in each relevant doc's "Open Items" section, not
 here — this section stays a pointer.
 
+**Frontend, added after the 12-phase plan, at explicit request (not part
+of the master prompt's own phases):** `apps/frontend` now has a real,
+working UI — auth (including MFA step-up), organizations, workspaces/
+projects, the storage file browser, and the database builder's data
+explorer — covering the core workflow end to end, client-rendered
+against the live API through the same Caddy proxy. See
+`apps/frontend/README.md` for how it's built and
+`docs/guide/USER_GUIDE.md` for how to use it. Sharing, applications,
+connected databases, the audit log, and teams remain reachable only
+through the browsable API (`/api/v1/`) — real and tested, just no page
+yet.
+
 ## Non-Negotiable Architectural Rules
 
 1. **Control plane / data plane separation** (ADR-0001). Django never

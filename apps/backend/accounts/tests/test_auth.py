@@ -6,6 +6,13 @@ from rest_framework.test import APITestCase
 from accounts.models import User
 
 
+class CSRFViewTests(APITestCase):
+    def test_csrf_endpoint_sets_the_cookie(self):
+        response = self.client.get(reverse("auth-csrf"))
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertIn("csrftoken", response.cookies)
+
+
 class RegisterTests(APITestCase):
     def setUp(self):
         # /auth/register/ carries a tight "auth" throttle scope (Phase 10)

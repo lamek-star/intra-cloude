@@ -1,24 +1,21 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* This app is dark-only by design (bg-slate-950 throughout) — no
+   light/dark media-query switch. Set directly on `body` inside a layer
+   so Tailwind's `bg-slate-950` utility on the same element (layout.tsx)
+   cascades correctly instead of being overridden by an unlayered rule. */
+@layer base {
+  body {
+    background: #020617;
+    color: #f1f5f9;
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      Roboto,
+      Helvetica,
+      Arial,
+      sans-serif;
   }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
 }

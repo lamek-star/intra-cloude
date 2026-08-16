@@ -1,10 +1,24 @@
 # Frontend (TypeScript + React + Next.js)
 
-Phase 1 scaffold — a minimal Next.js 16 app (App Router, TypeScript,
-Tailwind CSS), not yet wired to the backend API. Product features start in
-Phase 2+; see `docs/architecture/ROADMAP.md` and ADR-0007 for why Next.js
-is used selectively (SSR where it helps, client-rendered for the data-heavy
-authenticated views).
+A real, working UI over the backend API: sign-in/registration (including
+the MFA step-up flow), organizations, workspaces/projects, the storage
+bucket file browser, and the database builder's data explorer
+(columns + row browse/add/edit/delete/export). See
+[docs/guide/USER_GUIDE.md](../../docs/guide/USER_GUIDE.md) for how to use
+it, and this file for how it's built.
+
+Everything is client-rendered (`"use client"` throughout) and talks
+directly to `/api/v1/...` at the same origin — Caddy routes those paths to
+the backend (`infrastructure/proxy/Caddyfile`), so there's no CORS
+configuration and no separate API base URL. Session-cookie auth, matching
+the backend's CSRF discipline (`docs/api/API.md`): `src/lib/api.ts` primes
+the `csrftoken` cookie via `GET /auth/csrf/` before the first mutating
+request and echoes it back as `X-CSRFToken` on every one after.
+
+Not every backend feature has a page yet — sharing, applications/service
+accounts, connected databases, the audit log, and teams are real and
+tested on the server but only reachable through the browsable API
+(`/api/v1/`) for now; see `docs/guide/USER_GUIDE.md` Section 8.
 
 ## Notes on Generated Files
 
@@ -22,16 +36,47 @@ itself — leave them as-is:
 
 ```
 apps/frontend/
-    src/app/
-        layout.tsx    # root layout, metadata
-        page.tsx        # landing page (placeholder until Phase 2+)
-        globals.css
+    src/
+        lib/
+            api.ts              # fetch wrapper: CSRF handling, typed request helpers, domain types
+            auth-context.tsx    # AuthProvider/useAuth() — current user, login/register/logout/MFA verify
+        components/
+            ui.tsx               # shared primitives: Button, Input, Card, Table, Modal, EmptyState, ...
+            AppShell.tsx          # sidebar + topbar chrome for authenticated pages
+        app/
+            layout.tsx            # root layout, wraps everything in AuthProvider
+            page.tsx                # redirects to /orgs or /login based on auth state
+            login/page.tsx
+            register/page.tsx
+            (app)/                  # route group: AppShell + auth-redirect guard
+                layout.tsx
+                orgs/
+                    page.tsx                                    # list + create organizations
+                    [orgId]/page.tsx + _client.tsx                # workspaces + members
+                    [orgId]/workspaces/[workspaceId]/page.tsx + _client.tsx   # projects
+                projects/[projectId]/page.tsx + _client.tsx        # buckets + databases
+                buckets/[bucketId]/page.tsx + _client.tsx           # file browser
+                tenant-databases/[dbId]/page.tsx + _client.tsx       # tables
+                tables/[tableId]/page.tsx + _client.tsx               # data explorer: columns + rows
     public/               # static assets (currently empty — .gitkeep only)
     next.config.ts          # output: "standalone" for a lean Docker image
     eslint.config.mjs
     tsconfig.json
     package.json / package-lock.json
 ```
+
+Dynamic routes follow a consistent split: `page.tsx` is a thin Server
+Component that awaits Next.js 16's typed `params`/`searchParams` (see
+`AGENTS.md` — this Next.js version's own docs, not training-data
+knowledge) and renders a co-located `_client.tsx` Client Component that
+does the actual fetching/interactivity. `_client.tsx`/`_*.tsx` filenames
+are ignored by the App Router's routing convention, so they're safe to
+co-locate without becoming routes themselves.
+
+One backend endpoint exists solely to support this frontend:
+`GET /api/v1/auth/csrf/` (`apps/backend/accounts/views.py:CSRFView`) —
+standard practice for pairing a from-scratch SPA with Django's
+session+CSRF model.
 
 ## Local Setup
 
@@ -43,25 +88,40 @@ npm install
 npm run dev      # http://localhost:3000
 ```
 
+Running `next dev` directly (outside `docker compose`) talks to
+`/api/v1/...` on whatever origin serves the page — for the backend to
+actually respond, either run the full stack via `docker compose up -d`
+and open the app through Caddy (`https://localhost:8443/`), or adapt
+`src/lib/api.ts`'s `API_BASE` for a standalone dev setup.
+
 ## Testing & Linting
 
 ```
 npx tsc --noEmit   # type check
-npm run lint        # eslint
+npm run lint        # eslint (includes the React Compiler rule set — see note below)
 npm run build         # production build (also type-checks and lints)
 ```
 
-All three have been run against this scaffold and pass. No component/unit
-test runner is wired up yet — that lands with the first real feature in
-Phase 2+ (per `docs/architecture/ROADMAP.md`, frontend component tests are
-part of the testing requirements once there's UI behavior worth testing).
+All three are run against every change; no component/unit test runner is
+wired up yet (client-side integration was instead verified by driving the
+real API end-to-end through the live proxy — see
+`docs/architecture/ROADMAP.md`).
+
+**Note on `react-hooks/set-state-in-effect`**: this Next.js/React version
+ships the React Compiler's stricter hook lint rules by default (see
+`AGENTS.md`), which flag the standard "fetch-on-mount in a `useEffect`"
+pattern used throughout this app's pages. Each occurrence carries an
+inline `eslint-disable-next-line` with a one-line justification — the
+pattern itself (a one-shot fetch keyed to a route param, not an update
+loop) is safe; rewriting every page onto Suspense/`use()`-based fetching
+was judged disproportionate to what this app needs.
 
 ## Deliberate Deviations from the `create-next-app` Default
 
 - Removed the default Google Fonts (`next/font/google`) import — this
   platform is local-first (Section 1 of the master prompt: no internet
-  dependency for normal operation), so the UI uses system fonts instead of
-  fetching a font from Google at build time.
+  dependency for normal operation), so the UI uses system font stacks
+  instead of fetching a font from Google at build time.
 - Removed the default demo page content/assets.
 - Added `output: "standalone"` to `next.config.ts` and `NEXT_TELEMETRY_DISABLED=1`
   in the Dockerfile for a lean, telemetry-free production image.

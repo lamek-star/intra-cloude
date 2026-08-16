@@ -41,6 +41,7 @@ for dependency/version rationale.
 - [docs/security/PERMISSIONS.md](docs/security/PERMISSIONS.md) — capability/permission and role model
 - [docs/deployment/LOCAL_DEPLOYMENT.md](docs/deployment/LOCAL_DEPLOYMENT.md) — target local/LAN deployment (Docker Compose)
 - [docs/deployment/INTERNET_GATEWAY.md](docs/deployment/INTERNET_GATEWAY.md) — optional internet-facing exposure (opt-in, off by default)
+- [docs/guide/USER_GUIDE.md](docs/guide/USER_GUIDE.md) — using the web interface once the stack is running
 - [docs/operations/BACKUP_RESTORE.md](docs/operations/BACKUP_RESTORE.md) — backup, retention, and disaster recovery strategy
 - [docs/architecture/ROADMAP.md](docs/architecture/ROADMAP.md) — phase-by-phase delivery plan
 - [docs/architecture/adr/](docs/architecture/adr/README.md) — architecture decision records

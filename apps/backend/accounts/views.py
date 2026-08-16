@@ -1,4 +1,5 @@
 from django.contrib.auth import authenticate, login, logout
+from django.middleware.csrf import get_token
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -16,6 +17,22 @@ from .serializers import LoginSerializer, MFACodeSerializer, RegisterSerializer,
 # MFALoginVerifyView completes the real login().
 MFA_PENDING_SESSION_KEY = "mfa_pending_user_id"
 MFA_PENDING_SESSION_TIMEOUT_SECONDS = 300
+
+
+class CSRFView(APIView):
+    """`GET /auth/csrf/` — a browser SPA hits this once on load so Django
+    actually sets the `csrftoken` cookie (it's otherwise only set as a
+    side effect of `get_token()` running during some other request, e.g.
+    the first authenticated mutation, which is too late — the frontend
+    needs the cookie's value *before* it can send the matching
+    `X-CSRFToken` header on that very first mutating request)."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        get_token(request)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class RegisterView(APIView):
