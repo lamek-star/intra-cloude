@@ -14,4 +14,5 @@ urlpatterns: list[URLPattern | URLResolver] = [
     path("", include("imports.urls")),
     path("", include("applications.urls")),
     path("", include("sharing.urls")),
+    path("", include("exports.urls")),
 ]

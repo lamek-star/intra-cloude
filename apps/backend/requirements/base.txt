@@ -2,6 +2,10 @@
 #    uv pip compile base.in --python-version 3.13 --python-platform linux -o base.txt
 amqp==5.3.1
     # via kombu
+argon2-cffi==25.1.0
+    # via -r base.in
+argon2-cffi-bindings==25.1.0
+    # via argon2-cffi
 asgiref==3.12.1
     # via
     #   django
@@ -17,7 +21,9 @@ botocore==1.43.67
 celery==5.6.3
     # via -r base.in
 cffi==2.1.1
-    # via cryptography
+    # via
+    #   argon2-cffi-bindings
+    #   cryptography
 clamd==1.0.2
     # via -r base.in
 click==8.4.2

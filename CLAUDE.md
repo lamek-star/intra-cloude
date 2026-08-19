@@ -49,12 +49,22 @@ import retry path (a connection failure was previously miscounted as a
 bad row, and the checkpoint had an off-by-one that would have dropped
 the in-flight row on retry), an immutable and properly filterable audit
 log, and audit coverage for storage/permissions/organizations/auth
-actions that had none before. 246 tests pass against real PostgreSQL/
+actions that had none before. Phase 13 added a new `exports` app:
+portable `.icp` export/import for a whole Organization (workspace/
+project tree, tenant databases with schema+rows, object storage with
+real file bytes, membership/role metadata) — restore always creates a
+brand-new Organization, rebuilt exclusively through the same validated
+service functions the live database builder and upload pipeline
+already use (`databases.services.create_tenant_database`/`create_table`/
+`add_column`/`add_foreign_key`, `storage.services.upload_file`), never
+raw DDL/SQL from the package. 252 tests pass against real PostgreSQL/
 MinIO/Celery (not mocks); every phase's exit criteria was confirmed live
 against the running Docker stack, not just via the automated suite —
 including, in Phase 11, driving a real backup through `pg_dump` and
-restoring it into an isolated database, and in Phase 12, a real EICAR
-upload through the live API being quarantined by a real ClamAV daemon.
+restoring it into an isolated database, in Phase 12, a real EICAR
+upload through the live API being quarantined by a real ClamAV daemon,
+and in Phase 13, the full create-org/export/import/verify round trip
+(files, schema, FK-linked row data, membership) against the live API.
 
 No known, disclosed architectural gaps remain open from earlier phases:
 the tenant-Postgres-least-privilege gap tracked since Phase 2/3
@@ -121,8 +131,8 @@ secure defaults; readable code over clever code.
 See `README.md` for the full tree. Key rule: Django is organized into
 bounded apps (`accounts`, `organizations`, `permissions`, `workspaces`,
 `storage`, `databases`, `datasets`, `imports`, `applications`, `sharing`,
-`audit`, `system`) per `docs/architecture/DATA_MODEL.md` Section 1 — not
-one monolithic app. Business logic lives in service layers, not views or
+`audit`, `system`, `exports`) per `docs/architecture/DATA_MODEL.md`
+Section 1 — not one monolithic app. Business logic lives in service layers, not views or
 serializers.
 
 ## Development Process

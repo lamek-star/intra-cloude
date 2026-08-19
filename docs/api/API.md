@@ -268,6 +268,44 @@ above. Known, documented limitation: sharing with a `team` or
 only — someone who joins later isn't retroactively covered, and revoking
 is best-effort against *current* membership (see ROADMAP.md Phase 9).
 
+### Portable Export/Import (`exports/urls.py`, Phase 13)
+
+| Method | Path | Auth | Required permission | Notes |
+|---|---|---|---|---|
+| GET/POST | `/api/v1/organizations/{id}/export/` | active membership | `export.manage` (POST only) | POST body: `{"passphrase"?}` (min 8 chars if given). Enqueues a Celery task and returns immediately (`status: "pending"`); builds a `.icp` package for the whole organization — workspace/project tree, tenant databases (schema + row data), object storage (bucket/folder/file structure + real bytes), and membership/system-role metadata. Deliberately excludes (recorded in every manifest's `"excluded"` list, never silently): applications/service-account credentials, sharing grants, connected-database definitions, analytics (none exist yet), and user password hashes. |
+| GET | `/api/v1/export/{job_id}/` | active membership | — | Status/progress: `status`, `size_bytes`, `checksum_sha256`, `encrypted`. |
+| GET | `/api/v1/export/{job_id}/download/` | active membership | `export.manage` | Streams the finished `.icp` file. 409 if the job isn't `completed` yet. |
+| POST | `/api/v1/import/` | authenticated (no org membership check — see below) | — | Multipart: `package` (the `.icp` file) + optional `passphrase`. Restores into a **brand-new** Organization only — restoring into an existing one needs a conflict-resolution policy this doesn't have yet (tracked as an open item). Any authenticated user may attempt a restore; they become the new organization's administrator, exactly like creating one normally. Enqueues a Celery task and returns immediately. |
+| GET | `/api/v1/import/{job_id}/` | the user who created the job | — | Status and, once `completed`, a `report`: counts restored (workspaces/projects/tenant_databases/tables/rows/buckets/files) plus `memberships_skipped` (emails with no matching user account on this installation) and `warnings` (e.g. a file over this installation's upload size limit). |
+
+The `.icp` container format (`exports/container.py`): an 8-byte magic,
+a 4-byte length-prefixed plaintext JSON header (format name + encryption
+parameters, if any — deliberately readable before any decryption, so a
+caller knows whether a passphrase is needed at all), then the ZIP
+archive payload, AES-256-GCM-encrypted with an Argon2id-derived key if
+a passphrase was supplied. The ZIP itself contains `manifest.json`
+(format/product version, a `checksums` map covering every other file in
+the archive, verified before any restore work begins) plus
+`databases/<tenant_database_id>/{schema.json,rows/<table_id>.csv}` and
+content-addressed `objects/<sha256>` file bytes (naturally
+de-duplicated across identical files).
+
+Restore never executes raw DDL/SQL from the package — schema and rows
+are rebuilt exclusively through the same validated service functions
+the live database builder and upload pipeline already use
+(`databases.services.create_tenant_database`/`create_table`/
+`add_column`/`add_foreign_key`, `storage.services.upload_file` — so a
+restored file is malware-scanned and audited exactly like any other
+upload). The whole restore runs inside one real transaction on each of
+the two physical connections involved (`default` for the catalog,
+`tenant` for schema DDL + row data — PostgreSQL supports transactional
+DDL, so this is a genuine all-or-nothing guarantee, not the
+live schema-builder's best-effort compensating-DROP). The one
+non-transactional part is object storage itself (file bytes uploaded
+mid-restore aren't rolled back by a later failure) — a known, accepted
+gap, not a correctness problem, since no catalog row survives a
+rollback to reference an orphaned object.
+
 ## Authorization Model in Practice
 
 Every org-scoped view (and, transitively, every workspace/project/bucket/

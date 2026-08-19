@@ -21,8 +21,13 @@ tenant-database role available as an opt-in hardening step, a real
 dependency audit). A Phase 12 production-hardening pass (audit coverage
 for storage/permissions/organizations/auth, an SSRF guard on connected
 databases, upload size limits and optional ClamAV malware scanning, a
-fixed import-retry path, and an immutable/filterable audit log) has
-also landed since. 246 tests pass against real PostgreSQL, MinIO, and
+fixed import-retry path, and an immutable/filterable audit log), and a
+Phase 13 portable export/import pass (a `.icp` package format covering
+an organization's workspace/project tree, tenant databases, object
+storage, and membership/role metadata — restored only into a brand-new
+organization, exclusively through the same validated service functions
+the live database builder and upload pipeline already use), have also
+landed since. 252 tests pass against real PostgreSQL, MinIO, and
 Celery — not mocks — including cross-organization IDOR/BOLA regression
 tests for every tenant-owned resource type in the platform. Every
 phase's exit criteria has been confirmed against the actual running

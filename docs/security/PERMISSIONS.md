@@ -39,6 +39,7 @@ Last updated: 2026-08-07
 | `users.manage` | Invite/remove/suspend users, manage Team membership |
 | `audit.read` | View audit logs |
 | `backup.manage` | Trigger/inspect backup and restore operations |
+| `export.manage` | Create and download portable (`.icp`) exports of an organization |
 | `connection.manage` | Create/edit ConnectedDatabase configurations |
 | `sharing.manage` | Create/revoke ShareGrants (internal/external) |
 | `system.admin` | Platform-wide administrative operations (Super Administrator only) |

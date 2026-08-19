@@ -890,6 +890,110 @@ automated test failure:**
    the fix, not by assuming Django re-raises the original exception
    unchanged.
 
+## Phase 13 — Portable Export/Import (`.icp`) — COMPLETE
+
+New `exports` app implementing the `.icp` portable package format
+designed in the Phase 12 readiness audit — export/import an entire
+Organization (workspace/project tree, tenant databases with schema and
+row data, object storage with real file bytes, membership/system-role
+metadata), with optional AES-256-GCM + Argon2id encryption. See
+`docs/api/API.md`'s "Portable Export/Import" section for the endpoint
+contract and container format; `exports/manifest.py`'s `EXCLUDED_SCOPE`
+for what's deliberately not covered yet (applications, sharing,
+connected databases, analytics, password hashes).
+
+Design choices worth recording:
+- **Restore always creates a brand-new Organization** — restoring into
+  an existing one needs a conflict-resolution policy (what happens when
+  a table/bucket name collides) this phase doesn't build. This is a
+  real scope limit, not an oversight — tracked as an open item.
+- **Restore never executes raw DDL/SQL from the package.** Schema and
+  rows are rebuilt exclusively through
+  `databases.services.create_tenant_database`/`create_table`/
+  `add_column`/`add_foreign_key` and `storage.services.upload_file` —
+  the exact same validated service functions the live database builder
+  and upload pipeline already use. This means a restored file is
+  malware-scanned and audited exactly like any other upload, for free.
+- **Genuine transactional restore, stronger than the live schema
+  builder's own guarantee.** `databases/services.py`'s "compensating
+  DROP, not a guarantee" exists because each live schema edit commits
+  independently as a user makes it one at a time. A restore is one bulk
+  operation — PostgreSQL supports transactional DDL, so wrapping the
+  whole restore in one `transaction.atomic(using="tenant")` alongside
+  `transaction.atomic(using="default")` for the catalog gives a real
+  all-or-nothing guarantee on both connections. The one gap: object
+  storage itself isn't transactional, so a rolled-back restore can
+  leave orphaned (uncatalogued, harmless) objects behind — accepted,
+  not solved, in this phase.
+- **Row data round-trips through CSV, reusing the CSV import pipeline's
+  own value converter** (`imports.services._convert_value`) rather than
+  inventing a second string-to-typed-value mapping — one tested
+  conversion path for both features, not two that could drift apart.
+  Export reuses `databases.rows.iter_export_rows` (already existed, for
+  Phase 6's CSV export) for the same reason.
+- **The exported "id" primary-key values are preserved and re-inserted
+  explicitly** (not regenerated) — necessary for foreign-key
+  relationships between rows to survive the round trip at all. Rows are
+  inserted in FK-dependency topological order per tenant database, not
+  manifest order, so a row is never inserted before the row it
+  references.
+- **Passphrases never touch the Celery broker in plaintext.** They're
+  Fernet-wrapped (`exports/crypto.py`, reusing `CREDENTIAL_ENCRYPTION_KEY`,
+  the same key `databases/crypto.py` uses for connected-database
+  credentials) before being passed as a task argument — Celery logs
+  task args at INFO by default, and Valkey (the broker) would otherwise
+  hold the plaintext passphrase in its queue.
+
+Exit criteria — verified for real: the mandatory round-trip scenario
+(create a fully-populated organization — files in a folder, two tables
+with a foreign key and real rows, a second member with a `viewer` role —
+export it, import the package, verify everything came back, including
+FK-referencing row data with its original ids intact) passes as a live
+test against real PostgreSQL and MinIO
+(`exports/tests/test_portable_export.py::test_full_round_trip`), plus
+encrypted round-trip, tamper-detection, and permission-denial tests. 252
+tests total (up from Phase 12's 248); ruff and mypy clean.
+
+**Real bugs found while implementing this phase, none by an automated
+test failure catching them on the first attempt — each was caught by
+actually running the round-trip test and reading what broke:**
+1. A restored organization reuses the source organization's name — and
+   `Organization.slug` is globally unique, so `create_organization`'s
+   default `slugify(name)` collided with the (still-existing) source
+   organization's own slug on the very first round-trip test run. Fixed
+   by generating a `slugify(name)-<random-suffix>` slug and checking it
+   for collisions before restore.
+2. `schema.json`'s columns list deliberately excludes each table's
+   auto-created "id" primary key (`create_table` already creates it —
+   re-adding it via `add_column` would conflict). But a foreign key can
+   (and, for any real relational schema, usually does) reference that
+   same "id" column, and the FK-restore step had no entry for it in its
+   `columns_by_ref` lookup — a `KeyError` on the very first table with
+   a foreign key to another table's primary key. Fixed by explicitly
+   registering each table's auto-created id column right after creating
+   the table.
+3. Python's `zipfile` validates each member's CRC-32 lazily, on
+   `read()`, not when the archive is opened — so the tamper-detection
+   test (flipping one byte in the middle of the package) raised a raw
+   `zipfile.BadZipFile` that escaped `restorer.py`'s own error handling
+   entirely, rather than the intended `PackageValidationError`. Both
+   `open_package` (reading `manifest.json`) and `verify_checksums`
+   (reading every other file) needed their `except` clauses widened.
+4. Celery's eager test-mode `self.retry()` doesn't actually retry — it
+   raises `celery.exceptions.Retry` synchronously on the very first
+   failure, which propagates all the way back out through `.delay()` to
+   whatever called it. In production this is harmless (`.delay()` just
+   publishes to the broker and returns immediately; retry logic only
+   ever runs inside the real worker process) — but it meant the
+   negative-path tests (wrong passphrase, tampered package), which
+   expect a job to end up queryable as `FAILED`, would instead crash
+   the API request itself in the test suite. Phase 12's import-retry
+   work had already run into the same eager-mode quirk once; this
+   phase's fix follows the same precedent — those two tests call
+   `restorer.py`'s functions directly instead of going through the
+   async job endpoint, which is also the more precise test of the
+   actual validation logic being exercised.
+
 ## Non-Negotiable Cross-Phase Rules
 
 - No phase ships without tenant-isolation tests for any new tenant-owned
