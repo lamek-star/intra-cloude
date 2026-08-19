@@ -10,6 +10,8 @@ from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 
+from audit import services as audit
+
 from .catalog import ADMIN_PERMISSION_CODES, PLATFORM_WIDE_ROLE_SLUG
 from .models import Permission, ResourceGrant, Role, RoleAssignment
 
@@ -108,9 +110,18 @@ def assign_role(*, user, role_slug: str, organization=None, granted_by=None) -> 
             f"Cannot assign {role_slug!r}: internet gateway mode requires the target user to "
             "have MFA enabled before an administrative role can be granted."
         )
-    return RoleAssignment.objects.create(
+    assignment = RoleAssignment.objects.create(
         user=user, role=role, organization=organization, granted_by=granted_by
     )
+    audit.record(
+        actor=granted_by,
+        organization_id=organization.id if organization else None,
+        action="permissions.role.assign",
+        resource_type="user",
+        resource_id=user.id,
+        context={"role": role_slug},
+    )
+    return assignment
 
 
 def get_role(slug: str) -> Role:
@@ -137,7 +148,7 @@ def grant_resource_permission(
     Same validate-then-create discipline as `assign_role`."""
     if not permission_exists(permission_code):
         raise PermissionError_(f"Unknown permission: {permission_code!r}")
-    return ResourceGrant.objects.create(
+    grant = ResourceGrant.objects.create(
         user=user,
         permission_id=permission_code,
         organization_id=organization_id,
@@ -146,3 +157,12 @@ def grant_resource_permission(
         granted_by=granted_by,
         expires_at=expires_at,
     )
+    audit.record(
+        actor=granted_by,
+        organization_id=organization_id,
+        action="permissions.resource_grant.create",
+        resource_type=resource_type,
+        resource_id=resource_id,
+        context={"permission": permission_code, "granted_to": str(user.id)},
+    )
+    return grant

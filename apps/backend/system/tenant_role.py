@@ -91,3 +91,53 @@ def provision_role(role_name: str, password: str) -> None:
         raise
     except psycopg.Error as exc:
         raise TenantRoleError("could not provision the tenant role") from exc
+
+
+def ensure_role(role_name: str, password: str) -> None:
+    """Idempotent variant of `provision_role`: creates the role if it
+    doesn't exist, or updates its password if it does, instead of
+    raising on a rerun. `provision_role` stays strict (and is what the
+    `provision_tenant_role` management command / its tests use) because
+    a human operator re-running it by accident on the wrong role name is
+    exactly the kind of mistake that should fail loudly. This variant
+    exists for scripted/automated provisioning (e.g. a one-shot init
+    step run every time a deployment starts) where "already exists,
+    make sure the password matches" is the correct behavior, not an
+    error.
+
+    Still opt-in, not wired into docker-compose.yml as the default —
+    see the module docstring. Flipping the default requires a tested
+    migration path for deployments that already have tenant schemas
+    owned by the bootstrap superuser (this function alone does not
+    transfer ownership of existing objects), which is tracked as an open
+    item, not silently assumed safe here."""
+    tenant_db_name = _tenant_db_settings()["NAME"]
+    try:
+        with _bootstrap_connect() as conn, conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", [role_name])
+            role_exists = cur.fetchone() is not None
+
+            if role_exists:
+                cur.execute(
+                    sql.SQL("ALTER ROLE {} WITH LOGIN PASSWORD {}").format(
+                        sql.Identifier(role_name), sql.Literal(password)
+                    )
+                )
+            else:
+                cur.execute(
+                    sql.SQL(
+                        "CREATE ROLE {} WITH LOGIN PASSWORD {} NOSUPERUSER NOCREATEDB NOCREATEROLE"
+                    ).format(sql.Identifier(role_name), sql.Literal(password))
+                )
+            cur.execute(
+                sql.SQL("GRANT CONNECT, CREATE ON DATABASE {} TO {}").format(
+                    sql.Identifier(tenant_db_name), sql.Identifier(role_name)
+                )
+            )
+            cur.execute(
+                sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC").format(
+                    sql.Identifier(tenant_db_name)
+                )
+            )
+    except psycopg.Error as exc:
+        raise TenantRoleError("could not provision the tenant role") from exc

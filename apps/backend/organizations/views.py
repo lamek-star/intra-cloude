@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import User
+from audit import services as audit
 from permissions.catalog import SYSTEM_ROLES
 from permissions.services import assign_role, has_permission
 
@@ -79,6 +80,13 @@ class MembershipListCreateView(APIView):
             return Response(
                 {"detail": "This user is already a member."}, status=status.HTTP_409_CONFLICT
             )
+        audit.record(
+            actor=request.user,
+            organization_id=org.id,
+            action="organization.member.add",
+            resource_type="user",
+            resource_id=target_user.id,
+        )
         return Response(MembershipSerializer(membership).data, status=status.HTTP_201_CREATED)
 
 
@@ -128,6 +136,14 @@ class TeamListCreateView(APIView):
                 {"detail": "A team with this name already exists."}, status=status.HTTP_409_CONFLICT
             )
         team = Team.objects.create(organization=org, name=name)
+        audit.record(
+            actor=request.user,
+            organization_id=org.id,
+            action="organization.team.create",
+            resource_type="team",
+            resource_id=team.id,
+            context={"name": name},
+        )
         return Response(TeamSerializer(team).data, status=status.HTTP_201_CREATED)
 
 
@@ -146,7 +162,7 @@ class TeamMemberListCreateView(APIView):
         except User.DoesNotExist as exc:
             raise Http404 from exc
 
-        membership = add_team_member(team=team, user=target_user)
+        membership = add_team_member(team=team, user=target_user, actor=request.user)
         return Response(MembershipSerializer(membership).data, status=status.HTTP_201_CREATED)
 
 
@@ -163,5 +179,5 @@ class TeamMemberDetailView(APIView):
         except User.DoesNotExist as exc:
             raise Http404 from exc
 
-        remove_team_member(team=team, user=target_user)
+        remove_team_member(team=team, user=target_user, actor=request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)

@@ -41,11 +41,20 @@ path), `system` (`/healthz`/`/readyz`/`/metrics`; `BackupRecord` + real
 live-verified restore-test cycle; an opt-in least-privilege tenant-DB
 role addressing THREAT_MODEL.md TB3 — Phase 11). Internet-gateway mode
 (`docs/deployment/INTERNET_GATEWAY.md`) is an opt-in Caddyfile swap plus
-a tighter `"auth"` DRF throttle scope, not a new app. 229 tests pass
-against real PostgreSQL/MinIO/Celery (not mocks); every phase's exit
-criteria was confirmed live against the running Docker stack, not just
-via the automated suite — including, in Phase 11, driving a real backup
-through `pg_dump` and restoring it into an isolated database.
+a tighter `"auth"` DRF throttle scope, not a new app. A Phase 12
+production-hardening pass added: upload size limits + optional ClamAV
+malware scanning with fail-closed quarantine (`storage`), an SSRF guard
+on `ConnectedDatabase.host` (`databases/connectors.py`), a fixed CSV
+import retry path (a connection failure was previously miscounted as a
+bad row, and the checkpoint had an off-by-one that would have dropped
+the in-flight row on retry), an immutable and properly filterable audit
+log, and audit coverage for storage/permissions/organizations/auth
+actions that had none before. 246 tests pass against real PostgreSQL/
+MinIO/Celery (not mocks); every phase's exit criteria was confirmed live
+against the running Docker stack, not just via the automated suite —
+including, in Phase 11, driving a real backup through `pg_dump` and
+restoring it into an isolated database, and in Phase 12, a real EICAR
+upload through the live API being quarantined by a real ClamAV daemon.
 
 No known, disclosed architectural gaps remain open from earlier phases:
 the tenant-Postgres-least-privilege gap tracked since Phase 2/3

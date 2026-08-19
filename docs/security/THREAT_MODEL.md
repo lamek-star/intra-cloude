@@ -1,7 +1,9 @@
 # Threat Model — Private Data Cloud
 
-Status: DRAFT (Phase 0)
-Last updated: 2026-08-07
+Status: Living document — implemented through Phase 12 (production
+hardening); no longer a Phase 0 draft. Updated alongside the code as new
+phases land, per CLAUDE.md's engineering process.
+Last updated: 2026-08-19
 Methodology: STRIDE per major trust boundary, plus explicit multi-tenancy
 (IDOR/BOLA) analysis since that is the platform's central risk.
 
@@ -70,14 +72,15 @@ assumed to hold on the other.
 | Tampering (path traversal in object key) | Object keys are server-generated UUIDs, never derived from user-supplied filenames |
 | Spoofing (forged presigned URL) | Presigned URLs are short-lived, scoped to one object + one operation, signed server-side |
 | Information disclosure (public bucket misconfiguration) | Buckets default private; public/external sharing is an explicit, separately audited opt-in (Phase 9), disabled by default in local-only installs |
-| Malware upload | Antivirus/malware scan hook point in the upload pipeline (stub in early phases, wired to ClamAV or similar before external sharing is enabled) |
+| Malware upload | **Implemented, Phase 12.** Real ClamAV integration (`storage/scanning.py`, via `clamd`) — fails closed into `status=quarantined` (hidden from listings, download blocked) if the file is flagged or the scanner is unreachable; never silently treated as clean. Off by default (`MALWARE_SCAN_ENABLED=False`) since it needs the optional `clamav` docker-compose service (`--profile malware-scan`) — verified live with a real EICAR-file upload through the API. |
+| Unbounded upload size | **Implemented, Phase 12.** `MAX_UPLOAD_SIZE_BYTES` (default 2 GiB) enforced during the same streamed pass that computes the checksum — no upload size cap existed before this. |
 
 ### TB5 — API → Celery Workers (via Valkey)
 
 | Threat | Mitigation |
 |---|---|
 | Tampering (task payload injection) | Valkey not exposed outside the internal network; tasks reference resource IDs and re-check authorization at execution time rather than trusting the enqueueing context blindly |
-| Denial of service (queue flooding) | Per-org job rate limits/quotas on import/export job creation |
+| Denial of service (queue flooding) | Per-organization rate limit on import-job creation, Phase 12 (`system/throttling.py::OrganizationRateThrottle`, keyed by organization rather than DRF's default per-user/IP scoping — verified live). Export job creation does not have an equivalent per-org limit yet; tracked as an open item, not assumed covered by the same fix. |
 
 ### TB6 — API → External Connected Databases
 
@@ -86,6 +89,7 @@ assumed to hold on the other.
 | Spoofing / MITM | **Implemented, Phase 8.** `sslmode` is configurable per `ConnectedDatabase` (`disable`/`prefer`/`require`/`verify-full`), defaulting to `require`; certificate validation is never silently disabled by the platform. |
 | Tampering (credential exposure in logs/errors) | **Implemented, Phase 8.** `databases/connectors.py` catches every driver exception (`psycopg.Error`/`OperationalError`) and re-raises a fixed, sanitized `ConnectionFailed` message — the raw exception text, which can embed host/credential detail, never reaches a response, an audit event, or a log line. Verified by a test asserting a failed-connection response never contains the host or password. |
 | Elevation of privilege (connected DB used to reach unintended tenant data) | **Implemented, Phase 8, application-layer only.** Connection tested before any credential is persisted (ADR-0009); recommending a least-privilege DB role on the customer's external database is documented but not (and cannot be) enforced by the platform — that privilege boundary lives entirely on the external system. |
+| SSRF (the `host` field used to make the backend probe internal infrastructure) | **Implemented, Phase 12.** `databases/connectors.py::assert_host_is_safe` resolves the host and rejects link-local/reserved/multicast/unspecified addresses (covers cloud-metadata endpoints like `169.254.169.254`) before every connection attempt, not only at creation time — closing the DNS-rebinding window a create-time-only check would leave open. RFC1918 private ranges and loopback are allowed by default (this is a local-first, on-prem product; a customer's own PostgreSQL legitimately lives there), lockable via `CONNECTED_DATABASE_BLOCK_PRIVATE_NETWORKS` for a hosted/multi-tenant deployment where that assumption doesn't hold. |
 
 ## 4. Multi-Tenancy / IDOR-BOLA Deep Dive
 
@@ -105,12 +109,23 @@ belonging to Organization B, and requests it directly via
    any data — 404 vs 403 is a considered choice (prefer 404 for existence
    privacy on some resource types).
 2. Database-level defense in depth for tenant relational data: each
-   organization's tenant tables live in their own Postgres schema
-   (`org_<uuid>`), so even a missed application-layer filter cannot return
-   cross-org rows through the same connection/role boundary as easily as a
-   shared-table `WHERE org_id = ...` design would allow.
-3. Automated tests (`tests/security/test_tenant_isolation.py`,
-   `tests/security/test_idor.py`) that, for every resource type, assert:
+   `TenantDatabase` lives in its own Postgres schema (`db_<uuid-hex>` —
+   ADR-0005 originally sketched `org_<uuid>`/`org_<uuid>__db_<uuid>`,
+   but that scheme exceeds Postgres's 63-byte identifier limit; see
+   ADR-0005's implementation note and DATA_MODEL.md Section 3.5 for the
+   actual naming, which still fully satisfies this defense — every
+   schema maps to exactly one organization via
+   `project.workspace.organization`, so cross-org isolation is
+   unaffected by which level the schema boundary is drawn at), so even a
+   missed application-layer filter cannot return cross-org rows through
+   the same connection/role boundary as easily as a shared-table
+   `WHERE org_id = ...` design would allow.
+3. Automated tests (`tests/security/test_tenant_isolation.py` — this is
+   the one file covering cross-organization IDOR/BOLA for every
+   tenant-owned resource type; an earlier draft of this document
+   referred to a separate `test_idor.py` that was never created, since
+   its coverage was folded into the file above instead) that, for every
+   resource type, assert:
    create as Org A → attempt read/update/delete as Org B → expect denial.
    These tests are treated as security regression tests and run in CI on
    every change to `permissions`, `storage`, `databases`, `sharing`.

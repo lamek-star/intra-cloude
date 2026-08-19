@@ -104,3 +104,22 @@ Adopt schema-per-organization within a shared tenant PostgreSQL cluster as
 the default for Phase 4 (Database Builder). Revisit only via a new ADR if
 a concrete scale or compliance requirement demands per-organization
 clusters for specific tenants.
+
+## Implementation Note (added Phase 12, 2026-08-19)
+
+The naming scheme actually implemented is `db_<tenant-database-uuid-hex>`
+— one schema per `TenantDatabase`, not the `org_<uuid>` /
+`org_<uuid>__db_<uuid>` pattern sketched above. The nested pattern is 73
+characters, over PostgreSQL's 63-byte identifier limit; this was found
+by actually attempting to create a schema with that name (see
+DATA_MODEL.md Section 3.5). The isolation property this ADR is actually
+about — a missed application-layer filter cannot return another
+organization's rows — is unaffected: every schema still maps to exactly
+one organization via `project.workspace.organization`, so drawing the
+schema boundary at the TenantDatabase level rather than nesting it
+inside a per-organization schema is a naming/implementation detail, not
+a change to the decision itself. Left as a note here, rather than
+editing the Decision/Advantages sections above, so this document stays
+an accurate record of what was decided and why — see DATA_MODEL.md
+Section 3.5 and THREAT_MODEL.md Section 4 for the current, accurate
+naming.

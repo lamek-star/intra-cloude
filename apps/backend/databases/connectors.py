@@ -13,9 +13,12 @@ MariaDB/SQL Server/SQLite — Section 15 of the master prompt) implement
 the same three operations against their own driver.
 """
 
+import ipaddress
+import socket
 from dataclasses import dataclass
 
 import psycopg
+from django.conf import settings
 from psycopg import sql
 from psycopg.rows import dict_row
 
@@ -32,6 +35,53 @@ class ConnectionFailed(Exception):
     exception, which can embed host/credential detail in its text
     (docs/security/THREAT_MODEL.md TB6: 'errors from external DB drivers
     sanitized before returning to the client')."""
+
+
+class UnsafeHost(ConnectionFailed):
+    """Raised when a target host resolves to an address this deployment
+    must never let the backend dial (Section 30 of the master prompt:
+    SSRF via the connected-database feature). A subclass of
+    ConnectionFailed so every existing caller's `except ConnectionFailed`
+    already handles it correctly."""
+
+
+# Always blocked, regardless of configuration — none of these are ever a
+# legitimate connected-database target. Link-local matters most: it
+# covers cloud metadata endpoints like 169.254.169.254, a classic SSRF
+# pivot point that has nothing to do with this being a local-first
+# product. Loopback and RFC1918 private ranges are deliberately NOT in
+# this bucket — this is an on-prem, local-first product, and a
+# customer's own PostgreSQL (or, in this dev/CI setup, the very tenant
+# database this backend already uses) legitimately lives on the LAN or
+# even on localhost. See CONNECTED_DATABASE_BLOCK_PRIVATE_NETWORKS below
+# for deployments where that assumption doesn't hold.
+_ALWAYS_UNSAFE_ATTRS = ("is_link_local", "is_unspecified", "is_reserved", "is_multicast")
+
+# Only blocked when CONNECTED_DATABASE_BLOCK_PRIVATE_NETWORKS is enabled
+# (settings.py) — a stricter posture for a hosted/multi-tenant topology
+# where "private network" might mean the host's own internal Docker
+# network, which tenants must not be able to reach.
+_PRIVATE_NETWORK_ATTRS = ("is_private", "is_loopback")
+
+
+def assert_host_is_safe(host: str) -> None:
+    """Resolves `host` and rejects it if it lands on an address this
+    process must never be tricked into reaching. Re-checked on every
+    connection attempt (not just once at creation time) so a host that
+    later resolves differently (DNS rebinding) doesn't get a free pass
+    from an earlier check."""
+    try:
+        addr_infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as exc:
+        raise UnsafeHost(f"could not resolve host {host!r}") from exc
+
+    block_private = settings.CONNECTED_DATABASE_BLOCK_PRIVATE_NETWORKS
+    for *_rest, sockaddr in addr_infos:
+        ip = ipaddress.ip_address(sockaddr[0])
+        if any(getattr(ip, attr) for attr in _ALWAYS_UNSAFE_ATTRS):
+            raise UnsafeHost(f"{host!r} resolves to a non-routable address ({ip}) and cannot be used")
+        if block_private and any(getattr(ip, attr) for attr in _PRIVATE_NETWORK_ATTRS):
+            raise UnsafeHost(f"{host!r} resolves to a private address ({ip}), blocked on this deployment")
 
 
 @dataclass(frozen=True)
@@ -58,6 +108,7 @@ class TableInfo:
 
 
 def _connect(params: ConnectionParams) -> psycopg.Connection:
+    assert_host_is_safe(params.host)
     try:
         return psycopg.connect(
             host=params.host,

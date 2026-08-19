@@ -1,0 +1,68 @@
+Intra-Cloud Proprietary License
+
+Copyright (c) 2026 [Company Name]. All rights reserved.
+
+This repository and its contents (source code, object code, documentation,
+architecture decision records, and all other materials) are the
+proprietary and confidential property of [Company Name] ("the Company").
+
+No license, express or implied, to any intellectual property rights is
+granted by this document except as explicitly stated below.
+
+1. GRANT OF RIGHTS
+
+   Unless you have a separate written agreement with the Company stating
+   otherwise, no rights are granted to you to use, copy, modify,
+   merge, publish, distribute, sublicense, sell, or create derivative
+   works from this software, in whole or in part.
+
+2. AUTHORIZED USE
+
+   Use of this software by customers of the Company is governed by the
+   commercial agreement (order form, subscription agreement, or end-user
+   license agreement) entered into separately between the customer and
+   the Company, not by this file. In the absence of such an agreement,
+   no use is authorized.
+
+3. CONFIDENTIALITY
+
+   This software may contain trade secrets and confidential information
+   of the Company. Recipients with authorized access must not disclose
+   it to third parties without the Company's prior written consent.
+
+4. THIRD-PARTY COMPONENTS
+
+   This software incorporates open-source and other third-party
+   components, each under its own license. See THIRD_PARTY_NOTICES (to
+   be generated as part of the release process — Section 50/51 of the
+   engineering brief) for the full list and license texts. Nothing in
+   this file restricts the rights granted by those upstream licenses to
+   their respective components.
+
+5. DISCLAIMER OF WARRANTY
+
+   EXCEPT AS EXPRESSLY STATED IN A SEPARATE WRITTEN AGREEMENT, THIS
+   SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+   NONINFRINGEMENT.
+
+---
+
+NOTICE — READ BEFORE RELYING ON THIS FILE
+
+This is a placeholder proprietary-license template, not a legally
+reviewed document. Before any commercial release:
+
+  - Replace "[Company Name]" with the actual legal entity that will own
+    and license this software.
+  - Have this license, and the customer-facing EULA/subscription
+    agreement it refers to, reviewed by qualified legal counsel —
+    licensing terms, liability limitations, and data-processing/privacy
+    commitments for a product that will hold customers' business data
+    all carry real legal weight that a generated template cannot
+    substitute for.
+  - Generate the SBOM and THIRD_PARTY_NOTICES this file references (see
+    Section 50 of the engineering brief) and confirm every dependency's
+    license is actually compatible with proprietary redistribution —
+    this has not yet been audited.

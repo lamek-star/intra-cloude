@@ -3,10 +3,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from databases.models import DBTable
 from databases.services import get_member_table
 from permissions.services import has_permission
 from storage.backends import get_client
 from storage.services import get_member_file
+from system.throttling import OrganizationRateThrottle
 
 from .inspect import SAMPLE_BYTES, InspectionError, inspect_sample
 from .serializers import ImportJobCreateSerializer, ImportJobErrorSerializer, ImportJobSerializer
@@ -36,6 +38,24 @@ class ImportPreviewView(APIView):
 
 class ImportJobListCreateView(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [OrganizationRateThrottle]
+    throttle_scope = "import"
+
+    def initial(self, request, *args, **kwargs):
+        # Resolve the owning organization before DRF's check_throttles()
+        # runs in the superclass's initial() — OrganizationRateThrottle
+        # reads this to key the budget per organization rather than per
+        # user. A table_id that doesn't resolve just leaves throttling
+        # inapplicable for this request; get_member_table below still
+        # enforces the real 404/permission checks either way.
+        table_id = kwargs.get("table_id")
+        if table_id:
+            request.throttle_organization_id = (
+                DBTable.objects.filter(id=table_id)
+                .values_list("tenant_database__project__workspace__organization_id", flat=True)
+                .first()
+            )
+        super().initial(request, *args, **kwargs)
 
     def get(self, request, table_id):
         table = get_member_table(request.user, table_id)

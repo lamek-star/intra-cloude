@@ -18,7 +18,11 @@ internet-gateway path (TOTP MFA, real ACME TLS, tightened rate limiting);
 and monitoring/backup automation (real `pg_dump`/restore-test cycles on
 a Celery Beat schedule, Prometheus metrics, a genuinely least-privilege
 tenant-database role available as an opt-in hardening step, a real
-dependency audit). 229 tests pass against real PostgreSQL, MinIO, and
+dependency audit). A Phase 12 production-hardening pass (audit coverage
+for storage/permissions/organizations/auth, an SSRF guard on connected
+databases, upload size limits and optional ClamAV malware scanning, a
+fixed import-retry path, and an immutable/filterable audit log) has
+also landed since. 246 tests pass against real PostgreSQL, MinIO, and
 Celery — not mocks — including cross-organization IDOR/BOLA regression
 tests for every tenant-owned resource type in the platform. Every
 phase's exit criteria has been confirmed against the actual running
@@ -106,4 +110,6 @@ engineering process this repository follows.
 
 ## License
 
-TBD.
+Proprietary — see [LICENSE](LICENSE). The current file is a placeholder
+template pending legal review and a real company name; do not treat it
+as a finished, enforceable license until that review happens.

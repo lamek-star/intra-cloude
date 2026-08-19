@@ -2,6 +2,7 @@ from django.db import transaction
 from django.http import Http404
 from django.utils.text import slugify
 
+from audit import services as audit
 from permissions.services import assign_role
 
 from .models import Membership, Organization, Team
@@ -40,6 +41,14 @@ def create_organization(*, name: str, created_by, slug: str | None = None) -> Or
             organization=org,
             granted_by=created_by,
         )
+    audit.record(
+        actor=created_by,
+        organization_id=org.id,
+        action="organization.create",
+        resource_type="organization",
+        resource_id=org.id,
+        context={"name": name},
+    )
     return org
 
 
@@ -56,7 +65,7 @@ def get_member_team(user, team_id) -> Team:
         raise Http404 from exc
 
 
-def add_team_member(*, team: Team, user) -> Membership:
+def add_team_member(*, team: Team, user, actor) -> Membership:
     """A user's Team is a single field on their (user, organization)
     Membership row (one team per membership — see organizations/models.py)
     rather than a many-to-many, so "adding" someone to a team is a
@@ -67,14 +76,30 @@ def add_team_member(*, team: Team, user) -> Membership:
         raise Http404 from exc
     membership.team = team
     membership.save(update_fields=["team"])
+    audit.record(
+        actor=actor,
+        organization_id=team.organization_id,
+        action="organization.team.member_add",
+        resource_type="team",
+        resource_id=team.id,
+        context={"user": str(user.id)},
+    )
     return membership
 
 
-def remove_team_member(*, team: Team, user) -> Membership:
+def remove_team_member(*, team: Team, user, actor) -> Membership:
     try:
         membership = Membership.objects.get(user=user, organization=team.organization, team=team)
     except Membership.DoesNotExist as exc:
         raise Http404 from exc
     membership.team = None
     membership.save(update_fields=["team"])
+    audit.record(
+        actor=actor,
+        organization_id=team.organization_id,
+        action="organization.team.member_remove",
+        resource_type="team",
+        resource_id=team.id,
+        context={"user": str(user.id)},
+    )
     return membership

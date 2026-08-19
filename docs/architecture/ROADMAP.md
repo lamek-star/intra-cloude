@@ -137,9 +137,14 @@ dedicated cross-org tests confirm isolation holds.
   URL generation is implemented and works (`ObjectStorageClient.presigned_download_url`)
   for topologies where the endpoint is externally reachable (real AWS S3,
   Phase 9 external sharing), just isn't the default download path yet.
-- Malware-scan hook: not implemented — no antivirus integration exists to
-  hook into yet. Tracked as an explicit gap (see THREAT_MODEL.md Section
-  6), not silently skipped.
+- Malware-scan hook: implemented in Phase 12 (`storage/scanning.py`,
+  real ClamAV integration via `clamd`, fail-closed into quarantine if
+  the scanner is unreachable — verified live against a real ClamAV
+  daemon, including a genuine EICAR-file detection through the actual
+  upload API). Off by default (`MALWARE_SCAN_ENABLED=False`) since it
+  requires the optional `clamav` docker-compose service
+  (`--profile malware-scan`); leaving it off is a visible configuration
+  choice, not a silent gap. See THREAT_MODEL.md Section 6.
 
 Exit criteria — verified for real against live Postgres + MinIO
 containers, not mocks: upload → list → download (byte-for-byte match) →
@@ -757,6 +762,133 @@ automated test failure:**
    role still held the `GRANT ... ON DATABASE` privilege
    `provision_role()` had given it; fixed by explicitly revoking that
    privilege before dropping the role in the test's own cleanup.
+
+## Phase 12 — Production Hardening — COMPLETE
+
+Triggered by a code-grounded readiness audit (not a new feature request)
+that found several release blockers behind an otherwise-solid Phase
+0–11 foundation. Scope was deliberately limited to closing those
+blockers, not starting the Windows-installer/portable-export/analytics
+work the audit also scoped — that's substantially larger and follows
+this phase, not alongside it.
+
+- `storage`: upload size cap (`MAX_UPLOAD_SIZE_BYTES`, enforced inside
+  the same streamed checksum pass, no separate buffering pass) — no cap
+  existed at all before. Real ClamAV malware scanning
+  (`storage/scanning.py`, via `clamd`), fails closed into
+  `status=quarantined` on either a `FOUND` result or an unreachable
+  scanner — a scanner that can't be reached is never treated as clean.
+  Off by default (`MALWARE_SCAN_ENABLED=False`); the optional `clamav`
+  docker-compose service is behind `--profile malware-scan`. `delete_file`/
+  `restore_file`/`record_download` (new) and upload/version-upload now
+  all call `audit.record()` — previously every one of these was
+  unaudited despite `FileObject.Status.QUARANTINED` existing in the
+  schema since Phase 3 and never being set anywhere.
+- `databases`: `connectors.py::assert_host_is_safe` blocks link-local/
+  reserved/multicast/unspecified addresses on `ConnectedDatabase.host`
+  before every connection attempt (creation, test, schema read, row
+  read — not just at creation, closing a DNS-rebinding TOCTOU window a
+  create-time-only check would leave open). RFC1918 private ranges and
+  loopback are allowed by default — blocking them unconditionally would
+  have broken the product's actual primary use case (a customer's own
+  on-prem PostgreSQL, or in this dev/CI setup the tenant DB itself,
+  legitimately resolving to a private/loopback address) — lockable via
+  `CONNECTED_DATABASE_BLOCK_PRIVATE_NETWORKS` for a hosted/multi-tenant
+  deployment where that assumption doesn't hold.
+- `imports`: fixed two compounding bugs in `run_import`/`run_import_task`.
+  (1) A bare `except Exception` around each row's insert caught
+  connection-level failures (`django.db.OperationalError`/
+  `InterfaceError`) the same as bad row data, so they were recorded as
+  "rejected rows" instead of propagating — meaning the Celery task's
+  configured `max_retries=3` could never actually fire, no matter what
+  the task itself did. (2) Once exceptions did propagate, checkpointing
+  on the loop's `row_number` was off by one on a mid-row failure: that
+  row hadn't actually committed, so checkpointing it as
+  `last_processed_row` would have silently dropped it on retry (skipped
+  as "already processed"). `imports/tasks.py` now actually retries via
+  `self.retry()`, marking the job `FAILED` only once
+  `MaxRetriesExceededError` is reached. Also added a per-organization
+  rate limit on import-job creation (`system/throttling.py::OrganizationRateThrottle`,
+  keyed by organization rather than DRF's default per-user/IP scoping).
+- `audit`: `AuditEvent` is now immutable (`save()` rejects modifying an
+  existing row; a `pre_delete` signal rejects both single-instance and
+  bulk `QuerySet.delete()`). The list endpoint went from a hardcoded
+  "most recent 200, no filters" slice to real pagination plus filtering
+  by action/actor/resource_type/result/date range. Added
+  `audit.record()` calls to `permissions.assign_role`/
+  `grant_resource_permission`, `organizations` (org create, membership
+  add, team create/member-add/member-remove), and `accounts`
+  (auth.login success/failure, auth.mfa_verify failure, auth.logout) —
+  none of these were audited before, a real gap for a product whose
+  core promise is data custody.
+- CI (`.github/workflows/ci.yml`): added a MinIO instance (as a plain
+  step, not a `services:` entry — GitHub Actions services can't be
+  given a command, and MinIO's image just prints usage and exits
+  without `server /data`, confirmed by actually running it that way) so
+  `storage/tests/test_storage.py`'s real boto3 calls have a target to
+  hit; without this the "229 tests pass against real
+  PostgreSQL/MinIO/Celery" claim wasn't actually true of the CI pipeline
+  as committed. Added a `pip-audit` step, which immediately found four
+  real CVEs in `sqlparse` 0.5.5 (transitive via Django) — fixed by
+  pinning `sqlparse~=0.6.0` directly in `requirements/base.in`.
+- Docs: `docs/architecture/DATA_MODEL.md` and `docs/security/THREAT_MODEL.md`
+  had carried a stale "DRAFT (Phase 0)" status header since Phase 0
+  while describing Phase 4–11 behavior in detail — both now say "Living
+  document." ADR-0005 described `org_<uuid>`/`org_<uuid>__db_<uuid>`
+  schema naming; the actual implementation is `db_<uuid-hex>`
+  (DATA_MODEL.md Section 3.5 already had this right — ADR-0005 and
+  THREAT_MODEL.md didn't). Added an Implementation Note to ADR-0005
+  rather than editing its original Decision text, since an ADR is a
+  historical record. `docker-compose.yml` carried a comment saying the
+  stack had never been brought up end-to-end because "this development
+  environment does not have Docker installed" — directly contradicting
+  the README's "verified end-to-end" claim; this phase actually brought
+  the full 9-service stack up (`docker compose up --build`), ran the
+  248-test suite against it, and updated the comment to say so
+  truthfully instead of asserting it without having done it.
+
+Exit criteria — verified for real, not just via the automated suite:
+the full stack (`postgres-control`, `postgres-tenant`, `valkey`,
+`object-storage`, `backend`, `worker`, `beat`, `frontend`, `proxy`) was
+brought up together for the first time via `docker compose up --build`
+and reached a healthy state; the 248-test suite (added 16 over Phase
+11's 232) ran against these live containers via a throwaway Linux
+runner joined to the same Docker networks, not mocks; ruff and mypy
+clean. Malware scanning was verified against a real ClamAV daemon three
+ways: a direct `clamd` client call detecting the standard EICAR test
+string, a unit-test suite with a faked scanner client covering the
+FOUND/clean/unavailable-fails-closed paths, and a full live API round
+trip (register → org → bucket → upload the actual EICAR file) that
+came back `status: "quarantined"`, was absent from the file listing,
+and returned 403 on download — while a clean file uploaded the same way
+came back `status: "active"`. `pip-audit` went from 4 findings to 0
+after the `sqlparse` bump, re-verified against the full suite afterward.
+
+**Real bugs found while implementing this phase, neither by an
+automated test failure:**
+1. The custom `OrganizationRateThrottle` initially crashed every
+   request to the throttled view with
+   `ImproperlyConfigured: You must set either .scope or .rate` —
+   `SimpleRateThrottle.__init__` calls `get_rate()` immediately against
+   a class-level `scope` that isn't known until a request actually
+   arrives (it depends on the view). Found by running the live test
+   suite, not by the throttle's own logic looking wrong on inspection.
+   Fixed by overriding `__init__` to do nothing and moving scope/rate
+   resolution into `allow_request`, the same pattern DRF's own
+   `ScopedRateThrottle` uses for exactly this reason.
+2. The import-retry checkpoint bug described above (row skipped on
+   retry) was found while writing a live test for the *other* bug (the
+   swallowed-connection-failure one) — simulating a mid-row failure and
+   checking `last_processed_row` afterward showed it pointing at the
+   row that broke, not the last row that actually committed.
+3. `django.db.OperationalError`/`InterfaceError` are NOT subclasses of
+   `psycopg.OperationalError`/`InterfaceError` — Django's cursor wrapper
+   re-raises driver errors as new instances of its own exception
+   hierarchy. An initial fix that caught the `psycopg` exception classes
+   directly would have silently never matched anything. Confirmed by
+   checking the actual class hierarchy in a Python shell before trusting
+   the fix, not by assuming Django re-raises the original exception
+   unchanged.
 
 ## Non-Negotiable Cross-Phase Rules
 

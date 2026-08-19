@@ -33,3 +33,34 @@ class RecordTests(TestCase):
             result=AuditEvent.Result.DENIED,
         )
         self.assertIsNone(event.actor)
+
+
+class ImmutabilityTests(TestCase):
+    """Section 40: audit records must be protected from ordinary user
+    modification. Both the single-instance path (event.save()) and the
+    bulk queryset path (AuditEvent.objects.filter(...).delete(), which
+    never calls an instance's delete() method) must be blocked."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="audit-immutable@example.com", password="x")
+        self.org = Organization.objects.create(name="Org", slug="org2", created_by=self.user)
+        self.event = record(actor=self.user, organization_id=self.org.id, action="organization.create")
+
+    def test_modifying_an_existing_event_is_rejected(self):
+        self.event.action = "tampered"
+        with self.assertRaises(ValueError):
+            self.event.save()
+
+    def test_instance_delete_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.event.delete()
+
+    def test_bulk_queryset_delete_is_rejected(self):
+        from django.db import transaction
+
+        # The failed delete needs its own savepoint — without it, the
+        # ValueError raised mid-transaction leaves the outer test
+        # transaction unusable for the assertion query right after.
+        with self.assertRaises(ValueError), transaction.atomic():
+            AuditEvent.objects.filter(id=self.event.id).delete()
+        self.assertTrue(AuditEvent.objects.filter(id=self.event.id).exists())

@@ -6,6 +6,9 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
+from audit import services as audit
+from audit.models import AuditEvent
+
 from . import services
 from .models import User
 from .serializers import LoginSerializer, MFACodeSerializer, RegisterSerializer, UserSerializer
@@ -56,12 +59,20 @@ class LoginView(APIView):
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data["email"]
         user = authenticate(
             request,
-            username=serializer.validated_data["email"],
+            username=email,
             password=serializer.validated_data["password"],
         )
         if user is None or not user.is_active:
+            audit.record(
+                actor=None,
+                organization_id=None,
+                action="auth.login",
+                result=AuditEvent.Result.DENIED,
+                context={"email": email},
+            )
             return Response(
                 {"detail": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED
             )
@@ -72,6 +83,7 @@ class LoginView(APIView):
             return Response({"mfa_required": True})
 
         login(request, user)
+        audit.record(actor=user, organization_id=None, action="auth.login")
         return Response(UserSerializer(user).data)
 
 
@@ -97,10 +109,14 @@ class MFALoginVerifyView(APIView):
             return Response({"detail": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
 
         if not services.verify_mfa_code(user=user, code=serializer.validated_data["code"]):
+            audit.record(
+                actor=user, organization_id=None, action="auth.mfa_verify", result=AuditEvent.Result.DENIED
+            )
             return Response({"detail": "Invalid code."}, status=status.HTTP_401_UNAUTHORIZED)
 
         del request.session[MFA_PENDING_SESSION_KEY]
         login(request, user)
+        audit.record(actor=user, organization_id=None, action="auth.login")
         return Response(UserSerializer(user).data)
 
 
@@ -108,6 +124,7 @@ class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        audit.record(actor=request.user, organization_id=None, action="auth.logout")
         logout(request)
         return Response(status=status.HTTP_204_NO_CONTENT)
 

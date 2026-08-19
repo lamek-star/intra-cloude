@@ -11,11 +11,14 @@
 #   - backend/worker/beat/frontend sit on the internal "app" network and
 #     talk to `proxy` for host-facing traffic.
 #
-# NOT YET VERIFIED end-to-end (`docker compose up`) — this development
-# environment does not have Docker installed. Each image/build has been
-# checked for internal consistency (env vars, health check commands,
-# dependency ordering) but not run together. Verify as an early Phase 2
-# step; fix forward from whatever `docker compose up` surfaces.
+# Verified end-to-end via `docker compose up --build` (2026-08-19): all
+# nine services build and reach a healthy state — postgres-control,
+# postgres-tenant, valkey, object-storage, backend, worker, beat,
+# frontend, and proxy (Caddy obtains its internal-CA certificate and
+# serves correctly). The full backend test suite (246 tests) passes
+# against these live containers, not mocks. If you hit a proxy port
+# conflict on 8443, that's a host-level port collision with whatever
+# else is already bound to it, not a problem with this file.
 
 networks:
   edge:
@@ -33,6 +36,7 @@ volumes:
   valkey_data:
   caddy_data:
   pdc_backups:
+  clamav_data:
 
 services:
   proxy:
@@ -226,3 +230,30 @@ services:
     restart: unless-stopped
     # Console (port 9001) is intentionally not published to the host here;
     # access it via an SSH tunnel or a LAN-only admin route if needed.
+
+  # Optional malware-scan daemon for uploaded files (storage/scanning.py,
+  # Section 33 of the master prompt). Not started by default — this
+  # service is only pulled in when an operator runs
+  # `docker compose --profile malware-scan up -d` (or lists it
+  # explicitly), and MALWARE_SCAN_ENABLED must also be set to True for
+  # the backend to actually use it. backend/worker are deliberately NOT
+  # given a `depends_on` on this service: leaving scanning off is a
+  # supported, visible configuration state (uploads simply aren't
+  # scanned), not something that should block the rest of the stack
+  # from starting.
+  clamav:
+    image: clamav/clamav:stable
+    profiles: ["malware-scan"]
+    healthcheck:
+      test: ["CMD-SHELL", "echo PING | timeout 5 nc -w 5 localhost 3310 | grep -q PONG"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      # The virus definition database download on first start can take
+      # a while — don't flag it unhealthy while that's in progress.
+      start_period: 180s
+    volumes:
+      - clamav_data:/var/lib/clamav
+    networks:
+      - data
+    restart: unless-stopped

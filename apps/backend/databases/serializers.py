@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from .connectors import UnsafeHost, assert_host_is_safe
 from .models import ConnectedDatabase, DBColumn, DBForeignKey, DBTable, TenantDatabase
 
 
@@ -114,3 +115,14 @@ class ConnectedDatabaseCreateSerializer(serializers.Serializer):
     sslmode = serializers.ChoiceField(
         choices=ConnectedDatabase.SSLMode.choices, default=ConnectedDatabase.SSLMode.REQUIRE
     )
+
+    def validate_host(self, value):
+        # Fast, friendly feedback at creation time — connectors.py's
+        # _connect() re-checks this on every actual connection attempt
+        # regardless, so this validation is defense in depth, not the
+        # only enforcement point (Section 30 of the master prompt: SSRF).
+        try:
+            assert_host_is_safe(value)
+        except UnsafeHost as exc:
+            raise serializers.ValidationError(str(exc)) from exc
+        return value

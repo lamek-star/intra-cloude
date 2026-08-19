@@ -18,7 +18,16 @@ from .serializers import (
     FolderCreateSerializer,
     FolderSerializer,
 )
-from .services import get_member_bucket, get_member_file, upload_file, upload_new_version
+from .services import (
+    UploadTooLarge,
+    delete_file,
+    get_member_bucket,
+    get_member_file,
+    record_download,
+    restore_file,
+    upload_file,
+    upload_new_version,
+)
 
 # DRF's default JSON parser can't take file uploads; these views also need
 # to accept multipart bodies.
@@ -140,13 +149,16 @@ class FileListCreateView(APIView):
                 raise Http404 from exc
 
         display_filename = request.data.get("display_filename") or uploaded.name
-        file_obj = upload_file(
-            bucket=bucket,
-            folder=folder,
-            uploaded_file=uploaded,
-            display_filename=display_filename,
-            creator=request.user,
-        )
+        try:
+            file_obj = upload_file(
+                bucket=bucket,
+                folder=folder,
+                uploaded_file=uploaded,
+                display_filename=display_filename,
+                creator=request.user,
+            )
+        except UploadTooLarge as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
         return Response(FileObjectSerializer(file_obj).data, status=status.HTTP_201_CREATED)
 
 
@@ -185,8 +197,7 @@ class FileDetailView(APIView):
         file_obj = get_member_file(request.user, file_id)
         if not _require(request, "storage.delete", file_obj.organization_id, bucket_id=file_obj.bucket_id):
             return Response(status=status.HTTP_403_FORBIDDEN)
-        file_obj.status = FileObject.Status.DELETED
-        file_obj.save(update_fields=["status", "updated_at"])
+        delete_file(file_obj, actor=request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -197,8 +208,7 @@ class FileRestoreView(APIView):
         file_obj = get_member_file(request.user, file_id)
         if not _require(request, "storage.delete", file_obj.organization_id, bucket_id=file_obj.bucket_id):
             return Response(status=status.HTTP_403_FORBIDDEN)
-        file_obj.status = FileObject.Status.ACTIVE
-        file_obj.save(update_fields=["status", "updated_at"])
+        restore_file(file_obj, actor=request.user)
         return Response(FileObjectSerializer(file_obj).data)
 
 
@@ -215,7 +225,10 @@ class FileVersionUploadView(APIView):
         if uploaded is None:
             return Response({"detail": "No file provided."}, status=status.HTTP_400_BAD_REQUEST)
 
-        file_obj = upload_new_version(file=file_obj, uploaded_file=uploaded, creator=request.user)
+        try:
+            file_obj = upload_new_version(file=file_obj, uploaded_file=uploaded, creator=request.user)
+        except UploadTooLarge as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
         return Response(FileObjectSerializer(file_obj).data, status=status.HTTP_201_CREATED)
 
 
@@ -233,7 +246,13 @@ class FileDownloadView(APIView):
         file_obj = get_member_file(request.user, file_id)
         if not _require(request, "storage.read", file_obj.organization_id, bucket_id=file_obj.bucket_id):
             return Response(status=status.HTTP_403_FORBIDDEN)
+        if file_obj.status == FileObject.Status.QUARANTINED:
+            return Response(
+                {"detail": "This file was quarantined by malware scanning and cannot be downloaded."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
+        record_download(file_obj, actor=request.user)
         body = get_client().get_stream(file_obj.object_key)
         response = StreamingHttpResponse(
             body.iter_chunks(1024 * 1024), content_type=file_obj.mime_type

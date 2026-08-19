@@ -25,11 +25,13 @@ switching to APITransactionTestCase, which commits for real.
 import uuid
 
 from django.db import connections
+from django.test import override_settings
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITransactionTestCase
 
 from accounts.models import User
+from databases.connectors import UnsafeHost, assert_host_is_safe
 from databases.crypto import decrypt_credential
 from databases.models import ConnectedDatabase
 from organizations.models import Membership
@@ -185,3 +187,47 @@ class ConnectionLifecycleTests(ConnectedDatabaseTestBase):
         resp = self.client.delete(reverse("connected-database-detail", args=[self.connected_database_id]))
         self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(ConnectedDatabase.objects.filter(id=self.connected_database_id).exists())
+
+
+class SSRFGuardTests(ConnectedDatabaseTestBase):
+    """Section 30 of the master prompt: the connected-database host field
+    must not let the backend be used to probe internal infrastructure.
+    Link-local (cloud metadata endpoints like 169.254.169.254) is always
+    blocked; RFC1918 private ranges and loopback are allowed by default
+    (this is a local-first product — a customer's own on-prem PostgreSQL,
+    or in this dev/CI setup the tenant DB itself, legitimately lives
+    there) but can be locked down via CONNECTED_DATABASE_BLOCK_PRIVATE_NETWORKS
+    for a hosted/multi-tenant deployment."""
+
+    def test_link_local_metadata_address_is_always_rejected_at_create_time(self):
+        resp = self.client.post(
+            reverse("connected-database-list-create", args=[self.project_id]),
+            self._payload(host="169.254.169.254"),
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(ConnectedDatabase.objects.filter(host="169.254.169.254").exists())
+
+    def test_link_local_is_rejected_at_connect_time_too_not_only_creation(self):
+        with self.assertRaises(UnsafeHost):
+            assert_host_is_safe("169.254.169.254")
+
+    def test_private_network_host_allowed_by_default(self):
+        # The real tenant DB host in this environment is itself on a
+        # private network (or localhost) — proving the default posture
+        # doesn't block the product's own primary use case.
+        assert_host_is_safe(self.real_host)
+
+    @override_settings(CONNECTED_DATABASE_BLOCK_PRIVATE_NETWORKS=True)
+    def test_private_network_host_rejected_when_stricter_mode_enabled(self):
+        with self.assertRaises(UnsafeHost):
+            assert_host_is_safe("10.0.0.5")
+
+    @override_settings(CONNECTED_DATABASE_BLOCK_PRIVATE_NETWORKS=True)
+    def test_loopback_rejected_when_stricter_mode_enabled(self):
+        with self.assertRaises(UnsafeHost):
+            assert_host_is_safe("127.0.0.1")
+
+    def test_unresolvable_host_is_rejected_not_left_to_the_driver(self):
+        with self.assertRaises(UnsafeHost):
+            assert_host_is_safe("this-host-does-not-exist.invalid")

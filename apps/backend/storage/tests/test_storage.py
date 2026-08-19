@@ -1,4 +1,7 @@
+from unittest.mock import patch
+
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -6,7 +9,8 @@ from rest_framework.test import APITestCase
 from accounts.models import User
 from organizations.models import Membership
 from permissions.management.commands.seed_permissions import Command as SeedPermissionsCommand
-from storage.models import FileVersion
+from storage import scanning
+from storage.models import FileObject, FileVersion
 
 PNG_HEAD = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
 TEXT_CONTENT = b"hello world\n" * 1000
@@ -179,3 +183,67 @@ class FileVersioningTests(StorageTestBase):
 
 def _make_upload(content, name):
     return SimpleUploadedFile(name, content, content_type="text/plain")
+
+
+class UploadSizeLimitTests(StorageTestBase):
+    @override_settings(MAX_UPLOAD_SIZE_BYTES=10)
+    def test_upload_over_the_configured_limit_is_rejected(self):
+        resp = _upload_file(
+            self.client, reverse("file-list-create", args=[self.bucket_id]), content=b"x" * 100
+        )
+        self.assertEqual(resp.status_code, status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+        self.assertEqual(FileObject.objects.count(), 0)
+
+
+class MalwareScanningTests(StorageTestBase):
+    """MALWARE_SCAN_ENABLED is off by default (no ClamAV daemon in this
+    test environment) — these tests enable it and fake the scanner
+    client so the *integration logic* (quarantine on FOUND, fail-closed
+    on ScanUnavailable) is verified without depending on a real ClamAV
+    daemon being reachable in CI."""
+
+    @override_settings(MALWARE_SCAN_ENABLED=True)
+    def test_infected_upload_is_quarantined_and_hidden_from_listing(self):
+        with patch(
+            "storage.services.scanning.scan_stream",
+            return_value=scanning.ScanResult(clean=False, signature="Test.Signature"),
+        ):
+            upload_url = reverse("file-list-create", args=[self.bucket_id])
+            resp = _upload_file(self.client, upload_url, display_filename="evil.txt")
+
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data["status"], FileObject.Status.QUARANTINED)
+
+        listing = self.client.get(upload_url)
+        self.assertEqual(listing.data, [])
+
+        download = self.client.get(reverse("file-download", args=[resp.data["id"]]))
+        self.assertEqual(download.status_code, status.HTTP_403_FORBIDDEN)
+
+    @override_settings(MALWARE_SCAN_ENABLED=True)
+    def test_unreachable_scanner_fails_closed_into_quarantine(self):
+        with patch(
+            "storage.services.scanning.scan_stream", side_effect=scanning.ScanUnavailable("unreachable")
+        ):
+            resp = _upload_file(
+                self.client, reverse("file-list-create", args=[self.bucket_id]), display_filename="x.txt"
+            )
+        self.assertEqual(resp.data["status"], FileObject.Status.QUARANTINED)
+
+    @override_settings(MALWARE_SCAN_ENABLED=True)
+    def test_clean_result_is_stored_active(self):
+        with patch(
+            "storage.services.scanning.scan_stream", return_value=scanning.ScanResult(clean=True)
+        ):
+            resp = _upload_file(
+                self.client, reverse("file-list-create", args=[self.bucket_id]), display_filename="ok.txt"
+            )
+        self.assertEqual(resp.data["status"], FileObject.Status.ACTIVE)
+
+    def test_scanning_disabled_by_default_stores_active_without_calling_scanner(self):
+        with patch("storage.services.scanning.scan_stream") as mock_scan:
+            resp = _upload_file(
+                self.client, reverse("file-list-create", args=[self.bucket_id]), display_filename="ok.txt"
+            )
+        mock_scan.assert_not_called()
+        self.assertEqual(resp.data["status"], FileObject.Status.ACTIVE)

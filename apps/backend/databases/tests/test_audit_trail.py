@@ -41,7 +41,23 @@ class SchemaChangeAuditTests(APITestCase):
 
         response = self.client.get(reverse("audit-event-list", args=[self.org_id]))
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(any(e["action"] == "database.create" for e in response.data))
+        self.assertTrue(any(e["action"] == "database.create" for e in response.data["results"]))
+
+    def test_audit_events_can_be_filtered_by_action(self):
+        self.client.post(reverse("tenant-database-list-create", args=[self.project_id]), {"name": "AppDB"})
+        self.client.post(reverse("tenant-database-list-create", args=[self.project_id]), {"name": "OtherDB"})
+
+        response = self.client.get(
+            reverse("audit-event-list", args=[self.org_id]), {"action": "database.create"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 2)
+        self.assertTrue(all(e["action"] == "database.create" for e in response.data["results"]))
+
+        empty = self.client.get(
+            reverse("audit-event-list", args=[self.org_id]), {"action": "no.such.action"}
+        )
+        self.assertEqual(empty.data["count"], 0)
 
     def test_denied_schema_change_is_audited_as_denied(self):
         member = User.objects.create_user(email="plain-audit@example.com", password="x")

@@ -5,8 +5,10 @@ mode — see config/settings/test.py), and verify the actual rows landed in
 the real tenant PostgreSQL table.
 """
 
+from unittest.mock import patch
+
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import connections
+from django.db import OperationalError, connections
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -14,6 +16,8 @@ from rest_framework.test import APITestCase
 from accounts.models import User
 from databases.models import TenantDatabase
 from imports.models import ImportJob
+from imports.services import _convert_value as real_convert_value
+from imports.services import run_import
 from organizations.models import Membership
 from permissions.management.commands.seed_permissions import Command as SeedPermissionsCommand
 
@@ -157,6 +161,56 @@ class ImportJobRoundTripTests(ImportTestBase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_connection_failure_is_reraised_and_progress_checkpointed_for_retry(self):
+        """imports/services.py used to swallow every exception from the
+        per-row block, including a broken connection, as if it were a
+        bad row — meaning imports/tasks.py's configured Celery retry
+        could never actually fire, and (a separate bug found while
+        fixing that) the row that was mid-flight when it broke got
+        checkpointed as already-done, silently dropping it on retry.
+        This proves both are fixed: the failure propagates, and a
+        second run_import() call (standing in for the real worker's
+        retry, verified separately against a live worker) picks up
+        exactly where it left off with nothing skipped or duplicated."""
+        job = ImportJob.objects.create(
+            file_id=self.file_id,
+            table_id=self.table_id,
+            encoding="utf-8",
+            delimiter=",",
+            column_mapping=self.column_mapping,
+            created_by=self.admin,
+        )
+
+        calls = {"n": 0}
+
+        def flaky_convert(raw, data_type):
+            calls["n"] += 1
+            if calls["n"] == 4:  # first field ("name") of row 2 (Bob)
+                raise OperationalError("simulated connection loss")
+            return real_convert_value(raw, data_type)
+
+        with patch("imports.services._convert_value", side_effect=flaky_convert):
+            with self.assertRaises(OperationalError):
+                run_import(str(job.id))
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, ImportJob.Status.RUNNING)  # not marked FAILED by run_import itself
+        self.assertEqual(job.imported_rows, 1)  # row 1 (Alice) committed before the failure
+        # row 2 (Bob) was in flight, not committed — must not be skipped on retry
+        self.assertEqual(job.last_processed_row, 1)
+
+        # Simulates the retry a real Celery worker would perform.
+        run_import(str(job.id))
+        job.refresh_from_db()
+        self.assertEqual(job.status, ImportJob.Status.COMPLETED)
+        self.assertEqual(job.imported_rows, 2)  # Alice + Bob (Bob was retried, not dropped)
+        self.assertEqual(job.rejected_rows, 1)  # Carol's bad age, unaffected by the retry
+
+        with connections["tenant"].cursor() as cursor:
+            cursor.execute(f'SELECT name FROM "{self.schema_name}"."people" ORDER BY name')
+            names = [row[0] for row in cursor.fetchall()]
+        self.assertEqual(names, ["Alice", "Bob"])
 
     def test_member_without_dataset_import_permission_is_forbidden(self):
         member = User.objects.create_user(email="plain-import@example.com", password="x")

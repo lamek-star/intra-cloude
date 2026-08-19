@@ -12,10 +12,15 @@ import psycopg
 from django.db import connections
 from django.test import TestCase
 
-from system.tenant_role import TenantRoleError, provision_role
+from system.tenant_role import TenantRoleError, ensure_role, provision_role
 
 
-class ProvisionTenantRoleTests(TestCase):
+class _TenantRoleTestBase(TestCase):
+    """Shared setUp/cleanup for tenant-role tests — not itself collected
+    as a test case (no test_* methods here), so subclassing it doesn't
+    silently duplicate test runs the way subclassing a TestCase with its
+    own test_* methods would."""
+
     databases = {"tenant"}
 
     def setUp(self):
@@ -62,6 +67,7 @@ class ProvisionTenantRoleTests(TestCase):
             connect_timeout=10,
         )
 
+class ProvisionTenantRoleTests(_TenantRoleTestBase):
     def test_new_role_can_create_a_schema_but_not_a_database(self):
         provision_role(self.role_name, self.password)
 
@@ -99,3 +105,22 @@ class ProvisionTenantRoleTests(TestCase):
         provision_role(self.role_name, self.password)
         with self.assertRaises(TenantRoleError):
             provision_role(self.role_name, "a-different-password-1!")
+
+
+class EnsureRoleIdempotencyTests(_TenantRoleTestBase):
+    def test_first_call_creates_the_role_like_provision_role_does(self):
+        ensure_role(self.role_name, self.password)
+        with self._connect_as_new_role() as conn, conn.cursor() as cur:
+            cur.execute("SELECT 1")
+
+    def test_rerunning_with_a_new_password_updates_it_instead_of_raising(self):
+        ensure_role(self.role_name, self.password)
+        new_password = "a-different-real-password-2!"
+        ensure_role(self.role_name, new_password)  # must not raise
+
+        with self.assertRaises(psycopg.OperationalError):
+            self._connect_as_new_role()  # old password not accepted anymore
+
+        self.password = new_password
+        with self._connect_as_new_role() as conn, conn.cursor() as cur:
+            cur.execute("SELECT 1")

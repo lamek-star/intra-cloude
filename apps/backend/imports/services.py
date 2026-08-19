@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
-from django.db import connections, transaction
+from django.db import InterfaceError, OperationalError, connections, transaction
 from django.http import Http404
 from django.utils import timezone
 from psycopg import sql
@@ -181,6 +181,12 @@ def run_import(job_id: str) -> None:
     imported = job.imported_rows
     rejected = job.rejected_rows
     row_number = job.last_processed_row
+    # Tracks the last row whose per-row try/except actually finished
+    # (imported or rejected) — distinct from `row_number`, which during a
+    # mid-row failure still holds the row that was *in progress* when it
+    # broke. Checkpointing on `row_number` in that case would mark an
+    # uncommitted row as already processed, silently dropping it on retry.
+    last_completed_row = row_number
     pending_errors: list[ImportJobError] = []
 
     try:
@@ -194,6 +200,22 @@ def run_import(job_id: str) -> None:
                     with transaction.atomic(using="tenant"):
                         cursor.execute(insert_sql, values)
                     imported += 1
+                except (OperationalError, InterfaceError):
+                    # The connection itself is broken, not this row's
+                    # data — re-raise to the outer handler so the job is
+                    # checkpointed and the Celery task's retry actually
+                    # gets a chance to run (imports/tasks.py). A bare
+                    # `except Exception` here previously swallowed
+                    # connection failures as if they were bad rows,
+                    # which both mislabeled every remaining row as
+                    # "rejected" and meant the retry path was
+                    # unreachable no matter what imports/tasks.py did.
+                    # These are Django's own exception classes
+                    # (django.db.OperationalError/InterfaceError) — the
+                    # DB-API errors psycopg itself raises get wrapped
+                    # into new instances of these by Django's cursor,
+                    # they are not psycopg.OperationalError instances.
+                    raise
                 except Exception as exc:  # noqa: BLE001 - any bad row is rejected, not fatal to the job
                     rejected += 1
                     if len(pending_errors) < MAX_STORED_ERRORS:
@@ -203,18 +225,23 @@ def run_import(job_id: str) -> None:
                             )
                         )
 
+                last_completed_row = row_number
                 if row_number % CHUNK_ROWS == 0:
-                    _checkpoint(job, imported, rejected, row_number, pending_errors)
+                    _checkpoint(job, imported, rejected, last_completed_row, pending_errors)
                     pending_errors = []
-    except Exception as exc:
-        _checkpoint(job, imported, rejected, row_number, pending_errors)
-        job.status = ImportJob.Status.FAILED
-        job.error_message = str(exc)[:2000]
-        job.save(update_fields=["status", "error_message"])
-        logger.exception("Import job %s failed", job_id)
-        return
+    except Exception:
+        # Checkpoint progress and re-raise — a bad *row* is already
+        # handled above (rejected, not fatal); reaching here means
+        # something broke the job itself (e.g. a dropped DB connection),
+        # which is exactly the case imports/tasks.py's Celery retry exists
+        # for. Swallowing this here (the previous behavior) meant the
+        # task's configured retries never actually fired: no exception
+        # ever propagated out of run_import for Celery to react to.
+        _checkpoint(job, imported, rejected, last_completed_row, pending_errors)
+        logger.exception("Import job %s hit a transient failure at row %s; will retry", job_id, row_number)
+        raise
 
-    _checkpoint(job, imported, rejected, row_number, pending_errors)
+    _checkpoint(job, imported, rejected, last_completed_row, pending_errors)
     job.total_rows = row_number
     job.status = ImportJob.Status.COMPLETED
     job.completed_at = timezone.now()

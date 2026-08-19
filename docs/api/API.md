@@ -206,7 +206,7 @@ only.
 
 | Method | Path | Auth | Required permission | Notes |
 |---|---|---|---|---|
-| GET | `/api/v1/organizations/{id}/audit/` | active membership | `audit.read` | Most recent 200 events for the org, newest first. Every schema-change operation above records one, including on permission denial (Section 18 of the master prompt). |
+| GET | `/api/v1/organizations/{id}/audit/` | active membership | `audit.read` | Paginated (standard `limit`/`offset`), filterable by `action`, `actor`, `resource_type`, `result`, `since`, `until` — Phase 12 replaced the earlier hardcoded "most recent 200, no filters" behavior, which made anything older effectively unreachable. Records are immutable once written (Phase 12: `AuditEvent.save()`/`.delete()`, and a `pre_delete` signal for bulk `QuerySet.delete()`, both reject modification/deletion). Covers schema-change operations, storage upload/delete/restore/download, permission/role grants, organization/team membership changes, and auth login/logout/MFA-verify — several of these had no audit coverage at all before Phase 12. |
 
 ### CSV Import (`imports/urls.py`)
 
@@ -312,10 +312,14 @@ substitution.
   `UserRateThrottle`, plus a tighter `"auth"` scope on login/register/
   MFA-verify — Phase 10) and is now exercised by a test
   (`accounts/tests/test_mfa.py`).
-- Malware scanning on upload is not implemented — no antivirus service
-  exists to hook into yet (see docs/security/THREAT_MODEL.md Section 6);
-  the upload pipeline has a natural hook point
-  (`storage/services.py:upload_file`) for one later.
+- Malware scanning on upload is implemented (`storage/scanning.py`, a
+  real ClamAV integration via `clamd`) but off by default
+  (`MALWARE_SCAN_ENABLED=False`) — see docs/security/THREAT_MODEL.md
+  Section 6 and the optional `clamav` service in docker-compose.yml
+  (`--profile malware-scan`). When enabled, an infected or
+  unscannable-due-to-scanner-unavailability upload is stored with
+  `status=quarantined`: hidden from listings and blocked from download,
+  never silently treated as clean.
 - File search is a simple `icontains` on `display_filename` — fine at
   current scale, revisit (e.g. Postgres full-text search) if it becomes a
   bottleneck.

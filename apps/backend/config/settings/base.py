@@ -209,6 +209,11 @@ REST_FRAMEWORK = {
         # the endpoints a credential-stuffing or brute-force attempt
         # would actually hit (Phase 10; docs/deployment/INTERNET_GATEWAY.md).
         "auth": "10/minute",
+        # Shared per-organization budget (system.throttling.OrganizationRateThrottle,
+        # not the per-user "user" scope above) on import-job creation — each
+        # job is a background Celery task with real DB/object-storage cost,
+        # so this bounds it per organization, not just per member.
+        "import": "20/minute",
     },
     "EXCEPTION_HANDLER": "system.exceptions.structured_exception_handler",
 }
@@ -257,9 +262,38 @@ OBJECT_STORAGE_ACCESS_KEY = env("OBJECT_STORAGE_ROOT_USER", "")
 OBJECT_STORAGE_SECRET_KEY = env("OBJECT_STORAGE_ROOT_PASSWORD", "")
 OBJECT_STORAGE_BUCKET_PREFIX = env("OBJECT_STORAGE_BUCKET_PREFIX", "pdc")
 
+# Server-side upper bound on any single file upload (Section 8 of the
+# master prompt) — no such cap existed before. Default 2 GiB; an
+# operator with a real capacity plan (docs/architecture/... hardware
+# guide, once written) can raise or lower it per deployment profile.
+MAX_UPLOAD_SIZE_BYTES = int(env("MAX_UPLOAD_SIZE_BYTES", str(2 * 1024**3)))
+
+# --- Malware scanning (Section 33 of the master prompt) ---
+# Off by default: turning this on requires a ClamAV daemon actually
+# reachable at CLAMAV_HOST/CLAMAV_PORT (see infrastructure/docker and
+# docker-compose.yml's optional `clamav` service). storage/services.py
+# fails closed — a scanner that can't be reached quarantines the file,
+# it never falls back to treating it as clean.
+MALWARE_SCAN_ENABLED = env_bool("MALWARE_SCAN_ENABLED", False)
+CLAMAV_HOST = env("CLAMAV_HOST", "clamav")
+CLAMAV_PORT = int(env("CLAMAV_PORT", "3310"))
+CLAMAV_TIMEOUT_SECONDS = int(env("CLAMAV_TIMEOUT_SECONDS", "30"))
+
 # Dedicated key for encrypting ConnectedDatabase credentials at rest
 # (Section 15 of the master prompt) — distinct from SECRET_KEY.
 CREDENTIAL_ENCRYPTION_KEY = env("CREDENTIAL_ENCRYPTION_KEY", required=True)
+
+# --- Connected-database SSRF guard (Section 30 of the master prompt) ---
+# databases/connectors.py always blocks loopback/link-local/reserved/
+# multicast targets (link-local in particular covers cloud metadata
+# endpoints like 169.254.169.254) before dialing a connected database.
+# RFC1918 private ranges are allowed by default because they are the
+# *expected* target for this local-first, on-prem product — a
+# customer's own PostgreSQL is very likely to live on their own LAN.
+# Flip this on for deployments where that assumption doesn't hold (e.g.
+# a hosted/multi-tenant topology where "private network" might mean the
+# host's own internal Docker network, which tenants must not reach).
+CONNECTED_DATABASE_BLOCK_PRIVATE_NETWORKS = env_bool("CONNECTED_DATABASE_BLOCK_PRIVATE_NETWORKS", False)
 
 # --- Backups (Phase 11; docs/operations/BACKUP_RESTORE.md) ---
 # Where pg_dump output is written (system/backups.py). Mounted as a named

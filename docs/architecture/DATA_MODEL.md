@@ -1,7 +1,9 @@
 # Data Model — Private Data Cloud
 
-Status: DRAFT (Phase 0)
-Last updated: 2026-08-07
+Status: Living document — implemented through Phase 12 (production
+hardening); no longer a Phase 0 draft. Updated alongside the code as new
+phases land, per CLAUDE.md's engineering process.
+Last updated: 2026-08-19
 
 This document defines the control-plane entity model (Django apps/models) and
 the tenant data-plane conventions. It is the reference for Phase 2+
