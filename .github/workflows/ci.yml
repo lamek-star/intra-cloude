@@ -115,13 +115,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Type check
-        run: npx tsc --noEmit
-
       - name: Lint
         run: npm run lint
 
+      # Build before Type check, not after: Next.js 16 generates
+      # PageProps/LayoutProps as global ambient types into
+      # .next/types/**/*.ts (tsconfig.json includes that path) as a
+      # side effect of `next build`/`next dev` — running `tsc --noEmit`
+      # before anything has ever built the app leaves those types
+      # undefined. Confirmed for real: this was the actual cause of the
+      # standing "Cannot find name 'PageProps'" CI failures on master
+      # going back to at least Phase 12, caught by actually checking
+      # `gh run list` against real GitHub Actions runs rather than only
+      # trusting local Docker-based verification.
       - name: Build
         run: npm run build
         env:
           NEXT_TELEMETRY_DISABLED: "1"
+
+      - name: Type check
+        run: npx tsc --noEmit

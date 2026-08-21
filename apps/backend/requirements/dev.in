@@ -7,3 +7,10 @@ pytest~=8.3
 pytest-django~=4.9
 pytest-cov~=6.0
 factory-boy~=3.3
+# CI's dependency-vulnerability-scan step (.github/workflows/ci.yml)
+# assumed this was already available and has been failing with
+# "command not found" on every real GitHub Actions run since Phase 12
+# added that step -- caught by actually checking `gh run list`, not
+# just trusting the locally-verified Docker test-runner setup, which
+# had it installed by hand and masked the gap.
+pip-audit~=2.7
