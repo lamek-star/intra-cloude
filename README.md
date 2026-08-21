@@ -26,9 +26,13 @@ Phase 13 portable export/import pass (a `.icp` package format covering
 an organization's workspace/project tree, tenant databases, object
 storage, and membership/role metadata — restored only into a brand-new
 organization, exclusively through the same validated service functions
-the live database builder and upload pipeline already use), have also
-landed since. 252 tests pass against real PostgreSQL, MinIO, and
-Celery — not mocks — including cross-organization IDOR/BOLA regression
+the live database builder and upload pipeline already use), and a
+Phase 14 analytics pass (a fixed, versioned registry of server-side
+statistics operations — descriptive stats plus correlation/regression/
+t-test/chi-square/ANOVA/time-series, real numpy/scipy — automatic data
+profiling, and declarative-JSON dashboards re-validated live on every
+render), have also landed since. 279 tests pass against real PostgreSQL,
+MinIO, and Celery — not mocks — including cross-organization IDOR/BOLA regression
 tests for every tenant-owned resource type in the platform. Every
 phase's exit criteria has been confirmed against the actual running
 Docker stack, not only the automated suite — including, in the final

@@ -54,8 +54,8 @@ they are never invented inline in view code.
 | Super Administrator | Platform operator | `system.admin` + all permissions, all organizations |
 | Organization Administrator | Org owner/IT admin | All permissions except `system.admin`, scoped to their own organization (see implementation note below) |
 | Storage Administrator | IT/ops for files | `storage.read/write/delete/share/manage` |
-| Database Administrator | Data team lead | `database.*`, `dataset.import/export`, `connection.manage` |
-| Developer | App/integration builder | `application.create`, `application.credentials.manage`, `database.read`, `database.write`, `dataset.import/export` |
+| Database Administrator | Data team lead | `database.*`, `dataset.import/export/analyze`, `connection.manage` |
+| Developer | App/integration builder | `application.create`, `application.credentials.manage`, `database.read`, `database.write`, `dataset.import/export/analyze` |
 | Editor | General contributor | `storage.read/write`, `database.read/write`, `dataset.import` |
 | Viewer | Read-only staff | `storage.read`, `database.read` |
 | Auditor | Compliance/security | `audit.read` only |

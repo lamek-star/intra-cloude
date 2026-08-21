@@ -8,6 +8,8 @@ boto3~=1.35
 cryptography~=50.0
 clamd~=1.0
 argon2-cffi~=25.1
+numpy~=2.5
+scipy~=1.18
 # Transitive via Django, pinned explicitly: 0.5.5 has four known CVEs
 # (PYSEC-2026-3696/3697/3698/3699), fixed in 0.6.0. Confirmed via
 # `pip-audit` against the compiled lock file.

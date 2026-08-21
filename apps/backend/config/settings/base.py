@@ -71,6 +71,7 @@ LOCAL_APPS = [
     "audit",
     "system",
     "exports",
+    "analytics",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -295,6 +296,14 @@ CREDENTIAL_ENCRYPTION_KEY = env("CREDENTIAL_ENCRYPTION_KEY", required=True)
 # a hosted/multi-tenant topology where "private network" might mean the
 # host's own internal Docker network, which tenants must not reach).
 CONNECTED_DATABASE_BLOCK_PRIVATE_NETWORKS = env_bool("CONNECTED_DATABASE_BLOCK_PRIVATE_NETWORKS", False)
+
+# --- Analytics (Section 20/27 of the master prompt) ---
+# Upper bound on how many rows any single analytics operation pulls
+# into Python/numpy/scipy — a statistics engine must not become a
+# denial-of-service vector. Deliberately smaller than a raw data-export
+# cap: unlike a CSV export, this bounds request latency, not just total
+# throughput.
+ANALYTICS_MAX_ROWS = int(env("ANALYTICS_MAX_ROWS", "200000"))
 
 # --- Backups (Phase 11; docs/operations/BACKUP_RESTORE.md) ---
 # Where pg_dump output is written (system/backups.py). Mounted as a named

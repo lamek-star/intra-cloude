@@ -65,6 +65,14 @@ restoring it into an isolated database, in Phase 12, a real EICAR
 upload through the live API being quarantined by a real ClamAV daemon,
 and in Phase 13, the full create-org/export/import/verify round trip
 (files, schema, FK-linked row data, membership) against the live API.
+Phase 14 added a new `analytics` app: a fixed, versioned registry of
+server-side statistics operations (descriptive + correlation/
+regression/t-test/chi-square/ANOVA/time-series, real numpy/scipy, never
+hand-rolled formulas), automatic per-table data profiling, and
+declarative-JSON dashboards re-validated live on every render — a
+revoked ResourceGrant is proven to break a previously-working widget on
+its very next render, not just at dashboard-creation time. 279 tests
+total.
 
 No known, disclosed architectural gaps remain open from earlier phases:
 the tenant-Postgres-least-privilege gap tracked since Phase 2/3
@@ -131,8 +139,9 @@ secure defaults; readable code over clever code.
 See `README.md` for the full tree. Key rule: Django is organized into
 bounded apps (`accounts`, `organizations`, `permissions`, `workspaces`,
 `storage`, `databases`, `datasets`, `imports`, `applications`, `sharing`,
-`audit`, `system`, `exports`) per `docs/architecture/DATA_MODEL.md`
-Section 1 — not one monolithic app. Business logic lives in service layers, not views or
+`audit`, `system`, `exports`, `analytics`) per
+`docs/architecture/DATA_MODEL.md` Section 1 — not one monolithic app.
+Business logic lives in service layers, not views or
 serializers.
 
 ## Development Process

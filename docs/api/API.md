@@ -306,6 +306,24 @@ mid-restore aren't rolled back by a later failure) — a known, accepted
 gap, not a correctness problem, since no catalog row survives a
 rollback to reference an orphaned object.
 
+### Analytics & Dashboards (`analytics/urls.py`, Phase 14)
+
+| Method | Path | Auth | Required permission | Notes |
+|---|---|---|---|---|
+| POST | `/api/v1/tables/{table_id}/analyze/` | active membership | `database.read` | Body: `{"operation", "params"}`. Runs synchronously and returns the result directly — every operation is bounded by `ANALYTICS_MAX_ROWS` (default 200,000) before a single row reaches Python, so worst-case latency stays predictable without needing a background job for this phase's operation set. `operation` is one of a fixed, versioned registry (`analytics/operations.py:OPERATIONS`) — never arbitrary code or SQL. Descriptive: `count`, `distinct_count`, `missing`, `duplicate_count`, `frequency_distribution`, `sum`, `mean`, `median`, `min`, `max`, `stdev`, `variance`, `percentiles`, `outlier_detection`. Statistical: `pearson_correlation`, `spearman_correlation`, `linear_regression`, `t_test`, `chi_square`, `anova`, `time_series_summary`. Every statistical result includes `method`, `sample_size`, `assumptions`, and an `interpretation_note` — correlation results are never returned without a "does not establish causation" note attached. A column's type is validated server-side against the operation (e.g. `mean` on a text column is a 400), not left to the UI to enforce. |
+| GET | `/api/v1/tables/{table_id}/profile/` | active membership | `database.read` | Automatic data-quality report for the whole table in one call: row/column counts, and per column — missing count, null percentage, unique count, and (numeric) min/max/mean/median/stdev/potential-outlier-count or (categorical) top 5 values. |
+| GET/POST | `/api/v1/tenant-databases/{id}/dashboards/` | active membership | `dataset.analyze` (POST only) | A dashboard is `{"name", "widgets": [{"title", "chart_type", "table_id", "operation", "params"}, ...]}` — declarative JSON, never a saved raw query. Every widget's `table_id`/`operation` is validated at save time. |
+| GET/PATCH/DELETE | `/api/v1/dashboards/{id}/` | active membership | `dataset.analyze` (PATCH/DELETE) | GET only needs active membership (rendering, below, is where the real per-widget read check happens). |
+| GET | `/api/v1/dashboards/{id}/render/` | active membership | — (per-widget `database.read`) | Re-runs every widget's operation against **live** data, re-checking `database.read` on each widget's own table every time — a dashboard can never be used to keep seeing data a later-revoked grant should now hide. A widget whose permission or table is no longer reachable reports its own `{"error": ...}` instead of failing the whole dashboard. |
+
+Analytics deliberately runs synchronously rather than through Celery in
+this phase (Section 27 of the master prompt suggests background jobs for
+"expensive" analyses) — the row cap already bounds worst-case latency to
+something acceptable within a normal request, and adding a job/polling
+layer for operations that already return in well under a second would be
+premature. Revisit if a future operation (or a much higher row cap) makes
+that bound no longer hold.
+
 ## Authorization Model in Practice
 
 Every org-scoped view (and, transitively, every workspace/project/bucket/

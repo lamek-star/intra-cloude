@@ -994,6 +994,69 @@ actually running the round-trip test and reading what broke:**
    async job endpoint, which is also the more precise test of the
    actual validation logic being exercised.
 
+## Phase 14 — Analytics & Dashboards — COMPLETE
+
+New `analytics` app implementing the statistics/profiling/dashboard
+architecture designed in the Phase 12 audit: a fixed, versioned
+registry of server-side operations (`analytics/operations.py`) —
+descriptive statistics (count, distinct/missing/duplicate counts,
+frequency distribution, sum/mean/median/min/max/stdev/variance/
+percentiles, IQR outlier detection) and statistical analysis (Pearson/
+Spearman correlation, simple linear regression, Welch's t-test,
+chi-square test of independence, one-way ANOVA, a time-series summary
+with moving average and growth rate) — plus automatic per-table data
+profiling and saved dashboards of declarative widgets. Real numpy/scipy
+computation, not hand-rolled statistics formulas (the master prompt's
+own "do not invent cryptography" discipline extended to "do not invent
+validated statistical algorithms" either).
+
+Design choices worth recording:
+- **Every statistical result carries its own caveats.** `method`,
+  `sample_size`, `assumptions`, and an `interpretation_note` are
+  attached inside `operations.py` itself, not left to whatever UI
+  happens to render the result later — every correlation/regression/
+  t-test/chi-square/ANOVA result includes a "does not establish
+  causation" (or equivalent) note as data, not documentation.
+- **Column types are validated server-side, not just by the UI.**
+  `analytics/data.py::require_types` rejects e.g. `mean` on a text
+  column before any query runs — Section 27's "never blindly apply
+  statistical tests" applies at the API boundary, not only to whatever
+  client happens to be calling it.
+- **A hard row cap (`ANALYTICS_MAX_ROWS`, default 200,000) applies
+  before a single row reaches Python**, with a `truncated` flag in
+  every response so a capped result is never mistaken for a complete
+  one. Chosen deliberately smaller than a raw data-export cap: this
+  bounds request *latency*, not just total throughput.
+- **Analysis runs synchronously, not through Celery**, despite Section
+  27 suggesting background jobs for "expensive" analyses — the row cap
+  already bounds worst-case latency to something reasonable within a
+  normal request for this phase's operation set, and a job/polling
+  layer for sub-second operations would be premature. Documented as a
+  deliberate choice to revisit, not an oversight, if a future operation
+  (or a much higher cap) breaks that assumption.
+- **Dashboards are declarative JSON, re-validated live on every
+  render** — never a saved raw query or a cached result. Verified with
+  a real revoked-ResourceGrant test: a widget that worked at dashboard
+  creation time correctly starts failing (with its own per-widget
+  error, not a whole-dashboard failure) the moment the underlying
+  `database.read` grant is revoked, proving the permission check is
+  live, not cached from creation.
+- **Running ad-hoc analysis needs only `database.read`** (the same
+  capability the data explorer already requires) since it doesn't
+  expose anything reading the raw rows wouldn't. **Creating or editing
+  a saved dashboard needs the new `dataset.analyze` permission**, since
+  a saved dashboard is a persisted artifact, not just a read — granted
+  to `database-administrator`/`developer`/`organization-administrator`/
+  `super-administrator` by default.
+
+Exit criteria — verified for real against live PostgreSQL, not
+mocked statistics: a real 6-row sales table with a known, constructed
+relationship (`amount` ≈ 10 × `quantity`) confirms Pearson r > 0.99 and
+a recovered regression slope within 1 of the true value 10; a two-group
+t-test and three-group ANOVA both run against real grouped data; chi-
+square runs against a real contingency table. 279 tests total (up from
+Phase 13's 252); ruff and mypy clean.
+
 ## Non-Negotiable Cross-Phase Rules
 
 - No phase ships without tenant-isolation tests for any new tenant-owned
