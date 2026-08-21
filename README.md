@@ -31,7 +31,12 @@ Phase 14 analytics pass (a fixed, versioned registry of server-side
 statistics operations — descriptive stats plus correlation/regression/
 t-test/chi-square/ANOVA/time-series, real numpy/scipy — automatic data
 profiling, and declarative-JSON dashboards re-validated live on every
-render), have also landed since. 279 tests pass against real PostgreSQL,
+render), and a Phase 15 backup/DR hardening pass (object storage and
+configuration joined the automated nightly-backup/weekly-restore-test
+system alongside the two Postgres backups, and every backup type can
+now be encrypted at rest) have also landed since. A Windows deployment
+architecture is decided (ADR-0012 — an installer-managed WSL2 appliance
+by default) but not yet built. 289 tests pass against real PostgreSQL,
 MinIO, and Celery — not mocks — including cross-organization IDOR/BOLA regression
 tests for every tenant-owned resource type in the platform. Every
 phase's exit criteria has been confirmed against the actual running

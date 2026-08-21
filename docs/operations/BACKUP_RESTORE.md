@@ -5,10 +5,13 @@ automated restoration test job described in Sections 6/7 are real,
 scheduled via Celery Beat, and verified against the live Docker stack;
 see `system/backups.py`, `system/tasks.py`, and
 `docs/architecture/ROADMAP.md` Phase 11 for what was actually built and
-how it was verified). Object storage replication/`mc mirror` (Section 2)
-and off-host shipping (Section 4) remain deployment-time operator
-responsibilities, not automated by the platform itself — see Section 9.
-Last updated: 2026-08-09
+how it was verified. Phase 15 extended the same automated backup +
+weekly restore-test pattern to object storage and configuration, and
+added optional at-rest encryption for every backup type — see
+`docs/architecture/ROADMAP.md` Phase 15). Off-host shipping (Section 4)
+remains a deployment-time operator responsibility, not automated by the
+platform itself — see Section 9.
+Last updated: 2026-08-21
 
 ## 1. Principle
 
@@ -24,9 +27,9 @@ tested — an untested backup is an assumption, not a guarantee.
 |---|---|---|---|
 | Control-plane PostgreSQL | `pg_dump` (logical) + WAL archiving (physical, once volume justifies it) | Nightly full + continuous WAL | Contains users, orgs, permissions, file/schema catalog, audit |
 | Tenant PostgreSQL | `pg_dump` per schema/org or physical base backup + WAL | Nightly full + continuous WAL | Larger, may need physical backups (`pg_basebackup`) as data grows |
-| Object storage | MinIO server-side replication or `mc mirror` to backup target | Continuous/near-continuous | Content-addressed/UUID keys make incremental sync efficient |
-| Configuration | Version-controlled `.env.example`, compose files, infra-as-code | On every change (git) | Actual `.env` secrets excluded from git; backed up via the secrets mechanism below |
-| Secrets (Django `SECRET_KEY`, credential-encryption key, DB passwords, object storage root keys) | Encrypted secret backup (e.g. age/gpg-encrypted archive) stored separately from the primary backup target | On rotation/change | Losing the credential-encryption key makes stored `ConnectedDatabase` credentials unrecoverable — treat its backup as highest priority |
+| Object storage | **Implemented, Phase 15.** `system/backups.py::_run_object_storage_backup` streams every object into one tar archive plus a sha256 manifest, nightly via Celery Beat | Nightly full (MinIO server-side replication/`mc mirror` for continuous off-host sync remains an optional operator addition — Section 9) | Content-addressed/UUID keys make incremental sync efficient if an operator adds one |
+| Configuration | **Implemented, Phase 15.** `system/backups.py::_run_configuration_backup` captures the running application's own environment variables (a fixed allowlist, not raw `.env` — the container never has that file mounted) nightly via Celery Beat | Nightly, plus version-controlled `.env.example`/compose files/infra-as-code on every change (git) | Secret-looking values (`SECRET_KEY`, `CREDENTIAL_ENCRYPTION_KEY`, DB passwords, object-storage root keys) are redacted unless `BACKUP_ENCRYPTION_KEY` is set, in which case the whole backup is encrypted and includes real values |
+| Secrets (Django `SECRET_KEY`, credential-encryption key, DB passwords, object storage root keys) | **Implemented, Phase 15**, as part of the configuration backup above, when `BACKUP_ENCRYPTION_KEY` is set (AES-256-GCM/Argon2id, the same container format `exports/container.py` uses for `.icp` packages) | On the same nightly schedule as configuration | Losing `BACKUP_ENCRYPTION_KEY` itself makes every encrypted backup — including this one — permanently unrecoverable; store it separately from `BACKUP_DIR` (Section 9) |
 | Audit logs | Included in control-plane DB backup; consider separate export/archive for long retention if compliance requires it | Nightly (bundled) | |
 
 ## 3. Retention (initial target, adjust per organizational policy)
@@ -60,10 +63,10 @@ shipped elsewhere).
 
 ## 6. Restoration Procedure
 
-Steps 2/3/7/8 below are implemented and automated (`system/backups.py`:
-`run_backup`/`verify_backup_restorable`); steps 1/4/5/6 are deployment-
-level operator responsibility, not something application code can safely
-automate (see Section 9).
+Steps 2/3/4/5/7/8 below are implemented and automated (`system/backups.py`:
+`run_backup`/`verify_backup_restorable`, dispatching per backup type);
+steps 1/6 remain deployment-level operator responsibility, not something
+application code can safely automate (see Section 9).
 
 1. Provision a clean target environment (or a dedicated restore-test
    environment — never restore-test against production). **Implemented,
@@ -78,8 +81,8 @@ automate (see Section 9).
    exercise per Section 8.
 2. Restore control-plane PostgreSQL from the chosen backup point. **Implemented** (`pg_restore`, custom-format dump).
 3. Restore tenant PostgreSQL from the chosen backup point. **Implemented.**
-4. Restore/replicate object storage data. Not automated by the platform — MinIO replication/`mc mirror` is an operator-configured, infrastructure-level concern (Section 9).
-5. Restore configuration and secrets from the encrypted secret backup. Operator responsibility — secrets never pass through application code to be backed up by it (Section 2).
+4. Restore object storage data. **Implemented, Phase 15**: `_verify_object_storage_backup_restorable` extracts the tar archive, checks every object against its manifest sha256, re-uploads it to a scratch key prefix in the same bucket (the object-storage equivalent of the Postgres restore-test's isolated same-server database), reads it back, and confirms the round trip — a genuine restore into the real target system. A full production restore additionally means re-uploading to the *real* (non-scratch) keys, which the automated weekly check deliberately doesn't do against a live bucket — see Section 7.
+5. Restore configuration and secrets. **Implemented, Phase 15**, when `BACKUP_ENCRYPTION_KEY` is set: `_verify_configuration_backup_restorable` decrypts and parses the backup, confirming every expected configuration key is present. Without `BACKUP_ENCRYPTION_KEY`, secret values were never captured in the first place (redacted at backup time — Section 2), so there is nothing to restore from this backup for those keys; an operator's own separately-secured secret record remains the recovery path in that configuration.
 6. Bring the stack up pointed at restored data; run health checks. Use `/readyz` (Phase 1) — already checks exactly this (control-plane DB, tenant DB, Valkey reachability).
 7. Run a scripted validation pass: can a known test user log in, can a
    known test file be downloaded and its checksum verified, can a known
@@ -102,15 +105,25 @@ automate (see Section 9).
 ## 7. Automated Restoration Testing — IMPLEMENTED
 
 `CELERY_BEAT_SCHEDULE` (`config/settings/base.py`) schedules
-`system.tasks.verify_latest_backup_task` weekly for both the
-control-plane and tenant backup types, restoring the latest successful
-backup of each into an isolated database and running the Section 6
-validation pass automatically — the concrete mechanism that satisfies "a
-backup strategy is not complete until restoration is tested." Manual
-triggers also exist (`python manage.py verify_backup <control_db|
-tenant_db>`) for ops use outside the schedule. Verified for real against
-the live Docker stack in Phase 11 (see `docs/architecture/ROADMAP.md`
-Phase 11) — not just unit-tested.
+`system.tasks.verify_latest_backup_task` weekly for all four backup
+types (control-plane DB, tenant DB, object storage, configuration),
+restoring the latest successful backup of each into an isolated target
+and running the Section 6 validation pass automatically — the concrete
+mechanism that satisfies "a backup strategy is not complete until
+restoration is tested." Manual triggers also exist (`python manage.py
+verify_backup <control_db|tenant_db|object_storage|configuration>`) for
+ops use outside the schedule. Verified for real against the live Docker
+stack in Phase 11 (control DB/tenant DB — see
+`docs/architecture/ROADMAP.md` Phase 11) and Phase 15 (object storage/
+configuration, plus encryption for all four — see Phase 15) — not just
+unit-tested.
+
+The object-storage restore-test writes to a scratch key prefix inside
+the *same* production bucket, not a genuinely separate bucket/instance —
+deliberately, matching the same "isolated database on the same server"
+scope the Postgres restore-test already uses, and cleaned up
+immediately after (Section 6, step 4). A full disaster-recovery drill
+onto replacement infrastructure remains a Section 8 exercise.
 
 ## 8. Disaster Recovery Scenarios to Document (Phase 11 deliverable,
    tracked here so it isn't forgotten)
@@ -137,20 +150,20 @@ Phase 11) — not just unit-tested.
   upgrade if continuous point-in-time recovery (rather than nightly full
   dumps) becomes a real requirement — not needed to satisfy this phase's
   exit criteria.
-- **Object storage backup tooling: not yet chosen.** MinIO server-side
-  replication vs `mc mirror` vs `restic`/`borg` — still an operator
-  decision, not automated by the platform. Object storage content is
-  already content-addressed/UUID-keyed (`storage/backends.py`), which
-  makes any of these viable; picking one is deferred until a concrete
-  deployment needs it, per "avoid adding dependencies/infrastructure
-  before they're needed."
-- **Backup file encryption at rest: not yet implemented.** `pg_dump`
-  output currently sits unencrypted in `BACKUP_DIR`/the `pdc_backups`
-  volume — relying on filesystem/volume-level access control, not
-  independent encryption. Encrypting backup files themselves (and
-  managing that key, distinct from `CREDENTIAL_ENCRYPTION_KEY`/
-  `SECRET_KEY`) is a real gap for the "ransomware/compromise" scenario in
-  Section 8 and is the most concrete remaining item in this document.
+- **Object storage backup: automated as of Phase 15** (see Section 2) —
+  a full tar-archive backup, not incremental replication. Continuous
+  near-real-time replication (MinIO server-side replication or `mc
+  mirror`) remains an optional operator addition on top of the nightly
+  automated backup, not required for it to be correct — deferred until
+  a concrete deployment's RPO requirement demands it, per "avoid
+  adding infrastructure before it's needed."
+- **Backup file encryption at rest: implemented as of Phase 15**
+  (`BACKUP_ENCRYPTION_KEY`, Section 2) — off by default (an unencrypted
+  backup, like unencrypted `.icp` exports, is a visible, documented
+  configuration state, not a silent gap). Strongly recommended for any
+  deployment where the "ransomware/compromise" scenario (Section 8) is
+  a real concern, since `BACKUP_DIR`/the `pdc_backups` volume otherwise
+  relies entirely on filesystem/volume-level access control.
 - Off-host/off-machine shipping (Section 4) and object storage
   replication remain manual operator setup — the platform produces
   correct, verified local backups; getting a copy off-host is
@@ -158,3 +171,13 @@ Phase 11) — not just unit-tested.
   pointed at the `pdc_backups` volume), matching "local-first... backups
   don't require internet dependency for the platform itself to keep
   operating."
+- **`BACKUP_ENCRYPTION_KEY` itself has no backup mechanism** — by
+  design (see Section 2's note on configuration backups being unable
+  to protect the very key that encrypts them). An operator must record
+  it somewhere independent of this server before enabling encrypted
+  backups; this is documented but not, and cannot be, enforced by the
+  platform.
+- Continuous WAL archiving / physical base backups (`pg_basebackup`,
+  point-in-time recovery finer than nightly) remain a future upgrade
+  over the current nightly logical `pg_dump` — unchanged from the
+  Phase 11 decision, not revisited in Phase 15.

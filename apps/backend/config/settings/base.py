@@ -255,6 +255,30 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(hour=3, minute=30, day_of_week=0),
         "args": ("tenant_db",),
     },
+    # Phase 15: object storage and configuration join the same nightly-
+    # backup/weekly-restore-test cadence as the two Postgres backups
+    # above — a complete deployment's worth of state, not just the
+    # database.
+    "backup-object-storage-nightly": {
+        "task": "system.tasks.run_backup_task",
+        "schedule": crontab(hour=2, minute=45),
+        "args": ("object_storage",),
+    },
+    "backup-configuration-nightly": {
+        "task": "system.tasks.run_backup_task",
+        "schedule": crontab(hour=2, minute=50),
+        "args": ("configuration",),
+    },
+    "verify-object-storage-backup-weekly": {
+        "task": "system.tasks.verify_latest_backup_task",
+        "schedule": crontab(hour=4, minute=0, day_of_week=0),
+        "args": ("object_storage",),
+    },
+    "verify-configuration-backup-weekly": {
+        "task": "system.tasks.verify_latest_backup_task",
+        "schedule": crontab(hour=4, minute=15, day_of_week=0),
+        "args": ("configuration",),
+    },
 }
 
 # --- Object storage (S3-compatible; MinIO locally — ADR-0004) ---
@@ -311,6 +335,18 @@ ANALYTICS_MAX_ROWS = int(env("ANALYTICS_MAX_ROWS", "200000"))
 # backing storage at off-host/NAS media per BACKUP_RESTORE.md Section 4;
 # a local volume alone is not itself an off-host backup.
 BACKUP_DIR = env("BACKUP_DIR", "/backups")
+
+# Optional (Phase 15 hardening): when set, every backup type is wrapped
+# in the same AES-256-GCM/Argon2id container format exports/container.py
+# uses for .icp packages — one encrypted-archive format across the
+# product rather than a second one invented for backups. Deliberately a
+# *separate* secret from CREDENTIAL_ENCRYPTION_KEY: a configuration
+# backup contains CREDENTIAL_ENCRYPTION_KEY itself, so encrypting it
+# with itself would be circular (losing the key would make the very
+# backup meant to recover it unreadable too). Store this key completely
+# separately from BACKUP_DIR — e.g. a password manager, not this server
+# — losing it makes every encrypted backup permanently unrecoverable.
+BACKUP_ENCRYPTION_KEY = env("BACKUP_ENCRYPTION_KEY", "")
 
 # --- Feature flags (secure defaults: off) ---
 FEATURE_EXTERNAL_SHARING_ENABLED = env_bool("FEATURE_EXTERNAL_SHARING_ENABLED", False)

@@ -91,6 +91,16 @@ class ObjectStorageClient:
     def delete(self, key: str) -> None:
         self._client.delete_object(Bucket=self._bucket, Key=key)
 
+    def list_all_keys(self):
+        """Yields (key, size) for every object in the bucket, paginated —
+        never materializes the full key list in memory at once, the
+        same discipline the rest of this module applies to object
+        bodies (Phase 15: object-storage backup, system/backups.py)."""
+        paginator = self._client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self._bucket):
+            for obj in page.get("Contents", []):
+                yield obj["Key"], obj["Size"]
+
     def presigned_download_url(self, key: str, filename: str, expires_in: int = 300) -> str:
         """Not used as the default download path yet — see
         storage/views.py FileDownloadView — because the internal Docker

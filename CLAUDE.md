@@ -71,8 +71,15 @@ regression/t-test/chi-square/ANOVA/time-series, real numpy/scipy, never
 hand-rolled formulas), automatic per-table data profiling, and
 declarative-JSON dashboards re-validated live on every render — a
 revoked ResourceGrant is proven to break a previously-working widget on
-its very next render, not just at dashboard-creation time. 279 tests
-total.
+its very next render, not just at dashboard-creation time. Phase 15
+extended `system/backups.py`'s automated backup/restore-test system to
+object storage and configuration (alongside the existing control-DB/
+tenant-DB Postgres backups), and added optional at-rest encryption for
+all four backup types, reusing `exports/container.py`'s AES-256-GCM/
+Argon2id format. ADR-0012 decided the Windows deployment architecture
+(installer-managed WSL2 appliance by default; Control Center +
+customer-managed Linux host for Business/Enterprise) — decision made,
+installer not yet built. 289 tests total.
 
 No known, disclosed architectural gaps remain open from earlier phases:
 the tenant-Postgres-least-privilege gap tracked since Phase 2/3

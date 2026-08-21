@@ -1057,6 +1057,86 @@ t-test and three-group ANOVA both run against real grouped data; chi-
 square runs against a real contingency table. 279 tests total (up from
 Phase 13's 252); ruff and mypy clean.
 
+## Phase 15 — Backup/Disaster-Recovery Hardening — COMPLETE
+
+Closed the two open items `docs/operations/BACKUP_RESTORE.md` had
+tracked since Phase 11: object storage was never included in the
+automated backup system, and no backup file was ever encrypted at
+rest. Also formalized the Windows deployment decision as ADR-0012
+(installer-managed WSL2 appliance by default, a Control Center +
+customer-managed Linux host for Business/Enterprise — see the ADR for
+the full architecture comparison; no installer code yet, this is the
+decision the eventual installer work will follow).
+
+- `system/backups.py::run_backup`/`verify_backup_restorable` now
+  dispatch across four backup types, not two: `BackupRecord.BackupType`
+  gained `OBJECT_STORAGE` and `CONFIGURATION` alongside the existing
+  `CONTROL_DB`/`TENANT_DB`. Object storage backup streams every object
+  in the bucket into one tar archive plus a sha256 manifest
+  (`storage/backends.py` gained `ObjectStorageClient.list_all_keys`,
+  paginated); its restore-test extracts the archive, checks every
+  object against the manifest, re-uploads to a scratch key prefix in
+  the *same* bucket, reads it back, and confirms the round trip — the
+  object-storage equivalent of the Postgres restore-test's isolated
+  same-server database, not just an archive-integrity check.
+- Configuration backup captures the *running application's own
+  environment variables* against a fixed allowlist, not a host `.env`
+  file — the backend container never has that file mounted, only the
+  environment variables Compose's `env_file:` injected from it (found
+  while designing this: there was no path inside the container that
+  could even reach `.env`). Secret-looking values (`SECRET_KEY`,
+  `CREDENTIAL_ENCRYPTION_KEY`, DB passwords, object-storage root keys)
+  are redacted unless the backup is encrypted.
+- All four backup types can now be encrypted at rest via
+  `BACKUP_ENCRYPTION_KEY`, reusing `exports/container.py`'s AES-256-GCM/
+  Argon2id container format exactly as built for `.icp` packages in
+  Phase 13 — one reviewed encrypted-archive format across the product,
+  not a second one invented for backups. Deliberately a *separate*
+  secret from `CREDENTIAL_ENCRYPTION_KEY`: a configuration backup
+  contains `CREDENTIAL_ENCRYPTION_KEY` itself, so encrypting the backup
+  with the same key it's meant to protect would be circular. Off by
+  default — an unencrypted backup is a visible, documented
+  configuration state (same posture as `MALWARE_SCAN_ENABLED`), not a
+  silent gap.
+- `CELERY_BEAT_SCHEDULE` extended with nightly object-storage/
+  configuration backups and their weekly restore-tests, on the same
+  cadence pattern the two Postgres backups already used.
+
+Exit criteria — verified for real: a real MinIO object was backed up,
+its tar archive inspected directly (contains the object's real bytes
+and a manifest with the correct sha256), restore-verified into a real
+scratch prefix in the live bucket, read back, and cleaned up. A
+configuration backup was produced both unencrypted (confirmed secrets
+are redacted, non-secrets are real) and encrypted (confirmed the
+decrypted payload contains the real `SECRET_KEY`/DB password values,
+and that the wrong passphrase fails cleanly). A control-plane Postgres
+backup was produced with `BACKUP_ENCRYPTION_KEY` set, confirmed the
+file on disk does **not** start with `pg_dump`'s own `PGDMP` magic
+bytes (i.e. is genuinely encrypted, not just renamed), and still
+restore-verified successfully end to end through decrypt →
+`pg_restore` → validate. 289 tests total (up from Phase 14's 279);
+ruff and mypy clean.
+
+**Real bugs found while implementing this phase:**
+1. `makemigrations --check` (run for the first time this phase, not
+   habitually after every prior phase) turned up a migration that had
+   been missing since Phase 12: the `AuditEvent` composite index
+   (`organization`, `action`, `-timestamp`) added to speed up the
+   Phase 12 audit-filtering work was never actually migrated — the
+   model declared it, but the database never had it. Generated and
+   applied `audit/migrations/0002_...` to close the gap; the lesson
+   (running `makemigrations --check` as a standing verification step,
+   not just when a phase happens to touch models) is now applied going
+   forward.
+2. The first version of the tampered-archive restore-test (flip the
+   last 10 bytes of the tar file) came back "verified successfully" —
+   the flipped bytes landed in tar's end-of-archive zero-padding, not
+   any real file's data, so nothing was actually corrupted. The same
+   category of mistake Phase 13's `.icp` tamper test made and fixed;
+   fixed here the same way, using `tarfile`'s own `offset_data`/`size`
+   metadata to flip a byte at a precisely computed location inside the
+   test's own object data.
+
 ## Non-Negotiable Cross-Phase Rules
 
 - No phase ships without tenant-isolation tests for any new tenant-owned

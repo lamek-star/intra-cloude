@@ -15,6 +15,8 @@ class BackupRecord(models.Model):
     class BackupType(models.TextChoices):
         CONTROL_DB = "control_db", "Control-Plane Database"
         TENANT_DB = "tenant_db", "Tenant Database"
+        OBJECT_STORAGE = "object_storage", "Object Storage"
+        CONFIGURATION = "configuration", "Configuration"
 
     class Status(models.TextChoices):
         RUNNING = "running", "Running"
