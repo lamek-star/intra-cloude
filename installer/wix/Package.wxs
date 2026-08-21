@@ -1,0 +1,73 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <!--
+    Phase 16 walking skeleton: installs the Control Center's
+    self-contained single-file exe and a Start Menu shortcut. No
+    prerequisite/WSL2 checks, no directory-selection UI, no license
+    agreement enforcement beyond display — those are Phase 17/19.
+
+    UpgradeCode is fixed forever once this ships for real (it's the
+    identity MSI uses to recognize "this is an upgrade of the same
+    product," not a new install) — generated once via
+    [guid]::NewGuid(), never regenerate it casually.
+  -->
+  <Package Name="Intra-Cloud Control Center"
+           Manufacturer="Intra-Cloud"
+           Version="$(var.ProductVersion)"
+           UpgradeCode="622B2C0F-8C41-4F9D-8039-76F99791EF6A"
+           Language="1033"
+           Scope="perMachine">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Intra-Cloud Control Center is already installed." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Intra-Cloud">
+        <Directory Id="ControlCenterFolder" Name="Control Center" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="Intra-Cloud" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="ControlCenterComponents" Directory="ControlCenterFolder">
+      <Component Id="ControlCenterExe" Guid="6E4B2B4E-6C2C-4E1B-9B1A-2F5B7B6E1A11">
+        <File Id="ControlCenterExeFile"
+              Source="$(var.ControlCenterPublishDir)IntraCloudControlCenter.exe"
+              KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Component Id="StartMenuShortcut" Directory="ApplicationProgramsFolder" Guid="9A3E6C2D-1B4F-4C8A-8E2D-5A7C3B9F2E44">
+      <Shortcut Id="ControlCenterStartMenuShortcut"
+                Name="Intra-Cloud Control Center"
+                Description="Manage your Intra-Cloud installation"
+                Target="[ControlCenterFolder]IntraCloudControlCenter.exe"
+                WorkingDirectory="ControlCenterFolder" />
+      <RemoveFolder Id="RemoveApplicationProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />
+      <RegistryValue Root="HKCU"
+                      Key="Software\Intra-Cloud\ControlCenter"
+                      Name="installed"
+                      Type="integer"
+                      Value="1"
+                      KeyPath="yes" />
+    </Component>
+
+    <Feature Id="ControlCenterFeature" Title="Intra-Cloud Control Center" Level="1">
+      <ComponentGroupRef Id="ControlCenterComponents" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+
+    <ui:WixUI Id="WixUI_Minimal" />
+    <!-- Relative to this .wxs file's own project directory
+         (installer/wix/), not an MSBuild property — .wxs files don't
+         process $(MSBuildThisFileDirectory)-style MSBuild property
+         functions, only WiX's own $(var.X) preprocessor variables and
+         plain paths. -->
+    <WixVariable Id="WixUILicenseRtf" Value="..\assets\License.rtf" />
+
+  </Package>
+</Wix>

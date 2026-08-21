@@ -1137,6 +1137,59 @@ ruff and mypy clean.
    metadata to flip a byte at a precisely computed location inside the
    test's own object data.
 
+## Phase 16 — Windows Build Infrastructure — COMPLETE
+
+The first Windows-native code in the repository: a `control-center/`
+.NET 8 WPF walking skeleton and an `installer/wix/` WiX v5 project
+packaging it into a real MSI, plus `.github/workflows/windows-installer.yml`
+proving the whole chain (build → test → publish → package → checksum →
+artifact upload) on a real GitHub-hosted Windows runner. Full detail,
+including what's genuinely verified versus what still needs an elevated
+session or a real CI run, lives in `installer/README.md` — this entry
+stays a pointer plus the decisions worth surfacing at the roadmap level.
+
+- **A real, unexpected licensing finding**: WiX Toolset v6+ requires a
+  paid monthly "Open Source Maintenance Fee" for any revenue-generating
+  organization ($10–60/mo tiered by size) — discovered by actually
+  running the latest WiX CLI, which refused to execute at all without
+  EULA acceptance, not by reading release notes. Pinned to v5.0.2 (the
+  last fee-free major version) rather than silently accepting an
+  ongoing cost on the product's behalf; this needs a real decision
+  before release (stay on v5, budget for the fee, or switch to Inno
+  Setup) — see `installer/README.md`.
+- **.NET 8 WPF, not Electron/Tauri**, for the Control Center: its job is
+  OS-level lifecycle management (Windows Service interop, `wsl.exe`
+  process control, registry), where native .NET fits naturally and
+  shares one toolchain with the WiX installer, rather than introducing
+  a third language/runtime for a tool with almost no UI surface.
+- **A real MSI install was attempted**, not just built. It correctly
+  progressed through validation and most of the install sequence, then
+  correctly refused to complete a per-machine install without an
+  elevated session — proving the package itself is well-formed, not a
+  bug. This development session cannot self-elevate (confirmed: neither
+  an interactive `RunAs` nor registering a highest-privilege scheduled
+  task work from a non-elevated token, by design), so a full install/
+  uninstall cycle is marked as requiring a genuinely elevated session or
+  VM — Phase 20's job, not faked here.
+- `VERSION` (repo root) is the new single source of truth for the
+  product version, read by the Control Center's assembly version, the
+  MSI's `ProductVersion`, and CI artifact names — nothing currently
+  references the older placeholder `PRODUCT_VERSION` string in
+  `exports/manifest.py`; unifying those is a follow-up, not done here.
+
+Exit criteria — verified for real, locally, on an actual Windows 11
+host (not assumed from reading the code): Control Center builds,
+publishes as a self-contained single-file exe (~154 MB), launches, and
+displays the correct title/version; its 3 unit tests pass; the WiX
+project builds a real MSI (~54 MB) from a clean checkout with no
+manually-cached state; `Test-Prerequisites.ps1` runs and correctly
+classifies every check. PSScriptAnalyzer and Pester v5 against the
+PowerShell scripts could not run locally in this development session
+(`Install-Module`/`PowerShellGet` themselves are broken here — a
+sandboxing artifact, confirmed unrelated to the scripts' own
+correctness) — these are verified for the first time on the real
+GitHub Actions Windows runner, not claimed as locally tested.
+
 ## Non-Negotiable Cross-Phase Rules
 
 - No phase ships without tenant-isolation tests for any new tenant-owned

@@ -1,0 +1,164 @@
+name: Windows Installer
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "control-center/**"
+      - "installer/**"
+      - "VERSION"
+      - ".github/workflows/windows-installer.yml"
+  pull_request:
+    paths:
+      - "control-center/**"
+      - "installer/**"
+      - "VERSION"
+      - ".github/workflows/windows-installer.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build, test, and package (Windows)
+    # Pinned to a specific supported image, not windows-latest — CI
+    # reproducibility shouldn't silently shift when GitHub repoints
+    # "latest" at a new image. Bump deliberately when needed.
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Read product version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Output "Product version: $version"
+
+      # --- Control Center: build, test, publish ---
+
+      - name: Restore Control Center
+        working-directory: control-center
+        run: dotnet restore
+
+      - name: Build Control Center (Debug, for unit tests)
+        working-directory: control-center
+        run: dotnet build --no-restore -c Debug
+
+      - name: Run Control Center unit tests
+        working-directory: control-center\tests\IntraCloud.ControlCenter.Tests
+        run: dotnet test --no-restore -c Debug --logger "trx;LogFileName=test-results.trx" --results-directory ..\..\..\test-results
+
+      - name: Publish Control Center (Release, self-contained single-file)
+        working-directory: control-center
+        run: dotnet publish -c Release
+
+      - name: Smoke-test the published executable
+        shell: pwsh
+        run: |
+          $exePath = "control-center\bin\Release\net8.0-windows\win-x64\publish\IntraCloudControlCenter.exe"
+          if (-not (Test-Path $exePath)) {
+            Write-Error "Published executable not found at $exePath"
+            exit 1
+          }
+          $proc = Start-Process -FilePath $exePath -PassThru
+          Start-Sleep -Seconds 3
+          if ($proc.HasExited) {
+            Write-Error "Control Center exited immediately (code $($proc.ExitCode)) instead of staying open."
+            exit 1
+          }
+          Write-Output "Window title: $($proc.MainWindowTitle)"
+          if ($proc.MainWindowTitle -notlike "*$($env:VERSION)*") {
+            Write-Warning "Window title does not contain the expected version string."
+          }
+          Stop-Process -Id $proc.Id -Force
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+
+      # --- PowerShell scripts: static analysis + Pester ---
+
+      - name: Install PSScriptAnalyzer and Pester
+        shell: pwsh
+        run: |
+          Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser -MinimumVersion 1.21.0
+          Install-Module -Name Pester -Force -Scope CurrentUser -SkipPublisherCheck -MinimumVersion 5.5.0
+
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          $results = Invoke-ScriptAnalyzer -Path installer\scripts -Recurse -Severity Warning,Error
+          if ($results) {
+            $results | Format-Table -AutoSize
+            if ($results | Where-Object Severity -eq 'Error') {
+              Write-Error "PSScriptAnalyzer found error-severity issues."
+              exit 1
+            }
+            Write-Warning "PSScriptAnalyzer found warning-severity issues (non-blocking)."
+          } else {
+            Write-Output "PSScriptAnalyzer: clean."
+          }
+
+      - name: Run Pester tests
+        shell: pwsh
+        run: |
+          $config = New-PesterConfiguration
+          $config.Run.Path = 'installer\tests'
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          $config.TestResult.Enabled = $true
+          $config.TestResult.OutputPath = 'test-results\pester-results.xml'
+          Invoke-Pester -Configuration $config
+
+      # --- WiX installer package ---
+
+      - name: Restore WiX tool
+        working-directory: installer\wix
+        run: dotnet tool restore
+
+      - name: Build MSI
+        working-directory: installer\wix
+        run: dotnet build -c Release
+
+      - name: Compute release checksums
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          $msi = Get-ChildItem -Path installer\wix\bin\x64\Release -Filter *.msi | Select-Object -First 1
+          $exe = Get-ChildItem -Path control-center\bin\Release\net8.0-windows\win-x64\publish -Filter *.exe | Select-Object -First 1
+          Copy-Item $msi.FullName -Destination artifacts\
+          Copy-Item $exe.FullName -Destination "artifacts\IntraCloudControlCenter-standalone.exe"
+          Get-ChildItem artifacts | ForEach-Object {
+            $hash = Get-FileHash $_.FullName -Algorithm SHA256
+            "$($hash.Hash)  $($_.Name)" | Out-File -Append -Encoding ascii artifacts\SHA256SUMS.txt
+          }
+          Get-Content artifacts\SHA256SUMS.txt
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: intracloud-windows-${{ steps.version.outputs.version }}
+          path: artifacts\
+          if-no-files-found: error
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: test-results\
+          if-no-files-found: warn
+
+      # --- Extension point for future code signing (Phase 21) ---
+      # Deliberately absent, not stubbed with a fake/no-op step: signing
+      # needs a real certificate supplied via GitHub Secrets (never
+      # committed — see installer/README.md's Phase 21 section), which
+      # doesn't exist yet. Unsigned development builds must remain
+      # possible; this job produces one, correctly labeled as such by
+      # virtue of not being signed. When a signing identity exists, add
+      # a step here (e.g. `dotnet tool run sign` or `signtool.exe`)
+      # gated on `github.ref == 'refs/heads/master'` or a release tag,
+      # never running on every PR build.
