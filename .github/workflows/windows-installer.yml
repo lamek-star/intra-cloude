@@ -41,8 +41,19 @@ jobs:
 
       # --- Control Center: build, test, publish ---
 
+      # Restores both the main project and the nested test project —
+      # `dotnet restore` on just the main .csproj does not also restore
+      # a project it's referenced *by* (the test project references it,
+      # not the other way around). Confirmed by actually running this
+      # workflow with only the main project restored: the test step
+      # failed with "project.assets.json not found" since it was never
+      # restored at all.
       - name: Restore Control Center
         working-directory: control-center
+        run: dotnet restore
+
+      - name: Restore Control Center tests
+        working-directory: control-center\tests\IntraCloud.ControlCenter.Tests
         run: dotnet restore
 
       - name: Build Control Center (Debug, for unit tests)
