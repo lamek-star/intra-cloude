@@ -28,17 +28,19 @@ function Start-IntraCloudDistro {
         throw 'The Intra-Cloud distribution is not installed. Run Import-IntraCloudDistro.ps1 first.'
     }
 
-    Write-Output 'Starting the Intra-Cloud Compose stack...'
+    Write-Verbose 'Starting the Intra-Cloud Compose stack...'
     $result = Invoke-IntraCloudDistroCommand -Command 'cd /opt/intracloud && docker compose up -d'
     if ($result.ExitCode -ne 0) {
         throw "docker compose up failed (exit $($result.ExitCode)): $($result.StdErr)"
     }
 
-    Write-Output $result.StdOut
-    Write-Output 'Intra-Cloud started.'
+    Write-Verbose $result.StdOut
+    Write-Verbose 'Intra-Cloud started.'
     return $true
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
-    Start-IntraCloudDistro
+    if (Start-IntraCloudDistro) {
+        Write-Output 'Intra-Cloud started.'
+    }
 }

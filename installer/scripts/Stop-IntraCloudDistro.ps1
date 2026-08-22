@@ -31,12 +31,12 @@ function Stop-IntraCloudDistro {
     )
 
     if (-not (Test-IntraCloudDistroExists)) {
-        Write-Output 'Intra-Cloud distribution is not installed; nothing to stop.'
+        Write-Verbose 'Intra-Cloud distribution is not installed; nothing to stop.'
         return $true
     }
 
     if ((Get-IntraCloudDistroState) -eq 'Running') {
-        Write-Output 'Stopping the Intra-Cloud Compose stack...'
+        Write-Verbose 'Stopping the Intra-Cloud Compose stack...'
         $result = Invoke-IntraCloudDistroCommand -Command 'cd /opt/intracloud && docker compose stop'
         if ($result.ExitCode -ne 0) {
             throw "docker compose stop failed (exit $($result.ExitCode)): $($result.StdErr)"
@@ -44,17 +44,19 @@ function Stop-IntraCloudDistro {
     }
 
     if (-not $KeepDistroRunning) {
-        Write-Output 'Terminating the Intra-Cloud WSL2 distribution...'
+        Write-Verbose 'Terminating the Intra-Cloud WSL2 distribution...'
         $terminateResult = Invoke-Wsl -Arguments @('--terminate', $script:IntraCloudDistroName)
         if ($terminateResult.ExitCode -ne 0) {
             throw "wsl --terminate failed (exit $($terminateResult.ExitCode)): $($terminateResult.StdErr)"
         }
     }
 
-    Write-Output 'Intra-Cloud stopped.'
+    Write-Verbose 'Intra-Cloud stopped.'
     return $true
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
-    Stop-IntraCloudDistro -KeepDistroRunning:$KeepDistroRunning
+    if (Stop-IntraCloudDistro -KeepDistroRunning:$KeepDistroRunning) {
+        Write-Output 'Intra-Cloud stopped.'
+    }
 }

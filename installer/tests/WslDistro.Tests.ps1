@@ -2,7 +2,9 @@
 
 <#
 .SYNOPSIS
-    Pester v5 tests for the Phase 17 WSL2 lifecycle scripts.
+    Pester tests (v6.1.0 -- pinned exactly in
+    .github/workflows/windows-installer.yml, see that file's comment)
+    for the Phase 17 WSL2 lifecycle scripts.
 
 .DESCRIPTION
     These mock Invoke-Wsl/Invoke-IntraCloudDistroCommand rather than
@@ -18,6 +20,11 @@
     Engine installation and the full Compose stack were not exercised
     live, for real, disk-space reasons on the dev machine -- documented
     there as its own classification, not silently assumed to work).
+
+    Helper functions (New-WslResult) are defined inside the top-level
+    BeforeAll, not at bare script scope -- confirmed necessary for
+    Pester v6 on a real GitHub Actions run, where a bare top-level
+    function was invisible inside nested It blocks.
 #>
 
 BeforeAll {

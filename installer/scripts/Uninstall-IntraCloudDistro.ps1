@@ -45,7 +45,7 @@ function Backup-BeforeRemoval {
     )
 
     if ((Get-IntraCloudDistroState) -ne 'Running') {
-        Write-Output 'Distribution is not running; starting it so a pre-removal backup can be taken...'
+        Write-Verbose 'Distribution is not running; starting it so a pre-removal backup can be taken...'
         $startResult = Invoke-IntraCloudDistroCommand -Command 'cd /opt/intracloud && docker compose up -d'
         if ($startResult.ExitCode -ne 0) {
             throw "Could not start the stack to take a pre-removal backup (exit $($startResult.ExitCode)): $($startResult.StdErr). Use -DeleteData if you accept losing this data, or resolve the startup failure first."
@@ -54,12 +54,12 @@ function Backup-BeforeRemoval {
 
     $backupTypes = @('control_db', 'tenant_db', 'object_storage', 'configuration')
     foreach ($backupType in $backupTypes) {
-        Write-Output "Running $backupType backup..."
+        Write-Verbose "Running $backupType backup..."
         $backupResult = Invoke-IntraCloudDistroCommand -Command "cd /opt/intracloud && docker compose exec -T backend python manage.py run_backup $backupType"
         if ($backupResult.ExitCode -ne 0) {
             throw "Pre-removal backup of '$backupType' failed (exit $($backupResult.ExitCode)): $($backupResult.StdErr). Aborting removal -- no data has been deleted."
         }
-        Write-Output $backupResult.StdOut
+        Write-Verbose $backupResult.StdOut
     }
 
     New-Item -ItemType Directory -Force -Path $BackupDestination | Out-Null
@@ -74,9 +74,9 @@ function Backup-BeforeRemoval {
     # a customer who never plugged in off-host backup storage
     # (docs/operations/BACKUP_RESTORE.md Section 4) should still walk
     # away from an uninstall with every backup that ever existed.
-    Write-Output "Copying backup files to $BackupDestination..."
+    Write-Verbose "Copying backup files to $BackupDestination..."
     Copy-Item -Path "\\wsl.localhost\$($script:IntraCloudDistroName)\backups\*" -Destination $BackupDestination -Recurse -Force -ErrorAction Stop
-    Write-Output "Backup complete. Files preserved at $BackupDestination."
+    Write-Verbose "Backup complete. Files preserved at $BackupDestination."
 }
 
 function Uninstall-IntraCloudDistro {
@@ -87,30 +87,33 @@ function Uninstall-IntraCloudDistro {
     )
 
     if (-not (Test-IntraCloudDistroExists)) {
-        Write-Output 'Intra-Cloud distribution is not installed; nothing to remove.'
+        Write-Verbose 'Intra-Cloud distribution is not installed; nothing to remove.'
         return $true
     }
 
     if (-not $DeleteData) {
-        Backup-BeforeRemoval -BackupDestination $BackupDestination
+        Backup-BeforeRemoval -BackupDestination $BackupDestination | Out-Null
     } else {
         Write-Warning 'DeleteData specified: skipping the pre-removal backup. All customer data in this distribution will be permanently lost.'
     }
 
-    Write-Output 'Unregistering the Intra-Cloud WSL2 distribution...'
+    Write-Verbose 'Unregistering the Intra-Cloud WSL2 distribution...'
     $result = Invoke-Wsl -Arguments @('--unregister', $script:IntraCloudDistroName)
     if ($result.ExitCode -ne 0) {
         throw "wsl --unregister failed (exit $($result.ExitCode)): $($result.StdErr)"
     }
 
-    Write-Output 'Intra-Cloud distribution removed.'
+    Write-Verbose 'Intra-Cloud distribution removed.'
     return $true
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
-    if ($PSCmdlet.ParameterSetName -eq 'DeleteData') {
+    $removed = if ($PSCmdlet.ParameterSetName -eq 'DeleteData') {
         Uninstall-IntraCloudDistro -DeleteData
     } else {
         Uninstall-IntraCloudDistro -BackupDestination $BackupDestination
+    }
+    if ($removed) {
+        Write-Output 'Intra-Cloud distribution removed.'
     }
 }

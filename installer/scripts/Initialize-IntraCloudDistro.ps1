@@ -44,10 +44,10 @@ function Initialize-IntraCloudDistro {
         throw 'The Intra-Cloud distribution is not installed. Run Import-IntraCloudDistro.ps1 first.'
     }
 
-    Write-Output 'Checking for Docker Engine inside the Intra-Cloud distribution...'
+    Write-Verbose 'Checking for Docker Engine inside the Intra-Cloud distribution...'
     $dockerCheck = Invoke-IntraCloudDistroCommand -Command 'command -v docker'
     if ($dockerCheck.ExitCode -ne 0) {
-        Write-Output 'Docker Engine not found; installing (apt, not Docker Desktop -- ADR-0012)...'
+        Write-Verbose 'Docker Engine not found; installing (apt, not Docker Desktop -- ADR-0012)...'
         # Docker's own documented convenience script -- the same install
         # path used for any Debian/Ubuntu-based server, deliberately not
         # a hand-rolled apt pipeline that would drift from upstream's
@@ -57,10 +57,10 @@ function Initialize-IntraCloudDistro {
             throw "Docker Engine installation failed (exit $($installResult.ExitCode)): $($installResult.StdErr)"
         }
     } else {
-        Write-Output 'Docker Engine already present; skipping install.'
+        Write-Verbose 'Docker Engine already present; skipping install.'
     }
 
-    Write-Output 'Ensuring systemd is enabled (so dockerd survives a distro restart)...'
+    Write-Verbose 'Ensuring systemd is enabled (so dockerd survives a distro restart)...'
     # /etc/wsl.conf's [boot] systemd=true is read on distro *start*, not
     # picked up live -- confirmed against WSL's own documented behavior.
     # Only rewrite it if the setting is missing or different, so a
@@ -72,7 +72,7 @@ function Initialize-IntraCloudDistro {
         if ($writeConf.ExitCode -ne 0) {
             throw "Failed to write /etc/wsl.conf: $($writeConf.StdErr)"
         }
-        Write-Output 'Wrote /etc/wsl.conf; terminating the distribution so systemd takes effect on next start...'
+        Write-Verbose 'Wrote /etc/wsl.conf; terminating the distribution so systemd takes effect on next start...'
         $terminate = Invoke-Wsl -Arguments @('--terminate', $script:IntraCloudDistroName)
         if ($terminate.ExitCode -ne 0) {
             throw "Failed to terminate the distribution to apply the systemd setting: $($terminate.StdErr)"
@@ -80,10 +80,10 @@ function Initialize-IntraCloudDistro {
         # Next command implicitly restarts the distro with the new config.
         Invoke-IntraCloudDistroCommand -Command 'true' | Out-Null
     } else {
-        Write-Output 'systemd already enabled; skipping.'
+        Write-Verbose 'systemd already enabled; skipping.'
     }
 
-    Write-Output "Staging the Compose stack from $AppBundlePath..."
+    Write-Verbose "Staging the Compose stack from $AppBundlePath..."
     $stageResult = Invoke-IntraCloudDistroCommand -Command 'mkdir -p /opt/intracloud'
     if ($stageResult.ExitCode -ne 0) {
         throw "Failed to create /opt/intracloud inside the distribution: $($stageResult.StdErr)"
@@ -107,7 +107,7 @@ function Initialize-IntraCloudDistro {
     if (Test-Path $imagesDir) {
         $imageTarballs = Get-ChildItem -Path $imagesDir -Filter '*.tar' -ErrorAction SilentlyContinue
         foreach ($tarball in $imageTarballs) {
-            Write-Output "Loading image tarball $($tarball.Name)..."
+            Write-Verbose "Loading image tarball $($tarball.Name)..."
             $windowsPathInDistro = "/mnt/$($tarball.FullName.Substring(0,1).ToLower())$($tarball.FullName.Substring(2) -replace '\\','/')"
             $loadResult = Invoke-IntraCloudDistroCommand -Command "docker load -i '$windowsPathInDistro'"
             if ($loadResult.ExitCode -ne 0) {
@@ -116,10 +116,12 @@ function Initialize-IntraCloudDistro {
         }
     }
 
-    Write-Output 'Intra-Cloud distribution configured.'
+    Write-Verbose 'Intra-Cloud distribution configured.'
     return $true
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
-    Initialize-IntraCloudDistro -AppBundlePath $AppBundlePath
+    if (Initialize-IntraCloudDistro -AppBundlePath $AppBundlePath) {
+        Write-Output 'Intra-Cloud distribution configured.'
+    }
 }

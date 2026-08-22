@@ -127,18 +127,26 @@ function Get-IntraCloudDistroState {
         return 'NotInstalled'
     }
 
-    # `wsl -l -v` output columns are padded with embedded NUL/space
-    # noise from the UTF-16 decode and marks the default distro with a
-    # leading '*' -- match on the name as a whole word rather than
-    # trying to parse fixed-width columns.
-    $line = $result.StdOut -split "`n" | Where-Object { $_ -match "\b$([regex]::Escape($script:IntraCloudDistroName))\b" }
-    if (-not $line) {
-        return 'NotInstalled'
+    # Match the NAME column exactly, not a `\b`-bounded substring
+    # anywhere in the line: confirmed directly (a real Pester failure,
+    # not a hypothetical) that `\bIntraCloud\b` also matches
+    # "IntraCloud-dev", because a hyphen is a non-word character and
+    # therefore itself a word boundary in regex terms -- `\b` does not
+    # mean "whole token". The default distro is marked with a leading
+    # '*'; stripping that before splitting on whitespace isolates the
+    # real NAME column.
+    foreach ($rawLine in ($result.StdOut -split "`n")) {
+        $trimmedLine = $rawLine.Trim() -replace '^\*\s*', ''
+        if (-not $trimmedLine) { continue }
+        $columns = $trimmedLine -split '\s+'
+        if ($columns[0] -eq $script:IntraCloudDistroName) {
+            if ($trimmedLine -match 'Running') {
+                return 'Running'
+            }
+            return 'Stopped'
+        }
     }
-    if ($line -match 'Running') {
-        return 'Running'
-    }
-    return 'Stopped'
+    return 'NotInstalled'
 }
 
 function Test-IntraCloudDistroExists {

@@ -56,10 +56,10 @@ function Import-IntraCloudDistro {
     $existingState = Get-IntraCloudDistroState
     if ($existingState -ne 'NotInstalled') {
         if (-not $Force) {
-            Write-Output "Intra-Cloud distribution already exists (state: $existingState); nothing to do. Pass -Force to reimport."
+            Write-Verbose "Intra-Cloud distribution already exists (state: $existingState); nothing to do. Pass -Force to reimport."
             return $true
         }
-        Write-Output 'Existing Intra-Cloud distribution found; -Force specified, unregistering it before reimport.'
+        Write-Verbose 'Existing Intra-Cloud distribution found; -Force specified, unregistering it before reimport.'
         $unregisterResult = Invoke-Wsl -Arguments @('--unregister', $script:IntraCloudDistroName)
         if ($unregisterResult.ExitCode -ne 0) {
             throw "Failed to unregister the existing Intra-Cloud distribution before reimport: $($unregisterResult.StdErr)"
@@ -79,10 +79,12 @@ function Import-IntraCloudDistro {
         throw 'wsl --import reported success but the Intra-Cloud distribution is not visible in `wsl --list`.'
     }
 
-    Write-Output "Intra-Cloud distribution imported successfully into $InstallPath."
+    Write-Verbose "Intra-Cloud distribution imported successfully into $InstallPath."
     return $true
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
-    Import-IntraCloudDistro -RootfsPath $RootfsPath -InstallPath $InstallPath -Force:$Force
+    if (Import-IntraCloudDistro -RootfsPath $RootfsPath -InstallPath $InstallPath -Force:$Force) {
+        Write-Output "Intra-Cloud distribution ready at $InstallPath."
+    }
 }

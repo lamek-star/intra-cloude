@@ -92,11 +92,20 @@ jobs:
 
       # --- PowerShell scripts: static analysis + Pester ---
 
+      # Pester pinned to an exact version, not just a minimum: a
+      # `-MinimumVersion 5.5.0` install silently resolved to v6.1.0 on
+      # this runner, and Pester v6 turned out not to be purely additive
+      # -- a helper function defined at plain script scope in a
+      # .Tests.ps1 file (valid, working Pester v5 style) was no longer
+      # reliably visible inside nested It blocks, breaking every test
+      # that used it. Confirmed on a real GitHub Actions run, not
+      # assumed from release notes. Pinning avoids the same class of
+      # silent breakage recurring on some future v7.
       - name: Install PSScriptAnalyzer and Pester
         shell: pwsh
         run: |
           Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser -MinimumVersion 1.21.0
-          Install-Module -Name Pester -Force -Scope CurrentUser -SkipPublisherCheck -MinimumVersion 5.5.0
+          Install-Module -Name Pester -Force -Scope CurrentUser -SkipPublisherCheck -RequiredVersion 6.1.0
 
       - name: PSScriptAnalyzer
         shell: pwsh
