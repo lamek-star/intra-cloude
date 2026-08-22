@@ -1190,6 +1190,104 @@ sandboxing artifact, confirmed unrelated to the scripts' own
 correctness) — these are verified for the first time on the real
 GitHub Actions Windows runner, not claimed as locally tested.
 
+**Post-merge-readiness CI fixes (found by reading real GitHub Actions
+run logs, not assumed from local Docker runs):** two pre-existing Linux
+CI regressions, unrelated to the Windows work itself, were surfaced
+once this branch's PR was actually watched through to completion —
+`pip-audit` missing from `requirements/dev.in` (silently failing
+"command not found" since the scan step was added in Phase 12) and the
+frontend job type-checking before `next build` had ever generated
+Next.js 16's `PageProps`/`LayoutProps` global types. Fixed, then a
+third, real bug surfaced *after* those two: `assert_host_is_safe()`
+(`databases/connectors.py`, Phase 12's SSRF guard) blocked IPv6
+loopback (`::1`) under the default policy because Python's `ipaddress`
+module reports `::1`'s `is_reserved` as `True` unlike `127.0.0.1`'s
+`False` — invisible locally (Docker's default bridge network doesn't
+resolve `localhost` to `::1`) but real on GitHub's ubuntu runners,
+cascading into ~17 connected-database/tenant-isolation test failures.
+Alongside it, `system/tests/test_backups.py`'s real `pg_dump` calls
+failed with a server-version mismatch (runner's stock client is v16,
+service containers run Postgres 18) — fixed by installing
+`postgresql-client-18` from PGDG's apt repo in `ci.yml`. All three
+fixes verified against the actual GitHub Actions runs, not assumed;
+Linux CI (Backend + Frontend) and the Windows Installer workflow are
+now fully green together on the same PR.
+
+## Phase 17 — WSL2 Deployment & Lifecycle Scripts — COMPLETE
+
+`installer/scripts/` gained the layer ADR-0012 calls "real new
+engineering, not a repackaging exercise": the actual `wsl.exe`
+orchestration that provisions, configures, starts, stops, health-checks,
+and removes the dedicated `IntraCloud` WSL2 distribution Architecture A
+depends on. `WslDistro.Common.ps1` is the shared entry point every
+other script here goes through — `Invoke-Wsl` for wsl.exe's own native
+commands (`--list`, `--import`, `--unregister`, `--terminate`), a
+separate `Invoke-IntraCloudDistroCommand` for commands executed
+*inside* the distribution.
+
+- **A second real encoding bug, this time on the fix from Phase 16.**
+  Test-Prerequisites.ps1's UTF-16LE handling for `wsl --status` was
+  correct — but applying that same fix universally was not: running an
+  actual command inside a distribution (`wsl -d <name> -- <command>`)
+  passes the child Linux process's real stdout through unmodified
+  (UTF-8), and forcing Unicode decoding on it corrupted the output.
+  Caught by actually running both invocation styles side by side and
+  comparing results, not by reasoning about wsl.exe's documented
+  behavior — `Invoke-Wsl` (native commands) and
+  `Invoke-IntraCloudDistroCommand` (in-distro commands) now decode with
+  the encoding confirmed correct for each.
+- **Real, live-verified against this project's actual WSL2 development
+  host** (not a VM, not mocked): built a genuine ~118 MB rootfs tarball
+  (`docker export` of `python:3.13-slim`), then ran
+  `Import-IntraCloudDistro.ps1` against it for real — confirmed in
+  `wsl --list --verbose` ground truth, confirmed idempotent (a second
+  import against an already-imported distro is a no-op), ran a real
+  command inside it with correctly-decoded output, confirmed
+  `Get-IntraCloudDistroState`'s Running/Stopped parsing against real
+  state transitions (including after a direct `wsl --terminate`),
+  confirmed `Test-IntraCloudHealth.ps1` correctly reports unhealthy
+  against a distro with no Compose stack running, and confirmed
+  `Uninstall-IntraCloudDistro.ps1 -DeleteData` cleanly unregisters the
+  distribution — the host's own pre-existing `Ubuntu` and
+  `docker-desktop` distributions were untouched throughout, and all
+  temporary artifacts were removed afterward.
+- **IMPLEMENTED — REQUIRES WINDOWS VM VALIDATION**:
+  `Initialize-IntraCloudDistro.ps1`'s actual Docker Engine installation
+  (`get.docker.com`) and staging a real Compose stack bundle inside the
+  distribution, and `Uninstall-IntraCloudDistro.ps1`'s `-BackupDestination`
+  (data-preserving) path, which needs a fully running backend container
+  to produce real backup files to copy out. Not run live in this
+  session: this development machine had only ~11 GB free disk
+  (confirmed via `Get-PSDrive`) after reclaiming 18.85 GB of Docker
+  build cache, and a second nested Docker Engine plus a full 9-image
+  pull inside a WSL2 distribution risked destabilizing the host's own
+  running Docker Desktop and WSL distributions for marginal proof value
+  over what was already verified live. Both scripts' logic — idempotency
+  checks, command sequencing, abort-before-unregister-on-backup-failure
+  — is covered by the Pester suite (`installer/tests/WslDistro.Tests.ps1`)
+  with `Invoke-Wsl`/`Invoke-IntraCloudDistroCommand` mocked, verified for
+  real on the GitHub Actions Windows runner; a genuine end-to-end run
+  (Docker Engine install through a live health check) is Phase 20's
+  qualification-matrix job, on a machine provisioned for exactly that.
+- **Uninstall preserves data by default** (ADR-0012 / engineering brief
+  Section 48): `Uninstall-IntraCloudDistro.ps1` requires either
+  `-BackupDestination` (runs all four `system/backups.py` backup types
+  through the stack's own backend container first, copies the results
+  out to a Windows path, aborts *without* unregistering if any backup
+  step fails) or an explicit `-DeleteData` switch — there is no default
+  that silently deletes customer data.
+
+Exit criteria — the WSL2 distro-lifecycle plumbing itself (import,
+state detection, in-distro command execution with correct encoding,
+health-check parsing, idempotent start/stop/restart, clean unregister)
+is IMPLEMENTED + TESTED against a real WSL2 host; Docker-Engine-install
+and full-stack bring-up inside a freshly provisioned distribution are
+IMPLEMENTED + REQUIRES WINDOWS VM VALIDATION, honestly not claimed as
+live-verified here. All new scripts are additionally covered by a
+Pester suite verified on the real GitHub Actions Windows runner
+(`.github/workflows/windows-installer.yml`, which already discovers
+`installer/tests/*.Tests.ps1` with no workflow changes needed).
+
 ## Non-Negotiable Cross-Phase Rules
 
 - No phase ships without tenant-isolation tests for any new tenant-owned

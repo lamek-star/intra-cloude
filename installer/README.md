@@ -1,10 +1,12 @@
 # Intra-Cloud Windows Build Infrastructure
 
-Phase 16 (`docs/architecture/ROADMAP.md`) — the CI/build scaffolding for
-the Windows deployment work ADR-0012 decided. This phase proves the
-build chain (compile → test → package → checksum → artifact) genuinely
-works; it does not implement WSL2 provisioning, the real Control Center
-UI, or the real installer experience — those are Phases 17–19.
+Phase 16 (`docs/architecture/ROADMAP.md`) built the CI/build scaffolding
+for the Windows deployment work ADR-0012 decided: the build chain
+(compile → test → package → checksum → artifact) genuinely works.
+Phase 17 added the actual WSL2 distribution lifecycle scripts
+(`installer/scripts/*-IntraCloudDistro.ps1`) that scaffolding packages.
+Still not implemented: the real Control Center UI or the real installer
+experience — those are Phases 18–19.
 
 ## Directory structure
 
@@ -71,6 +73,46 @@ on a real elevated session or VM, not something to fake past.
 GitHub Actions Windows runner. Watch the actual workflow run before
 trusting this phase's PowerShell-script gate as green.
 
+## Phase 17: WSL2 lifecycle scripts — real verification performed
+
+Built and imported a genuine ~118 MB rootfs tarball (`docker export` of
+`python:3.13-slim`) against this host's real WSL2 installation (WSL
+2.7.11.0, kernel 6.1.18.33.2), using the actual
+`Import-IntraCloudDistro.ps1` script — not a simulated/mocked run:
+
+- Import succeeded, confirmed against `wsl --list --verbose` ground
+  truth; a second import against the same distro was correctly a no-op
+  (idempotency); `-Force` correctly unregistered-then-reimported.
+- `Get-IntraCloudDistroState` correctly reported Stopped immediately
+  after import, Running after a command was executed inside the
+  distribution, and Stopped again after a direct `wsl --terminate` —
+  proving the state parser is reading real `wsl -l -v` output, not a
+  guess about its format.
+- `Invoke-IntraCloudDistroCommand` ran a real command
+  (`cat /etc/os-release && python3 --version`) inside the distribution
+  and returned correctly-decoded UTF-8 output — this is the run that
+  caught the encoding bug described in "Environment quirks" below.
+- `Test-IntraCloudHealth.ps1` correctly reported `Healthy: $false`
+  against a distribution with no Compose stack running (exit code 1).
+- `Uninstall-IntraCloudDistro.ps1 -DeleteData` cleanly unregistered the
+  test distribution; confirmed gone from `wsl --list --verbose`
+  afterward, with the host's own pre-existing `Ubuntu` and
+  `docker-desktop` distributions untouched throughout. All temporary
+  files (the rootfs tarball, the install directory) were removed after.
+
+**Not run live in this session:** `Initialize-IntraCloudDistro.ps1`'s
+actual Docker Engine installation and Compose-stack staging inside a
+distribution, and `Uninstall-IntraCloudDistro.ps1`'s `-BackupDestination`
+(data-preserving) path, which needs a real running backend container.
+This development machine had only ~11 GB free disk (`Get-PSDrive C`)
+even after reclaiming 18.85 GB of reclaimable Docker build cache — a
+second nested Docker Engine plus a full 9-image pull inside a WSL2
+distribution was judged a real risk to this host's own running Docker
+Desktop and WSL distributions, for proof value already covered by the
+lifecycle verification above plus the Pester suite's coverage of both
+scripts' branching logic. See `docs/architecture/ROADMAP.md` Phase 17
+for the full classification.
+
 ## WiX version and licensing (read before upgrading)
 
 Pinned to **WiX Toolset v5.0.2**, not the latest release. WiX v6+
@@ -119,13 +161,20 @@ images will dominate the real installer size regardless.
   instead — a real customer machine (locked-down corporate image,
   Server Core, security software interfering with WMI) can hit the same
   class of failure, not just this one sandboxed session.
-- **`wsl.exe`'s stdout is UTF-16LE.** Capturing it naively through
-  PowerShell produces visibly garbled, space-interleaved text. Any
-  future script parsing `wsl.exe` output must set
+- **`wsl.exe`'s own generated text (`--list`, `--status`, `--import`,
+  `--unregister`, `--terminate`) is UTF-16LE**, regardless of console
+  codepage. Capturing it naively through PowerShell produces visibly
+  garbled, space-interleaved text; reading it requires
   `[Console]::OutputEncoding = [System.Text.Encoding]::Unicode` first
-  (and restore it afterward) — `Test-Prerequisites.ps1`'s
-  `Test-Wsl2Availability` does this and has a test proving the encoding
-  is restored afterward.
+  (and restoring it afterward). **But a real program's stdout passed
+  through from *inside* a running distribution (`wsl -d <name> -- ...`)
+  is not re-encoded** — forcing Unicode decoding on that path corrupts
+  otherwise-correct UTF-8 output. This distinction cost a real bug in
+  Phase 17 (`installer/scripts/WslDistro.Common.ps1`'s
+  `Invoke-IntraCloudDistroCommand` vs. `Invoke-Wsl`), caught only by
+  actually running both invocation styles side by side on a real WSL2
+  host and comparing the output — not something obvious from reading
+  `wsl.exe`'s documented behavior alone.
 - **`Install-Module`/`PowerShellGet` don't work in this specific
   sandboxed session** ("the module could not be loaded"). Real Windows
   machines and GitHub's hosted runners don't share this restriction —
@@ -147,4 +196,12 @@ dotnet build -c Release   # -> bin\x64\Release\IntraCloudControlCenter-Setup.msi
 
 # Prerequisite check script
 .\installer\scripts\Test-Prerequisites.ps1
+
+# WSL2 distribution lifecycle (Phase 17) -- requires a real WSL2 host
+.\installer\scripts\Import-IntraCloudDistro.ps1 -RootfsPath <path-to-rootfs.tar>
+.\installer\scripts\Initialize-IntraCloudDistro.ps1 -AppBundlePath <path-to-release-bundle>
+.\installer\scripts\Start-IntraCloudDistro.ps1
+.\installer\scripts\Test-IntraCloudHealth.ps1
+.\installer\scripts\Stop-IntraCloudDistro.ps1
+.\installer\scripts\Uninstall-IntraCloudDistro.ps1 -BackupDestination <path>   # or -DeleteData
 ```
