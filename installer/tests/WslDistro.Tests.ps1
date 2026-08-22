@@ -22,11 +22,19 @@
 
 BeforeAll {
     . "$PSScriptRoot\..\scripts\WslDistro.Common.ps1"
-}
 
-function New-WslResult {
-    param([int]$ExitCode = 0, [string]$StdOut = '', [string]$StdErr = '')
-    [PSCustomObject]@{ ExitCode = $ExitCode; StdOut = $StdOut; StdErr = $StdErr }
+    # Defined inside BeforeAll, not as a bare top-level function: Pester
+    # v6 (resolved on GitHub's windows-2022 runner despite this workflow
+    # only pinning a *minimum* version of 5.5.0 -- confirmed by actually
+    # running this suite there) does not reliably expose a function
+    # declared at plain script scope to nested It blocks the way Pester
+    # v5 did. A function defined inside BeforeAll is Pester's own
+    # documented mechanism for sharing helpers across a file's Describe
+    # blocks, and works under both major versions.
+    function New-WslResult {
+        param([int]$ExitCode = 0, [string]$StdOut = '', [string]$StdErr = '')
+        [PSCustomObject]@{ ExitCode = $ExitCode; StdOut = $StdOut; StdErr = $StdErr }
+    }
 }
 
 Describe 'Get-IntraCloudDistroState' {
@@ -70,9 +78,19 @@ Describe 'Test-IntraCloudDistroExists' {
 
 Describe 'Import-IntraCloudDistro.ps1' {
     BeforeAll {
-        . "$PSScriptRoot\..\scripts\Import-IntraCloudDistro.ps1"
+        # RootfsPath/InstallPath are Mandatory on the script's own param
+        # block, which PowerShell evaluates at dot-source time regardless
+        # of the InvocationName auto-run guard further down the file --
+        # dot-sourcing with no arguments at all left PowerShell unable to
+        # bind a required parameter non-interactively, which surfaced
+        # (confirmed on the real GitHub Actions run) as Pester's own
+        # "break/continue label" defensive error, not a clear "missing
+        # mandatory parameter" message. The dummy file must exist before
+        # the dot-source call: RootfsPath's -ValidateScript also runs at
+        # bind time.
         $script:fakeTar = Join-Path $TestDrive 'fake-rootfs.tar'
         Set-Content -Path $script:fakeTar -Value 'not a real tarball, just needs to exist for -ValidateScript'
+        . "$PSScriptRoot\..\scripts\Import-IntraCloudDistro.ps1" -RootfsPath $script:fakeTar -InstallPath (Join-Path $TestDrive 'dummy-install')
     }
 
     It 'is a no-op when the distro already exists and -Force is not passed' {
@@ -226,11 +244,15 @@ Describe 'Restart-IntraCloudDistro.ps1' {
 
 Describe 'Initialize-IntraCloudDistro.ps1' {
     BeforeAll {
-        . "$PSScriptRoot\..\scripts\Initialize-IntraCloudDistro.ps1"
+        # AppBundlePath is Mandatory with -ValidateScript -- both are
+        # evaluated at dot-source time, so the directory must exist
+        # before the dot-source call. See Import-IntraCloudDistro.ps1's
+        # BeforeAll above for why this matters.
         $script:bundlePath = Join-Path $TestDrive 'bundle'
         New-Item -ItemType Directory -Force -Path $script:bundlePath | Out-Null
         Set-Content -Path (Join-Path $script:bundlePath 'docker-compose.yml') -Value 'services: {}'
         New-Item -ItemType Directory -Force -Path (Join-Path $script:bundlePath 'infrastructure') | Out-Null
+        . "$PSScriptRoot\..\scripts\Initialize-IntraCloudDistro.ps1" -AppBundlePath $script:bundlePath
     }
 
     It 'throws if the distro is not installed' {
@@ -281,7 +303,17 @@ Describe 'Initialize-IntraCloudDistro.ps1' {
 }
 
 Describe 'Uninstall-IntraCloudDistro.ps1' {
-    BeforeAll { . "$PSScriptRoot\..\scripts\Uninstall-IntraCloudDistro.ps1" }
+    BeforeAll {
+        # Two mandatory parameter sets (-BackupDestination vs. -DeleteData)
+        # -- dot-sourcing with zero arguments is ambiguous and PowerShell
+        # cannot bind either at dot-source time. -DeleteData (a switch,
+        # no external file/path needed) unambiguously satisfies one set;
+        # the tests below call the inner Uninstall-IntraCloudDistro
+        # function directly with whichever parameters each case needs,
+        # so this dot-source's own parameter choice has no bearing on
+        # what the tests actually exercise.
+        . "$PSScriptRoot\..\scripts\Uninstall-IntraCloudDistro.ps1" -DeleteData
+    }
 
     It 'is a no-op when the distro is not installed' {
         Mock Invoke-Wsl { New-WslResult -StdOut 'Ubuntu' }
