@@ -1477,6 +1477,36 @@ touches distro data" behavior is IMPLEMENTED by omission and documented
 as a deliberate safety decision, not something requiring further work
 in this phase.
 
+## Phase 20 — Windows Qualification Test Matrix — DOCUMENT WRITTEN, NOT EXECUTED
+
+`docs/deployment/WINDOWS_QUALIFICATION_MATRIX.md`: a real, detailed
+checklist for a genuinely elevated Windows session (physical machine or
+VM) to run through before the installer path ships — target platform
+matrix, fresh install, first launch, the full WSL2-distro-lifecycle
+scenario Phases 17/18 explicitly couldn't reach (a real Docker Engine +
+9-service Compose stack inside the distro, not the lightweight/mocked
+verification those phases used), backup/restore, upgrade, repair,
+uninstall (specifically confirming Phase 19's "never touches the
+distro" decision holds in practice), and multi-user-machine behavior.
+
+This document was **written, not executed**, and that's the honest,
+correct outcome here, not a shortfall: every scenario in it requires a
+genuinely elevated, interactive Windows session, which this development
+session has never had access to (confirmed since Phase 16 — no
+self-elevation path exists from its account's non-elevated token).
+Writing an accurate, complete checklist grounded in exactly what
+Phases 16–19 already verified (so a real tester doesn't waste time
+re-covering it) and exactly what they couldn't (so nothing gets
+silently assumed fine) is the correct contribution from a session that
+cannot run the matrix itself — fabricating "passed" results for
+scenarios never actually run would violate this project's own
+standing rule against claiming untested things work.
+
+Exit criteria — the matrix itself is IMPLEMENTED (a real, reviewable
+document); every scenario it contains is BLOCKED BY EXTERNAL
+REQUIREMENT (a genuinely elevated Windows test session) until someone
+with that access runs it.
+
 ## Non-Negotiable Cross-Phase Rules
 
 - No phase ships without tenant-isolation tests for any new tenant-owned
