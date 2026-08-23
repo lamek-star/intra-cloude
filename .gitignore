@@ -26,6 +26,20 @@ build/
 coverage/
 *.tsbuildinfo
 
+# .NET / Windows build (control-center, installer/wix)
+bin/
+obj/
+*.msi
+*.wixpdb
+*.wixobj
+publish/
+# WiX's local extension cache (downloaded binaries, not source —
+# restored automatically via NuGet when the .wixproj's PackageReference
+# is resolved; committing it would put a binary DLL in git for no
+# reason, confirmed by actually running `wix extension add` locally
+# and seeing exactly this land here).
+installer/wix/.wix/
+
 # Editor / OS
 .vscode/
 .idea/

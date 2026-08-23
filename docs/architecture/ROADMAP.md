@@ -1137,6 +1137,505 @@ ruff and mypy clean.
    metadata to flip a byte at a precisely computed location inside the
    test's own object data.
 
+## Phase 16 — Windows Build Infrastructure — COMPLETE
+
+The first Windows-native code in the repository: a `control-center/`
+.NET 8 WPF walking skeleton and an `installer/wix/` WiX v5 project
+packaging it into a real MSI, plus `.github/workflows/windows-installer.yml`
+proving the whole chain (build → test → publish → package → checksum →
+artifact upload) on a real GitHub-hosted Windows runner. Full detail,
+including what's genuinely verified versus what still needs an elevated
+session or a real CI run, lives in `installer/README.md` — this entry
+stays a pointer plus the decisions worth surfacing at the roadmap level.
+
+- **A real, unexpected licensing finding**: WiX Toolset v6+ requires a
+  paid monthly "Open Source Maintenance Fee" for any revenue-generating
+  organization ($10–60/mo tiered by size) — discovered by actually
+  running the latest WiX CLI, which refused to execute at all without
+  EULA acceptance, not by reading release notes. Pinned to v5.0.2 (the
+  last fee-free major version) rather than silently accepting an
+  ongoing cost on the product's behalf; this needs a real decision
+  before release (stay on v5, budget for the fee, or switch to Inno
+  Setup) — see `installer/README.md`.
+- **.NET 8 WPF, not Electron/Tauri**, for the Control Center: its job is
+  OS-level lifecycle management (Windows Service interop, `wsl.exe`
+  process control, registry), where native .NET fits naturally and
+  shares one toolchain with the WiX installer, rather than introducing
+  a third language/runtime for a tool with almost no UI surface.
+- **A real MSI install was attempted**, not just built. It correctly
+  progressed through validation and most of the install sequence, then
+  correctly refused to complete a per-machine install without an
+  elevated session — proving the package itself is well-formed, not a
+  bug. This development session cannot self-elevate (confirmed: neither
+  an interactive `RunAs` nor registering a highest-privilege scheduled
+  task work from a non-elevated token, by design), so a full install/
+  uninstall cycle is marked as requiring a genuinely elevated session or
+  VM — Phase 20's job, not faked here.
+- `VERSION` (repo root) is the new single source of truth for the
+  product version, read by the Control Center's assembly version, the
+  MSI's `ProductVersion`, and CI artifact names — nothing currently
+  references the older placeholder `PRODUCT_VERSION` string in
+  `exports/manifest.py`; unifying those is a follow-up, not done here.
+
+Exit criteria — verified for real, locally, on an actual Windows 11
+host (not assumed from reading the code): Control Center builds,
+publishes as a self-contained single-file exe (~154 MB), launches, and
+displays the correct title/version; its 3 unit tests pass; the WiX
+project builds a real MSI (~54 MB) from a clean checkout with no
+manually-cached state; `Test-Prerequisites.ps1` runs and correctly
+classifies every check. PSScriptAnalyzer and Pester v5 against the
+PowerShell scripts could not run locally in this development session
+(`Install-Module`/`PowerShellGet` themselves are broken here — a
+sandboxing artifact, confirmed unrelated to the scripts' own
+correctness) — these are verified for the first time on the real
+GitHub Actions Windows runner, not claimed as locally tested.
+
+**Post-merge-readiness CI fixes (found by reading real GitHub Actions
+run logs, not assumed from local Docker runs):** two pre-existing Linux
+CI regressions, unrelated to the Windows work itself, were surfaced
+once this branch's PR was actually watched through to completion —
+`pip-audit` missing from `requirements/dev.in` (silently failing
+"command not found" since the scan step was added in Phase 12) and the
+frontend job type-checking before `next build` had ever generated
+Next.js 16's `PageProps`/`LayoutProps` global types. Fixed, then a
+third, real bug surfaced *after* those two: `assert_host_is_safe()`
+(`databases/connectors.py`, Phase 12's SSRF guard) blocked IPv6
+loopback (`::1`) under the default policy because Python's `ipaddress`
+module reports `::1`'s `is_reserved` as `True` unlike `127.0.0.1`'s
+`False` — invisible locally (Docker's default bridge network doesn't
+resolve `localhost` to `::1`) but real on GitHub's ubuntu runners,
+cascading into ~17 connected-database/tenant-isolation test failures.
+Alongside it, `system/tests/test_backups.py`'s real `pg_dump` calls
+failed with a server-version mismatch (runner's stock client is v16,
+service containers run Postgres 18) — fixed by installing
+`postgresql-client-18` from PGDG's apt repo in `ci.yml`. All three
+fixes verified against the actual GitHub Actions runs, not assumed;
+Linux CI (Backend + Frontend) and the Windows Installer workflow are
+now fully green together on the same PR.
+
+## Phase 17 — WSL2 Deployment & Lifecycle Scripts — COMPLETE
+
+`installer/scripts/` gained the layer ADR-0012 calls "real new
+engineering, not a repackaging exercise": the actual `wsl.exe`
+orchestration that provisions, configures, starts, stops, health-checks,
+and removes the dedicated `IntraCloud` WSL2 distribution Architecture A
+depends on. `WslDistro.Common.ps1` is the shared entry point every
+other script here goes through — `Invoke-Wsl` for wsl.exe's own native
+commands (`--list`, `--import`, `--unregister`, `--terminate`), a
+separate `Invoke-IntraCloudDistroCommand` for commands executed
+*inside* the distribution.
+
+- **A second real encoding bug, this time on the fix from Phase 16.**
+  Test-Prerequisites.ps1's UTF-16LE handling for `wsl --status` was
+  correct — but applying that same fix universally was not: running an
+  actual command inside a distribution (`wsl -d <name> -- <command>`)
+  passes the child Linux process's real stdout through unmodified
+  (UTF-8), and forcing Unicode decoding on it corrupted the output.
+  Caught by actually running both invocation styles side by side and
+  comparing results, not by reasoning about wsl.exe's documented
+  behavior — `Invoke-Wsl` (native commands) and
+  `Invoke-IntraCloudDistroCommand` (in-distro commands) now decode with
+  the encoding confirmed correct for each.
+- **Real, live-verified against this project's actual WSL2 development
+  host** (not a VM, not mocked): built a genuine ~118 MB rootfs tarball
+  (`docker export` of `python:3.13-slim`), then ran
+  `Import-IntraCloudDistro.ps1` against it for real — confirmed in
+  `wsl --list --verbose` ground truth, confirmed idempotent (a second
+  import against an already-imported distro is a no-op), ran a real
+  command inside it with correctly-decoded output, confirmed
+  `Get-IntraCloudDistroState`'s Running/Stopped parsing against real
+  state transitions (including after a direct `wsl --terminate`),
+  confirmed `Test-IntraCloudHealth.ps1` correctly reports unhealthy
+  against a distro with no Compose stack running, and confirmed
+  `Uninstall-IntraCloudDistro.ps1 -DeleteData` cleanly unregisters the
+  distribution — the host's own pre-existing `Ubuntu` and
+  `docker-desktop` distributions were untouched throughout, and all
+  temporary artifacts were removed afterward.
+- **IMPLEMENTED — REQUIRES WINDOWS VM VALIDATION**:
+  `Initialize-IntraCloudDistro.ps1`'s actual Docker Engine installation
+  (`get.docker.com`) and staging a real Compose stack bundle inside the
+  distribution, and `Uninstall-IntraCloudDistro.ps1`'s `-BackupDestination`
+  (data-preserving) path, which needs a fully running backend container
+  to produce real backup files to copy out. Not run live in this
+  session: this development machine had only ~11 GB free disk
+  (confirmed via `Get-PSDrive`) after reclaiming 18.85 GB of Docker
+  build cache, and a second nested Docker Engine plus a full 9-image
+  pull inside a WSL2 distribution risked destabilizing the host's own
+  running Docker Desktop and WSL distributions for marginal proof value
+  over what was already verified live. Both scripts' logic — idempotency
+  checks, command sequencing, abort-before-unregister-on-backup-failure
+  — is covered by the Pester suite (`installer/tests/WslDistro.Tests.ps1`)
+  with `Invoke-Wsl`/`Invoke-IntraCloudDistroCommand` mocked, verified for
+  real on the GitHub Actions Windows runner; a genuine end-to-end run
+  (Docker Engine install through a live health check) is Phase 20's
+  qualification-matrix job, on a machine provisioned for exactly that.
+- **Uninstall preserves data by default** (ADR-0012 / engineering brief
+  Section 48): `Uninstall-IntraCloudDistro.ps1` requires either
+  `-BackupDestination` (runs all four `system/backups.py` backup types
+  through the stack's own backend container first, copies the results
+  out to a Windows path, aborts *without* unregistering if any backup
+  step fails) or an explicit `-DeleteData` switch — there is no default
+  that silently deletes customer data.
+
+Exit criteria — the WSL2 distro-lifecycle plumbing itself (import,
+state detection, in-distro command execution with correct encoding,
+health-check parsing, idempotent start/stop/restart, clean unregister)
+is IMPLEMENTED + TESTED against a real WSL2 host; Docker-Engine-install
+and full-stack bring-up inside a freshly provisioned distribution are
+IMPLEMENTED + REQUIRES WINDOWS VM VALIDATION, honestly not claimed as
+live-verified here. All new scripts are additionally covered by a
+Pester suite verified on the real GitHub Actions Windows runner
+(`.github/workflows/windows-installer.yml`, which already discovers
+`installer/tests/*.Tests.ps1` with no workflow changes needed).
+
+## Phase 18 — Control Center UI — COMPLETE
+
+A real, four-screen WPF UI (`control-center/Views/`: Status, Backup &
+Restore, Settings, Logs & Diagnostics) atop the Phase 17 lifecycle
+scripts, plus three new narrowly-scoped scripts
+(`Invoke-IntraCloudBackup.ps1`, `Get-IntraCloudBackupHistory.ps1`,
+`Get-IntraCloudContainerLogs.ps1` — each locked to a fixed
+`-ValidateSet` of values, not a generic command-runner, matching this
+repo's "no unreviewed dynamic SQL" principle extended to shell
+commands) and a new Django `list_backups` management command
+(`apps/backend/system/management/commands/list_backups.py`) so the
+Backup & Restore screen has real `BackupRecord` history to show.
+Architecture A only (ADR-0012) — Architecture D (remote Linux host) is
+still deferred to its own future ADR, per ADR-0012's own Open Items.
+
+**Architecture decisions locked in before implementation** (three-way
+call, all confirmed): subprocess invocation of the PowerShell scripts
+(`powershell.exe -File`, not the Microsoft.PowerShell.SDK NuGet
+package — keeps the already-154MB self-contained publish from growing
+further for infrequent, non-hot-path calls); the main window launches
+**unelevated**, with a present-but-unwired `ElevationHelper` ready for
+Phase 19 (Import/Uninstall are out of scope for this phase's UI, so
+there are zero elevated actions here to wire it to); backup history
+read via the new `list_backups --json` command shelled into the distro
+(the same pattern `Uninstall-IntraCloudDistro.ps1` already uses), not
+a new HTTP/API client trust boundary.
+
+**`%ProgramData%` ACL fix, treated as a prerequisite, not a
+refinement.** The Control Center runs unelevated and needs to write
+its own settings file, but the WiX package previously provisioned
+nothing under `%ProgramData%\IntraCloud` at all. Added
+`util:PermissionEx` (new `WixToolset.Util.wixext` package reference)
+scoped to exactly one new subdirectory,
+`%ProgramData%\IntraCloud\ControlCenter\`, granting `Users`
+read/write/execute/delete — not Full Control, and not applied to the
+existing `%ProgramData%\IntraCloud\wsl` tree the installer manages,
+which stays exactly as protected as before. Verified for real: built
+the MSI, ran a real administrative extraction (`msiexec /a ... /qn`,
+which doesn't require install-time elevation), and confirmed the
+scripts and the new data folder component are actually in the
+package's file table, not just assumed from a clean `wix build`.
+
+**Real bugs found and fixed, every one of them by actually running the
+compiled app end-to-end via Windows UI Automation against a real WSL2
+distro** (`Add-Type -AssemblyName UIAutomationClient`; not a permanent
+project dependency, a one-off verification script), not by inspection
+— none of these were caught by the Pester suite, because every Pester
+test for these scripts mocks `Invoke-Wsl`/`Invoke-IntraCloudDistroCommand`
+and therefore never exercises wsl.exe's real native-command behavior:
+
+1. **WPF command re-query bug.** Every Start/Stop/Restart/Refresh
+   button went permanently disabled after the *first* background
+   auto-refresh tick and never recovered. The auto-refresh loop calls
+   `RefreshAsync()` directly rather than through `RefreshCommand.Execute()`,
+   so `AsyncRelayCommand`'s own `CommandManager.InvalidateRequerySuggested()`
+   call never fired for that path. Fixed by calling it explicitly
+   wherever `StatusViewModel.IsBusy` changes.
+2. **PowerShell 5.1 turns routine command failures into uncaught
+   script termination.** `Invoke-WslRaw`'s original
+   `& wsl.exe @Arguments 2>$stderrPath` looked like a plain OS-level
+   stderr-to-file redirect but wasn't: Windows PowerShell 5.1 first
+   converts a native command's stderr into a PowerShell `ErrorRecord`
+   (PowerShell's own error stream, not the OS one), and under this
+   file's `$ErrorActionPreference = 'Stop'`, that terminated the whole
+   script on any routine failure (e.g. `Test-IntraCloudHealth.ps1`
+   detecting an unhealthy stack) instead of returning the non-zero-exit
+   result every caller's own `if ($result.ExitCode -ne 0)` logic
+   expects.
+3. **`Start-Process -ArgumentList` silently drops argument
+   boundaries.** The first fix for #2 used `Start-Process` with real
+   file redirection, which solved the termination problem but broke
+   argument passing: an array element containing an internal space
+   (one logical argument to `bash -lc`) got joined into the child
+   command line without correct quoting, silently truncating it.
+   Confirmed by direct byte-level inspection of the captured output,
+   not inferred. Fixed by switching to `System.Diagnostics.Process`
+   directly — and since `ProcessStartInfo.ArgumentList` (the collection
+   type that would make quoting a non-issue) doesn't exist on .NET
+   Framework, which Windows PowerShell 5.1 runs on, added
+   `ConvertTo-WindowsQuotedArgument`, the same quote-doubling algorithm
+   .NET's own `ArgumentList` and `CommandLineToArgvW` use, to build the
+   single pre-quoted `Arguments` string by hand.
+4. **`ContainerStatus` was a string in one code path and an array of
+   service objects in another.** `Test-IntraCloudHealth.ps1`'s
+   `docker compose ps` failure branch set `ContainerStatus = $psResult.StdErr`
+   (a bare string) where the success path sets it to a parsed JSON
+   array — invisible to every existing (untyped) PowerShell caller, but
+   the Control Center's C# `DistroHealth.ContainerStatus` model
+   (`List<ContainerServiceStatus>?`) throws a `JsonException` on
+   deserializing it. Fixed by always emitting `null` there and moving
+   the diagnostic text to `Detail`, which the UI already surfaces.
+
+**Verified live, for real, end to end**, after all four fixes: imported
+a disposable test distro (same `docker export python:3.13-slim`
+technique as Phase 17), launched the actual published exe, and drove
+it through Stopped → Start → Running (with an honest, specific,
+non-crashing error — no compose stack was staged in this lightweight
+test distro, which remains Phase 17's own
+IMPLEMENTED + REQUIRES WINDOWS VM VALIDATION territory, not something
+this phase changes) → Stop → Restart → Refresh → Settings tab
+save/reload, confirming throughout: no UAC prompt, no UI freeze (the
+automation driver's own calls kept succeeding while the background
+auto-refresh loop ran), correct button re-enablement, and status text
+that reflects genuine current state rather than a misleading fallback.
+Settings persistence (save/reload round trip) and the Backup & Restore
+screen's history/trigger wiring were verified via real xUnit tests
+(`ScriptRunnerTests` — real subprocess calls including a real timeout/
+cancellation test, not mocked; `SettingsServiceTests`;
+`LocalConnectionValidationTests`) and via the same live UI-Automation
+run for Settings specifically. **Not verified live**: a populated,
+healthy per-service table, which needs a real Docker Engine and
+Compose stack inside the distro — unchanged from Phase 17's own
+disk-space-driven classification, not attempted again here for the
+same reason.
+
+Exit criteria — the four-screen UI, subprocess/service layer, settings
+persistence, and backup-history plumbing are IMPLEMENTED + TESTED
+(real xUnit subprocess tests, real live UI-Automation run against an
+actual WSL2 distro, real `list_backups` tests against live PostgreSQL,
+real MSI administrative-extraction verification of the new ACL/scripts
+components); a fully populated healthy status view requires a real
+Docker-Engine-and-Compose-stack-inside-the-distro environment and
+remains IMPLEMENTED + REQUIRES WINDOWS VM VALIDATION, matching Phase
+17's own classification, not silently upgraded here.
+
+## Phase 19 — Windows Installer Experience — COMPLETE (scoped down from the original brief, deliberately)
+
+Two real, verified additions to `installer/wix/Package.wxs`: real
+directory selection (`WixUI_InstallDir`, replacing `WixUI_Minimal`,
+with `WIXUI_INSTALLDIR` pointed at `INSTALLFOLDER`) and a native MSI
+`<Launch>` condition rejecting a non-64-bit OS before attempting to
+place a 64-bit exe under `ProgramFiles64Folder`. Both verified for
+real: a clean `dotnet build`, a real administrative extraction
+confirming the file table, and a real `msiexec /i ... /quiet` install
+attempt that correctly passed the new launch condition, resolved the
+new directory-selection properties, and reached `InstallFinalize`
+before failing with the same, already-documented `Error 1925`
+(insufficient privileges — Phase 16's UAC wall, not a new bug) — with
+a clean rollback confirmed afterward (no orphaned
+`Program Files\Intra-Cloud`, no orphaned uninstall registry key), same
+as Phase 16.
+
+**Two scope calls made deliberately, not deferred by accident:**
+
+- **Install-time prerequisite-check gating (Windows build number,
+  virtualization, WSL2 itself) is explicitly NOT wired into a blocking
+  custom action.** The straightforward-looking approach — run
+  `Test-Prerequisites.ps1` before `InstallFiles` and abort on failure —
+  needs the script embedded as MSI `Binary` data (extracted by the MSI
+  engine to a temp path before the target directory exists yet) and a
+  `CustomAction`/sequencing setup this session cannot verify actually
+  works at real install time without a genuinely elevated session — the
+  same UAC wall documented since Phase 16, but now blocking
+  verification of new custom-action *logic*, not just file placement.
+  Shipping unverified custom-action sequencing (a notoriously
+  easy-to-get-subtly-wrong area of MSI authoring) failed silently on a
+  real customer machine would be worse than the current, honest gap:
+  `Test-Prerequisites.ps1` still exists, still works (Phase 16), and is
+  still available for the Control Center or a support engineer to run
+  manually. Wiring it into the MSI itself is left for Phase 20, on a
+  machine actually provisioned for a real elevated install cycle.
+- **MSI uninstall never touches the WSL2 distribution or its data, in
+  either direction — no automatic backup, no automatic removal.**
+  Reconsidered from an initial assumption that "uninstall should
+  default to a data-preserving backup-then-remove flow"
+  (`Uninstall-IntraCloudDistro.ps1`'s own default). That default is
+  right for an *interactive* removal a human is watching, but wrong for
+  what `msiexec /x /quiet` actually is in practice — the standard
+  SCCM/Group Policy enterprise-removal path, which gives no opportunity
+  to confirm a destructive action and no good way to surface a
+  real `pg_dump`-backed backup cycle failing partway through a supposedly
+  "quiet" transaction. Uninstalling the *Control Center application*
+  and removing the *Intra-Cloud deployment and its data* are kept as
+  two separate, never-conflated actions — Programs and Features removes
+  only the former. This is ADR-0012's "remove the application, preserve
+  customer data by default" principle applied to the specific hazard an
+  unattended MSI transaction introduces, not a reduction in scope for
+  its own sake.
+
+Exit criteria — real directory selection and the 64-bit launch
+condition are IMPLEMENTED + TESTED (real build, real administrative
+extraction, real install attempt reaching the expected elevation wall
+with clean rollback confirmed); install-time prerequisite-check gating
+is explicitly NOT IMPLEMENTED, deferred to Phase 20 with the reasoning
+above on record rather than left as a silent gap; the "uninstall never
+touches distro data" behavior is IMPLEMENTED by omission and documented
+as a deliberate safety decision, not something requiring further work
+in this phase.
+
+## Phase 20 — Windows Qualification Test Matrix — DOCUMENT WRITTEN, NOT EXECUTED
+
+`docs/deployment/WINDOWS_QUALIFICATION_MATRIX.md`: a real, detailed
+checklist for a genuinely elevated Windows session (physical machine or
+VM) to run through before the installer path ships — target platform
+matrix, fresh install, first launch, the full WSL2-distro-lifecycle
+scenario Phases 17/18 explicitly couldn't reach (a real Docker Engine +
+9-service Compose stack inside the distro, not the lightweight/mocked
+verification those phases used), backup/restore, upgrade, repair,
+uninstall (specifically confirming Phase 19's "never touches the
+distro" decision holds in practice), and multi-user-machine behavior.
+
+This document was **written, not executed**, and that's the honest,
+correct outcome here, not a shortfall: every scenario in it requires a
+genuinely elevated, interactive Windows session, which this development
+session has never had access to (confirmed since Phase 16 — no
+self-elevation path exists from its account's non-elevated token).
+Writing an accurate, complete checklist grounded in exactly what
+Phases 16–19 already verified (so a real tester doesn't waste time
+re-covering it) and exactly what they couldn't (so nothing gets
+silently assumed fine) is the correct contribution from a session that
+cannot run the matrix itself — fabricating "passed" results for
+scenarios never actually run would violate this project's own
+standing rule against claiming untested things work.
+
+Exit criteria — the matrix itself is IMPLEMENTED (a real, reviewable
+document); every scenario it contains is BLOCKED BY EXTERNAL
+REQUIREMENT (a genuinely elevated Windows test session) until someone
+with that access runs it.
+
+## Phase 21 — Release Bundle & Code Signing — PARTIALLY COMPLETE
+
+Two real additions, one fully verified and one deliberately not:
+
+**`installer/release/Build-ReleaseBundle.ps1` — IMPLEMENTED + TESTED.**
+Closes a real gap flagged since Phase 17 and reiterated in Phase 20's
+qualification matrix: `Initialize-IntraCloudDistro.ps1` has always
+expected a populated `-AppBundlePath` (`docker-compose.yml`,
+`infrastructure/`, `images/*.tar`), and nothing in this repository
+actually produced one. Deliberately placed outside `installer/scripts/`
+(a release-time tool a release engineer runs once per release, not a
+per-machine lifecycle script the Control Center ships and invokes —
+the `.csproj`'s `installer\scripts\*.ps1` glob would otherwise have
+bundled a release tool into the customer-facing product by accident).
+Verified for real against this repository's actual `docker-compose.yml`
+and locally-built images: resolved the exact 9-service image list via
+`docker compose config --images`, correctly deduplicated it to 6 unique
+images (`postgres:18` and `pdc-backend:latest` are each used by
+multiple services), saved all 6 as real `.tar` files (~630 MB total),
+and copied `docker-compose.yml`/`infrastructure/` alongside them —
+inspected the resulting bundle directory tree directly, not assumed
+from the script succeeding.
+
+Deliberately does **not** include a `.env`: a real one holds live
+secrets (DB passwords, Fernet key, JWT signing key, backup encryption
+key), and copying a developer's own `.env` into a redistributable
+bundle would mean every customer install starts from the same secrets
+— a real security problem, not a convenience worth the risk.
+Generating fresh, correctly-random per-install secrets is left as a
+deliberately separate, not-yet-solved design question (matching each
+secret's own entropy/algorithm requirements deserves its own pass, not
+a rushed addition here); `Initialize-IntraCloudDistro.ps1`'s existing
+"No `.env` found" warning stands as the honest current behavior.
+
+**Code signing (`.github/workflows/windows-installer.yml`) — IMPLEMENTED, EXPLICITLY UNTESTED.**
+A real `signtool.exe`-based signing step for the Control Center exe and
+the MSI, gated on both a `WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64`
+secret existing *and* running on `master`/a release tag (never on a
+disposable PR build). No certificate has ever existed to verify this
+step actually works — Authenticode signature validity, timestamp
+server reachability from the runner, and the exact `signtool.exe`
+search path on a real `windows-2022` image are all unverified,
+written from documented `signtool` usage rather than a real run.
+Shipping this honestly labeled as untested, gated so it can never
+accidentally run without a real certificate present, was judged better
+than leaving the extension point unfilled — but whoever adds the real
+secret should treat that step's first real CI run as the actual
+verification, not assume it from this entry. The original,
+deliberately-absent stub comment from Phase 16 is removed now that a
+real (if unverified) implementation exists in its place.
+
+**`installer/scripts/New-IntraCloudEnvironmentFile.ps1` — IMPLEMENTED + TESTED,
+closing the fresh-per-install-secrets gap Phase 21's own first pass
+deliberately deferred.** Generates a real `.env` with a fresh,
+cryptographically random value for every operator-supplied secret
+`.env.example` lists (`SECRET_KEY`, `CREDENTIAL_ENCRYPTION_KEY`,
+`CONTROL_DB_PASSWORD`, `TENANT_DB_PASSWORD`,
+`OBJECT_STORAGE_ROOT_USER`/`_PASSWORD`) — confirmed by actually reading
+`databases/crypto.py`/`accounts/crypto.py`/`exports/crypto.py` that
+every one of these is documented as an "arbitrary-length
+operator-supplied" value, SHA-256-hashed down to Fernet's fixed-length
+key requirement rather than needing a specific binary format itself,
+so one random-alphanumeric generator is correct for all of them.
+Deliberately does not set `BACKUP_ENCRYPTION_KEY` — `.env.example`
+itself leaves encrypted backups opt-in, and generating that key
+silently during an unattended install would create a key whose loss
+makes every encrypted backup permanently unrecoverable, without an
+operator ever having deliberately chosen that trade-off.
+`Build-ReleaseBundle.ps1` now includes `.env.example` (never `.env`)
+in the bundle, and `Initialize-IntraCloudDistro.ps1` calls the new
+script whenever no `.env` is already present, replacing the previous
+"No `.env` found" warning-only behavior. Verified for real, twice: a
+Pester suite (`installer/tests/New-IntraCloudEnvironmentFile.Tests.ps1`)
+covering placeholder replacement, uniqueness across runs, non-secret
+lines surviving unchanged, and the `BACKUP_ENCRYPTION_KEY` omission —
+and a full live integration run against this project's actual WSL2
+host: imported a real test distribution, ran
+`Initialize-IntraCloudDistro.ps1` against a bundle containing only
+`.env.example`, and confirmed via `Invoke-IntraCloudDistroCommand`
+that a real, correctly-shaped `.env` (112 lines, matching
+`.env.example`'s own length, with a genuine random `SECRET_KEY`) ended
+up at `/opt/intracloud/.env` inside the distribution.
+
+**`exports/manifest.py`'s `PRODUCT_VERSION` placeholder — unified with
+the repo-root `VERSION` file**, the same single source of truth
+`control-center/IntraCloud.ControlCenter.csproj` and
+`installer/wix/Package.wixproj` already use. Real engineering, not a
+one-line fix: the backend's Docker build context is `./apps/backend`,
+which cannot `COPY` a file from outside itself (Docker forbids reaching
+above the build context), so `docker-compose.yml`'s `backend`/`worker`
+services now bind-mount the repo-root `VERSION` file read-only at
+`/VERSION` instead. `manifest.py` reads that mount first, falling back
+to walking upward from its own file location looking for a `VERSION`
+file otherwise (for local dev/pytest, which runs outside Docker).
+That walk is deliberately open-ended, not a fixed parent count: a
+hardcoded `parents[3]` (correct for `apps/backend/exports/manifest.py`
+outside Docker) threw a real `IndexError` inside the actual container,
+where the Dockerfile's `WORKDIR /app` plus copying `apps/backend`'s
+*contents* into it puts this same file two levels shallower, at
+`/app/exports/manifest.py` — caught by actually rebuilding the image
+and running it, not by inspection. Verified for real in both contexts
+after the fix: `docker compose exec backend python -c "from
+exports.manifest import PRODUCT_VERSION..."` against the live,
+rebuilt container correctly printed `0.1.0-dev`, and the same import
+via the disposable pytest test-runner container (outside Docker's
+`/app` layout) also correctly printed `0.1.0-dev` via the fallback
+walk; all 22 real `exports`/`system.backups` tests against live
+PostgreSQL still pass.
+
+Exit criteria — the release bundle builder, fresh-secret generator,
+and `PRODUCT_VERSION` unification are all IMPLEMENTED + TESTED (real
+builds, real Pester coverage, a real live WSL2 integration run, and
+real container rebuilds — not assumed from any of these individually);
+code signing is IMPLEMENTED but BLOCKED BY EXTERNAL REQUIREMENT (a
+real signing certificate, which is a business asset this development
+session neither has nor should fabricate) for actual verification.
+**Not closed by any of the above: offline installation is still
+partial.** `Initialize-IntraCloudDistro.ps1` bundles container images
+via `Build-ReleaseBundle.ps1` (no internet needed for those), but still
+installs Docker Engine itself via `curl -fsSL https://get.docker.com |
+sh` inside the distribution — confirmed still present and still
+internet-dependent by re-reading the script during this same pass, not
+fixed here. A genuinely offline install would need Docker Engine's
+`.deb` packages (and their full dependency closure) bundled the same
+way the container images are, which is real, separate follow-up work,
+not attempted in this pass. The WiX v6+ licensing decision
+(`installer/README.md`) remains open and is also a business decision,
+not something this phase resolves.
+
 ## Non-Negotiable Cross-Phase Rules
 
 - No phase ships without tenant-isolation tests for any new tenant-owned

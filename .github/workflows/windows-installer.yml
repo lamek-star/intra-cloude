@@ -1,0 +1,239 @@
+name: Windows Installer
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "control-center/**"
+      - "installer/**"
+      - "VERSION"
+      - ".github/workflows/windows-installer.yml"
+  pull_request:
+    paths:
+      - "control-center/**"
+      - "installer/**"
+      - "VERSION"
+      - ".github/workflows/windows-installer.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build, test, and package (Windows)
+    # Pinned to a specific supported image, not windows-latest — CI
+    # reproducibility shouldn't silently shift when GitHub repoints
+    # "latest" at a new image. Bump deliberately when needed.
+    runs-on: windows-2022
+
+    # Job-level, not step-level: GitHub Actions' own contexts table
+    # documents `secrets` as unavailable in a step's `if:` condition
+    # (only `env`, among others, is listed there) -- confirmed the hard
+    # way, this file failed to parse at all when the signing step first
+    # referenced `secrets.*` directly in its own `if:`. Defining it here
+    # instead makes it reachable via `env.*` in that condition, while
+    # still being exactly the secret value inside the step's own script.
+    env:
+      WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64 }}
+      WINDOWS_CODE_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_CERTIFICATE_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Read product version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Output "Product version: $version"
+
+      # --- Control Center: build, test, publish ---
+
+      # Restores both the main project and the nested test project —
+      # `dotnet restore` on just the main .csproj does not also restore
+      # a project it's referenced *by* (the test project references it,
+      # not the other way around). Confirmed by actually running this
+      # workflow with only the main project restored: the test step
+      # failed with "project.assets.json not found" since it was never
+      # restored at all.
+      - name: Restore Control Center
+        working-directory: control-center
+        run: dotnet restore
+
+      - name: Restore Control Center tests
+        working-directory: control-center\tests\IntraCloud.ControlCenter.Tests
+        run: dotnet restore
+
+      - name: Build Control Center (Debug, for unit tests)
+        working-directory: control-center
+        run: dotnet build --no-restore -c Debug
+
+      - name: Run Control Center unit tests
+        working-directory: control-center\tests\IntraCloud.ControlCenter.Tests
+        run: dotnet test --no-restore -c Debug --logger "trx;LogFileName=test-results.trx" --results-directory ..\..\..\test-results
+
+      - name: Publish Control Center (Release, self-contained single-file)
+        working-directory: control-center
+        run: dotnet publish -c Release
+
+      - name: Smoke-test the published executable
+        shell: pwsh
+        run: |
+          $exePath = "control-center\bin\Release\net8.0-windows\win-x64\publish\IntraCloudControlCenter.exe"
+          if (-not (Test-Path $exePath)) {
+            Write-Error "Published executable not found at $exePath"
+            exit 1
+          }
+          $proc = Start-Process -FilePath $exePath -PassThru
+          Start-Sleep -Seconds 3
+          if ($proc.HasExited) {
+            Write-Error "Control Center exited immediately (code $($proc.ExitCode)) instead of staying open."
+            exit 1
+          }
+          Write-Output "Window title: $($proc.MainWindowTitle)"
+          if ($proc.MainWindowTitle -notlike "*$($env:VERSION)*") {
+            Write-Warning "Window title does not contain the expected version string."
+          }
+          Stop-Process -Id $proc.Id -Force
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+
+      # --- PowerShell scripts: static analysis + Pester ---
+
+      # Pester pinned to an exact version, not just a minimum: a
+      # `-MinimumVersion 5.5.0` install silently resolved to v6.1.0 on
+      # this runner, and Pester v6 turned out not to be purely additive
+      # -- a helper function defined at plain script scope in a
+      # .Tests.ps1 file (valid, working Pester v5 style) was no longer
+      # reliably visible inside nested It blocks, breaking every test
+      # that used it. Confirmed on a real GitHub Actions run, not
+      # assumed from release notes. Pinning avoids the same class of
+      # silent breakage recurring on some future v7.
+      - name: Install PSScriptAnalyzer and Pester
+        shell: pwsh
+        run: |
+          Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser -MinimumVersion 1.21.0
+          Install-Module -Name Pester -Force -Scope CurrentUser -SkipPublisherCheck -RequiredVersion 6.1.0
+
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          $results = Invoke-ScriptAnalyzer -Path installer\scripts -Recurse -Severity Warning,Error
+          if ($results) {
+            $results | Format-Table -AutoSize
+            if ($results | Where-Object Severity -eq 'Error') {
+              Write-Error "PSScriptAnalyzer found error-severity issues."
+              exit 1
+            }
+            Write-Warning "PSScriptAnalyzer found warning-severity issues (non-blocking)."
+          } else {
+            Write-Output "PSScriptAnalyzer: clean."
+          }
+
+      - name: Run Pester tests
+        shell: pwsh
+        run: |
+          $config = New-PesterConfiguration
+          $config.Run.Path = 'installer\tests'
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          $config.TestResult.Enabled = $true
+          $config.TestResult.OutputPath = 'test-results\pester-results.xml'
+          Invoke-Pester -Configuration $config
+
+      # --- WiX installer package ---
+
+      - name: Restore WiX tool
+        working-directory: installer\wix
+        run: dotnet tool restore
+
+      - name: Build MSI
+        working-directory: installer\wix
+        run: dotnet build -c Release
+
+      # --- Code signing (Phase 21) ---
+      # Runs only when a real signing certificate exists as a repo
+      # secret. Absent one (every run so far, including this one),
+      # every other step in this job still produces a genuine, working,
+      # correctly-labeled *unsigned* build -- signing was never stubbed
+      # with a fake/no-op step specifically so an unsigned dev build
+      # stays possible on every PR, per the original brief.
+      #
+      # Also gated on branch/tag, not just secret presence: a real
+      # signing identity shouldn't get invoked on every disposable PR
+      # build once configured, only on master or a release tag.
+      #
+      # UNTESTED: no real certificate has ever been available to verify
+      # this step actually signs correctly (Authenticode signature
+      # validity, timestamp server reachability from the runner, the
+      # exact signtool.exe path on a real windows-2022 image) -- it is
+      # written from documented signtool usage, not confirmed by a real
+      # run. Whoever adds WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64 as a
+      # real secret should treat this step's first real run as the
+      # actual verification, not assume it from this comment. See
+      # docs/architecture/ROADMAP.md's Phase 21 entry.
+      - name: Sign Control Center executable and MSI
+        if: ${{ env.WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64 != '' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) }}
+        shell: pwsh
+        run: |
+          $signtool = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like '*x64*' } | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) {
+            Write-Error "signtool.exe not found under the Windows 10 SDK path on this runner."
+            exit 1
+          }
+
+          $certPath = Join-Path $env:RUNNER_TEMP 'signing-cert.pfx'
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64))
+          try {
+            $filesToSign = @(
+              'control-center\bin\Release\net8.0-windows\win-x64\publish\IntraCloudControlCenter.exe'
+              (Get-ChildItem -Path installer\wix\bin\x64\Release -Filter *.msi | Select-Object -First 1).FullName
+            )
+            foreach ($file in $filesToSign) {
+              & $signtool sign /f $certPath /p $env:WINDOWS_CODE_SIGNING_CERTIFICATE_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $file
+              if ($LASTEXITCODE -ne 0) {
+                Write-Error "signtool failed for $file (exit $LASTEXITCODE)."
+                exit 1
+              }
+            }
+          } finally {
+            # The certificate is written to disk only to hand its path
+            # to signtool.exe (no supported way to sign from an
+            # in-memory PFX) -- removed immediately after, whether
+            # signing succeeded or failed, not left for the runner's
+            # own cleanup.
+            Remove-Item $certPath -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Compute release checksums
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          $msi = Get-ChildItem -Path installer\wix\bin\x64\Release -Filter *.msi | Select-Object -First 1
+          $exe = Get-ChildItem -Path control-center\bin\Release\net8.0-windows\win-x64\publish -Filter *.exe | Select-Object -First 1
+          Copy-Item $msi.FullName -Destination artifacts\
+          Copy-Item $exe.FullName -Destination "artifacts\IntraCloudControlCenter-standalone.exe"
+          Get-ChildItem artifacts | ForEach-Object {
+            $hash = Get-FileHash $_.FullName -Algorithm SHA256
+            "$($hash.Hash)  $($_.Name)" | Out-File -Append -Encoding ascii artifacts\SHA256SUMS.txt
+          }
+          Get-Content artifacts\SHA256SUMS.txt
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: intracloud-windows-${{ steps.version.outputs.version }}
+          path: artifacts\
+          if-no-files-found: error
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: test-results\
+          if-no-files-found: warn

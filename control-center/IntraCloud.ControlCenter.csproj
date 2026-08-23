@@ -1,0 +1,87 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Phase 16 (Windows Build Infrastructure) deliberately keeps this
+    project's *content* minimal — a real, buildable WPF shell proving
+    the CI chain (dotnet build -> publish -> WiX package -> checksum)
+    genuinely works end to end. The actual Control Center UI (system
+    status, start/stop/restart, backup/restore buttons —
+    docs/architecture/ROADMAP.md Phase 18) is out of scope here; this
+    is the walking skeleton it gets built into.
+
+    .NET 8 (LTS) WPF, not Electron/Tauri: this app's job is OS-level
+    lifecycle management (Windows Service interop, wsl.exe process
+    control, registry) where native .NET is the natural fit, and it
+    shares one toolchain with the WiX installer rather than introducing
+    a third language/runtime for a tool with almost no UI surface.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>IntraCloud.ControlCenter</RootNamespace>
+    <AssemblyName>IntraCloudControlCenter</AssemblyName>
+    <!-- ApplicationIcon intentionally not set yet — a real product icon
+         is a Phase 19 (installer/branding) asset, not part of this
+         phase's walking skeleton. -->
+
+    <!-- Single source of truth for the product version — the same
+         VERSION file the installer (installer/wix) and CI both read,
+         so the Control Center's "About" string, the MSI's
+         ProductVersion, and release artifact filenames never drift
+         apart from each other. -->
+    <VersionFile>$(MSBuildThisFileDirectory)..\VERSION</VersionFile>
+    <Version Condition="Exists('$(VersionFile)')">$([System.IO.File]::ReadAllText($(VersionFile)).Trim())</Version>
+    <Version Condition="'$(Version)' == ''">0.0.0-unknown</Version>
+    <InformationalVersion>$(Version)</InformationalVersion>
+
+    <!-- Self-contained single-file publish (installer/scripts and CI
+         both target this) — the target machine is never assumed to
+         have a .NET runtime installed; the installer must not add
+         "install .NET" as a prerequisite step of its own. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+
+    <Company>Intra-Cloud</Company>
+    <Product>Intra-Cloud Control Center</Product>
+    <AssemblyTitle>Intra-Cloud Control Center</AssemblyTitle>
+  </PropertyGroup>
+
+  <!-- SDK-style projects glob **/*.cs by default, which would also
+       pull in tests/IntraCloud.ControlCenter.Tests/*.cs as part of
+       *this* app's own compilation (that subdirectory is nested under
+       this project's directory) — confirmed by actually building
+       without this exclusion: it failed with "Xunit could not be
+       found" attributed to this .csproj, not the test project. -->
+  <ItemGroup>
+    <Compile Remove="tests\**\*.cs" />
+    <EmbeddedResource Remove="tests\**\*" />
+    <None Remove="tests\**\*" />
+    <Page Remove="tests\**\*.xaml" />
+  </ItemGroup>
+
+  <!-- Phase 18: the Control Center invokes the Phase 17 lifecycle
+       scripts as a subprocess (Services/ScriptRunner.cs), so they must
+       ship alongside the exe, not just live in the repo. Copying them
+       into the publish output here — rather than having the WiX
+       package reach into installer/scripts/ directly — keeps one
+       source of truth: whatever is in this publish folder is exactly
+       what both `dotnet publish` (dev/debug runs) and the MSI (real
+       installs, which packages files from this same
+       ControlCenterPublishDir) ship. Resolved at runtime relative to
+       AppContext.BaseDirectory, so it works identically whether running
+       from bin\Debug, bin\Release\...\publish, or an MSI-installed
+       Program Files directory. -->
+  <ItemGroup>
+    <Content Include="..\installer\scripts\*.ps1">
+      <Link>scripts\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

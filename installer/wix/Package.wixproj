@@ -1,0 +1,57 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <!--
+    Phase 16 (Windows Build Infrastructure): a real, buildable WiX v5
+    project packaging the Control Center's self-contained publish
+    output into a genuine MSI — proving the CI chain
+    (dotnet publish -> wix build -> checksum -> artifact) works end to
+    end, not the full installer experience (Section 4/9/10 of the
+    engineering brief — WSL2 provisioning, prerequisite checks,
+    directory-selection UI — land in Phase 17/19).
+
+    Pinned to WiX v5.0.2 deliberately, not "latest": WiX v6+ requires
+    accepting a paid "Open Source Maintenance Fee" EULA for any
+    revenue-generating organization (confirmed by actually running the
+    v7 CLI against a fresh install — it refused to run at all without
+    EULA acceptance). v5 is the last major version not subject to that
+    fee. This is a real product/licensing decision that needs
+    revisiting before release, not something to silently commit to
+    either way — see installer/README.md.
+  -->
+  <PropertyGroup>
+    <OutputName>IntraCloudControlCenter-Setup</OutputName>
+    <OutputType>Package</OutputType>
+    <!-- The Control Center is win-x64-only (RuntimeIdentifier in the
+         main .csproj) — the MSI must declare itself 64-bit too, or WiX's
+         own validation (ICE80) correctly rejects placing a component
+         under ProgramFiles64Folder from a package that still defaults
+         to 32-bit. -->
+    <Platform>x64</Platform>
+
+    <ControlCenterPublishDir>$(MSBuildThisFileDirectory)..\..\control-center\bin\Release\net8.0-windows\win-x64\publish\</ControlCenterPublishDir>
+    <VersionFile>$(MSBuildThisFileDirectory)..\..\VERSION</VersionFile>
+    <VersionRaw Condition="Exists('$(VersionFile)')">$([System.IO.File]::ReadAllText($(VersionFile)).Trim())</VersionRaw>
+    <VersionRaw Condition="'$(VersionRaw)' == ''">0.0.0-unknown</VersionRaw>
+    <!-- MSI ProductVersion must be plain numeric major.minor.build
+         (no semver pre-release suffix like "-dev") — strip anything
+         from the first '-' onward. -->
+    <MsiVersion>$(VersionRaw.Split('-')[0])</MsiVersion>
+
+    <DefineConstants>
+      ControlCenterPublishDir=$(ControlCenterPublishDir);
+      ProductVersion=$(MsiVersion)
+    </DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="5.0.2" />
+    <!-- util:PermissionEx (Phase 18): provisions
+         %ProgramData%\IntraCloud\ControlCenter with a narrow ACL so the
+         unelevated Control Center can write its own settings file there.
+         Scoped to that one subdirectory only, so the WSL/VHDX and
+         installer-controlled material under %ProgramData%\IntraCloud
+         stays exactly as protected as it is today. -->
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+  </ItemGroup>
+
+</Project>

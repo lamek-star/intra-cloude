@@ -78,6 +78,20 @@ def assert_host_is_safe(host: str) -> None:
     block_private = settings.CONNECTED_DATABASE_BLOCK_PRIVATE_NETWORKS
     for *_rest, sockaddr in addr_infos:
         ip = ipaddress.ip_address(sockaddr[0])
+        # Loopback is exempted from the always-unsafe bucket even though
+        # `is_reserved` is True for it: Python's ipaddress module reports
+        # IPv6 `::1` as reserved (unlike IPv4 `127.0.0.1`, where
+        # is_reserved is False) — an stdlib quirk, confirmed directly
+        # against CPython, not a documented IANA distinction. Left
+        # unhandled, that quirk silently blocked IPv6 loopback under the
+        # default (non-strict) policy, contradicting the documented intent
+        # that loopback is only ever blocked via
+        # CONNECTED_DATABASE_BLOCK_PRIVATE_NETWORKS below — and broke real
+        # CI runs where `localhost` resolves to `::1`.
+        if ip.is_loopback:
+            if block_private:
+                raise UnsafeHost(f"{host!r} resolves to a private address ({ip}), blocked on this deployment")
+            continue
         if any(getattr(ip, attr) for attr in _ALWAYS_UNSAFE_ATTRS):
             raise UnsafeHost(f"{host!r} resolves to a non-routable address ({ip}) and cannot be used")
         if block_private and any(getattr(ip, attr) for attr in _PRIVATE_NETWORK_ATTRS):

@@ -76,6 +76,26 @@ jobs:
             sleep 2
           done
 
+      # The runner's default postgresql-client (16.x on ubuntu-latest) is
+      # older than the postgres:18 service containers above. pg_dump
+      # refuses to run against a newer server ("aborting because of
+      # server version mismatch") — confirmed as the real cause of every
+      # system/tests/test_backups.py failure on a real GitHub Actions
+      # run, not a hypothetical. PGDG's apt repo (following their own
+      # documented install steps) provides postgresql-client-18;
+      # installing it alongside the stock 16 package registers it with
+      # a higher update-alternatives priority, so /usr/bin/pg_dump and
+      # /usr/bin/pg_restore resolve to 18 without touching the app code.
+      - name: Install PostgreSQL 18 client tools
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-18
+          pg_dump --version
+          pg_restore --version
+
       - name: Install dependencies
         run: pip install -r apps/backend/requirements/dev.txt
 
@@ -115,13 +135,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Type check
-        run: npx tsc --noEmit
-
       - name: Lint
         run: npm run lint
 
+      # Build before Type check, not after: Next.js 16 generates
+      # PageProps/LayoutProps as global ambient types into
+      # .next/types/**/*.ts (tsconfig.json includes that path) as a
+      # side effect of `next build`/`next dev` — running `tsc --noEmit`
+      # before anything has ever built the app leaves those types
+      # undefined. Confirmed for real: this was the actual cause of the
+      # standing "Cannot find name 'PageProps'" CI failures on master
+      # going back to at least Phase 12, caught by actually checking
+      # `gh run list` against real GitHub Actions runs rather than only
+      # trusting local Docker-based verification.
       - name: Build
         run: npm run build
         env:
           NEXT_TELEMETRY_DISABLED: "1"
+
+      - name: Type check
+        run: npx tsc --noEmit
