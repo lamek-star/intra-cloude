@@ -56,7 +56,18 @@ public sealed class ScriptRunnerTests : IDisposable
     [Fact]
     public async Task Captures_a_nonzero_exit_code_and_stderr_on_failure()
     {
-        var script = WriteScript("fail.ps1", "Write-Error 'a real failure message'; exit 1");
+        // [Console]::Error.WriteLine, not Write-Error: confirmed on a
+        // real GitHub Actions run that Write-Error's stderr formatting
+        // (stack trace, "At <path>:1 char:1 ...") is PowerShell-version/
+        // patch-dependent -- this test passed against a shorter format
+        // locally and failed against a longer one on the CI runner, for
+        // the same underlying reason WslDistro.Common.ps1 stopped using
+        // PowerShell's ErrorRecord machinery for real error text.
+        // Writing straight to the OS-level stderr stream sidesteps that
+        // entirely and is a more accurate test of what ScriptRunner
+        // actually needs to capture: whatever raw bytes the child
+        // process writes to its own stderr.
+        var script = WriteScript("fail.ps1", "[Console]::Error.WriteLine('a real failure message'); exit 1");
 
         var result = await ScriptRunner.RunAsync(script);
 
