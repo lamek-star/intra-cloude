@@ -5,8 +5,11 @@ for the Windows deployment work ADR-0012 decided: the build chain
 (compile → test → package → checksum → artifact) genuinely works.
 Phase 17 added the actual WSL2 distribution lifecycle scripts
 (`installer/scripts/*-IntraCloudDistro.ps1`) that scaffolding packages.
-Still not implemented: the real Control Center UI or the real installer
-experience — those are Phases 18–19.
+Phase 18 built the real four-screen Control Center UI. Phase 19 added
+real directory selection and a 64-bit-OS install guard to the MSI
+itself — see `docs/architecture/ROADMAP.md`'s Phase 19 entry for what's
+still an explicit, documented gap (install-time prerequisite-check
+gating) rather than shipped unverified.
 
 ## Directory structure
 

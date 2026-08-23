@@ -1413,6 +1413,70 @@ Docker-Engine-and-Compose-stack-inside-the-distro environment and
 remains IMPLEMENTED + REQUIRES WINDOWS VM VALIDATION, matching Phase
 17's own classification, not silently upgraded here.
 
+## Phase 19 — Windows Installer Experience — COMPLETE (scoped down from the original brief, deliberately)
+
+Two real, verified additions to `installer/wix/Package.wxs`: real
+directory selection (`WixUI_InstallDir`, replacing `WixUI_Minimal`,
+with `WIXUI_INSTALLDIR` pointed at `INSTALLFOLDER`) and a native MSI
+`<Launch>` condition rejecting a non-64-bit OS before attempting to
+place a 64-bit exe under `ProgramFiles64Folder`. Both verified for
+real: a clean `dotnet build`, a real administrative extraction
+confirming the file table, and a real `msiexec /i ... /quiet` install
+attempt that correctly passed the new launch condition, resolved the
+new directory-selection properties, and reached `InstallFinalize`
+before failing with the same, already-documented `Error 1925`
+(insufficient privileges — Phase 16's UAC wall, not a new bug) — with
+a clean rollback confirmed afterward (no orphaned
+`Program Files\Intra-Cloud`, no orphaned uninstall registry key), same
+as Phase 16.
+
+**Two scope calls made deliberately, not deferred by accident:**
+
+- **Install-time prerequisite-check gating (Windows build number,
+  virtualization, WSL2 itself) is explicitly NOT wired into a blocking
+  custom action.** The straightforward-looking approach — run
+  `Test-Prerequisites.ps1` before `InstallFiles` and abort on failure —
+  needs the script embedded as MSI `Binary` data (extracted by the MSI
+  engine to a temp path before the target directory exists yet) and a
+  `CustomAction`/sequencing setup this session cannot verify actually
+  works at real install time without a genuinely elevated session — the
+  same UAC wall documented since Phase 16, but now blocking
+  verification of new custom-action *logic*, not just file placement.
+  Shipping unverified custom-action sequencing (a notoriously
+  easy-to-get-subtly-wrong area of MSI authoring) failed silently on a
+  real customer machine would be worse than the current, honest gap:
+  `Test-Prerequisites.ps1` still exists, still works (Phase 16), and is
+  still available for the Control Center or a support engineer to run
+  manually. Wiring it into the MSI itself is left for Phase 20, on a
+  machine actually provisioned for a real elevated install cycle.
+- **MSI uninstall never touches the WSL2 distribution or its data, in
+  either direction — no automatic backup, no automatic removal.**
+  Reconsidered from an initial assumption that "uninstall should
+  default to a data-preserving backup-then-remove flow"
+  (`Uninstall-IntraCloudDistro.ps1`'s own default). That default is
+  right for an *interactive* removal a human is watching, but wrong for
+  what `msiexec /x /quiet` actually is in practice — the standard
+  SCCM/Group Policy enterprise-removal path, which gives no opportunity
+  to confirm a destructive action and no good way to surface a
+  real `pg_dump`-backed backup cycle failing partway through a supposedly
+  "quiet" transaction. Uninstalling the *Control Center application*
+  and removing the *Intra-Cloud deployment and its data* are kept as
+  two separate, never-conflated actions — Programs and Features removes
+  only the former. This is ADR-0012's "remove the application, preserve
+  customer data by default" principle applied to the specific hazard an
+  unattended MSI transaction introduces, not a reduction in scope for
+  its own sake.
+
+Exit criteria — real directory selection and the 64-bit launch
+condition are IMPLEMENTED + TESTED (real build, real administrative
+extraction, real install attempt reaching the expected elevation wall
+with clean rollback confirmed); install-time prerequisite-check gating
+is explicitly NOT IMPLEMENTED, deferred to Phase 20 with the reasoning
+above on record rather than left as a silent gap; the "uninstall never
+touches distro data" behavior is IMPLEMENTED by omission and documented
+as a deliberate safety decision, not something requiring further work
+in this phase.
+
 ## Non-Negotiable Cross-Phase Rules
 
 - No phase ships without tenant-isolation tests for any new tenant-owned
