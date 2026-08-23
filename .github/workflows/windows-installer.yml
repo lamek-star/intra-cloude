@@ -143,6 +143,66 @@ jobs:
         working-directory: installer\wix
         run: dotnet build -c Release
 
+      # --- Code signing (Phase 21) ---
+      # Runs only when a real signing certificate exists as a repo
+      # secret. Absent one (every run so far, including this one),
+      # every other step in this job still produces a genuine, working,
+      # correctly-labeled *unsigned* build -- signing was never stubbed
+      # with a fake/no-op step specifically so an unsigned dev build
+      # stays possible on every PR, per the original brief.
+      #
+      # Also gated on branch/tag, not just secret presence: a real
+      # signing identity shouldn't get invoked on every disposable PR
+      # build once configured, only on master or a release tag.
+      #
+      # UNTESTED: no real certificate has ever been available to verify
+      # this step actually signs correctly (Authenticode signature
+      # validity, timestamp server reachability from the runner, the
+      # exact signtool.exe path on a real windows-2022 image) -- it is
+      # written from documented signtool usage, not confirmed by a real
+      # run. Whoever adds WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64 as a
+      # real secret should treat this step's first real run as the
+      # actual verification, not assume it from this comment. See
+      # docs/architecture/ROADMAP.md's Phase 21 entry.
+      - name: Sign Control Center executable and MSI
+        if: >-
+          ${{ secrets.WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64 != '' &&
+              (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) }}
+        shell: pwsh
+        env:
+          WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64 }}
+          WINDOWS_CODE_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          $signtool = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like '*x64*' } | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) {
+            Write-Error "signtool.exe not found under the Windows 10 SDK path on this runner."
+            exit 1
+          }
+
+          $certPath = Join-Path $env:RUNNER_TEMP 'signing-cert.pfx'
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64))
+          try {
+            $filesToSign = @(
+              'control-center\bin\Release\net8.0-windows\win-x64\publish\IntraCloudControlCenter.exe'
+              (Get-ChildItem -Path installer\wix\bin\x64\Release -Filter *.msi | Select-Object -First 1).FullName
+            )
+            foreach ($file in $filesToSign) {
+              & $signtool sign /f $certPath /p $env:WINDOWS_CODE_SIGNING_CERTIFICATE_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $file
+              if ($LASTEXITCODE -ne 0) {
+                Write-Error "signtool failed for $file (exit $LASTEXITCODE)."
+                exit 1
+              }
+            }
+          } finally {
+            # The certificate is written to disk only to hand its path
+            # to signtool.exe (no supported way to sign from an
+            # in-memory PFX) -- removed immediately after, whether
+            # signing succeeded or failed, not left for the runner's
+            # own cleanup.
+            Remove-Item $certPath -Force -ErrorAction SilentlyContinue
+          }
+
       - name: Compute release checksums
         shell: pwsh
         run: |
@@ -171,14 +231,3 @@ jobs:
           name: test-results
           path: test-results\
           if-no-files-found: warn
-
-      # --- Extension point for future code signing (Phase 21) ---
-      # Deliberately absent, not stubbed with a fake/no-op step: signing
-      # needs a real certificate supplied via GitHub Secrets (never
-      # committed — see installer/README.md's Phase 21 section), which
-      # doesn't exist yet. Unsigned development builds must remain
-      # possible; this job produces one, correctly labeled as such by
-      # virtue of not being signed. When a signing identity exists, add
-      # a step here (e.g. `dotnet tool run sign` or `signtool.exe`)
-      # gated on `github.ref == 'refs/heads/master'` or a release tag,
-      # never running on every PR build.

@@ -1507,6 +1507,65 @@ document); every scenario it contains is BLOCKED BY EXTERNAL
 REQUIREMENT (a genuinely elevated Windows test session) until someone
 with that access runs it.
 
+## Phase 21 — Release Bundle & Code Signing — PARTIALLY COMPLETE
+
+Two real additions, one fully verified and one deliberately not:
+
+**`installer/release/Build-ReleaseBundle.ps1` — IMPLEMENTED + TESTED.**
+Closes a real gap flagged since Phase 17 and reiterated in Phase 20's
+qualification matrix: `Initialize-IntraCloudDistro.ps1` has always
+expected a populated `-AppBundlePath` (`docker-compose.yml`,
+`infrastructure/`, `images/*.tar`), and nothing in this repository
+actually produced one. Deliberately placed outside `installer/scripts/`
+(a release-time tool a release engineer runs once per release, not a
+per-machine lifecycle script the Control Center ships and invokes —
+the `.csproj`'s `installer\scripts\*.ps1` glob would otherwise have
+bundled a release tool into the customer-facing product by accident).
+Verified for real against this repository's actual `docker-compose.yml`
+and locally-built images: resolved the exact 9-service image list via
+`docker compose config --images`, correctly deduplicated it to 6 unique
+images (`postgres:18` and `pdc-backend:latest` are each used by
+multiple services), saved all 6 as real `.tar` files (~630 MB total),
+and copied `docker-compose.yml`/`infrastructure/` alongside them —
+inspected the resulting bundle directory tree directly, not assumed
+from the script succeeding.
+
+Deliberately does **not** include a `.env`: a real one holds live
+secrets (DB passwords, Fernet key, JWT signing key, backup encryption
+key), and copying a developer's own `.env` into a redistributable
+bundle would mean every customer install starts from the same secrets
+— a real security problem, not a convenience worth the risk.
+Generating fresh, correctly-random per-install secrets is left as a
+deliberately separate, not-yet-solved design question (matching each
+secret's own entropy/algorithm requirements deserves its own pass, not
+a rushed addition here); `Initialize-IntraCloudDistro.ps1`'s existing
+"No `.env` found" warning stands as the honest current behavior.
+
+**Code signing (`.github/workflows/windows-installer.yml`) — IMPLEMENTED, EXPLICITLY UNTESTED.**
+A real `signtool.exe`-based signing step for the Control Center exe and
+the MSI, gated on both a `WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64`
+secret existing *and* running on `master`/a release tag (never on a
+disposable PR build). No certificate has ever existed to verify this
+step actually works — Authenticode signature validity, timestamp
+server reachability from the runner, and the exact `signtool.exe`
+search path on a real `windows-2022` image are all unverified,
+written from documented `signtool` usage rather than a real run.
+Shipping this honestly labeled as untested, gated so it can never
+accidentally run without a real certificate present, was judged better
+than leaving the extension point unfilled — but whoever adds the real
+secret should treat that step's first real CI run as the actual
+verification, not assume it from this entry. The original,
+deliberately-absent stub comment from Phase 16 is removed now that a
+real (if unverified) implementation exists in its place.
+
+Exit criteria — the release bundle builder is IMPLEMENTED + TESTED
+against this repository's real Compose stack; code signing is
+IMPLEMENTED but BLOCKED BY EXTERNAL REQUIREMENT (a real signing
+certificate, which is a business asset this development session
+neither has nor should fabricate) for actual verification. The WiX
+v6+ licensing decision (`installer/README.md`) remains open and is
+also a business decision, not something this phase resolves.
+
 ## Non-Negotiable Cross-Phase Rules
 
 - No phase ships without tenant-isolation tests for any new tenant-owned
