@@ -270,6 +270,75 @@ export type RowsPage = {
   results: Record<string, unknown>[];
 };
 
+export type ImportPreviewColumn = {
+  csv_column: string;
+  inferred_type: string;
+};
+
+export type ImportPreview = {
+  encoding: string;
+  delimiter: string;
+  headers: string[];
+  sample_rows: string[][];
+  columns: ImportPreviewColumn[];
+};
+
+export type ColumnMappingEntry = {
+  csv_column: string;
+  target_column: string;
+  target_type: string;
+};
+
+export type ImportJob = {
+  id: string;
+  file: string;
+  table: string;
+  encoding: string;
+  delimiter: string;
+  column_mapping: ColumnMappingEntry[];
+  status: "pending" | "running" | "completed" | "failed";
+  total_rows: number;
+  imported_rows: number;
+  rejected_rows: number;
+  error_message: string;
+  created_by: string;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+};
+
+export type ImportJobError = {
+  id: string;
+  row_number: number;
+  message: string;
+  raw_row: Record<string, unknown>;
+  created_at: string;
+};
+
+export type ColumnProfile = {
+  name: string;
+  data_type: string;
+  missing_count: number;
+  null_percentage: number;
+  unique_count: number;
+  min?: number;
+  max?: number;
+  mean?: number;
+  median?: number;
+  stdev?: number;
+  potential_outlier_count?: number;
+  top_values?: { value: unknown; count: number }[];
+};
+
+export type TableProfile = {
+  table: string;
+  row_count: number;
+  column_count: number;
+  truncated: boolean;
+  sampled_rows: number;
+  columns: ColumnProfile[];
+};
+
 export type AuditEvent = {
   id: string;
   timestamp: string;

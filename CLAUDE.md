@@ -96,12 +96,24 @@ of the master prompt's own phases):** `apps/frontend` now has a real,
 working UI — auth (including MFA step-up), organizations, workspaces/
 projects, the storage file browser, and the database builder's data
 explorer — covering the core workflow end to end, client-rendered
-against the live API through the same Caddy proxy. See
-`apps/frontend/README.md` for how it's built and
+against the live API through the same Caddy proxy. A later addition
+closed the CSV-import and analytics gap: `/tables/[tableId]/import`
+(upload or pick a stored CSV, preview detected encoding/delimiter/
+headers/inferred types, map columns to an existing table, watch the
+async job through pending/running/completed) and
+`/tables/[tableId]/analytics` (an automatic per-column data-quality
+profile plus a form-driven runner over the full `analytics.OPERATIONS`
+registry — descriptive stats, correlation, regression, t-test,
+chi-square, ANOVA, time-series). Both wrap existing, already-tested
+backend endpoints; verified live end to end against the real running
+stack (real user, org, table, uploaded CSV, completed import job, and
+a profile/analyze result cross-checked against each other), not just
+compiled. See `apps/frontend/README.md` for how it's built and
 `docs/guide/USER_GUIDE.md` for how to use it. Sharing, applications,
-connected databases, the audit log, and teams remain reachable only
-through the browsable API (`/api/v1/`) — real and tested, just no page
-yet.
+connected databases, the audit log, teams, and dashboards (the
+persistent declarative-JSON widget layer analytics also supports)
+remain reachable only through the browsable API (`/api/v1/`) — real
+and tested, just no page yet.
 
 ## Non-Negotiable Architectural Rules
 

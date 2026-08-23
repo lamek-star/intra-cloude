@@ -113,6 +113,18 @@ export default function TableDetailClient({ tableId }: { tableId: string }) {
         actions={
           <>
             <a
+              href={`/tables/${tableId}/analytics`}
+              className="inline-flex items-center rounded-md border border-white/10 bg-white/5 px-3.5 py-2 text-sm font-medium text-slate-100 hover:bg-white/10"
+            >
+              Analytics
+            </a>
+            <a
+              href={`/tables/${tableId}/import`}
+              className="inline-flex items-center rounded-md border border-white/10 bg-white/5 px-3.5 py-2 text-sm font-medium text-slate-100 hover:bg-white/10"
+            >
+              Import CSV
+            </a>
+            <a
               href={`/api/v1/tables/${tableId}/rows/export/`}
               className="inline-flex items-center rounded-md border border-white/10 bg-white/5 px-3.5 py-2 text-sm font-medium text-slate-100 hover:bg-white/10"
             >
