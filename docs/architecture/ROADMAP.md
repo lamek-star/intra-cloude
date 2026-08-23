@@ -1288,6 +1288,131 @@ Pester suite verified on the real GitHub Actions Windows runner
 (`.github/workflows/windows-installer.yml`, which already discovers
 `installer/tests/*.Tests.ps1` with no workflow changes needed).
 
+## Phase 18 — Control Center UI — COMPLETE
+
+A real, four-screen WPF UI (`control-center/Views/`: Status, Backup &
+Restore, Settings, Logs & Diagnostics) atop the Phase 17 lifecycle
+scripts, plus three new narrowly-scoped scripts
+(`Invoke-IntraCloudBackup.ps1`, `Get-IntraCloudBackupHistory.ps1`,
+`Get-IntraCloudContainerLogs.ps1` — each locked to a fixed
+`-ValidateSet` of values, not a generic command-runner, matching this
+repo's "no unreviewed dynamic SQL" principle extended to shell
+commands) and a new Django `list_backups` management command
+(`apps/backend/system/management/commands/list_backups.py`) so the
+Backup & Restore screen has real `BackupRecord` history to show.
+Architecture A only (ADR-0012) — Architecture D (remote Linux host) is
+still deferred to its own future ADR, per ADR-0012's own Open Items.
+
+**Architecture decisions locked in before implementation** (three-way
+call, all confirmed): subprocess invocation of the PowerShell scripts
+(`powershell.exe -File`, not the Microsoft.PowerShell.SDK NuGet
+package — keeps the already-154MB self-contained publish from growing
+further for infrequent, non-hot-path calls); the main window launches
+**unelevated**, with a present-but-unwired `ElevationHelper` ready for
+Phase 19 (Import/Uninstall are out of scope for this phase's UI, so
+there are zero elevated actions here to wire it to); backup history
+read via the new `list_backups --json` command shelled into the distro
+(the same pattern `Uninstall-IntraCloudDistro.ps1` already uses), not
+a new HTTP/API client trust boundary.
+
+**`%ProgramData%` ACL fix, treated as a prerequisite, not a
+refinement.** The Control Center runs unelevated and needs to write
+its own settings file, but the WiX package previously provisioned
+nothing under `%ProgramData%\IntraCloud` at all. Added
+`util:PermissionEx` (new `WixToolset.Util.wixext` package reference)
+scoped to exactly one new subdirectory,
+`%ProgramData%\IntraCloud\ControlCenter\`, granting `Users`
+read/write/execute/delete — not Full Control, and not applied to the
+existing `%ProgramData%\IntraCloud\wsl` tree the installer manages,
+which stays exactly as protected as before. Verified for real: built
+the MSI, ran a real administrative extraction (`msiexec /a ... /qn`,
+which doesn't require install-time elevation), and confirmed the
+scripts and the new data folder component are actually in the
+package's file table, not just assumed from a clean `wix build`.
+
+**Real bugs found and fixed, every one of them by actually running the
+compiled app end-to-end via Windows UI Automation against a real WSL2
+distro** (`Add-Type -AssemblyName UIAutomationClient`; not a permanent
+project dependency, a one-off verification script), not by inspection
+— none of these were caught by the Pester suite, because every Pester
+test for these scripts mocks `Invoke-Wsl`/`Invoke-IntraCloudDistroCommand`
+and therefore never exercises wsl.exe's real native-command behavior:
+
+1. **WPF command re-query bug.** Every Start/Stop/Restart/Refresh
+   button went permanently disabled after the *first* background
+   auto-refresh tick and never recovered. The auto-refresh loop calls
+   `RefreshAsync()` directly rather than through `RefreshCommand.Execute()`,
+   so `AsyncRelayCommand`'s own `CommandManager.InvalidateRequerySuggested()`
+   call never fired for that path. Fixed by calling it explicitly
+   wherever `StatusViewModel.IsBusy` changes.
+2. **PowerShell 5.1 turns routine command failures into uncaught
+   script termination.** `Invoke-WslRaw`'s original
+   `& wsl.exe @Arguments 2>$stderrPath` looked like a plain OS-level
+   stderr-to-file redirect but wasn't: Windows PowerShell 5.1 first
+   converts a native command's stderr into a PowerShell `ErrorRecord`
+   (PowerShell's own error stream, not the OS one), and under this
+   file's `$ErrorActionPreference = 'Stop'`, that terminated the whole
+   script on any routine failure (e.g. `Test-IntraCloudHealth.ps1`
+   detecting an unhealthy stack) instead of returning the non-zero-exit
+   result every caller's own `if ($result.ExitCode -ne 0)` logic
+   expects.
+3. **`Start-Process -ArgumentList` silently drops argument
+   boundaries.** The first fix for #2 used `Start-Process` with real
+   file redirection, which solved the termination problem but broke
+   argument passing: an array element containing an internal space
+   (one logical argument to `bash -lc`) got joined into the child
+   command line without correct quoting, silently truncating it.
+   Confirmed by direct byte-level inspection of the captured output,
+   not inferred. Fixed by switching to `System.Diagnostics.Process`
+   directly — and since `ProcessStartInfo.ArgumentList` (the collection
+   type that would make quoting a non-issue) doesn't exist on .NET
+   Framework, which Windows PowerShell 5.1 runs on, added
+   `ConvertTo-WindowsQuotedArgument`, the same quote-doubling algorithm
+   .NET's own `ArgumentList` and `CommandLineToArgvW` use, to build the
+   single pre-quoted `Arguments` string by hand.
+4. **`ContainerStatus` was a string in one code path and an array of
+   service objects in another.** `Test-IntraCloudHealth.ps1`'s
+   `docker compose ps` failure branch set `ContainerStatus = $psResult.StdErr`
+   (a bare string) where the success path sets it to a parsed JSON
+   array — invisible to every existing (untyped) PowerShell caller, but
+   the Control Center's C# `DistroHealth.ContainerStatus` model
+   (`List<ContainerServiceStatus>?`) throws a `JsonException` on
+   deserializing it. Fixed by always emitting `null` there and moving
+   the diagnostic text to `Detail`, which the UI already surfaces.
+
+**Verified live, for real, end to end**, after all four fixes: imported
+a disposable test distro (same `docker export python:3.13-slim`
+technique as Phase 17), launched the actual published exe, and drove
+it through Stopped → Start → Running (with an honest, specific,
+non-crashing error — no compose stack was staged in this lightweight
+test distro, which remains Phase 17's own
+IMPLEMENTED + REQUIRES WINDOWS VM VALIDATION territory, not something
+this phase changes) → Stop → Restart → Refresh → Settings tab
+save/reload, confirming throughout: no UAC prompt, no UI freeze (the
+automation driver's own calls kept succeeding while the background
+auto-refresh loop ran), correct button re-enablement, and status text
+that reflects genuine current state rather than a misleading fallback.
+Settings persistence (save/reload round trip) and the Backup & Restore
+screen's history/trigger wiring were verified via real xUnit tests
+(`ScriptRunnerTests` — real subprocess calls including a real timeout/
+cancellation test, not mocked; `SettingsServiceTests`;
+`LocalConnectionValidationTests`) and via the same live UI-Automation
+run for Settings specifically. **Not verified live**: a populated,
+healthy per-service table, which needs a real Docker Engine and
+Compose stack inside the distro — unchanged from Phase 17's own
+disk-space-driven classification, not attempted again here for the
+same reason.
+
+Exit criteria — the four-screen UI, subprocess/service layer, settings
+persistence, and backup-history plumbing are IMPLEMENTED + TESTED
+(real xUnit subprocess tests, real live UI-Automation run against an
+actual WSL2 distro, real `list_backups` tests against live PostgreSQL,
+real MSI administrative-extraction verification of the new ACL/scripts
+components); a fully populated healthy status view requires a real
+Docker-Engine-and-Compose-stack-inside-the-distro environment and
+remains IMPLEMENTED + REQUIRES WINDOWS VM VALIDATION, matching Phase
+17's own classification, not silently upgraded here.
+
 ## Non-Negotiable Cross-Phase Rules
 
 - No phase ships without tenant-isolation tests for any new tenant-owned

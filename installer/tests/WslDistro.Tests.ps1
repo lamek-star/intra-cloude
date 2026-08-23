@@ -227,6 +227,23 @@ Describe 'Test-IntraCloudHealth.ps1' {
         $result.Detail | Should -BeLike '*postgres-tenant*'
     }
 
+    It 'reports ContainerStatus as null, not a string, when docker compose ps itself fails' {
+        # Phase 18 regression: ContainerStatus must be array-or-null in
+        # every code path, never a bare string -- a strongly-typed JSON
+        # consumer (the Control Center's C# DistroHealth model) throws
+        # on deserializing this property if its shape flips between
+        # calls. Confirmed by actually driving the compiled app against
+        # a distro with no compose stack staged: the original
+        # `ContainerStatus = $psResult.StdErr` produced exactly this
+        # failure live, not just in theory.
+        Mock Invoke-Wsl { New-WslResult -StdOut "IntraCloud`tRunning`t2" }
+        Mock Invoke-IntraCloudDistroCommand { New-WslResult -ExitCode 1 -StdErr 'bash: line 1: cd: /opt/intracloud: No such file or directory' }
+        $result = Test-IntraCloudHealth
+        $result.Healthy | Should -Be $false
+        $result.ContainerStatus | Should -Be $null
+        $result.Detail | Should -BeLike '*No such file or directory*'
+    }
+
     It 'reports unhealthy with no services reported' {
         Mock Invoke-Wsl { New-WslResult -StdOut "IntraCloud`tRunning`t2" }
         Mock Invoke-IntraCloudDistroCommand { New-WslResult -StdOut '' }

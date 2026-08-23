@@ -7,13 +7,23 @@
 
 .OUTPUTS
     A [PSCustomObject] with Healthy (bool), DistroState, and
-    ContainerStatus (raw `docker compose ps` output) — shaped for the
-    Control Center (Phase 18) to consume directly, and for scripted use
-    (non-zero exit when unhealthy) in the meantime.
+    ContainerStatus (raw `docker compose ps` output).
+
+.PARAMETER Json
+    Emit the result as a single-line compressed JSON object on stdout
+    and nothing else -- stdout is a machine-readable contract when this
+    switch is passed: no Write-Output narration mixes in (there is none
+    in this script's function body to begin with), no partial/pretty-
+    printed object formatting. Warnings/verbose output, if any, still go
+    to their own streams, not stdout, so a caller parsing stdout as JSON
+    never has to guard against stray text. This is what the Control
+    Center (Phase 18) invokes via a subprocess.
 #>
 
 [CmdletBinding()]
-param()
+param(
+    [switch]$Json
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -45,8 +55,17 @@ function Test-IntraCloudHealth {
         return [PSCustomObject]@{
             Healthy         = $false
             DistroState     = $distroState
-            ContainerStatus = $psResult.StdErr
-            Detail          = 'docker compose ps failed inside the Intra-Cloud distribution.'
+            # Always an array-or-null, never a string: confirmed
+            # directly that a strongly-typed JSON consumer (the Control
+            # Center's C# DistroHealth model, Phase 18) throws on
+            # deserializing this property when its shape flips between
+            # a service-object array (the healthy/partial path below)
+            # and a bare error string (this path, as originally
+            # written). The actual diagnostic text belongs in Detail,
+            # which the UI already surfaces -- not smuggled into a
+            # field whose contract elsewhere is "array of services".
+            ContainerStatus = $null
+            Detail          = "docker compose ps failed inside the Intra-Cloud distribution: $($psResult.StdErr)"
         }
     }
 
@@ -85,7 +104,13 @@ function Test-IntraCloudHealth {
 
 if ($MyInvocation.InvocationName -ne '.') {
     $result = Test-IntraCloudHealth
-    Write-Output $result.Detail
+    if ($Json) {
+        # -Compress: one line, easy for a subprocess reader to know it
+        # has the whole object once it sees a newline.
+        Write-Output ($result | ConvertTo-Json -Depth 5 -Compress)
+    } else {
+        Write-Output $result.Detail
+    }
     if (-not $result.Healthy) {
         exit 1
     }

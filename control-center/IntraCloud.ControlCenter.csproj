@@ -64,4 +64,24 @@
     <Page Remove="tests\**\*.xaml" />
   </ItemGroup>
 
+  <!-- Phase 18: the Control Center invokes the Phase 17 lifecycle
+       scripts as a subprocess (Services/ScriptRunner.cs), so they must
+       ship alongside the exe, not just live in the repo. Copying them
+       into the publish output here — rather than having the WiX
+       package reach into installer/scripts/ directly — keeps one
+       source of truth: whatever is in this publish folder is exactly
+       what both `dotnet publish` (dev/debug runs) and the MSI (real
+       installs, which packages files from this same
+       ControlCenterPublishDir) ship. Resolved at runtime relative to
+       AppContext.BaseDirectory, so it works identically whether running
+       from bin\Debug, bin\Release\...\publish, or an MSI-installed
+       Program Files directory. -->
+  <ItemGroup>
+    <Content Include="..\installer\scripts\*.ps1">
+      <Link>scripts\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>

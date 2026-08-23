@@ -45,6 +45,13 @@
 
   <ItemGroup>
     <PackageReference Include="WixToolset.UI.wixext" Version="5.0.2" />
+    <!-- util:PermissionEx (Phase 18): provisions
+         %ProgramData%\IntraCloud\ControlCenter with a narrow ACL so the
+         unelevated Control Center can write its own settings file there.
+         Scoped to that one subdirectory only, so the WSL/VHDX and
+         installer-controlled material under %ProgramData%\IntraCloud
+         stays exactly as protected as it is today. -->
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
   </ItemGroup>
 
 </Project>

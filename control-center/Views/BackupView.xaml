@@ -1,0 +1,33 @@
+<UserControl x:Class="IntraCloud.ControlCenter.Views.BackupView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+            <Button Content="Back up Control DB" Command="{Binding BackupControlDbCommand}" Margin="0,0,8,0" Padding="12,4" />
+            <Button Content="Back up Tenant DB" Command="{Binding BackupTenantDbCommand}" Margin="0,0,8,0" Padding="12,4" />
+            <Button Content="Back up Object Storage" Command="{Binding BackupObjectStorageCommand}" Margin="0,0,8,0" Padding="12,4" />
+            <Button Content="Back up Configuration" Command="{Binding BackupConfigurationCommand}" Margin="0,0,8,0" Padding="12,4" />
+            <Button Content="Refresh" Command="{Binding RefreshCommand}" Padding="12,4" />
+        </StackPanel>
+
+        <TextBlock Grid.Row="1" Text="{Binding StatusMessage}" TextWrapping="Wrap" Margin="0,0,0,8" Foreground="Gray" />
+
+        <DataGrid Grid.Row="2" ItemsSource="{Binding History}" AutoGenerateColumns="False"
+                  IsReadOnly="True" CanUserAddRows="False" HeadersVisibility="Column">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Type" Binding="{Binding BackupType}" Width="*" />
+                <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*" />
+                <DataGridTextColumn Header="Size (bytes)" Binding="{Binding SizeBytes}" Width="*" />
+                <DataGridTextColumn Header="Started" Binding="{Binding StartedAt}" Width="1.5*" />
+                <DataGridTextColumn Header="Completed" Binding="{Binding CompletedAt}" Width="1.5*" />
+                <DataGridCheckBoxColumn Header="Verified" Binding="{Binding VerifiedRestorable}" Width="Auto" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</UserControl>

@@ -1,5 +1,6 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
 
   <!--
     Phase 16 walking skeleton: installs the Control Center's
@@ -25,12 +26,27 @@
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Intra-Cloud">
-        <Directory Id="ControlCenterFolder" Name="Control Center" />
+        <Directory Id="ControlCenterFolder" Name="Control Center">
+          <Directory Id="ScriptsFolder" Name="scripts" />
+        </Directory>
       </Directory>
     </StandardDirectory>
 
     <StandardDirectory Id="ProgramMenuFolder">
       <Directory Id="ApplicationProgramsFolder" Name="Intra-Cloud" />
+    </StandardDirectory>
+
+    <!-- Phase 18: the Control Center runs unelevated by design (only the
+         out-of-scope-for-Phase-18 import/uninstall actions would ever
+         relaunch elevated), so it needs a %ProgramData% location it can
+         actually write its own settings file into. Scoped to this one
+         subdirectory, not the whole IntraCloud tree, so the WSL/VHDX
+         storage under %ProgramData%\IntraCloud\wsl (Import-IntraCloudDistro.ps1's
+         default InstallPath) stays exactly as protected as it is today. -->
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="IntraCloudProgramData" Name="IntraCloud">
+        <Directory Id="ControlCenterDataFolder" Name="ControlCenter" />
+      </Directory>
     </StandardDirectory>
 
     <ComponentGroup Id="ControlCenterComponents" Directory="ControlCenterFolder">
@@ -39,6 +55,15 @@
               Source="$(var.ControlCenterPublishDir)IntraCloudControlCenter.exe"
               KeyPath="yes" />
       </Component>
+    </ComponentGroup>
+
+    <!-- The Phase 17 lifecycle scripts the Control Center invokes as a
+         subprocess (Services/ScriptRunner.cs) — copied into
+         ControlCenterPublishDir\scripts\ by the .csproj's own Content
+         item, so this harvests the exact same files the published exe
+         ships next to in a dev run, not a second copy that could drift. -->
+    <ComponentGroup Id="ScriptsComponents" Directory="ScriptsFolder">
+      <Files Include="$(var.ControlCenterPublishDir)scripts\*.ps1" />
     </ComponentGroup>
 
     <Component Id="StartMenuShortcut" Directory="ApplicationProgramsFolder" Guid="9A3E6C2D-1B4F-4C8A-8E2D-5A7C3B9F2E44">
@@ -56,9 +81,30 @@
                       KeyPath="yes" />
     </Component>
 
+    <!-- Users (BUILTIN), not Everyone or Authenticated Users: the
+         narrowest built-in group that still covers every standard local
+         account the Control Center would run as. GenericRead/Write/
+         Execute + Delete approximates NTFS "Modify" without granting
+         ChangePermission/TakeOwnership (that combination stays Full
+         Control, deliberately withheld here). -->
+    <Component Id="ControlCenterDataFolder" Directory="ControlCenterDataFolder" Guid="B4C1E9A7-3D2F-4A6E-9C8B-1E5F7A2D6C90">
+      <CreateFolder>
+        <util:PermissionEx User="Users" GenericRead="yes" GenericWrite="yes" GenericExecute="yes" Delete="yes" />
+      </CreateFolder>
+      <RemoveFolder Id="RemoveControlCenterDataFolder" Directory="ControlCenterDataFolder" On="uninstall" />
+      <RegistryValue Root="HKLM"
+                      Key="Software\Intra-Cloud\ControlCenter"
+                      Name="DataFolderProvisioned"
+                      Type="integer"
+                      Value="1"
+                      KeyPath="yes" />
+    </Component>
+
     <Feature Id="ControlCenterFeature" Title="Intra-Cloud Control Center" Level="1">
       <ComponentGroupRef Id="ControlCenterComponents" />
+      <ComponentGroupRef Id="ScriptsComponents" />
       <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="ControlCenterDataFolder" />
     </Feature>
 
     <ui:WixUI Id="WixUI_Minimal" />
