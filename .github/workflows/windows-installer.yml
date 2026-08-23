@@ -24,6 +24,17 @@ jobs:
     # "latest" at a new image. Bump deliberately when needed.
     runs-on: windows-2022
 
+    # Job-level, not step-level: GitHub Actions' own contexts table
+    # documents `secrets` as unavailable in a step's `if:` condition
+    # (only `env`, among others, is listed there) -- confirmed the hard
+    # way, this file failed to parse at all when the signing step first
+    # referenced `secrets.*` directly in its own `if:`. Defining it here
+    # instead makes it reachable via `env.*` in that condition, while
+    # still being exactly the secret value inside the step's own script.
+    env:
+      WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64 }}
+      WINDOWS_CODE_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_CERTIFICATE_PASSWORD }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -165,13 +176,8 @@ jobs:
       # actual verification, not assume it from this comment. See
       # docs/architecture/ROADMAP.md's Phase 21 entry.
       - name: Sign Control Center executable and MSI
-        if: >-
-          ${{ secrets.WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64 != '' &&
-              (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) }}
+        if: ${{ env.WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64 != '' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) }}
         shell: pwsh
-        env:
-          WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64 }}
-          WINDOWS_CODE_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_CERTIFICATE_PASSWORD }}
         run: |
           $signtool = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -like '*x64*' } | Select-Object -First 1 -ExpandProperty FullName
