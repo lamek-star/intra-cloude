@@ -1558,13 +1558,83 @@ verification, not assume it from this entry. The original,
 deliberately-absent stub comment from Phase 16 is removed now that a
 real (if unverified) implementation exists in its place.
 
-Exit criteria — the release bundle builder is IMPLEMENTED + TESTED
-against this repository's real Compose stack; code signing is
-IMPLEMENTED but BLOCKED BY EXTERNAL REQUIREMENT (a real signing
-certificate, which is a business asset this development session
-neither has nor should fabricate) for actual verification. The WiX
-v6+ licensing decision (`installer/README.md`) remains open and is
-also a business decision, not something this phase resolves.
+**`installer/scripts/New-IntraCloudEnvironmentFile.ps1` — IMPLEMENTED + TESTED,
+closing the fresh-per-install-secrets gap Phase 21's own first pass
+deliberately deferred.** Generates a real `.env` with a fresh,
+cryptographically random value for every operator-supplied secret
+`.env.example` lists (`SECRET_KEY`, `CREDENTIAL_ENCRYPTION_KEY`,
+`CONTROL_DB_PASSWORD`, `TENANT_DB_PASSWORD`,
+`OBJECT_STORAGE_ROOT_USER`/`_PASSWORD`) — confirmed by actually reading
+`databases/crypto.py`/`accounts/crypto.py`/`exports/crypto.py` that
+every one of these is documented as an "arbitrary-length
+operator-supplied" value, SHA-256-hashed down to Fernet's fixed-length
+key requirement rather than needing a specific binary format itself,
+so one random-alphanumeric generator is correct for all of them.
+Deliberately does not set `BACKUP_ENCRYPTION_KEY` — `.env.example`
+itself leaves encrypted backups opt-in, and generating that key
+silently during an unattended install would create a key whose loss
+makes every encrypted backup permanently unrecoverable, without an
+operator ever having deliberately chosen that trade-off.
+`Build-ReleaseBundle.ps1` now includes `.env.example` (never `.env`)
+in the bundle, and `Initialize-IntraCloudDistro.ps1` calls the new
+script whenever no `.env` is already present, replacing the previous
+"No `.env` found" warning-only behavior. Verified for real, twice: a
+Pester suite (`installer/tests/New-IntraCloudEnvironmentFile.Tests.ps1`)
+covering placeholder replacement, uniqueness across runs, non-secret
+lines surviving unchanged, and the `BACKUP_ENCRYPTION_KEY` omission —
+and a full live integration run against this project's actual WSL2
+host: imported a real test distribution, ran
+`Initialize-IntraCloudDistro.ps1` against a bundle containing only
+`.env.example`, and confirmed via `Invoke-IntraCloudDistroCommand`
+that a real, correctly-shaped `.env` (112 lines, matching
+`.env.example`'s own length, with a genuine random `SECRET_KEY`) ended
+up at `/opt/intracloud/.env` inside the distribution.
+
+**`exports/manifest.py`'s `PRODUCT_VERSION` placeholder — unified with
+the repo-root `VERSION` file**, the same single source of truth
+`control-center/IntraCloud.ControlCenter.csproj` and
+`installer/wix/Package.wixproj` already use. Real engineering, not a
+one-line fix: the backend's Docker build context is `./apps/backend`,
+which cannot `COPY` a file from outside itself (Docker forbids reaching
+above the build context), so `docker-compose.yml`'s `backend`/`worker`
+services now bind-mount the repo-root `VERSION` file read-only at
+`/VERSION` instead. `manifest.py` reads that mount first, falling back
+to walking upward from its own file location looking for a `VERSION`
+file otherwise (for local dev/pytest, which runs outside Docker).
+That walk is deliberately open-ended, not a fixed parent count: a
+hardcoded `parents[3]` (correct for `apps/backend/exports/manifest.py`
+outside Docker) threw a real `IndexError` inside the actual container,
+where the Dockerfile's `WORKDIR /app` plus copying `apps/backend`'s
+*contents* into it puts this same file two levels shallower, at
+`/app/exports/manifest.py` — caught by actually rebuilding the image
+and running it, not by inspection. Verified for real in both contexts
+after the fix: `docker compose exec backend python -c "from
+exports.manifest import PRODUCT_VERSION..."` against the live,
+rebuilt container correctly printed `0.1.0-dev`, and the same import
+via the disposable pytest test-runner container (outside Docker's
+`/app` layout) also correctly printed `0.1.0-dev` via the fallback
+walk; all 22 real `exports`/`system.backups` tests against live
+PostgreSQL still pass.
+
+Exit criteria — the release bundle builder, fresh-secret generator,
+and `PRODUCT_VERSION` unification are all IMPLEMENTED + TESTED (real
+builds, real Pester coverage, a real live WSL2 integration run, and
+real container rebuilds — not assumed from any of these individually);
+code signing is IMPLEMENTED but BLOCKED BY EXTERNAL REQUIREMENT (a
+real signing certificate, which is a business asset this development
+session neither has nor should fabricate) for actual verification.
+**Not closed by any of the above: offline installation is still
+partial.** `Initialize-IntraCloudDistro.ps1` bundles container images
+via `Build-ReleaseBundle.ps1` (no internet needed for those), but still
+installs Docker Engine itself via `curl -fsSL https://get.docker.com |
+sh` inside the distribution — confirmed still present and still
+internet-dependent by re-reading the script during this same pass, not
+fixed here. A genuinely offline install would need Docker Engine's
+`.deb` packages (and their full dependency closure) bundled the same
+way the container images are, which is real, separate follow-up work,
+not attempted in this pass. The WiX v6+ licensing decision
+(`installer/README.md`) remains open and is also a business decision,
+not something this phase resolves.
 
 ## Non-Negotiable Cross-Phase Rules
 

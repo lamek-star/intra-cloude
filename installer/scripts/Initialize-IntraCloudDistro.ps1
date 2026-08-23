@@ -96,11 +96,36 @@ function Initialize-IntraCloudDistro {
     $distroUncRoot = "\\wsl.localhost\$($script:IntraCloudDistroName)\opt\intracloud"
     Copy-Item -Path (Join-Path $AppBundlePath 'docker-compose.yml') -Destination $distroUncRoot -Force
     Copy-Item -Path (Join-Path $AppBundlePath 'infrastructure') -Destination $distroUncRoot -Recurse -Force
+    # A real, secrets-bearing .env should never ship inside
+    # AppBundlePath (Build-ReleaseBundle.ps1 deliberately includes only
+    # .env.example, the safe template) -- if a caller supplies one
+    # anyway, honor it rather than silently overwrite something a real
+    # operator may have hand-configured. The expected path is the
+    # else branch: generate a fresh, unique .env for this install via
+    # New-IntraCloudEnvironmentFile.ps1, never a copied/shared one.
     $envSource = Join-Path $AppBundlePath '.env'
     if (Test-Path $envSource) {
+        Write-Verbose "Using the .env already present in the app bundle."
         Copy-Item -Path $envSource -Destination $distroUncRoot -Force
     } else {
-        Write-Warning "No .env found at $envSource -- the Compose stack will need one created before it can start."
+        $envTemplate = Join-Path $AppBundlePath '.env.example'
+        if (Test-Path $envTemplate) {
+            Write-Verbose 'Generating a fresh .env with unique per-install secrets...'
+            $generatedEnvPath = Join-Path $env:TEMP "intracloud-generated-$([Guid]::NewGuid().ToString('N')).env"
+            try {
+                & "$PSScriptRoot\New-IntraCloudEnvironmentFile.ps1" -TemplatePath $envTemplate -OutputPath $generatedEnvPath | Out-Null
+                Copy-Item -Path $generatedEnvPath -Destination (Join-Path $distroUncRoot '.env') -Force
+            } finally {
+                # The generated file briefly exists on the Windows side
+                # only to get copied through the WSL UNC path -- removed
+                # immediately after, whether the copy succeeded or not,
+                # not left holding real secrets in a Windows temp
+                # directory.
+                Remove-Item -Path $generatedEnvPath -Force -ErrorAction SilentlyContinue
+            }
+        } else {
+            Write-Warning "No .env or .env.example found at $AppBundlePath -- the Compose stack will need one created before it can start."
+        }
     }
 
     $imagesDir = Join-Path $AppBundlePath 'images'

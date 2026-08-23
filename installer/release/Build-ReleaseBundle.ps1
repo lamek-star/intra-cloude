@@ -93,6 +93,11 @@ function Build-ReleaseBundle {
 
         Copy-Item -Path (Join-Path $script:RepoRoot 'docker-compose.yml') -Destination $OutputPath -Force
         Copy-Item -Path (Join-Path $script:RepoRoot 'infrastructure') -Destination $OutputPath -Recurse -Force
+        # .env.example only, never .env: the template that
+        # New-IntraCloudEnvironmentFile.ps1 fills in with fresh,
+        # per-install random secrets at configure time -- not a real
+        # secrets-bearing file, which this script must never touch.
+        Copy-Item -Path (Join-Path $script:RepoRoot '.env.example') -Destination $OutputPath -Force
 
         Write-Verbose "Release bundle written to $OutputPath ($($images.Count) image(s))."
         return $true

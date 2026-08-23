@@ -101,6 +101,14 @@ services:
       # in production per docs/operations/BACKUP_RESTORE.md Section 4
       # (a Docker named volume alone is not off-host backup).
       - pdc_backups:/backups
+      # Read-only mount, not COPYed in the Dockerfile: the build context
+      # is ./apps/backend, which can't reach the repo-root VERSION file
+      # (Docker forbids COPY paths outside the build context). Mounting
+      # it is the single-source-of-truth path without widening the
+      # build context to the whole repo — exports/manifest.py reads it
+      # for PRODUCT_VERSION, falling back to a placeholder if this mount
+      # is ever absent (e.g. a container run outside this Compose file).
+      - ./VERSION:/VERSION:ro
     networks:
       - app
       - data
@@ -125,6 +133,7 @@ services:
     command: celery -A config worker -l info
     volumes:
       - pdc_backups:/backups
+      - ./VERSION:/VERSION:ro
     networks:
       - app
       - data

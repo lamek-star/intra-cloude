@@ -6,16 +6,53 @@ itself, travels to other installations, and must be readable by a
 future version of this code that may not share this version's models.
 """
 
+from pathlib import Path
+
 FORMAT_NAME = "intracloud-portable"
 
 # Bumped whenever the *container/manifest structure* changes in a way
 # that isn't backward-readable — independent of PRODUCT_VERSION, which
 # tracks the source installation's own release (Section 18 of the
-# master prompt: these are deliberately two different numbers). There
-# is no formal product release-versioning scheme yet (tracked as an
-# open item), so PRODUCT_VERSION is currently a fixed placeholder.
+# master prompt: these are deliberately two different numbers).
 FORMAT_VERSION = 1
-PRODUCT_VERSION = "0.0.0-unreleased"
+
+
+def _read_product_version() -> str:
+    """Reads the repo-root VERSION file — the same single source of
+    truth control-center/IntraCloud.ControlCenter.csproj and
+    installer/wix/Package.wixproj already use for the Windows side.
+    Checked in order: the read-only /VERSION mount docker-compose.yml
+    provides for backend/worker (the build context is ./apps/backend,
+    which can't COPY a file from outside itself), then walking up from
+    this file's own location looking for a VERSION file. That walk is
+    deliberately open-ended, not a fixed parent count: this module's
+    real on-disk depth differs between the Docker image (Dockerfile's
+    WORKDIR /app copies apps/backend's *contents* to /app, so this file
+    lands at /app/exports/manifest.py, two levels shallower than the
+    repo root) and running outside Docker (local dev, pytest --
+    apps/backend/exports/manifest.py, three levels below repo root).
+    Confirmed the hard way: a hardcoded parents[3] worked in one
+    context and threw IndexError in the other. Falls back to a
+    placeholder only if nothing is found, rather than raising -- a
+    missing version string must never block producing an export."""
+    mounted = Path("/VERSION")
+    if mounted.is_file():
+        try:
+            return mounted.read_text().strip()
+        except OSError:
+            pass
+
+    for directory in Path(__file__).resolve().parents:
+        candidate = directory / "VERSION"
+        if candidate.is_file():
+            try:
+                return candidate.read_text().strip()
+            except OSError:
+                continue
+    return "0.0.0-unreleased"
+
+
+PRODUCT_VERSION = _read_product_version()
 
 # What Section 12 lists as things a full export *could* contain, that
 # this first implementation deliberately does not. Recorded in every
