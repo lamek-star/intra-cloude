@@ -37,7 +37,19 @@ Describe 'New-IntraCloudEnvironmentFile.ps1' {
         New-IntraCloudEnvironmentFile -TemplatePath $script:TemplatePath -OutputPath $outputPath | Should -Be $true
         $content = Get-Content $outputPath -Raw
 
-        $content | Should -Not -Match 'changeme'
+        # Scoped to the ACTIVE secret lines only, not the whole file:
+        # the commented-out BACKUP_ENCRYPTION_KEY template line is
+        # deliberately left untouched (its own test below covers that),
+        # and still legitimately contains the word "changeme" -- a
+        # blanket "file must never contain changeme anywhere" assertion
+        # would be asserting against this script's own correct,
+        # by-design behavior, not a real property of a fixed install.
+        $content | Should -Not -Match '(?m)^SECRET_KEY=.*changeme'
+        $content | Should -Not -Match '(?m)^CREDENTIAL_ENCRYPTION_KEY=.*changeme'
+        $content | Should -Not -Match '(?m)^CONTROL_DB_PASSWORD=.*changeme'
+        $content | Should -Not -Match '(?m)^TENANT_DB_PASSWORD=.*changeme'
+        $content | Should -Not -Match '(?m)^OBJECT_STORAGE_ROOT_USER=.*changeme'
+        $content | Should -Not -Match '(?m)^OBJECT_STORAGE_ROOT_PASSWORD=.*changeme'
         $content | Should -Match 'SECRET_KEY=\w{50}'
         $content | Should -Match 'CREDENTIAL_ENCRYPTION_KEY=\w{50}'
         $content | Should -Match 'CONTROL_DB_PASSWORD=\w{50}'
