@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { FileText } from "lucide-react";
-import { api, ApiError, ensureCsrfCookie, type FileObject, type Project } from "@/lib/api";
+import { api, ApiError, ensureCsrfCookie, type FileObject, type Project, type Workspace } from "@/lib/api";
 import {
   Button,
   EmptyState,
@@ -17,6 +17,7 @@ import {
   THead,
   TRow,
 } from "@/components/ui";
+import { ShareSection } from "@/components/ShareSection";
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -40,6 +41,7 @@ export default function BucketDetailClient({
 }) {
   const [bucketName] = useState(initialName ?? "Bucket");
   const [project, setProject] = useState<Project | null>(null);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [files, setFiles] = useState<FileObject[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -54,7 +56,14 @@ export default function BucketDetailClient({
   async function load() {
     try {
       if (projectId) {
-        setProject(await api.get<Project>(`/projects/${projectId}/`));
+        const p = await api.get<Project>(`/projects/${projectId}/`);
+        setProject(p);
+        // Best-effort, for the Sharing section's organization scope --
+        // the file list above doesn't depend on this resolving.
+        api
+          .get<Workspace>(`/workspaces/${p.workspace}/`)
+          .then((ws) => setOrganizationId(ws.organization))
+          .catch(() => {});
       }
       await loadFiles();
     } catch (err) {
@@ -202,6 +211,16 @@ export default function BucketDetailClient({
             ))}
           </tbody>
         </Table>
+      )}
+
+      {organizationId && (
+        <div className="mt-8">
+          <ShareSection
+            organizationId={organizationId}
+            resourceType="storage.bucket"
+            resourceId={bucketId}
+          />
+        </div>
       )}
     </div>
   );
