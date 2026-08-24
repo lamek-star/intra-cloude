@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { X } from "lucide-react";
-import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
+import { Check, Copy, X } from "lucide-react";
+import { useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
 
 export function Button({
   variant = "primary",
@@ -59,6 +59,18 @@ export function LinkButton({
 export function Input({ className = "", ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
+      className={`w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 ${className}`}
+      {...props}
+    />
+  );
+}
+
+export function Textarea({
+  className = "",
+  ...props
+}: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return (
+    <textarea
       className={`w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 ${className}`}
       {...props}
     />
@@ -180,6 +192,55 @@ export function ErrorBanner({ message }: { message: string }) {
   return (
     <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
       {message}
+    </div>
+  );
+}
+
+/** Copies `value` to the clipboard, showing a brief confirmation instead
+ * of the label. Falls back silently if the Clipboard API is unavailable
+ * (e.g. non-HTTPS context) — the value is still visible to select/copy
+ * manually. */
+export function CopyButton({ value, label = "Copy" }: { value: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(value);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          // Clipboard API unavailable; the value remains visible to copy by hand.
+        }
+      }}
+      className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:bg-white/10 hover:text-white"
+    >
+      {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? "Copied" : label}
+    </button>
+  );
+}
+
+/** A secret shown exactly once at creation/rotation time. Never re-fetch
+ * or persist this value across a reload — the backend genuinely cannot
+ * return it again (only its hash is stored). */
+export function SecretReveal({
+  label = "This secret is shown only once",
+  secret,
+}: {
+  label?: string;
+  secret: string;
+}) {
+  return (
+    <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
+      <p className="text-xs font-medium text-amber-300">{label} — copy it now.</p>
+      <div className="flex items-center gap-2">
+        <code className="min-w-0 flex-1 truncate rounded bg-black/30 px-2 py-1.5 font-mono text-xs text-slate-100">
+          {secret}
+        </code>
+        <CopyButton value={secret} />
+      </div>
     </div>
   );
 }

@@ -77,6 +77,9 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
         description={`/${org.slug}`}
         actions={
           <>
+            <LinkButton href={`/orgs/${orgId}/applications`} variant="secondary" size="sm">
+              Applications
+            </LinkButton>
             <LinkButton href={`/orgs/${orgId}/teams`} variant="secondary" size="sm">
               Teams
             </LinkButton>

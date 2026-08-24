@@ -368,3 +368,33 @@ export type AuditEvent = {
   result: "success" | "denied" | "error";
   context: Record<string, unknown>;
 };
+
+export type Application = {
+  id: string;
+  organization: string;
+  name: string;
+  description: string;
+  owner: string;
+  created_at: string;
+};
+
+export type ApplicationCredential = {
+  id: string;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+  revoked_at: string | null;
+  /** Only present exactly once, in the response to create/rotate — the
+   * backend never stores or re-returns the plaintext. */
+  secret?: string;
+};
+
+export type ResourceGrant = {
+  id: string;
+  permission: string;
+  resource_type: string;
+  resource_id: string;
+  granted_by: string | null;
+  expires_at: string | null;
+  created_at: string;
+};
