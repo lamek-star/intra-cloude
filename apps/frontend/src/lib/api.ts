@@ -270,6 +270,17 @@ export type ConnectedDatabase = {
   created_at: string;
 };
 
+export type ConnectedColumn = {
+  name: string;
+  data_type: string;
+  is_nullable: boolean;
+};
+
+export type ConnectedTableSchema = {
+  name: string;
+  columns: ConnectedColumn[];
+};
+
 export type RowsPage = {
   count: number;
   limit: number;
