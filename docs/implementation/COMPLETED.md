@@ -33,16 +33,19 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
 - Bucket sharing — `ShareSection` component (share/list/revoke) wired into
   `/buckets/[bucketId]`; resource-agnostic, ready to reuse on tenant/
   connected database pages. *(this session)*
+- Connected databases — connect/test/browse (schema + paginated rows)/
+  delete an external read-only Postgres connection, plus `ShareSection`.
+  `/projects/[projectId]` (new section) and `/connected-databases/
+  [connectedDatabaseId]`. *(this session)*
 
 ## Still API-only (no frontend page yet)
 
 Real and tested on the backend; tracked as Unit 3+ in `MASTER_PLAN.md`:
 
-- Connected databases (external read-only Postgres)
 - Persistent declarative-JSON dashboards (the analytics widget layer)
-- Sharing UI on resource types other than buckets (tenant database,
-  connected database) — `ShareSection` already supports any resource
-  type; only the "drop it into the page" step remains per type.
+- Sharing UI on tenant databases specifically — `ShareSection` already
+  supports `databases.tenant_database` as a resource_type; only the
+  "drop it into `/tenant-databases/[dbId]`" step remains.
 
 ## Known pre-existing gap (not fixed by this initiative unless a unit
 targets it explicitly)

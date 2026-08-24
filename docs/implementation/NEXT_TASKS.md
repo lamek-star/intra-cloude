@@ -16,13 +16,11 @@ checkpoint commit), then move to the next.
    dropping it into the tenant-database and connected-database detail
    pages (once those exist) is a few lines each, not new work — do it
    alongside item 3 below rather than as a separate pass.
-3. **Connected databases** — external read-only Postgres connection setup
-   + browse, reusing the existing tenant-database data-explorer components
-   where the shape matches. Include `ShareSection` on this page. *(next
-   up)*
+3. ~~**Connected databases**~~ — done (`76be185`). Connect/test/browse
+   schema+rows/delete, `ShareSection` included.
 4. **Dashboards** — render existing declarative-JSON dashboards; a
    dashboard *builder* UI is a larger, separate follow-up, not part of this
-   unit.
+   unit. *(next up — last item in Unit 3)*
 
 Each must follow the Teams page's verification pattern: real API calls
 through the live stack, request/response shapes checked against
