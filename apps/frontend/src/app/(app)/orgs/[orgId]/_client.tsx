@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { api, ApiError, type Membership, type Organization, type Workspace } from "@/lib/api";
+import { api, ApiError, type Membership, type Organization, type Team, type Workspace } from "@/lib/api";
 import {
   Badge,
   Button,
@@ -27,6 +27,7 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
   const [org, setOrg] = useState<Organization | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[] | null>(null);
   const [members, setMembers] = useState<Membership[] | null>(null);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [wsModalOpen, setWsModalOpen] = useState(false);
   const [memberModalOpen, setMemberModalOpen] = useState(false);
@@ -43,11 +44,17 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
       setError(err instanceof ApiError ? err.message : "Failed to load organization.");
       return;
     }
-    // Members require users.manage — a plain member may not have it; fail soft.
+    // Members and teams require users.manage — a plain member may not have
+    // it; fail soft.
     try {
       setMembers(await api.get<Membership[]>(`/organizations/${orgId}/members/`));
     } catch {
       setMembers([]);
+    }
+    try {
+      setTeams(await api.get<Team[]>(`/organizations/${orgId}/teams/`));
+    } catch {
+      setTeams([]);
     }
   }
 
@@ -69,9 +76,14 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
         breadcrumbs={[{ label: "Organizations", href: "/orgs" }, { label: org.name }]}
         description={`/${org.slug}`}
         actions={
-          <LinkButton href={`/orgs/${orgId}/audit`} variant="secondary" size="sm">
-            Audit log
-          </LinkButton>
+          <>
+            <LinkButton href={`/orgs/${orgId}/teams`} variant="secondary" size="sm">
+              Teams
+            </LinkButton>
+            <LinkButton href={`/orgs/${orgId}/audit`} variant="secondary" size="sm">
+              Audit log
+            </LinkButton>
+          </>
         }
       />
 
@@ -137,7 +149,9 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
                   <Td>
                     <Badge tone={m.status === "active" ? "success" : "warning"}>{m.status}</Badge>
                   </Td>
-                  <Td className="text-slate-500">{m.team ?? "—"}</Td>
+                  <Td className="text-slate-500">
+                    {teams.find((t) => t.id === m.team)?.name ?? "—"}
+                  </Td>
                 </TRow>
               ))}
             </tbody>

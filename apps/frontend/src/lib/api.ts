@@ -181,6 +181,13 @@ export type Membership = {
   created_at: string;
 };
 
+export type Team = {
+  id: string;
+  organization: string;
+  name: string;
+  created_at: string;
+};
+
 export type Workspace = {
   id: string;
   organization: string;
