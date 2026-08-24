@@ -108,12 +108,28 @@ chi-square, ANOVA, time-series). Both wrap existing, already-tested
 backend endpoints; verified live end to end against the real running
 stack (real user, org, table, uploaded CSV, completed import job, and
 a profile/analyze result cross-checked against each other), not just
-compiled. See `apps/frontend/README.md` for how it's built and
+compiled. A `/dashboard` landing page (shown after login instead of
+going straight to `/orgs`) followed the same standard: an overview of
+the caller's organizations (with per-org workspace counts), this
+deployment's live `/healthz`/`/readyz` status, and — only when the
+user belongs to exactly one organization, so it is never ambiguous
+whose log is shown — its 8 most recent audit events; verified live
+against the Django test client (a real registered user, a real
+created organization/workspace, and the actual `/api/v1/organizations/`,
+`/workspaces/`, `/audit/`, `/healthz`, `/readyz` responses cross-checked
+field-for-field against what the page's TypeScript types expect), not
+just compiled. All icons across the UI are `lucide-react` SVG
+components, not emoji — emoji don't render consistently across
+platforms/fonts and several code review passes flagged them; any new
+page should follow that convention rather than reintroducing emoji.
+See `apps/frontend/README.md` for how it's built and
 `docs/guide/USER_GUIDE.md` for how to use it. Sharing, applications,
-connected databases, the audit log, teams, and dashboards (the
-persistent declarative-JSON widget layer analytics also supports)
-remain reachable only through the browsable API (`/api/v1/`) — real
-and tested, just no page yet.
+connected databases, the audit log's own page (only the dashboard's
+recent-activity summary exists so far), teams, and dashboards (the
+persistent declarative-JSON widget layer analytics also supports, not
+to be confused with the new `/dashboard` landing page above) remain
+reachable only through the browsable API (`/api/v1/`) — real and
+tested, just no page yet.
 
 ## Non-Negotiable Architectural Rules
 

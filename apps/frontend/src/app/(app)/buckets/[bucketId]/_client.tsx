@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { FileText } from "lucide-react";
 import { api, ApiError, ensureCsrfCookie, type FileObject, type Project } from "@/lib/api";
 import {
   Button,
@@ -172,7 +173,12 @@ export default function BucketDetailClient({
           <tbody>
             {files?.map((f) => (
               <TRow key={f.id}>
-                <Td className="font-medium text-white">📄 {f.display_filename}</Td>
+                <Td className="font-medium text-white">
+                  <span className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-slate-400" />
+                    {f.display_filename}
+                  </span>
+                </Td>
                 <Td className="text-slate-400">{formatBytes(f.size)}</Td>
                 <Td className="text-slate-500">{f.content_type}</Td>
                 <Td className="text-slate-500">{new Date(f.created_at).toLocaleString()}</Td>

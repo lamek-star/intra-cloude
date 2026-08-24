@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ChevronDown, LayoutDashboard, type LucideIcon, Building2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -20,7 +21,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <span className="text-sm font-semibold text-white">Private Data Cloud</span>
         </div>
         <nav className="flex flex-1 flex-col gap-0.5 p-3 text-sm">
-          <SidebarLink href="/orgs" icon="🏢">
+          <SidebarLink href="/dashboard" icon={LayoutDashboard}>
+            Dashboard
+          </SidebarLink>
+          <SidebarLink href="/orgs" icon={Building2}>
             Organizations
           </SidebarLink>
         </nav>
@@ -44,7 +48,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {user?.email.slice(0, 1).toUpperCase()}
               </span>
               <span className="hidden sm:inline">{user?.email}</span>
-              <span className="text-slate-600">▾</span>
+              <ChevronDown className="h-3.5 w-3.5 text-slate-600" />
             </button>
             {menuOpen && (
               <>
@@ -79,11 +83,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
 function SidebarLink({
   href,
-  icon,
+  icon: Icon,
   children,
 }: {
   href: string;
-  icon: string;
+  icon: LucideIcon;
   children: React.ReactNode;
 }) {
   return (
@@ -91,7 +95,7 @@ function SidebarLink({
       href={href}
       className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-slate-300 hover:bg-white/5 hover:text-white"
     >
-      <span className="text-base leading-none">{icon}</span>
+      <Icon className="h-4 w-4" strokeWidth={2} />
       {children}
     </Link>
   );

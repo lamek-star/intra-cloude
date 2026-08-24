@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { X } from "lucide-react";
 import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
 
 export function Button({
@@ -291,7 +292,7 @@ export function Modal({
             className="rounded p-1 text-slate-500 hover:bg-white/10 hover:text-white"
             aria-label="Close"
           >
-            ✕
+            <X className="h-4 w-4" />
           </button>
         </div>
         {children}

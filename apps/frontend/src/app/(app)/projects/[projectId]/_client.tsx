@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { Database, Folder } from "lucide-react";
 import {
   api,
   ApiError,
@@ -108,7 +109,7 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
               >
                 <Card className="transition-colors hover:border-indigo-400/40 hover:bg-white/[0.05]">
                   <div className="flex items-center gap-2">
-                    <span className="text-lg">🗂️</span>
+                    <Folder className="h-4 w-4 text-indigo-300" />
                     <p className="font-medium text-white">{b.name}</p>
                   </div>
                 </Card>
@@ -145,7 +146,7 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
               >
                 <Card className="transition-colors hover:border-indigo-400/40 hover:bg-white/[0.05]">
                   <div className="flex items-center gap-2">
-                    <span className="text-lg">🗄️</span>
+                    <Database className="h-4 w-4 text-indigo-300" />
                     <p className="font-medium text-white">{db.name}</p>
                   </div>
                 </Card>
