@@ -5,18 +5,21 @@ Active and queued units, in order. Pull the top one; don't skip ahead.
 ## Active: Unit 3 — frontend pages for API-only surfaces
 
 Pick one surface, build it end to end (page + live verification +
-checkpoint commit), then move to the next. Suggested order (smallest/most
-self-contained first):
+checkpoint commit), then move to the next.
 
-1. **Applications** — list/create/revoke `Application` + rotate
-   `ApplicationCredential`. This is also the natural foundation for Unit 5
-   (connect wizard) and Unit 6 (AI connection UX), so doing it first avoids
-   rework.
-2. **Sharing** — `ShareGrant` create/revoke UI on a resource's detail page
-   (bucket/table/etc.), not a standalone page — it's a per-resource action.
+1. ~~**Applications**~~ — done (`baafb67`, bugfix `57df3a7`). Register
+   Application, issue/rotate/revoke ApplicationCredential, grant/list
+   resource permissions. Foundation Units 5/6 will build on.
+2. ~~**Sharing**~~ — done for buckets (`d3262cc`). `ShareSection`
+   (`apps/frontend/src/components/ShareSection.tsx`) takes
+   `{organizationId, resourceType, resourceId}` and is resource-agnostic;
+   dropping it into the tenant-database and connected-database detail
+   pages (once those exist) is a few lines each, not new work — do it
+   alongside item 3 below rather than as a separate pass.
 3. **Connected databases** — external read-only Postgres connection setup
    + browse, reusing the existing tenant-database data-explorer components
-   where the shape matches.
+   where the shape matches. Include `ShareSection` on this page. *(next
+   up)*
 4. **Dashboards** — render existing declarative-JSON dashboards; a
    dashboard *builder* UI is a larger, separate follow-up, not part of this
    unit.

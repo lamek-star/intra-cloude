@@ -29,6 +29,16 @@ request, with the tradeoff surfaced first. Not a blocker for any other
 work; revisit only if the user installs the `headroom` binary or reports
 the hook failures as noisy.
 
+## ShareSection filters share grants client-side
+
+`GET /organizations/{id}/shares/` returns every `ShareGrant` for the
+organization — no `resource_type`/`resource_id` query param exists on
+`sharing/views.py`'s `ShareGrantListCreateView`. `ShareSection` fetches
+the full list and filters client-side to the one resource it's rendered
+for. Acceptable at the scale a single org's share grants reach today
+(nowhere near audit-log or file-list volume); if that changes, add the
+filter server-side rather than paginating around it in the component.
+
 ## docs/implementation/ vs docs/development/
 
 `docs/development/` already existed pre-session (`CONTRIBUTING.md`) and is
