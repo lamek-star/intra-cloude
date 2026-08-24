@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, ApiError, type AuditEvent, type Organization, type Workspace } from "@/lib/api";
+import { api, ApiError, type AuditEvent, type Organization, type Paginated, type Workspace } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Badge, Card, EmptyState, ErrorBanner, PageHeader, PageLoading, Spinner } from "@/components/ui";
 
@@ -63,10 +63,10 @@ export default function DashboardPage() {
         // page already does for its members list.
         if (orgs.length === 1) {
           try {
-            const events = await api.get<{ results: AuditEvent[] } | AuditEvent[]>(
+            const events = await api.get<Paginated<AuditEvent>>(
               `/organizations/${orgs[0].id}/audit/?limit=8`,
             );
-            setRecentActivity(Array.isArray(events) ? events : events.results);
+            setRecentActivity(events.results);
           } catch {
             setRecentActivity([]);
           }

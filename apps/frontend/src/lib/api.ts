@@ -339,6 +339,16 @@ export type TableProfile = {
   columns: ColumnProfile[];
 };
 
+// DRF's stock LimitOffsetPagination shape (config/settings/base.py's
+// DEFAULT_PAGINATION_CLASS) -- distinct from RowsPage above, which is a
+// bespoke shape the row-browsing endpoint returns instead.
+export type Paginated<T> = {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: T[];
+};
+
 export type AuditEvent = {
   id: string;
   timestamp: string;

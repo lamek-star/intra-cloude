@@ -11,6 +11,7 @@ import {
   ErrorBanner,
   Input,
   Label,
+  LinkButton,
   Modal,
   PageHeader,
   PageLoading,
@@ -67,6 +68,11 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
         title={org.name}
         breadcrumbs={[{ label: "Organizations", href: "/orgs" }, { label: org.name }]}
         description={`/${org.slug}`}
+        actions={
+          <LinkButton href={`/orgs/${orgId}/audit`} variant="secondary" size="sm">
+            Audit log
+          </LinkButton>
+        }
       />
 
       <div className="mb-8">

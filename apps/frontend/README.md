@@ -17,10 +17,9 @@ the `csrftoken` cookie via `GET /auth/csrf/` before the first mutating
 request and echoes it back as `X-CSRFToken` on every one after.
 
 Not every backend feature has a page yet — sharing, applications/service
-accounts, connected databases, a dedicated audit log page (the dashboard
-only shows a recent-activity summary), teams, and the persistent
-declarative-JSON dashboard-widget layer are real and tested on the server
-but only reachable through the browsable API (`/api/v1/`) for now; see
+accounts, connected databases, teams, and the persistent declarative-JSON
+dashboard-widget layer are real and tested on the server but only
+reachable through the browsable API (`/api/v1/`) for now; see
 `docs/guide/USER_GUIDE.md` Section 8.
 
 Icons are [`lucide-react`](https://lucide.dev) SVG components throughout
@@ -63,6 +62,7 @@ apps/frontend/
                 orgs/
                     page.tsx                                    # list + create organizations
                     [orgId]/page.tsx + _client.tsx                # workspaces + members
+                    [orgId]/audit/page.tsx + _client.tsx           # filterable, paginated audit log
                     [orgId]/workspaces/[workspaceId]/page.tsx + _client.tsx   # projects
                 projects/[projectId]/page.tsx + _client.tsx        # buckets + databases
                 buckets/[bucketId]/page.tsx + _client.tsx           # file browser
