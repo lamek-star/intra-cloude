@@ -42,6 +42,7 @@ export default function DashboardPage() {
   const [health, setHealth] = useState<HealthCheck[] | null>(null);
   const [recentActivity, setRecentActivity] = useState<AuditEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
 
   useEffect(() => {
     (async () => {
@@ -84,6 +85,7 @@ export default function DashboardPage() {
         }
       } catch (err) {
         setError(err instanceof ApiError ? err.message : "Failed to load your organizations.");
+        setErrorDetail(err);
       }
 
       const [healthz, readyz] = await Promise.all([fetchHealth("/healthz"), fetchHealth("/readyz")]);
@@ -119,7 +121,7 @@ export default function DashboardPage() {
 
       {error && (
         <div className="mb-4">
-          <ErrorBanner message={error} />
+          <ErrorBanner message={error} error={errorDetail} />
         </div>
       )}
 

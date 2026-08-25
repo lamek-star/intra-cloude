@@ -183,6 +183,22 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
   assumed either way. A full page-by-page accessibility audit remains
   open work, not claimed done. *(this session)*
 
+- Error-experience pass, first real pass (Unit 9): investigated the
+  "no raw backend exceptions" concern first -- `ApiError` and
+  `system/exceptions.py` already handled that correctly pre-dating
+  this unit, verified rather than assumed broken. The real gap was
+  that `ApiError`'s structured `code`/`request_id` were parsed then
+  discarded once reduced to a message string, with no way to see them.
+  `ApiError` now exposes both; `ErrorBanner` gained a
+  backward-compatible optional `error` prop rendering a collapsed
+  "View technical details" disclosure (status/code/request) --
+  omitting it renders exactly as every pre-existing call site already
+  does. Wired into `/dashboard` and `/tenant-databases/[dbId]` as
+  representative high-consequence surfaces, not mechanically swept
+  across all ~20 pages that catch `ApiError` (documented as open work,
+  not claimed done). Live-verified against a real 404, not staged.
+  *(this session)*
+
 ## Known pre-existing gap (not fixed by this initiative unless a unit
 targets it explicitly)
 

@@ -286,10 +286,58 @@ every remaining page at every breakpoint) — the highest-value shared-
 primitive fixes are in; a page-by-page audit is real remaining work,
 not falsely claimed complete here.
 
+## Done: Unit 9 — error-experience pass (first real pass)
+
+Investigated the "no raw backend exceptions" half first, before
+building anything: `ApiError` (`lib/api.ts`) already curated every
+error into a clean message pre-dating this unit -- DRF's structured
+`{error: {code, message, request_id}}` shape when the backend used it,
+a per-status fallback (`403` -> "You don't have permission to do
+that.", etc.) otherwise, and `system/exceptions.py`'s own handler
+already never sends a stack trace even on a genuine 500 (logs it
+server-side keyed by request_id instead). That half was already solid;
+no fix needed there, and no unverified claim of a gap that wasn't
+real.
+
+The actual gap was the second half: no "View technical details"
+disclosure existed anywhere, so the structured `code`/`request_id` the
+backend was already sending got silently discarded once `ApiError`
+reduced it to a plain message string. Fixed:
+
+- `ApiError` now also exposes `code`/`requestId` (parsed from the same
+  structured body it already read for the message).
+- `ErrorBanner` gained a backward-compatible optional `error` prop --
+  every pre-existing call site (message-only) renders exactly as
+  before; passing the caught error additionally renders a collapsed
+  "View technical details" disclosure (status/code/request) below the
+  friendly message. Never a stack trace, since the backend was never
+  sending one to begin with.
+- Wired into two representative, high-consequence error surfaces --
+  `/dashboard` (the landing page every session hits) and
+  `/tenant-databases/[dbId]` (load failure and the "Drop database"
+  destructive-action failure, where a request ID actually matters for
+  support) -- not mechanically swept across all ~20 pages that catch
+  `ApiError`, matching Unit 8's "first pass, not exhaustive" framing
+  rather than overclaiming.
+
+Live-verified against a real 404 (`/tenant-databases/<bad-uuid>`, not
+staged/mocked): the banner showed "Not found." by default, and
+expanding "View technical details" showed the real
+`status: 404 / code: error / request: eff3d784-...` -- a genuine
+request ID a user could hand to support, not a placeholder.
+
+**Deferred, not done**: the same `error` prop on the other ~18 pages
+that already catch `ApiError` into a plain message.
+
 ## Queued
 
-- **Unit 9** — Error-experience pass (no raw backend exceptions to normal
-  users; "View technical details" disclosure for admins).
+None currently -- Units 3 through 9 (the full original list) are all
+done. Real remaining work exists as explicit "Deferred, not done" notes
+inside several units above (the dashboard builder UI's authoring
+constraints, the page-by-page a11y audit, the other ~18 pages'
+`ErrorBanner` technical-details wiring, etc.) rather than as new
+numbered units -- pull from those, or from `MASTER_PLAN.md`'s longer
+list, for what's next.
 
 ## Explicitly out of scope for this initiative
 

@@ -12,12 +12,26 @@ const API_BASE = "/api/v1";
 export class ApiError extends Error {
   status: number;
   body: unknown;
+  /** Present when the backend used the structured `{error: {code, ...}}`
+   * shape (system/exceptions.py) -- absent for the many views that
+   * still `return Response({"detail": "..."})` or a bare status code
+   * directly. Never a stack trace either way; the backend logs those
+   * server-side only, keyed by requestId (Section 14 of the master
+   * prompt). Surfaced by ErrorBanner's optional "View technical
+   * details" disclosure, not shown by default. */
+  code: string | null;
+  requestId: string | null;
 
   constructor(status: number, body: unknown) {
     const detail = extractDetail(body);
     super(detail ?? DEFAULT_STATUS_MESSAGES[status] ?? `Request failed with status ${status}`);
     this.status = status;
     this.body = body;
+    const errorObj =
+      body && typeof body === "object" && (body as Record<string, unknown>).error;
+    const errorRecord = errorObj && typeof errorObj === "object" ? (errorObj as Record<string, unknown>) : null;
+    this.code = typeof errorRecord?.code === "string" ? errorRecord.code : null;
+    this.requestId = typeof errorRecord?.request_id === "string" ? errorRecord.request_id : null;
   }
 }
 

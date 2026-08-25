@@ -188,10 +188,30 @@ export function EmptyState({
   );
 }
 
-export function ErrorBanner({ message }: { message: string }) {
+/** `error`, when passed and it's an `ApiError` carrying the backend's
+ * structured shape (status/code/requestId), renders a "View technical
+ * details" disclosure below the friendly message -- never shown by
+ * default, and never a stack trace (the backend doesn't send one; see
+ * ApiError's own docstring). Omitting `error` (every pre-existing call
+ * site) renders exactly as before. */
+export function ErrorBanner({ message, error }: { message: string; error?: unknown }) {
+  const details =
+    error && typeof error === "object" && "status" in error
+      ? (error as { status: number; code?: string | null; requestId?: string | null })
+      : null;
   return (
     <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
       {message}
+      {details && (
+        <details className="mt-1.5 text-xs text-red-600/80">
+          <summary className="cursor-pointer select-none">View technical details</summary>
+          <dl className="mt-1 space-y-0.5 font-mono">
+            <div>status: {details.status}</div>
+            {details.code && <div>code: {details.code}</div>}
+            {details.requestId && <div>request: {details.requestId}</div>}
+          </dl>
+        </details>
+      )}
     </div>
   );
 }

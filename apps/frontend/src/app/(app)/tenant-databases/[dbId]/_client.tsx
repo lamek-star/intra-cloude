@@ -36,6 +36,7 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
   const [tables, setTables] = useState<DBTable[] | null>(null);
   const [dashboards, setDashboards] = useState<Dashboard[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [dashboardModalOpen, setDashboardModalOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -62,6 +63,7 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
         .catch(() => setDashboards([]));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load database.");
+      setErrorDetail(err);
     }
   }
 
@@ -89,12 +91,13 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
       router.push(`/projects/${db.project}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to delete database.");
+      setErrorDetail(err);
       setDeleting(false);
     }
   }
 
   if (!db && !error) return <PageLoading />;
-  if (error && !db) return <ErrorBanner message={error} />;
+  if (error && !db) return <ErrorBanner message={error} error={errorDetail} />;
   if (!db) return null;
 
   return (
@@ -119,7 +122,7 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
 
       {error && (
         <div className="mb-4">
-          <ErrorBanner message={error} />
+          <ErrorBanner message={error} error={errorDetail} />
         </div>
       )}
 
