@@ -8,9 +8,12 @@ notes below) — trust this + `git log`/`git status` over conversation memory.
 
 UI/UX Professionalization Initiative. Unit 3 (frontend pages for
 API-only surfaces) is complete — applications, bucket sharing, connected
-databases, dashboards. Unit 4 (Developer portal shell) is next. See
-`NEXT_TASKS.md` for the full unit list and `MASTER_PLAN.md` for the
-overall initiative shape.
+databases, dashboards. A light-mode design-system foundation + `/dashboard`
+flagship redesign landed at the user's explicit request (against a
+reference image), out of the unit sequence — see `COMPLETED.md`. Unit 4
+(Developer portal shell) and Unit 4a (rolling the light theme out to
+remaining pages) are both next. See `NEXT_TASKS.md` for the full unit
+list and `MASTER_PLAN.md` for the overall initiative shape.
 
 ## Completed this session
 

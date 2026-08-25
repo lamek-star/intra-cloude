@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { ChevronDown, LayoutDashboard, type LucideIcon, Building2 } from "lucide-react";
+import { Building2, ChevronDown, LayoutDashboard, LogOut, type LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -11,16 +11,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
 
+  async function handleLogout() {
+    setMenuOpen(false);
+    await logout();
+    router.push("/login");
+  }
+
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-100">
-      <aside className="hidden w-56 shrink-0 border-r border-white/10 bg-slate-950/60 sm:flex sm:flex-col">
-        <div className="flex h-14 items-center gap-2 border-b border-white/10 px-4">
-          <div className="flex h-6 w-6 items-center justify-center rounded bg-indigo-500 text-xs font-bold text-white">
+    <div className="flex min-h-screen bg-[#F5F6FB] text-slate-900">
+      <aside className="hidden w-60 shrink-0 flex-col bg-gradient-to-b from-[#12163A] to-[#0B0E24] p-4 sm:flex">
+        <div className="mb-6 flex items-center gap-2.5 px-1">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-500 text-sm font-bold text-white">
             P
           </div>
           <span className="text-sm font-semibold text-white">Private Data Cloud</span>
         </div>
-        <nav className="flex flex-1 flex-col gap-0.5 p-3 text-sm">
+
+        <nav className="flex flex-1 flex-col gap-1 text-sm">
           <SidebarLink href="/dashboard" icon={LayoutDashboard}>
             Dashboard
           </SidebarLink>
@@ -28,43 +35,57 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             Organizations
           </SidebarLink>
         </nav>
-        <div className="border-t border-white/10 p-3 text-[11px] text-slate-600">
-          Self-hosted · local-first
-        </div>
+
+        {user && (
+          <div className="mt-4 space-y-1 border-t border-white/10 pt-4">
+            <div className="flex items-center gap-2.5 rounded-xl bg-white/5 px-2.5 py-2.5">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-500/25 text-xs font-semibold text-indigo-200">
+                {user.email.slice(0, 1).toUpperCase()}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-medium text-white">
+                  {user.first_name || "Account"}
+                </p>
+                <p className="truncate text-[11px] text-slate-400">{user.email}</p>
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-red-300 hover:bg-white/5 hover:text-red-200"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              Log out
+            </button>
+          </div>
+        )}
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 px-4 sm:px-6">
-          <Link href="/orgs" className="text-sm font-semibold text-white sm:hidden">
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 sm:hidden">
+          <Link href="/orgs" className="text-sm font-semibold text-slate-900">
             Private Data Cloud
           </Link>
-          <div className="hidden sm:block" />
           <div className="relative">
             <button
               onClick={() => setMenuOpen((v) => !v)}
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-300 hover:bg-white/5"
+              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
             >
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-500/20 text-xs font-medium text-indigo-300">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-50 text-xs font-medium text-indigo-600">
                 {user?.email.slice(0, 1).toUpperCase()}
               </span>
-              <span className="hidden sm:inline">{user?.email}</span>
-              <ChevronDown className="h-3.5 w-3.5 text-slate-600" />
+              <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
             </button>
             {menuOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                <div className="absolute right-0 z-20 mt-1 w-48 rounded-md border border-white/10 bg-slate-900 py-1 shadow-xl">
-                  <div className="border-b border-white/10 px-3 py-2 text-xs text-slate-500">
+                <div className="absolute right-0 z-20 mt-1 w-48 rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
+                  <div className="border-b border-slate-100 px-3 py-2 text-xs text-slate-400">
                     Signed in as
-                    <div className="truncate text-slate-300">{user?.email}</div>
+                    <div className="truncate text-slate-700">{user?.email}</div>
                   </div>
                   <button
-                    onClick={async () => {
-                      setMenuOpen(false);
-                      await logout();
-                      router.push("/login");
-                    }}
-                    className="block w-full px-3 py-2 text-left text-sm text-slate-300 hover:bg-white/5 hover:text-white"
+                    onClick={handleLogout}
+                    className="block w-full px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                   >
                     Log out
                   </button>
@@ -90,10 +111,14 @@ function SidebarLink({
   icon: LucideIcon;
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
+  const active = pathname === href || pathname?.startsWith(`${href}/`);
   return (
     <Link
       href={href}
-      className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-slate-300 hover:bg-white/5 hover:text-white"
+      className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors ${
+        active ? "bg-indigo-500 text-white shadow-sm" : "text-slate-300 hover:bg-white/5 hover:text-white"
+      }`}
     >
       <Icon className="h-4 w-4" strokeWidth={2} />
       {children}

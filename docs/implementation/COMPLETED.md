@@ -30,6 +30,31 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
   `analytics.OPERATIONS` runner (descriptive, correlation, regression,
   t-test, chi-square, ANOVA, time-series).
 - Icon system: `lucide-react` throughout, emoji fully removed.
+- Light-mode design system (foundation + flagship pass, at the user's
+  request against a specific reference image): `ui.tsx`'s shared
+  primitives (Button/Input/Card/Badge/Table/Modal/etc.), `AppShell`
+  (dark-navy sidebar with an active-route pill, user identity + logout
+  card, `usePathname`-driven active state; mobile keeps the old
+  dropdown-menu header since the sidebar is hidden below `sm`), and a
+  new `StatCard` component all moved from the previous all-dark theme
+  to light content on a `#F5F6FB` page background. `/dashboard` was
+  fully rebuilt as the flagship: real stat tiles (org/workspace counts,
+  live health-check ratio, recent-activity count) with a colored icon
+  badge and a decorative (not fabricated-data) accent bar — no invented
+  sparkline/trend, since Intra-Cloud doesn't record historical
+  snapshots of these counts. Self-hosted Inter via `next/font/google`
+  (downloaded at build time, no runtime request — stays local-first).
+  Every other existing page is untouched this pass; because most of
+  them already composed their content from `ui.tsx` primitives rather
+  than one-off markup, they inherit the new light theme automatically
+  and remain readable, though a handful of page-local hardcoded accents
+  (e.g. the org-list avatar badge on `/orgs`) still show old dark-mode
+  color values until their own follow-up unit. Live-verified with a
+  real logged-in screenshot (Playwright, installed `--no-save` as a
+  one-time local QA tool, not a project dependency) through the actual
+  Caddy proxy, not just compiled — caught and fixed one real bug this
+  way: the sidebar's identity card showed the user's email twice when
+  `first_name` was empty.
 - Bucket sharing — `ShareSection` component (share/list/revoke) wired into
   `/buckets/[bucketId]`; resource-agnostic, ready to reuse on tenant/
   connected database pages. *(this session)*

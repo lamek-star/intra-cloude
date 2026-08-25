@@ -1,10 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import {
+  Activity,
+  Building2,
+  ChevronRight,
+  HeartPulse,
+  History,
+  Layers,
+} from "lucide-react";
 import { api, ApiError, type AuditEvent, type Organization, type Paginated, type Workspace } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { Badge, Card, EmptyState, ErrorBanner, PageHeader, PageLoading, Spinner } from "@/components/ui";
+import { Badge, Card, EmptyState, ErrorBanner, PageHeader, PageLoading, Spinner, StatCard } from "@/components/ui";
 
 type OrgSummary = { org: Organization; workspaceCount: number | null };
 
@@ -95,6 +104,12 @@ export default function DashboardPage() {
 
   if (orgSummaries === null && !error) return <PageLoading />;
 
+  const totalWorkspaces = orgSummaries?.reduce((sum, s) => sum + (s.workspaceCount ?? 0), 0) ?? 0;
+  const workspaceCountUnknown = orgSummaries?.some((s) => s.workspaceCount === null) ?? false;
+  const healthyCount = health?.filter((h) => h.status === "healthy").length ?? 0;
+  const healthTotal = health?.length ?? 0;
+  const allHealthy = health !== null && healthyCount === healthTotal;
+
   return (
     <div>
       <PageHeader
@@ -108,90 +123,160 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="mb-8">
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">System health</h2>
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          icon={Building2}
+          label="Organizations"
+          value={orgSummaries?.length ?? 0}
+          accent="blue"
+        />
+        <StatCard
+          icon={Layers}
+          label="Workspaces"
+          value={totalWorkspaces}
+          accent="amber"
+          detail={workspaceCountUnknown ? "Some counts unavailable" : undefined}
+        />
+        <StatCard
+          icon={HeartPulse}
+          label="System health"
+          value={health === null ? "…" : `${healthyCount}/${healthTotal}`}
+          accent={health === null ? "blue" : allHealthy ? "emerald" : "amber"}
+          detail={health === null ? "Checking…" : allHealthy ? "All checks passing" : "Needs attention"}
+        />
+        <StatCard
+          icon={History}
+          label="Recent activity"
+          value={recentActivity === null ? "…" : recentActivity.length}
+          accent="violet"
+          detail={
+            orgSummaries && orgSummaries.length > 1 ? "Open an org for its log" : "Last 8 events"
+          }
+        />
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div>
+          <SectionHeader title="Organizations" href={orgSummaries && orgSummaries.length > 0 ? "/orgs" : undefined} />
+          {orgSummaries && orgSummaries.length === 0 ? (
+            <EmptyState
+              title="No organizations yet"
+              description="Create your first organization to begin managing projects, storage, databases, and applications."
+            />
+          ) : (
+            <Card className="!p-0">
+              <ul className="divide-y divide-slate-100">
+                {orgSummaries?.map(({ org, workspaceCount }) => (
+                  <li key={org.id}>
+                    <button
+                      onClick={() => router.push(`/orgs/${org.id}`)}
+                      className="flex w-full items-center gap-3 px-5 py-3.5 text-left hover:bg-slate-50"
+                    >
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                        <Building2 className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-slate-800">{org.name}</span>
+                        <span className="block text-xs text-slate-400">
+                          {workspaceCount === null
+                            ? "Workspace count unavailable"
+                            : `${workspaceCount} workspace${workspaceCount === 1 ? "" : "s"}`}
+                        </span>
+                      </span>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+        </div>
+
+        <div>
+          <SectionHeader title="Recent activity" />
+          {recentActivity === null ? (
+            <Card>
+              <div className="flex items-center gap-2 text-sm text-slate-400">
+                <Spinner className="h-4 w-4" /> Loading…
+              </div>
+            </Card>
+          ) : recentActivity.length === 0 ? (
+            <EmptyState
+              title="No recent activity to show"
+              description={
+                orgSummaries && orgSummaries.length > 1
+                  ? "Open an organization to see its own audit log."
+                  : "Actions across your organization will show up here."
+              }
+            />
+          ) : (
+            <Card className="!p-0">
+              <ul className="divide-y divide-slate-100">
+                {recentActivity.map((event) => (
+                  <li key={event.id} className="flex items-center gap-3 px-5 py-3.5">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+                      <Activity className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm text-slate-800">
+                        {event.action}{" "}
+                        <span className="text-slate-400">on {event.resource_type}</span>
+                      </span>
+                      <span className="block text-xs text-slate-400">
+                        {new Date(event.timestamp).toLocaleString()}
+                      </span>
+                    </span>
+                    <Badge
+                      tone={
+                        event.result === "success"
+                          ? "success"
+                          : event.result === "denied"
+                            ? "warning"
+                            : "danger"
+                      }
+                    >
+                      {event.result}
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <SectionHeader title="System health" />
         {health === null ? (
           <Card>
-            <div className="flex items-center gap-2 text-sm text-slate-500">
-              <Spinner className="h-4 w-4" /> Checking...
+            <div className="flex items-center gap-2 text-sm text-slate-400">
+              <Spinner className="h-4 w-4" /> Checking…
             </div>
           </Card>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {health.map((check) => (
               <Card key={check.name} className="flex items-center justify-between">
-                <span className="text-sm text-slate-300">{check.name}</span>
+                <span className="text-sm text-slate-600">{check.name}</span>
                 <HealthBadge status={check.status} />
               </Card>
             ))}
           </div>
         )}
       </div>
+    </div>
+  );
+}
 
-      <div className="mb-8">
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">Organizations</h2>
-        {orgSummaries && orgSummaries.length === 0 ? (
-          <EmptyState
-            title="No organizations yet"
-            description="Create your first organization to begin managing projects, storage, databases, and applications."
-          />
-        ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {orgSummaries?.map(({ org, workspaceCount }) => (
-              <button key={org.id} onClick={() => router.push(`/orgs/${org.id}`)} className="text-left">
-                <Card className="h-full transition-colors hover:border-indigo-400/40 hover:bg-white/[0.05]">
-                  <p className="font-medium text-white">{org.name}</p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {workspaceCount === null
-                      ? "Workspace count unavailable"
-                      : `${workspaceCount} workspace${workspaceCount === 1 ? "" : "s"}`}
-                  </p>
-                </Card>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div>
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">Recent activity</h2>
-        {recentActivity === null ? (
-          <Card>
-            <div className="flex items-center gap-2 text-sm text-slate-500">
-              <Spinner className="h-4 w-4" /> Loading...
-            </div>
-          </Card>
-        ) : recentActivity.length === 0 ? (
-          <EmptyState
-            title="No recent activity to show"
-            description={
-              orgSummaries && orgSummaries.length > 1
-                ? "Open an organization to see its own audit log."
-                : "Actions across your organization will show up here."
-            }
-          />
-        ) : (
-          <Card>
-            <ul className="divide-y divide-white/5">
-              {recentActivity.map((event) => (
-                <li key={event.id} className="flex items-center justify-between gap-4 py-2.5 text-sm">
-                  <span className="text-slate-300">
-                    {event.action} <span className="text-slate-500">on {event.resource_type}</span>
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <Badge tone={event.result === "success" ? "success" : event.result === "denied" ? "warning" : "danger"}>
-                      {event.result}
-                    </Badge>
-                    <span className="whitespace-nowrap text-xs text-slate-500">
-                      {new Date(event.timestamp).toLocaleString()}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        )}
-      </div>
+function SectionHeader({ title, href }: { title: string; href?: string }) {
+  return (
+    <div className="mb-3 flex items-center justify-between">
+      <h2 className="text-sm font-semibold text-slate-700">{title}</h2>
+      {href && (
+        <Link href={href} className="text-xs font-medium text-indigo-600 hover:text-indigo-500">
+          View all
+        </Link>
+      )}
     </div>
   );
 }

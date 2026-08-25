@@ -42,6 +42,14 @@ Webhooks, Usage) stubbed as "coming soon" rather than faked.
 
 ## Queued
 
+- **Unit 4a** — Light-mode conversion pass over the remaining ~20 existing
+  pages. `ui.tsx`/`AppShell`/`/dashboard` are already converted (this
+  session); other pages inherit that automatically wherever they compose
+  purely from shared primitives, but several have page-local hardcoded
+  dark-mode color values (e.g. `/orgs`' org-avatar badge) that need a
+  per-page pass, not a mechanical find/replace — grep each page for
+  `slate-950`, `white/`, `text-white`, `text-slate-3` and similar
+  dark-specific utility values outside of what `ui.tsx` already owns.
 - **Unit 4b** — Sharing UI on tenant databases (the one remaining
   `ShareSection` drop-in from Unit 3 item 2, deferred rather than
   forgotten).
