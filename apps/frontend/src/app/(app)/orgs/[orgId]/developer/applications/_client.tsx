@@ -16,6 +16,7 @@ import {
   PageLoading,
   Textarea,
 } from "@/components/ui";
+import { DeveloperNav } from "@/components/DeveloperNav";
 
 export default function ApplicationsClient({ orgId }: { orgId: string }) {
   const router = useRouter();
@@ -55,6 +56,7 @@ export default function ApplicationsClient({ orgId }: { orgId: string }) {
         breadcrumbs={[
           { label: "Organizations", href: "/orgs" },
           { label: org.name, href: `/orgs/${orgId}` },
+          { label: "Developer", href: `/orgs/${orgId}/developer` },
           { label: "Applications" },
         ]}
         description="Register external software that connects to this organization's data with its own scoped credentials."
@@ -64,6 +66,8 @@ export default function ApplicationsClient({ orgId }: { orgId: string }) {
           </Button>
         }
       />
+
+      <DeveloperNav orgId={orgId} active="applications" />
 
       {error && (
         <div className="mb-4">

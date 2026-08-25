@@ -361,6 +361,22 @@ export function Modal({
   );
 }
 
+/** A nav destination whose backend surface doesn't exist yet (Section 6
+ * of NEXT_TASKS.md's Unit 4 entry: stub honestly rather than fake a
+ * working page). Says what it will do once the API exists, not just
+ * "coming soon" with no context. */
+export function ComingSoon({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/60 px-6 py-16 text-center">
+      <p className="text-sm font-medium text-slate-800">{title}</p>
+      <p className="mt-1.5 max-w-md text-sm text-slate-500">{description}</p>
+      <div className="mt-4">
+        <Badge tone="info">Planned, not yet built</Badge>
+      </div>
+    </div>
+  );
+}
+
 const STAT_ACCENTS = {
   amber: { icon: "bg-amber-50 text-amber-600", bar: "bg-gradient-to-r from-amber-300 to-amber-500" },
   emerald: {

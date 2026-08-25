@@ -11,12 +11,14 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
 - `/orgs`, `/orgs/[orgId]` — organization list/detail, workspace list,
   member list.
 - `/orgs/[orgId]/teams` — team CRUD, add/remove members. *(this session)*
-- `/orgs/[orgId]/applications`, `/applications/[applicationId]` — register
-  applications, issue/rotate/revoke credentials, grant resource
-  permissions. *(this session)* Also surfaced and fixed a real backend
-  bug: `ResourceGrantSerializer.granted_by` leaked the granting user's
-  email instead of their UUID (`apps/backend/applications/serializers.py`,
-  commit `57df3a7`).
+- `/orgs/[orgId]/developer/applications`, `/applications/[applicationId]`
+  — register applications, issue/rotate/revoke credentials, grant
+  resource permissions. *(this session)* Also surfaced and fixed a real
+  backend bug: `ResourceGrantSerializer.granted_by` leaked the granting
+  user's email instead of their UUID
+  (`apps/backend/applications/serializers.py`, commit `57df3a7`). Moved
+  under `/developer/` in the Unit 4 entry below — the old
+  `/orgs/[orgId]/applications` URL no longer resolves.
 - `/orgs/[orgId]/audit` — filterable, paginated audit log with a real
   permission-denied state distinct from the non-member 404.
 - `/orgs/[orgId]/workspaces/[workspaceId]`, `/projects/[projectId]` —
@@ -90,6 +92,25 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
   leftover non-`lucide-react` glyph icon (▤ on the tenant-database
   table cards) the earlier icon-system pass missed because it's outside
   the emoji Unicode ranges that pass searched.
+- Developer portal shell (Unit 4): `DeveloperNav` — a 12-tab horizontal
+  nav (Overview/Applications/Environments/API Keys/Storage/Database/
+  Auth/Webhooks/API Logs/Usage/SDKs/Docs) at `/orgs/[orgId]/developer/*`,
+  auto-scrolling the active tab into view (a real bug caught and fixed
+  by screenshotting the SDKs/Docs tabs, not assumed fine). Applications
+  is the exact Unit 3 page *moved* here (not duplicated) — the old
+  `/orgs/[orgId]/applications` route is gone. Overview and Applications
+  are real (live app/credential counts via a bounded per-app fan-out,
+  since no org-wide credential-list endpoint exists). SDKs and Docs are
+  real content, not stubs: bearer-token examples (`Authorization: Bearer
+  pdc_sk_...`) verified against `applications/authentication.py` and a
+  live credential-issue call; the Docs tab's browsable-API link was
+  checked live first (`/api/v1/` 404s, `/api/v1/organizations/` renders
+  — links to the one that works). The six genuinely backend-dependent
+  tabs (Environments, API Keys, Storage, Database, Auth, Webhooks, API
+  Logs, Usage) are honest `ComingSoon` stubs via a shared
+  `DeveloperStub` component — each says what's missing and points at
+  real existing functionality where there is any, never fakes data.
+  *(this session)*
 
 ## Still API-only (no frontend page yet)
 

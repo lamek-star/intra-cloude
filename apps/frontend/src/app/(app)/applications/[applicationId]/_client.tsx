@@ -138,7 +138,8 @@ export default function ApplicationDetailClient({ applicationId }: { application
           ...(org
             ? [
                 { label: org.name, href: `/orgs/${org.id}` },
-                { label: "Applications", href: `/orgs/${org.id}/applications` },
+                { label: "Developer", href: `/orgs/${org.id}/developer` },
+                { label: "Applications", href: `/orgs/${org.id}/developer/applications` },
               ]
             : []),
           { label: application.name },

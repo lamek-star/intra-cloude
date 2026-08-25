@@ -32,20 +32,33 @@ light-mode design system (`ui.tsx`/`AppShell`/`/dashboard` from the
 prior commit). See `COMPLETED.md` for the full mapping and what was
 deliberately left dark (secret chip, modal scrim).
 
-## Active: Unit 4 — Developer portal shell
+## Done: Unit 4 — Developer portal shell
 
-Nav: Overview/Applications/Environments/API Keys/Storage/Database/Auth/
-Webhooks/API Logs/Usage/SDKs/Docs, per the product-direction brief. The
-existing `/orgs/[orgId]/applications` page from Unit 3 is the seed to
-build the shell around, not a page to duplicate. Environments,
-per-environment credential separation, webhooks, and API logs are new
-backend surface, not just frontend — if this unit's scope turns out to
-need real backend design work (new models/migrations), stop and flag it
-per the "explicitly out of scope" rule below rather than absorb it
-silently; a thinner Unit 4 that only organizes what already exists
-(Applications, credentials, ResourceGrants) behind the new nav shell is
-an acceptable first pass, with the backend-dependent nav items (API Logs,
-Webhooks, Usage) stubbed as "coming soon" rather than faked.
+Thin first pass, as the entry above allowed: `DeveloperNav` (12-tab
+horizontal nav, auto-scrolls the active tab into view) at
+`/orgs/[orgId]/developer/*`. Overview and Applications are real —
+Applications is the exact Unit-3 page *moved* (not duplicated) from
+`/orgs/[orgId]/applications`, which no longer exists; Overview adds
+real stat tiles (application count, active-credential count via a
+bounded per-app fan-out, since there's no org-wide credential-list
+endpoint) plus a shortcut list. SDKs and Docs are also real, not
+stubs: verified `curl`/JS/Python examples against the actual
+`ServiceAccountAuthentication` bearer-token contract
+(`Authorization: Bearer pdc_sk_...`, confirmed against
+`applications/authentication.py` and a live credential-issue call, not
+assumed), and a Docs tab linking to the real browsable-API endpoint
+(checked live first — the bare `/api/v1/` root 404s, so it links to
+`/api/v1/organizations/` instead, which actually renders). The six
+truly backend-dependent tabs (Environments, API Keys, Storage,
+Database, Auth, Webhooks, API Logs, Usage) are honest `ComingSoon`
+stubs via a shared `DeveloperStub` component, each explaining what's
+missing and pointing at the real functionality that already exists
+where there is one (e.g. Storage/Database point to the per-project
+pages). No backend changes were needed, so nothing was silently
+absorbed. Live-verified: create-application → issue-credential →
+Overview reflects both, through the new location, plus every one of
+the 12 tab routes checked for a real 200 and the old `/applications`
+URL confirmed gone (404, not silently stale).
 
 ## Queued
 
