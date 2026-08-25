@@ -47,14 +47,31 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
   Every other existing page is untouched this pass; because most of
   them already composed their content from `ui.tsx` primitives rather
   than one-off markup, they inherit the new light theme automatically
-  and remain readable, though a handful of page-local hardcoded accents
-  (e.g. the org-list avatar badge on `/orgs`) still show old dark-mode
-  color values until their own follow-up unit. Live-verified with a
+  and remained readable even before Unit 4a's full sweep below closed the
+  remaining page-local hardcoded-accent gaps (e.g. the org-list avatar
+  badge on `/orgs`). Live-verified with a
   real logged-in screenshot (Playwright, installed `--no-save` as a
   one-time local QA tool, not a project dependency) through the actual
   Caddy proxy, not just compiled — caught and fixed one real bug this
   way: the sidebar's identity card showed the user's email twice when
   `first_name` was empty.
+- Light-mode rollout to every remaining page (Unit 4a): applications,
+  buckets, connected databases, dashboards, org detail/applications/
+  audit/teams/workspaces, orgs list, projects, tables (detail/analytics/
+  import), tenant databases, `ShareSection`, login, register, and the
+  `(app)` group's auth-loading screen. Mapping: `text-white`/
+  `slate-100/200/300` → `slate-900/800/700/600`; `border`/`bg`/
+  `divide-white/N` → the equivalent `slate-100/200/300`; `bg-slate-
+  900/950` panels → white; `bg-black` overlay → `slate-900/40`; washed-
+  out accent colors used as icons/links (`indigo/red/amber-300/400`) →
+  `600/700`; old dark-badge `bg-{color}-500/15` tints → light
+  `bg-{color}-50`; the two `<pre>` JSON-dump blocks → a light
+  `bg-slate-50` well. Two elements were deliberately left dark after
+  checking the surrounding code, not left by omission: `SecretReveal`'s
+  monospace secret chip, and the `Modal` backdrop scrim. Verified: full
+  docker build + `eslint` clean, plus live screenshots of the org-detail
+  page and the logged-out login page through the real proxy — fully
+  readable, no low-contrast/invisible text found.
 - Bucket sharing — `ShareSection` component (share/list/revoke) wired into
   `/buckets/[bucketId]`; resource-agnostic, ready to reuse on tenant/
   connected database pages. *(this session)*
