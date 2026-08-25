@@ -27,6 +27,7 @@ import {
   THead,
   TRow,
 } from "@/components/ui";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 const DATA_TYPES = [
   "text",
@@ -53,6 +54,7 @@ export default function TableDetailClient({ tableId }: { tableId: string }) {
   const [columnModalOpen, setColumnModalOpen] = useState(false);
   const [rowModalOpen, setRowModalOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<Record<string, unknown> | null>(null);
+  const confirm = useConfirm();
 
   async function loadTable() {
     const t = await api.get<DBTable>(`/tables/${tableId}/`);
@@ -83,7 +85,7 @@ export default function TableDetailClient({ tableId }: { tableId: string }) {
   }, [tableId]);
 
   async function handleDeleteRow(row: Record<string, unknown>) {
-    if (!confirm("Delete this row?")) return;
+    if (!(await confirm({ title: "Delete this row?", confirmLabel: "Delete", danger: true }))) return;
     try {
       await api.del(`/tables/${tableId}/rows/${row.id}/`);
       await loadRows();

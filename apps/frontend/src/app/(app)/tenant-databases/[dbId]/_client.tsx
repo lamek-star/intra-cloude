@@ -25,9 +25,11 @@ import {
   PageLoading,
 } from "@/components/ui";
 import { ShareSection } from "@/components/ShareSection";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
   const router = useRouter();
+  const confirm = useConfirm();
   const [db, setDb] = useState<TenantDatabase | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
@@ -73,9 +75,12 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
   async function handleDeleteDatabase() {
     if (!db) return;
     if (
-      !confirm(
-        `Permanently DROP the "${db.name}" database and all its tables? This cannot be undone.`,
-      )
+      !(await confirm({
+        title: `Permanently DROP the "${db.name}" database?`,
+        description: "This deletes all its tables too. This cannot be undone.",
+        confirmLabel: "Drop database",
+        danger: true,
+      }))
     )
       return;
     setDeleting(true);

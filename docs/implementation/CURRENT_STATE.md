@@ -13,15 +13,16 @@ databases, dashboards. A light-mode design-system conversion (`ui.tsx`/
 other existing page) landed at the user's explicit request against a
 reference image, out of the unit sequence. Unit 4 (Developer portal
 shell), Unit 4b (tenant-database sharing UI), Unit 4c (dashboard
-builder UI), Unit 5 (Connect Application wizard), and Unit 6
-(permission-summary UX) are also done. See `COMPLETED.md` for detail
-on all of them, including two real bugs Unit 5 caught before shipping
-(a skipped secret-reveal, a test-connection check that would have
-false-passed) and a cross-unit authorization finding
-(organization-membership-only visibility on a couple of endpoints, not
-a fix, just flagged). Unit 7 (shared component library) is next. See
-`NEXT_TASKS.md` for the full unit list and `MASTER_PLAN.md` for the
-overall initiative shape.
+builder UI), Unit 5 (Connect Application wizard), Unit 6
+(permission-summary UX), and Unit 7 (shared component library, first
+pass: `ConfirmProvider`, `CommandPalette`) are also done. See
+`COMPLETED.md` for detail on all of them, including two real bugs Unit
+5 caught before shipping (a skipped secret-reveal, a test-connection
+check that would have false-passed) and a cross-unit authorization
+finding (organization-membership-only visibility on a couple of
+endpoints, not a fix, just flagged). Unit 8 (accessibility +
+responsiveness pass) is next. See `NEXT_TASKS.md` for the full unit
+list and `MASTER_PLAN.md` for the overall initiative shape.
 
 ## Completed this session
 
@@ -123,13 +124,9 @@ See `TEST_STATUS.md`.
 
 ## Next safe action
 
-Start Unit 7 (`NEXT_TASKS.md`): shared component library (command
-palette, data table, drawer, confirmation dialog, wizard shell, secret
-reveal, toasts) -- extract from what Units 3-6 actually built (the
-Connect Application wizard's `Stepper`/`StepCard`, `SecretReveal`
-already shared, the various ad hoc modals), not speculative new
-components nothing uses yet. Same verification pattern as every unit
-so far: real API calls through the live stack, live-verified round
-trip (Unit 5 showed curl-only verification isn't always enough -- a
-Playwright-driven pass through the actual UI caught a bug curl
-couldn't), checkpoint commit, update these docs.
+Start Unit 8 (`NEXT_TASKS.md`): accessibility + responsiveness pass
+over all existing pages. Same verification pattern as every unit so
+far: real interaction through the live stack (Unit 5 and Unit 7 both
+showed curl-only verification isn't enough for interactive bugs -- use
+Playwright driving the actual UI, keyboard included, not just an API
+shape check), checkpoint commit, update these docs.

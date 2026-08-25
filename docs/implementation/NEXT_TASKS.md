@@ -194,10 +194,42 @@ compiled.
 
 ## Queued
 
-- **Unit 7** — Shared component library (command palette, data table,
-  drawer, confirmation dialog, wizard shell, secret reveal, toasts).
-  Extract from whatever ad hoc versions Units 3–6 end up needing first,
-  rather than speculatively building components nothing uses yet.
+## Done: Unit 7 — shared component library (first real pass)
+
+Two deliverables, chosen because they were either a real, widespread ad
+hoc pattern to consolidate, or an explicit brief ask with real data to
+back it -- not speculative components nothing uses yet (`Drawer` and
+`Toasts` stay unbuilt for exactly that reason: no ad hoc version of
+either exists anywhere in the app today).
+
+- **`ConfirmProvider`/`useConfirm()`** (`src/components/ConfirmProvider.tsx`):
+  replaces all 7 native `window.confirm()` call sites across the app
+  (buckets file delete, connected-database disconnect, dashboard widget
+  remove + dashboard delete, table row delete, tenant-database drop)
+  with a styled, on-brand dialog matching `Modal`'s conventions --
+  danger variant gets a red icon+button. Mounted once in `AppShell` so
+  any page can call `useConfirm()`. Same one-line-guard call shape as
+  before (`if (!(await confirm({...}))) return;`), just async instead
+  of a blocking browser-native prompt.
+- **`CommandPalette`** (`src/components/CommandPalette.tsx`): Ctrl/Cmd+K
+  global search (Section 51 of the professionalization brief), mounted
+  in `AppShell` with a visible "Search... Ctrl K" affordance in the
+  sidebar (not keyboard-only/undiscoverable). Real destinations only --
+  Dashboard, Organizations, Log out, plus the user's actual
+  organizations fetched live and filterable by name -- not a
+  speculative list of every conceivable future action, since those are
+  genuinely all the top-level destinations that exist today.
+
+Live-verified both with Playwright driving the real UI, not curl (this
+class of bug -- a dead click, a skipped modal -- doesn't show up in an
+API-shape check): confirmed no native browser dialog ever fires
+(`page.on("dialog", ...)` asserted silent throughout), Cancel leaves
+the file in place, Confirm actually deletes it; Ctrl+K opens the
+palette, typing "Teams" filters to exactly one real matching
+organization, Enter navigates to it, Escape closes it.
+
+## Queued
+
 - **Unit 8** — Accessibility + responsiveness pass over all existing pages.
 - **Unit 9** — Error-experience pass (no raw backend exceptions to normal
   users; "View technical details" disclosure for admins).

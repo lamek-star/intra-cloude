@@ -16,9 +16,11 @@ import {
 } from "@/lib/api";
 import { OPERATIONS, type OperationSpec } from "@/lib/analytics-operations";
 import { Badge, Button, Card, ErrorBanner, Label, Modal, PageHeader, PageLoading, Select, Input } from "@/components/ui";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 export default function DashboardClient({ dashboardId }: { dashboardId: string }) {
   const router = useRouter();
+  const confirm = useConfirm();
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [database, setDatabase] = useState<TenantDatabase | null>(null);
   const [tables, setTables] = useState<DBTable[]>([]);
@@ -81,13 +83,22 @@ export default function DashboardClient({ dashboardId }: { dashboardId: string }
 
   async function removeWidget(index: number) {
     if (!dashboard) return;
-    if (!confirm("Remove this widget from the dashboard?")) return;
+    if (!(await confirm({ title: "Remove this widget from the dashboard?", confirmLabel: "Remove", danger: true })))
+      return;
     await saveWidgets(dashboard.widgets.filter((_, i) => i !== index));
   }
 
   async function handleDeleteDashboard() {
     if (!dashboard) return;
-    if (!confirm(`Delete the dashboard "${dashboard.name}"? This cannot be undone.`)) return;
+    if (
+      !(await confirm({
+        title: `Delete the dashboard "${dashboard.name}"?`,
+        description: "This cannot be undone.",
+        confirmLabel: "Delete",
+        danger: true,
+      }))
+    )
+      return;
     try {
       await api.del(`/dashboards/${dashboardId}/`);
       router.push(`/tenant-databases/${dashboard.tenant_database}`);

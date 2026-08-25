@@ -27,6 +27,7 @@ import {
   TRow,
 } from "@/components/ui";
 import { ShareSection } from "@/components/ShareSection";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 const STATUS_TONE = { untested: "default", connected: "success", unreachable: "danger" } as const;
 const ROWS_PER_PAGE = 25;
@@ -64,6 +65,7 @@ export default function ConnectedDatabaseDetailClient({
   const [rowsError, setRowsError] = useState<string | null>(null);
   const [rowsLoading, setRowsLoading] = useState(false);
   const [offset, setOffset] = useState(0);
+  const confirm = useConfirm();
 
   async function load() {
     try {
@@ -129,7 +131,14 @@ export default function ConnectedDatabaseDetailClient({
 
   async function handleDelete() {
     if (!cdb) return;
-    if (!confirm(`Remove the connection "${cdb.name}"? This only removes the connection record -- the external database itself is untouched.`)) {
+    if (
+      !(await confirm({
+        title: `Remove the connection "${cdb.name}"?`,
+        description: "This only removes the connection record -- the external database itself is untouched.",
+        confirmLabel: "Remove",
+        danger: true,
+      }))
+    ) {
       return;
     }
     try {

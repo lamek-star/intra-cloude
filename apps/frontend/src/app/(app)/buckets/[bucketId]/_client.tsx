@@ -18,6 +18,7 @@ import {
   TRow,
 } from "@/components/ui";
 import { ShareSection } from "@/components/ShareSection";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -47,6 +48,7 @@ export default function BucketDetailClient({
   const [uploading, setUploading] = useState(false);
   const [search, setSearch] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const confirm = useConfirm();
 
   async function loadFiles(q?: string) {
     const qs = q ? `?search=${encodeURIComponent(q)}` : "";
@@ -101,7 +103,15 @@ export default function BucketDetailClient({
   }
 
   async function handleDelete(file: FileObject) {
-    if (!confirm(`Delete "${file.display_filename}"? This can be restored via the API afterward.`)) return;
+    if (
+      !(await confirm({
+        title: `Delete "${file.display_filename}"?`,
+        description: "This can be restored via the API afterward.",
+        confirmLabel: "Delete",
+        danger: true,
+      }))
+    )
+      return;
     try {
       await api.del(`/files/${file.id}/`);
       setFiles((prev) => prev?.filter((f) => f.id !== file.id) ?? null);

@@ -156,6 +156,17 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
   "Resource permissions" table (previously showed a raw UUID).
   *(this session)*
 
+- Shared component library, first real pass (Unit 7): `ConfirmProvider`/
+  `useConfirm()` replaced all 7 native `window.confirm()` call sites
+  app-wide with a styled dialog matching `Modal`'s conventions;
+  `CommandPalette` (Ctrl/Cmd+K, visible "Search... Ctrl K" affordance in
+  the sidebar) with real destinations plus the user's live organization
+  list, filterable by name. Both Playwright-verified against the actual
+  UI (no native dialog ever fires; typing filters to a real match;
+  Enter navigates; Escape closes) rather than assumed from a passing
+  build. `Drawer`/`Toasts` deliberately left unbuilt -- no ad hoc
+  version of either exists anywhere in the app yet. *(this session)*
+
 ## Known pre-existing gap (not fixed by this initiative unless a unit
 targets it explicitly)
 
