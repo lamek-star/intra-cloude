@@ -132,6 +132,19 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
   → 404), plus confirmed the extraction didn't change
   `/tables/[tableId]/analytics`'s behavior. *(this session)*
 
+- Connect Application wizard (Unit 5): `/orgs/[orgId]/developer/
+  applications/connect` — Type (client-only, steers example-code
+  language) → Identity (real `Application`) → Data access (real
+  `ResourceGrant`s over every bucket/tenant-database in the org) →
+  Credential (real `ApplicationCredential`) → Connect (real bearer-
+  token snippet + a live "Test connection" call). Two real bugs found
+  and fixed pre-ship: the secret-reveal step was being skipped
+  entirely by an over-eager `setStep`, caught only by Playwright-
+  driving the actual UI, not by replaying API calls; and the database
+  "Test connection" target was hitting a membership-gated-only
+  endpoint that would report success even on a failed grant, fixed to
+  test row access on an actual table instead. *(this session)*
+
 ## Known pre-existing gap (not fixed by this initiative unless a unit
 targets it explicitly)
 
@@ -139,3 +152,17 @@ Workspace, project, and bucket *creation* emit no audit event (only
 `Organization` creation does, and only file-level storage actions do).
 Noted in `CLAUDE.md`; touches `workspaces`, project creation, and
 `storage`'s bucket creation — a backend fix, not a frontend one.
+
+`GET /organizations/{id}/applications/` (and, per Unit 4b, a tenant
+database's own detail/table-list endpoints) are gated by organization
+membership only, not a specific permission — any of an org's
+application credentials can see the org's other application names/
+descriptions/owners, and any org member can see a database's name and
+table/column schema, regardless of ResourceGrants. Actual protected
+data (row contents, credentials themselves, resource-grant lists)
+correctly requires the real permission/grant in both cases — this is
+existence-visibility only, and it's the same pattern in both places, so
+likely a deliberate, consistent design rather than an oversight. Not
+fixed here (reopening backend authorization design is out of this
+initiative's scope per the rule below); flagged for whoever owns that
+decision.

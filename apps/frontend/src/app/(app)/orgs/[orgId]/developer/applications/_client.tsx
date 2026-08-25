@@ -11,6 +11,7 @@ import {
   ErrorBanner,
   Input,
   Label,
+  LinkButton,
   Modal,
   PageHeader,
   PageLoading,
@@ -61,9 +62,14 @@ export default function ApplicationsClient({ orgId }: { orgId: string }) {
         ]}
         description="Register external software that connects to this organization's data with its own scoped credentials."
         actions={
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            New application
-          </Button>
+          <>
+            <Button size="sm" variant="secondary" onClick={() => setCreateOpen(true)}>
+              New application
+            </Button>
+            <LinkButton href={`/orgs/${orgId}/developer/applications/connect`} size="sm">
+              Connect application
+            </LinkButton>
+          </>
         }
       />
 
@@ -80,9 +86,9 @@ export default function ApplicationsClient({ orgId }: { orgId: string }) {
           title="No applications yet"
           description="Register a website, backend service, or AI application to issue it a scoped API credential."
           action={
-            <Button size="sm" onClick={() => setCreateOpen(true)}>
-              New application
-            </Button>
+            <LinkButton href={`/orgs/${orgId}/developer/applications/connect`} size="sm">
+              Connect application
+            </LinkButton>
           }
         />
       ) : (

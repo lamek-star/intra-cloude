@@ -107,10 +107,62 @@ confirms it's gone. Screenshotted the builder page with a live widget.
 Confirmed the analytics-operations extraction didn't break
 `/tables/[tableId]/analytics` (still 200, unchanged behavior).
 
+## Done: Unit 5 — Connect Application wizard
+
+`/orgs/[orgId]/developer/applications/connect`, five real steps (Type,
+Identity, Data access, Credential, Connect), reachable from the
+Applications tab's header action and its empty state. Type is
+deliberately client-only (not persisted — no `Application.type` field
+exists, and adding one would be backend scope creep for a value that
+only needs to steer example-code language); Identity creates the real
+`Application`; Data access lists every bucket/tenant-database across
+the org's projects (same bounded fan-out pattern as `/dashboard` and
+the Developer Overview) and issues real `ResourceGrant`s scoped to the
+selection; Credential issues a real `ApplicationCredential` and (fixed
+before shipping, see below) actually shows the `SecretReveal` panel;
+Connect shows a real bearer-token snippet and a live "Test connection"
+button.
+
+Two real bugs found and fixed while building this, not assumed away:
+
+1. `handleIssueCredential` originally called `setStep(4)` immediately
+   after `setCredential(...)`, which skipped past the step-3
+   `SecretReveal` render entirely — the one-time secret would have
+   flashed by unseen. Caught by Playwright-driving the actual wizard
+   UI (not just replaying the API calls by hand) and screenshotting
+   each step; a curl-only verification pass would have missed this
+   since the API call itself succeeds fine.
+2. "Test connection" originally hit `GET /tenant-databases/{id}/` for
+   database resources, which turned out to be membership-gated only
+   (same finding as Unit 4b) — it would report success even if the
+   grant step had failed or been skipped, since it doesn't touch the
+   permission check at all. Fixed to fetch the database's first table
+   and test row access there instead (`GET /tables/{id}/rows/`, which
+   Unit 4b already confirmed is genuinely `database.read`-gated),
+   with an honest "no tables to test against yet" message when there
+   are none — never a fake pass.
+
+While verifying step 3's data-access grants, also independently
+confirmed (not a bug, a documented-consistent design already seen in
+Unit 4b): `GET /organizations/{id}/applications/` is membership-gated
+only, so any of an org's own service-account credentials can list the
+org's *other* application names/descriptions/owners (not secrets or
+data) — the same "existence is visible to members, data access needs
+an explicit grant" pattern found twice now. Not fixed here (out of
+this unit's scope per the rule below); worth a dedicated look if it
+ever needs tightening.
+
+Live-verified two ways: a full curl walkthrough matching the wizard's
+exact API call sequence (create app -> grant `storage.read` on a real
+bucket -> issue credential -> bearer-token call succeeds against the
+granted bucket, a separate ungranted-resource call demonstrating the
+membership-visibility finding above), and a Playwright-driven run of
+the actual UI clicking through all five steps against the live stack,
+screenshotted at each step, including a real "Test connection" 200
+result shown in the finished UI.
+
 ## Queued
 
-- **Unit 5** — Connect Application wizard. Depends on Unit 4 (Applications
-  nav) + real credential issuance already working.
 - **Unit 6** — AI application connection UX with a permission summary
   generated from live `ResourceGrant`/permission data.
 - **Unit 7** — Shared component library (command palette, data table,
