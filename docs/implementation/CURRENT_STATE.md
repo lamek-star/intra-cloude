@@ -6,9 +6,11 @@ notes below) — trust this + `git log`/`git status` over conversation memory.
 
 ## Current phase
 
-UI/UX Professionalization Initiative, Unit 3 in progress (applications +
-sharing/buckets done; connected databases next). See `MASTER_PLAN.md` for
-the full unit list.
+UI/UX Professionalization Initiative. Unit 3 (frontend pages for
+API-only surfaces) is complete — applications, bucket sharing, connected
+databases, dashboards. Unit 4 (Developer portal shell) is next. See
+`NEXT_TASKS.md` for the full unit list and `MASTER_PLAN.md` for the
+overall initiative shape.
 
 ## Completed this session
 
@@ -40,6 +42,25 @@ the full unit list.
   revoke. Live-verified not just as CRUD but as real enforcement — a
   second real user was 403 before sharing, 200 after, 403 again after
   revoke. Committed `d3262cc`.
+- Connected databases (`/projects/[projectId]` new section,
+  `/connected-databases/[connectedDatabaseId]`): connect/test/browse
+  (schema + paginated rows)/delete an external read-only Postgres
+  connection, `ShareSection` included. Committed `76be185`.
+- Dashboards (`/tenant-databases/[dbId]` new "Dashboards" section,
+  `/dashboards/[dashboardId]`): read-only render of persistent
+  declarative-JSON widget dashboards; each widget re-runs its
+  `analytics.OPERATIONS` call and re-checks permissions on load/Refresh.
+  Live-verified end to end: created a real tenant database + table + rows
+  through the API, created a 3-widget dashboard, confirmed the render
+  endpoint's payload shape matches what the page consumes field-for-field,
+  then tore the fixtures down. Also fixed a second stray non-`lucide-react`
+  glyph icon (▤) the earlier icon-system pass missed (outside the emoji
+  Unicode ranges that pass's search covered). Committed `cb20c4b` (docs)
+  + this session's dashboards commit.
+- Docker Desktop's daemon dropped mid-session (`npipe` connection error);
+  relaunched `Docker Desktop.exe` and waited for it — all 9 containers
+  came back up automatically via Docker's own restart policy, nothing
+  manually recreated except the frontend image rebuild.
 
 ## Known environment quirk (not a project bug)
 
@@ -60,6 +81,14 @@ and plain-HTTP/TCP to the same port both work).
 - `apps/frontend/src/components/ui.tsx` (added Textarea, CopyButton, SecretReveal)
 - `apps/frontend/src/components/ShareSection.tsx` (new)
 - `apps/frontend/src/app/(app)/buckets/[bucketId]/_client.tsx`
+- `apps/frontend/src/app/(app)/projects/[projectId]/_client.tsx` (connected
+  databases section, icon fix)
+- `apps/frontend/src/app/(app)/connected-databases/[connectedDatabaseId]/
+  {_client,page}.tsx` (new)
+- `apps/frontend/src/app/(app)/tenant-databases/[dbId]/_client.tsx`
+  (dashboards section, icon fix)
+- `apps/frontend/src/app/(app)/dashboards/[dashboardId]/{_client,page}.tsx`
+  (new)
 - `apps/backend/applications/serializers.py` (bug fix)
 - `apps/backend/applications/tests/test_applications.py` (regression test)
 - `docs/implementation/*` (new, this initiative's tracking docs)
@@ -83,8 +112,10 @@ See `TEST_STATUS.md`.
 
 ## Next safe action
 
-Continue Unit 3 (`NEXT_TASKS.md`, item 3): build the connected-databases
-frontend page, including `ShareSection`. Same pattern as the last three
-features — real API calls, live-verified round trip (and, where the
-feature is permission-relevant, verify actual enforcement with a second
-real user, not just the CRUD shape), checkpoint commit, update these docs.
+Start Unit 4 (`NEXT_TASKS.md`): Developer portal shell nav. Read that
+file's Unit 4 entry first — it flags that Environments/API Keys/Webhooks/
+API Logs are new backend surface, not just frontend, and says to stop and
+flag rather than silently absorb real backend design work if the unit
+turns out to need it. Same verification pattern as every unit so far:
+real API calls through the live stack, live-verified round trip, checkpoint
+commit, update these docs.

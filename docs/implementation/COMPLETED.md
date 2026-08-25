@@ -37,12 +37,24 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
   delete an external read-only Postgres connection, plus `ShareSection`.
   `/projects/[projectId]` (new section) and `/connected-databases/
   [connectedDatabaseId]`. *(this session)*
+- Dashboards — read-only render of persistent declarative-JSON widget
+  dashboards; every widget re-runs its `analytics.OPERATIONS` call and
+  re-checks permissions on each page load/Refresh, matching
+  `render_dashboard`'s live-revalidation contract, not a cached view.
+  `/tenant-databases/[dbId]` (new "Dashboards" section, listed only when
+  at least one exists) and `/dashboards/[dashboardId]`. Dashboard
+  *creation* stays API-only — a builder UI is separate, larger follow-up
+  work, not part of this unit. *(this session)* Also fixed a second
+  leftover non-`lucide-react` glyph icon (▤ on the tenant-database
+  table cards) the earlier icon-system pass missed because it's outside
+  the emoji Unicode ranges that pass searched.
 
 ## Still API-only (no frontend page yet)
 
 Real and tested on the backend; tracked as Unit 3+ in `MASTER_PLAN.md`:
 
-- Persistent declarative-JSON dashboards (the analytics widget layer)
+- Dashboard *builder* UI (creating/editing widgets) — viewing is done;
+  authoring is separate follow-up work.
 - Sharing UI on tenant databases specifically — `ShareSection` already
   supports `databases.tenant_database` as a resource_type; only the
   "drop it into `/tenant-databases/[dbId]`" step remains.

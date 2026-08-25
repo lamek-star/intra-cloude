@@ -2,10 +2,7 @@
 
 Active and queued units, in order. Pull the top one; don't skip ahead.
 
-## Active: Unit 3 — frontend pages for API-only surfaces
-
-Pick one surface, build it end to end (page + live verification +
-checkpoint commit), then move to the next.
+## Done: Unit 3 — frontend pages for API-only surfaces
 
 1. ~~**Applications**~~ — done (`baafb67`, bugfix `57df3a7`). Register
    Application, issue/rotate/revoke ApplicationCredential, grant/list
@@ -18,22 +15,40 @@ checkpoint commit), then move to the next.
    alongside item 3 below rather than as a separate pass.
 3. ~~**Connected databases**~~ — done (`76be185`). Connect/test/browse
    schema+rows/delete, `ShareSection` included.
-4. **Dashboards** — render existing declarative-JSON dashboards; a
-   dashboard *builder* UI is a larger, separate follow-up, not part of this
-   unit. *(next up — last item in Unit 3)*
+4. ~~**Dashboards**~~ — done. Read-only render of existing declarative-JSON
+   dashboards on `/tenant-databases/[dbId]` (new section) and
+   `/dashboards/[dashboardId]`; a dashboard *builder* UI is a larger,
+   separate follow-up (tracked in Queued below), not part of this unit.
 
-Each must follow the Teams page's verification pattern: real API calls
+Each followed the Teams page's verification pattern: real API calls
 through the live stack, request/response shapes checked against
 `apps/frontend/src/lib/api.ts` types, not assumed from the OpenAPI/backend
 code alone.
 
+## Active: Unit 4 — Developer portal shell
+
+Nav: Overview/Applications/Environments/API Keys/Storage/Database/Auth/
+Webhooks/API Logs/Usage/SDKs/Docs, per the product-direction brief. The
+existing `/orgs/[orgId]/applications` page from Unit 3 is the seed to
+build the shell around, not a page to duplicate. Environments,
+per-environment credential separation, webhooks, and API logs are new
+backend surface, not just frontend — if this unit's scope turns out to
+need real backend design work (new models/migrations), stop and flag it
+per the "explicitly out of scope" rule below rather than absorb it
+silently; a thinner Unit 4 that only organizes what already exists
+(Applications, credentials, ResourceGrants) behind the new nav shell is
+an acceptable first pass, with the backend-dependent nav items (API Logs,
+Webhooks, Usage) stubbed as "coming soon" rather than faked.
+
 ## Queued
 
-- **Unit 4** — Developer portal shell (nav: Overview/Applications/
-  Environments/API Keys/Storage/Database/Auth/Webhooks/API Logs/Usage/
-  SDKs/Docs). Depends on Unit 3's Applications page existing first.
-- **Unit 5** — Connect Application wizard. Depends on Unit 3 (Applications)
-  + real credential issuance already working.
+- **Unit 4b** — Sharing UI on tenant databases (the one remaining
+  `ShareSection` drop-in from Unit 3 item 2, deferred rather than
+  forgotten).
+- **Unit 4c** — Dashboard builder UI (create/edit widgets) — the
+  authoring half of Unit 3 item 4.
+- **Unit 5** — Connect Application wizard. Depends on Unit 4 (Applications
+  nav) + real credential issuance already working.
 - **Unit 6** — AI application connection UX with a permission summary
   generated from live `ResourceGrant`/permission data.
 - **Unit 7** — Shared component library (command palette, data table,

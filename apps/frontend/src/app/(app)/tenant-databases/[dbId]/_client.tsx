@@ -2,7 +2,8 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { api, ApiError, type DBTable, type Project, type TenantDatabase } from "@/lib/api";
+import { LayoutGrid, Table as TableIcon } from "lucide-react";
+import { api, ApiError, type Dashboard, type DBTable, type Project, type TenantDatabase } from "@/lib/api";
 import {
   Badge,
   Button,
@@ -21,6 +22,7 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
   const [db, setDb] = useState<TenantDatabase | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [tables, setTables] = useState<DBTable[] | null>(null);
+  const [dashboards, setDashboards] = useState<Dashboard[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -35,6 +37,10 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
       ]);
       setProject(p);
       setTables(t);
+      api
+        .get<Dashboard[]>(`/tenant-databases/${dbId}/dashboards/`)
+        .then(setDashboards)
+        .catch(() => setDashboards([]));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load database.");
     }
@@ -107,7 +113,7 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
             <button key={t.id} onClick={() => router.push(`/tables/${t.id}`)} className="text-left">
               <Card className="transition-colors hover:border-indigo-400/40 hover:bg-white/[0.05]">
                 <div className="flex items-center gap-2">
-                  <span className="text-lg">▤</span>
+                  <TableIcon className="h-4 w-4 text-indigo-300" />
                   <p className="font-medium text-white">{t.name}</p>
                 </div>
                 <p className="mt-2 text-xs text-slate-500">{t.columns.length} column(s)</p>
@@ -120,6 +126,27 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
               </Card>
             </button>
           ))}
+        </div>
+      )}
+
+      {dashboards && dashboards.length > 0 && (
+        <div className="mt-8">
+          <h2 className="mb-3 text-sm font-semibold text-slate-300">Dashboards</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {dashboards.map((d) => (
+              <button key={d.id} onClick={() => router.push(`/dashboards/${d.id}`)} className="text-left">
+                <Card className="transition-colors hover:border-indigo-400/40 hover:bg-white/[0.05]">
+                  <div className="flex items-center gap-2">
+                    <LayoutGrid className="h-4 w-4 text-indigo-300" />
+                    <p className="font-medium text-white">{d.name}</p>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">
+                    {d.widgets.length} widget{d.widgets.length === 1 ? "" : "s"}
+                  </p>
+                </Card>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

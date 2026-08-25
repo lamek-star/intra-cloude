@@ -424,3 +424,35 @@ export type ResourceGrant = {
   expires_at: string | null;
   created_at: string;
 };
+
+export type DashboardWidget = {
+  table_id: string;
+  operation: string;
+  params?: Record<string, unknown>;
+  chart_type?: string;
+  title?: string;
+  position?: number;
+};
+
+export type Dashboard = {
+  id: string;
+  tenant_database: string;
+  name: string;
+  widgets: DashboardWidget[];
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DashboardWidgetResult = {
+  title: string;
+  chart_type: string;
+  data?: Record<string, unknown>;
+  error?: string;
+};
+
+export type DashboardRenderResult = {
+  id: string;
+  name: string;
+  widgets: DashboardWidgetResult[];
+};
