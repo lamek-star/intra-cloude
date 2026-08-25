@@ -182,7 +182,7 @@ export default function BucketDetailClient({
           <tbody>
             {files?.map((f) => (
               <TRow key={f.id}>
-                <Td className="font-medium text-white">
+                <Td className="font-medium text-slate-900">
                   <span className="flex items-center gap-2">
                     <FileText className="h-4 w-4 text-slate-400" />
                     {f.display_filename}
@@ -195,13 +195,13 @@ export default function BucketDetailClient({
                   <div className="flex justify-end gap-3 text-xs">
                     <a
                       href={`/api/v1/files/${f.id}/download/`}
-                      className="text-indigo-400 hover:text-indigo-300"
+                      className="text-indigo-600 hover:text-indigo-500"
                     >
                       Download
                     </a>
                     <button
                       onClick={() => handleDelete(f)}
-                      className="text-red-400 hover:text-red-300"
+                      className="text-red-600 hover:text-red-500"
                     >
                       Delete
                     </button>

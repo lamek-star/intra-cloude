@@ -89,10 +89,10 @@ export default function ApplicationsClient({ orgId }: { orgId: string }) {
               onClick={() => router.push(`/applications/${app.id}`)}
               className="text-left"
             >
-              <Card className="transition-colors hover:border-indigo-400/40 hover:bg-white/[0.05]">
+              <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
                 <div className="flex items-center gap-2">
-                  <AppWindow className="h-4 w-4 text-indigo-300" />
-                  <p className="font-medium text-white">{app.name}</p>
+                  <AppWindow className="h-4 w-4 text-indigo-600" />
+                  <p className="font-medium text-slate-900">{app.name}</p>
                 </div>
                 {app.description && (
                   <p className="mt-1.5 line-clamp-2 text-xs text-slate-500">{app.description}</p>

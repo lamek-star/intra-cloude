@@ -114,19 +114,19 @@ export default function TableDetailClient({ tableId }: { tableId: string }) {
           <>
             <a
               href={`/tables/${tableId}/analytics`}
-              className="inline-flex items-center rounded-md border border-white/10 bg-white/5 px-3.5 py-2 text-sm font-medium text-slate-100 hover:bg-white/10"
+              className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
             >
               Analytics
             </a>
             <a
               href={`/tables/${tableId}/import`}
-              className="inline-flex items-center rounded-md border border-white/10 bg-white/5 px-3.5 py-2 text-sm font-medium text-slate-100 hover:bg-white/10"
+              className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
             >
               Import CSV
             </a>
             <a
               href={`/api/v1/tables/${tableId}/rows/export/`}
-              className="inline-flex items-center rounded-md border border-white/10 bg-white/5 px-3.5 py-2 text-sm font-medium text-slate-100 hover:bg-white/10"
+              className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
             >
               Export CSV
             </a>
@@ -217,13 +217,13 @@ export default function TableDetailClient({ tableId }: { tableId: string }) {
                           setEditingRow(row);
                           setRowModalOpen(true);
                         }}
-                        className="text-indigo-400 hover:text-indigo-300"
+                        className="text-indigo-600 hover:text-indigo-500"
                       >
                         Edit
                       </button>
                       <button
                         onClick={() => handleDeleteRow(row)}
-                        className="text-red-400 hover:text-red-300"
+                        className="text-red-600 hover:text-red-500"
                       >
                         Delete
                       </button>
@@ -413,11 +413,11 @@ function AddColumnModal({
           </div>
         )}
         <div className="flex gap-4">
-          <label className="flex items-center gap-2 text-sm text-slate-300">
+          <label className="flex items-center gap-2 text-sm text-slate-600">
             <Checkbox checked={isNullable} onChange={(e) => setIsNullable(e.target.checked)} />
             Nullable
           </label>
-          <label className="flex items-center gap-2 text-sm text-slate-300">
+          <label className="flex items-center gap-2 text-sm text-slate-600">
             <Checkbox checked={isUnique} onChange={(e) => setIsUnique(e.target.checked)} />
             Unique
           </label>
@@ -537,7 +537,7 @@ function RowFormModal({
           <div key={c.id}>
             <Label htmlFor={`field-${c.name}`}>
               {c.name}
-              {!c.is_nullable && <span className="text-red-400"> *</span>}
+              {!c.is_nullable && <span className="text-red-600"> *</span>}
             </Label>
             <FieldInput
               column={c}
@@ -601,7 +601,7 @@ function FieldInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="{}"
-        className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 font-mono text-xs text-slate-100 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+        className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-800 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
       />
     );
   }

@@ -78,8 +78,8 @@ export default function WorkspaceDetailClient({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {projects?.map((p) => (
             <button key={p.id} onClick={() => router.push(`/projects/${p.id}`)} className="text-left">
-              <Card className="transition-colors hover:border-indigo-400/40 hover:bg-white/[0.05]">
-                <p className="font-medium text-white">{p.name}</p>
+              <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
+                <p className="font-medium text-slate-900">{p.name}</p>
                 <p className="mt-1 text-xs text-slate-500">
                   Created {new Date(p.created_at).toLocaleDateString()}
                 </p>

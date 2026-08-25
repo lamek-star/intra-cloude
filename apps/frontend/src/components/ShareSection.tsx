@@ -105,7 +105,7 @@ export function ShareSection({
   return (
     <section>
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-300">Sharing</h2>
+        <h2 className="text-sm font-semibold text-slate-600">Sharing</h2>
         {shares && (
           <Button size="sm" variant="secondary" onClick={() => setModalOpen(true)}>
             <Share2 className="h-3.5 w-3.5" />
@@ -131,7 +131,7 @@ export function ShareSection({
           <tbody>
             {shares.map((s) => (
               <TRow key={s.id}>
-                <Td className="font-medium text-white">{principalLabel(s)}</Td>
+                <Td className="font-medium text-slate-900">{principalLabel(s)}</Td>
                 <Td>
                   <Badge tone={LEVEL_TONE[s.level]}>{s.level}</Badge>
                 </Td>
@@ -141,7 +141,7 @@ export function ShareSection({
                 <Td>
                   <button
                     onClick={() => revoke(s)}
-                    className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-red-400"
+                    className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-red-600"
                   >
                     <ShieldOff className="h-3.5 w-3.5" />
                     Revoke

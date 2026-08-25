@@ -65,11 +65,11 @@ export default function OrgsPage() {
               onClick={() => router.push(`/orgs/${org.id}`)}
               className="text-left"
             >
-              <Card className="h-full transition-colors hover:border-indigo-400/40 hover:bg-white/[0.05]">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500/15 text-sm font-semibold text-indigo-300">
+              <Card className="h-full transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-sm font-semibold text-indigo-600">
                   {org.name.slice(0, 1).toUpperCase()}
                 </div>
-                <p className="mt-3 font-medium text-white">{org.name}</p>
+                <p className="mt-3 font-medium text-slate-900">{org.name}</p>
                 <p className="mt-0.5 text-xs text-slate-500">/{org.slug}</p>
               </Card>
             </button>

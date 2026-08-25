@@ -208,7 +208,7 @@ export default function AuditLogClient({ orgId }: { orgId: string }) {
                       <Td className="whitespace-nowrap text-slate-400">
                         {new Date(event.timestamp).toLocaleString()}
                       </Td>
-                      <Td className="font-medium text-white">{event.action}</Td>
+                      <Td className="font-medium text-slate-900">{event.action}</Td>
                       <Td className="text-slate-400">
                         {event.resource_type}
                         {event.resource_id && (

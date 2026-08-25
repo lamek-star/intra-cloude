@@ -92,7 +92,7 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
 
       <div className="mb-8">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-300">Workspaces</h2>
+          <h2 className="text-sm font-semibold text-slate-600">Workspaces</h2>
           <Button size="sm" onClick={() => setWsModalOpen(true)}>
             New workspace
           </Button>
@@ -115,8 +115,8 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
                 onClick={() => router.push(`/orgs/${orgId}/workspaces/${ws.id}`)}
                 className="text-left"
               >
-                <Card className="transition-colors hover:border-indigo-400/40 hover:bg-white/[0.05]">
-                  <p className="font-medium text-white">{ws.name}</p>
+                <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
+                  <p className="font-medium text-slate-900">{ws.name}</p>
                   <p className="mt-1 text-xs text-slate-500">
                     Created {new Date(ws.created_at).toLocaleDateString()}
                   </p>
@@ -129,7 +129,7 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
 
       <div>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-300">Members</h2>
+          <h2 className="text-sm font-semibold text-slate-600">Members</h2>
           <Button size="sm" variant="secondary" onClick={() => setMemberModalOpen(true)}>
             Add member
           </Button>

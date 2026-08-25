@@ -13,7 +13,6 @@ import {
 import {
   Badge,
   Button,
-  Card,
   ErrorBanner,
   Input,
   Label,
@@ -149,7 +148,7 @@ export default function ApplicationDetailClient({ applicationId }: { application
 
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-300">Credentials</h2>
+          <h2 className="text-sm font-semibold text-slate-600">Credentials</h2>
           <Button size="sm" onClick={issueCredential}>
             New credential
           </Button>
@@ -194,14 +193,14 @@ export default function ApplicationDetailClient({ applicationId }: { application
                         <div className="flex justify-end gap-3 text-xs">
                           <button
                             onClick={() => rotate(c)}
-                            className="inline-flex items-center gap-1 text-indigo-400 hover:text-indigo-300"
+                            className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-500"
                           >
                             <RotateCw className="h-3.5 w-3.5" />
                             Rotate
                           </button>
                           <button
                             onClick={() => revoke(c)}
-                            className="inline-flex items-center gap-1 text-slate-500 hover:text-red-400"
+                            className="inline-flex items-center gap-1 text-slate-500 hover:text-red-600"
                           >
                             <ShieldOff className="h-3.5 w-3.5" />
                             Revoke
@@ -224,7 +223,7 @@ export default function ApplicationDetailClient({ applicationId }: { application
 
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-300">Resource permissions</h2>
+          <h2 className="text-sm font-semibold text-slate-600">Resource permissions</h2>
           {grants && (
             <Button size="sm" onClick={() => setGrantModalOpen(true)}>
               Grant permission
@@ -247,7 +246,7 @@ export default function ApplicationDetailClient({ applicationId }: { application
             <tbody>
               {grants.map((g) => (
                 <TRow key={g.id}>
-                  <Td className="font-medium text-white">{g.permission}</Td>
+                  <Td className="font-medium text-slate-900">{g.permission}</Td>
                   <Td className="text-slate-400">
                     {g.resource_type}:{g.resource_id}
                   </Td>

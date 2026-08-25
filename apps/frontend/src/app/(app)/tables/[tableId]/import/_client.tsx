@@ -264,7 +264,7 @@ export default function ImportClient({ tableId }: { tableId: string }) {
                   value={newBucketName}
                   onChange={(e) => setNewBucketName(e.target.value)}
                   placeholder="imports"
-                  className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+                  className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
                 />
               </div>
               <Button onClick={handleCreateBucket} disabled={creatingBucket || !newBucketName.trim()}>
@@ -284,7 +284,7 @@ export default function ImportClient({ tableId }: { tableId: string }) {
                   accept=".csv,text/csv"
                   onChange={(e) => handleUpload(e.target.files)}
                   disabled={uploading}
-                  className="text-sm text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-500 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-indigo-400"
+                  className="text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-500 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-900 hover:file:bg-indigo-400"
                 />
                 {uploading && <Spinner className="h-4 w-4 text-slate-400" />}
               </div>
@@ -330,7 +330,7 @@ export default function ImportClient({ tableId }: { tableId: string }) {
           </div>
 
           <div>
-            <h2 className="mb-2 text-sm font-semibold text-white">Map columns</h2>
+            <h2 className="mb-2 text-sm font-semibold text-slate-900">Map columns</h2>
             <p className="mb-3 text-sm text-slate-500">
               Each CSV column below can be mapped to an existing column on <strong>{table.name}</strong>, or
               left set to Skip to ignore it. The target type shown is the destination column&apos;s real
@@ -352,7 +352,7 @@ export default function ImportClient({ tableId }: { tableId: string }) {
                     .filter((v) => v !== undefined && v !== "");
                   return (
                     <TRow key={col.csv_column}>
-                      <Td className="font-medium text-slate-100">{col.csv_column}</Td>
+                      <Td className="font-medium text-slate-800">{col.csv_column}</Td>
                       <Td className="text-slate-400">{col.inferred_type}</Td>
                       <Td className="max-w-xs truncate text-slate-500">{samples.join(", ") || "—"}</Td>
                       <Td>
@@ -397,9 +397,9 @@ export default function ImportClient({ tableId }: { tableId: string }) {
       )}
 
       {step === "running" && job && (
-        <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-white/10 py-16">
-          <Spinner className="h-6 w-6 text-indigo-400" />
-          <p className="text-sm text-slate-300">
+        <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-slate-200 py-16">
+          <Spinner className="h-6 w-6 text-indigo-600" />
+          <p className="text-sm text-slate-600">
             Importing… {job.imported_rows} row{job.imported_rows === 1 ? "" : "s"} imported
             {job.total_rows ? ` of ${job.total_rows}` : ""}
             {job.rejected_rows > 0 ? `, ${job.rejected_rows} rejected so far` : ""}
@@ -416,20 +416,20 @@ export default function ImportClient({ tableId }: { tableId: string }) {
                 : "border-amber-500/30 bg-amber-500/5"
             }`}
           >
-            <p className="text-sm font-medium text-white">
+            <p className="text-sm font-medium text-slate-900">
               {job.status === "failed" ? "Import failed" : "Import finished"}
             </p>
-            <p className="mt-1 text-sm text-slate-300">
+            <p className="mt-1 text-sm text-slate-600">
               {job.imported_rows} row{job.imported_rows === 1 ? "" : "s"} imported
               {job.rejected_rows > 0 ? `, ${job.rejected_rows} rejected` : ""}
               {job.total_rows ? ` (${job.total_rows} total rows in the file)` : ""}.
             </p>
-            {job.error_message && <p className="mt-2 text-sm text-red-300">{job.error_message}</p>}
+            {job.error_message && <p className="mt-2 text-sm text-red-600">{job.error_message}</p>}
           </div>
 
           {jobErrors && jobErrors.length > 0 && (
             <div>
-              <h2 className="mb-2 text-sm font-semibold text-white">
+              <h2 className="mb-2 text-sm font-semibold text-slate-900">
                 Rejected rows{jobErrors.length >= 200 ? " (first 200)" : ""}
               </h2>
               <Table>
@@ -441,7 +441,7 @@ export default function ImportClient({ tableId }: { tableId: string }) {
                   {jobErrors.map((e) => (
                     <TRow key={e.id}>
                       <Td className="font-mono text-xs">{e.row_number}</Td>
-                      <Td className="text-red-300">{e.message}</Td>
+                      <Td className="text-red-600">{e.message}</Td>
                     </TRow>
                   ))}
                 </tbody>
@@ -464,7 +464,7 @@ export default function ImportClient({ tableId }: { tableId: string }) {
             </Button>
             <a
               href={`/tables/${tableId}`}
-              className="inline-flex items-center justify-center rounded-md bg-indigo-500 px-3.5 py-2 text-sm font-medium text-white hover:bg-indigo-400"
+              className="inline-flex items-center justify-center rounded-md bg-indigo-500 px-3.5 py-2 text-sm font-medium text-slate-900 hover:bg-indigo-400"
             >
               View table
             </a>

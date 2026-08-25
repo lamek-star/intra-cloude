@@ -289,7 +289,7 @@ export default function AnalyticsClient({ tableId }: { tableId: string }) {
 
       {profile && (
         <div className="mb-8">
-          <h2 className="mb-3 text-sm font-semibold text-white">
+          <h2 className="mb-3 text-sm font-semibold text-slate-900">
             Data quality report
             <span className="ml-2 font-normal text-slate-500">
               {profile.row_count} row{profile.row_count === 1 ? "" : "s"} · {profile.column_count} column
@@ -301,7 +301,7 @@ export default function AnalyticsClient({ tableId }: { tableId: string }) {
             {profile.columns.map((c) => (
               <Card key={c.name}>
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-white">{c.name}</span>
+                  <span className="text-sm font-medium text-slate-900">{c.name}</span>
                   <Badge>{c.data_type}</Badge>
                 </div>
                 <dl className="space-y-1 text-xs text-slate-400">
@@ -333,7 +333,7 @@ export default function AnalyticsClient({ tableId }: { tableId: string }) {
       )}
 
       <div className="mb-8">
-        <h2 className="mb-3 text-sm font-semibold text-white">Run an analysis</h2>
+        <h2 className="mb-3 text-sm font-semibold text-slate-900">Run an analysis</h2>
         <Card>
           <form onSubmit={handleRun} className="space-y-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -386,7 +386,7 @@ export default function AnalyticsClient({ tableId }: { tableId: string }) {
                       type="number"
                       value={fieldValues[field.key] ?? String(field.default ?? "")}
                       onChange={(e) => setFieldValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                      className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+                      className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
                     />
                   )}
                 </div>
@@ -410,7 +410,7 @@ export default function AnalyticsClient({ tableId }: { tableId: string }) {
 
       {history.length > 0 && (
         <div>
-          <h2 className="mb-3 text-sm font-semibold text-white">Results (this session)</h2>
+          <h2 className="mb-3 text-sm font-semibold text-slate-900">Results (this session)</h2>
           <div className="space-y-3">
             {history.map((entry, i) => (
               <ResultCard key={i} entry={entry} />
@@ -426,7 +426,7 @@ function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-2">
       <span className="text-slate-500">{label}</span>
-      <span className="text-slate-300">{value}</span>
+      <span className="text-slate-600">{value}</span>
     </div>
   );
 }
@@ -441,7 +441,7 @@ function ResultCard({ entry }: { entry: AnalysisResult }) {
   return (
     <Card>
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-sm font-medium text-white">{spec.label}</span>
+        <span className="text-sm font-medium text-slate-900">{spec.label}</span>
         {typeof result.p_value === "number" && (
           <Badge tone={result.p_value < 0.05 ? "success" : "default"}>
             p = {(result.p_value as number).toFixed(4)}
@@ -458,7 +458,7 @@ function ResultCard({ entry }: { entry: AnalysisResult }) {
         </div>
       )}
       {typeof result.interpretation_note === "string" && (
-        <p className="mb-2 text-xs text-amber-300">{result.interpretation_note}</p>
+        <p className="mb-2 text-xs text-amber-700">{result.interpretation_note}</p>
       )}
       {Array.isArray(result.assumptions) && result.assumptions.length > 0 && (
         <p className="mb-2 text-xs text-slate-500">
@@ -466,8 +466,8 @@ function ResultCard({ entry }: { entry: AnalysisResult }) {
         </p>
       )}
       <details className="text-xs text-slate-500">
-        <summary className="cursor-pointer select-none hover:text-slate-300">Full result</summary>
-        <pre className="mt-2 overflow-x-auto rounded-md bg-black/30 p-3 text-[11px] text-slate-300">
+        <summary className="cursor-pointer select-none hover:text-slate-600">Full result</summary>
+        <pre className="mt-2 overflow-x-auto rounded-md bg-slate-50 border border-slate-200 p-3 text-[11px] text-slate-600">
           {JSON.stringify(result, null, 2)}
         </pre>
       </details>

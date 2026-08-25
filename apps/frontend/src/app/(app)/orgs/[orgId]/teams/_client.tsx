@@ -112,11 +112,11 @@ export default function TeamsClient({ orgId }: { orgId: string }) {
             return (
               <Card key={team.id}>
                 <div className="mb-3 flex items-center justify-between">
-                  <p className="font-medium text-white">{team.name}</p>
+                  <p className="font-medium text-slate-900">{team.name}</p>
                   {members && (
                     <button
                       onClick={() => setAddMemberTeam(team)}
-                      className="text-xs text-indigo-400 hover:text-indigo-300"
+                      className="text-xs text-indigo-600 hover:text-indigo-500"
                     >
                       Add member
                     </button>
@@ -129,12 +129,12 @@ export default function TeamsClient({ orgId }: { orgId: string }) {
                     {teamMembers.map((m) => (
                       <li
                         key={m.id}
-                        className="flex items-center justify-between gap-2 text-sm text-slate-300"
+                        className="flex items-center justify-between gap-2 text-sm text-slate-600"
                       >
                         <span className="truncate">{m.user.email}</span>
                         <button
                           onClick={() => removeFromTeam(team, m.user.id)}
-                          className="text-xs text-slate-500 hover:text-red-400"
+                          className="text-xs text-slate-500 hover:text-red-600"
                         >
                           Remove
                         </button>

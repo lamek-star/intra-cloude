@@ -183,7 +183,7 @@ export default function DashboardPage() {
                             : `${workspaceCount} workspace${workspaceCount === 1 ? "" : "s"}`}
                         </span>
                       </span>
-                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
+                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-600" />
                     </button>
                   </li>
                 ))}

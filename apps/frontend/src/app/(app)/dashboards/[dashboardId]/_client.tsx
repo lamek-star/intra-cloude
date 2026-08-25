@@ -67,7 +67,7 @@ export default function DashboardClient({ dashboardId }: { dashboardId: string }
           <button
             onClick={loadRender}
             disabled={refreshing}
-            className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/5 disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
             Refresh
@@ -103,10 +103,10 @@ function WidgetCard({ widget }: { widget: DashboardWidgetResult }) {
     return (
       <Card>
         <div className="mb-2 flex items-center gap-2">
-          <TriangleAlert className="h-4 w-4 text-amber-400" />
-          <span className="text-sm font-medium text-white">{widget.title || "Untitled widget"}</span>
+          <TriangleAlert className="h-4 w-4 text-amber-600" />
+          <span className="text-sm font-medium text-slate-900">{widget.title || "Untitled widget"}</span>
         </div>
-        <p className="text-xs text-amber-300">{widget.error}</p>
+        <p className="text-xs text-amber-700">{widget.error}</p>
       </Card>
     );
   }
@@ -131,7 +131,7 @@ function WidgetCard({ widget }: { widget: DashboardWidgetResult }) {
   return (
     <Card>
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-sm font-medium text-white">{widget.title || "Untitled widget"}</span>
+        <span className="text-sm font-medium text-slate-900">{widget.title || "Untitled widget"}</span>
         {typeof result.p_value === "number" && (
           <Badge tone={(result.p_value as number) < 0.05 ? "success" : "default"}>
             p = {(result.p_value as number).toFixed(4)}
@@ -148,11 +148,11 @@ function WidgetCard({ widget }: { widget: DashboardWidgetResult }) {
         </div>
       )}
       {typeof result.interpretation_note === "string" && (
-        <p className="mb-2 text-xs text-amber-300">{result.interpretation_note}</p>
+        <p className="mb-2 text-xs text-amber-700">{result.interpretation_note}</p>
       )}
       <details className="text-xs text-slate-500">
-        <summary className="cursor-pointer select-none hover:text-slate-300">Full result</summary>
-        <pre className="mt-2 overflow-x-auto rounded-md bg-black/30 p-3 text-[11px] text-slate-300">
+        <summary className="cursor-pointer select-none hover:text-slate-600">Full result</summary>
+        <pre className="mt-2 overflow-x-auto rounded-md bg-slate-50 border border-slate-200 p-3 text-[11px] text-slate-600">
           {JSON.stringify(result, null, 2)}
         </pre>
       </details>

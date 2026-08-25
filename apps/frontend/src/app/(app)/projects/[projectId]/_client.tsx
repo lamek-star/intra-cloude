@@ -95,7 +95,7 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
 
       <div className="mb-8">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-300">Storage buckets</h2>
+          <h2 className="text-sm font-semibold text-slate-600">Storage buckets</h2>
           <Button size="sm" onClick={() => setBucketModalOpen(true)}>
             New bucket
           </Button>
@@ -120,10 +120,10 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
                 }
                 className="text-left"
               >
-                <Card className="transition-colors hover:border-indigo-400/40 hover:bg-white/[0.05]">
+                <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
                   <div className="flex items-center gap-2">
-                    <Folder className="h-4 w-4 text-indigo-300" />
-                    <p className="font-medium text-white">{b.name}</p>
+                    <Folder className="h-4 w-4 text-indigo-600" />
+                    <p className="font-medium text-slate-900">{b.name}</p>
                   </div>
                 </Card>
               </button>
@@ -134,7 +134,7 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
 
       <div>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-300">Databases</h2>
+          <h2 className="text-sm font-semibold text-slate-600">Databases</h2>
           <Button size="sm" onClick={() => setDbModalOpen(true)}>
             New database
           </Button>
@@ -157,10 +157,10 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
                 onClick={() => router.push(`/tenant-databases/${db.id}`)}
                 className="text-left"
               >
-                <Card className="transition-colors hover:border-indigo-400/40 hover:bg-white/[0.05]">
+                <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
                   <div className="flex items-center gap-2">
-                    <Database className="h-4 w-4 text-indigo-300" />
-                    <p className="font-medium text-white">{db.name}</p>
+                    <Database className="h-4 w-4 text-indigo-600" />
+                    <p className="font-medium text-slate-900">{db.name}</p>
                   </div>
                 </Card>
               </button>
@@ -171,7 +171,7 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
 
       <div className="mt-8">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-300">Connected databases</h2>
+          <h2 className="text-sm font-semibold text-slate-600">Connected databases</h2>
           <Button size="sm" onClick={() => setConnectedDbModalOpen(true)}>
             New connection
           </Button>
@@ -194,11 +194,11 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
                 onClick={() => router.push(`/connected-databases/${cdb.id}`)}
                 className="text-left"
               >
-                <Card className="transition-colors hover:border-indigo-400/40 hover:bg-white/[0.05]">
+                <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <Plug className="h-4 w-4 text-indigo-300" />
-                      <p className="font-medium text-white">{cdb.name}</p>
+                      <Plug className="h-4 w-4 text-indigo-600" />
+                      <p className="font-medium text-slate-900">{cdb.name}</p>
                     </div>
                     <Badge tone={CONNECTED_DB_STATUS_TONE[cdb.status]}>{cdb.status}</Badge>
                   </div>

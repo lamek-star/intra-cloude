@@ -8,7 +8,6 @@ import {
   ApiError,
   type ConnectedDatabase,
   type ConnectedTableSchema,
-  type Organization,
   type Project,
   type RowsPage,
   type Workspace,
@@ -186,15 +185,15 @@ export default function ConnectedDatabaseDetailClient({
           </div>
           <div>
             <p className="text-xs text-slate-500">Username</p>
-            <p className="text-slate-200">{cdb.username}</p>
+            <p className="text-slate-700">{cdb.username}</p>
           </div>
           <div>
             <p className="text-xs text-slate-500">SSL mode</p>
-            <p className="text-slate-200">{cdb.sslmode}</p>
+            <p className="text-slate-700">{cdb.sslmode}</p>
           </div>
           <div>
             <p className="text-xs text-slate-500">Last tested</p>
-            <p className="text-slate-200">
+            <p className="text-slate-700">
               {cdb.last_tested_at ? new Date(cdb.last_tested_at).toLocaleString() : "Never"}
             </p>
           </div>
@@ -207,11 +206,11 @@ export default function ConnectedDatabaseDetailClient({
       </Card>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-slate-300">Tables</h2>
+        <h2 className="mb-3 text-sm font-semibold text-slate-600">Tables</h2>
         {schemaError && <ErrorBanner message={schemaError} />}
         {schema && schema.length === 0 && !schemaError && (
           <p className="text-sm text-slate-500">
-            No tables found, or the connection hasn't been tested yet -- try "Test connection" above.
+            No tables found, or the connection hasn&apos;t been tested yet -- try &quot;Test connection&quot; above.
           </p>
         )}
         {schema && schema.length > 0 && (
@@ -226,8 +225,8 @@ export default function ConnectedDatabaseDetailClient({
                   }}
                   className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm ${
                     selectedTable === t.name
-                      ? "bg-indigo-500/15 text-indigo-300"
-                      : "text-slate-300 hover:bg-white/5 hover:text-white"
+                      ? "bg-indigo-50 text-indigo-600"
+                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                   }`}
                 >
                   <TableIcon className="h-3.5 w-3.5 shrink-0" />
@@ -254,7 +253,7 @@ export default function ConnectedDatabaseDetailClient({
                         {rows.results.map((row, i) => (
                           <TRow key={i}>
                             {columnNamesFor(schema, selectedTable, rows).map((col) => (
-                              <Td key={col} className="text-slate-300">
+                              <Td key={col} className="text-slate-600">
                                 {row[col] === null || row[col] === undefined ? (
                                   <span className="text-slate-600">null</span>
                                 ) : (
