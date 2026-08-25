@@ -167,6 +167,22 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
   build. `Drawer`/`Toasts` deliberately left unbuilt -- no ad hoc
   version of either exists anywhere in the app yet. *(this session)*
 
+- Accessibility + responsiveness, first real pass (Unit 8): shared
+  `useDialogA11y` hook (Escape-to-close, focus trap, initial/restored
+  focus) wired into `Modal`, `ConfirmProvider`, and `CommandPalette` --
+  reaches every create/edit form in the app at once via `Modal`. A
+  global `:focus-visible` outline in `globals.css` gives every
+  interactive element a visible, on-brand focus ring by default,
+  covering the many ad hoc `<button>` list-item wrappers across the app
+  without touching each page. `TRow`'s `onClick` is keyboard-hardened
+  for future use (not currently exercised by any page). Spot-checked
+  responsiveness at a real 390px viewport; confirmed via
+  `page.evaluate()` that a members table that looked clipped in a
+  screenshot was actually its own `overflow-x-auto` container scrolling
+  correctly, not the page body overflowing -- verified rather than
+  assumed either way. A full page-by-page accessibility audit remains
+  open work, not claimed done. *(this session)*
+
 ## Known pre-existing gap (not fixed by this initiative unless a unit
 targets it explicitly)
 

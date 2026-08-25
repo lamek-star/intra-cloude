@@ -230,7 +230,64 @@ organization, Enter navigates to it, Escape closes it.
 
 ## Queued
 
-- **Unit 8** — Accessibility + responsiveness pass over all existing pages.
+## Done: Unit 8 — accessibility + responsiveness pass (first real pass)
+
+Prioritized the highest-leverage, cross-cutting fixes over a page-by-
+page sweep, since the shared primitives (`Modal`, `ui.tsx`, `AppShell`)
+are what every page is actually built from:
+
+- New `src/lib/use-dialog-a11y.ts` (`useDialogA11y`): Escape-to-close, a
+  Tab/Shift+Tab focus trap within the panel, focus moved into the
+  dialog on open, focus restored to the trigger on close. Wired into
+  `Modal` (used by every create/edit form across the app -- this one
+  fix reaches all of them at once), `ConfirmProvider`'s dialog, and
+  `CommandPalette`, which each had the same gap independently (none of
+  the three closed on Escape or trapped focus before this). `Modal`
+  and the confirm dialog also gained real `role="dialog"`/
+  `role="alertdialog"`, `aria-modal`, and `aria-labelledby` wired to a
+  `useId()`-generated id (not a hardcoded one, which would collide if
+  two ever rendered at once).
+- Global `:focus-visible` outline in `globals.css` for every
+  interactive element site-wide (a, button, input, select, textarea,
+  `[tabindex]`) -- the real gap was dozens of ad hoc
+  `<button className="text-left">` list-item wrappers (org cards,
+  application cards, bucket/database cards, etc.) with no explicit
+  focus styling; fixing this once in `@layer base` reaches every one
+  of them instead of touching each page individually. Components with
+  their own `focus-visible:` utility (`Button`, `Input`, `TRow`) simply
+  override it with their own ring.
+- `TRow`'s `onClick` prop is keyboard-hardened (`tabIndex`,
+  `role="button"`, Enter/Space activation, a focus-visible outline) --
+  worth noting honestly: no page currently passes `onClick` to `TRow`,
+  so this fixes the primitive for whenever a future page does, not a
+  live bug found in an existing page.
+- Responsiveness: spot-checked at a real mobile viewport (390px) rather
+  than assumed fine from the light-mode pass's desktop screenshots.
+  `/dashboard` reflows cleanly to a single column. `/orgs/[orgId]`'s
+  members table looked clipped in a naive full-page screenshot, but
+  `page.evaluate()` confirmed the *page body* never overflows
+  horizontally (`scrollWidth === clientWidth`) -- the table's own
+  `overflow-x-auto` wrapper is what's scrolling
+  (`wrapperScrollWidth > wrapperClientWidth`), exactly the intended
+  "wide content scrolls inside its own container" design already in
+  place from earlier units. Verified, not assumed, before writing this
+  down as correct rather than filing it as a bug.
+
+Live-verified with Playwright, not a passing build: focus genuinely
+moves into `Modal` on open (`dialog.contains(document.activeElement)`
+asserted true) and Escape genuinely closes it; the same for
+`CommandPalette`'s search input; a Tab-driven walk to a real org card
+shows the on-brand indigo focus ring in a screenshot, not the
+browser's mismatched default.
+
+**Deferred, not done**: a full page-by-page pass (every table's
+sortable-column keyboard behavior, exhaustive screen-reader labeling,
+every remaining page at every breakpoint) — the highest-value shared-
+primitive fixes are in; a page-by-page audit is real remaining work,
+not falsely claimed complete here.
+
+## Queued
+
 - **Unit 9** — Error-experience pass (no raw backend exceptions to normal
   users; "View technical details" disclosure for admins).
 

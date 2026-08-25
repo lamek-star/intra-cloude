@@ -14,14 +14,17 @@ other existing page) landed at the user's explicit request against a
 reference image, out of the unit sequence. Unit 4 (Developer portal
 shell), Unit 4b (tenant-database sharing UI), Unit 4c (dashboard
 builder UI), Unit 5 (Connect Application wizard), Unit 6
-(permission-summary UX), and Unit 7 (shared component library, first
-pass: `ConfirmProvider`, `CommandPalette`) are also done. See
-`COMPLETED.md` for detail on all of them, including two real bugs Unit
-5 caught before shipping (a skipped secret-reveal, a test-connection
-check that would have false-passed) and a cross-unit authorization
-finding (organization-membership-only visibility on a couple of
-endpoints, not a fix, just flagged). Unit 8 (accessibility +
-responsiveness pass) is next. See `NEXT_TASKS.md` for the full unit
+(permission-summary UX), Unit 7 (shared component library, first pass:
+`ConfirmProvider`, `CommandPalette`), and Unit 8 (accessibility +
+responsiveness, first pass: dialog focus trap/Escape, global focus
+ring) are also done. See `COMPLETED.md` for detail on all of them,
+including two real bugs Unit 5 caught before shipping (a skipped
+secret-reveal, a test-connection check that would have false-passed)
+and a cross-unit authorization finding (organization-membership-only
+visibility on a couple of endpoints, not a fix, just flagged). Unit 8
+is explicitly a first pass, not an exhaustive page-by-page audit --
+see its `COMPLETED.md` entry for what's still open. Unit 9
+(error-experience pass) is next. See `NEXT_TASKS.md` for the full unit
 list and `MASTER_PLAN.md` for the overall initiative shape.
 
 ## Completed this session
@@ -124,9 +127,10 @@ See `TEST_STATUS.md`.
 
 ## Next safe action
 
-Start Unit 8 (`NEXT_TASKS.md`): accessibility + responsiveness pass
-over all existing pages. Same verification pattern as every unit so
-far: real interaction through the live stack (Unit 5 and Unit 7 both
-showed curl-only verification isn't enough for interactive bugs -- use
-Playwright driving the actual UI, keyboard included, not just an API
-shape check), checkpoint commit, update these docs.
+Start Unit 9 (`NEXT_TASKS.md`): error-experience pass (no raw backend
+exceptions surfaced to normal users; a "View technical details"
+disclosure for admins). Same verification pattern as every unit so
+far: real interaction through the live stack (Units 5, 7, and 8 all
+showed curl-only verification isn't enough for interactive/behavioral
+bugs -- use Playwright driving the actual UI, keyboard included, not
+just an API shape check), checkpoint commit, update these docs.

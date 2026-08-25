@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Building2, LayoutDashboard, LogOut, Search } from "lucide-react";
 import { api, ApiError, type Organization } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useDialogA11y } from "@/lib/use-dialog-a11y";
 
 type Item = {
   id: string;
@@ -26,6 +27,8 @@ export function CommandPalette({ open, setOpen }: { open: boolean; setOpen: (ope
   const [orgs, setOrgs] = useState<Organization[] | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(open, () => setOpen(false), panelRef);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -85,7 +88,13 @@ export function CommandPalette({ open, setOpen }: { open: boolean; setOpen: (ope
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 pt-24">
       <div className="absolute inset-0 bg-slate-900/40" onClick={() => setOpen(false)} />
-      <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Search Intra-Cloud"
+        className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+      >
         <div className="flex items-center gap-2.5 border-b border-slate-100 px-4 py-3">
           <Search className="h-4 w-4 shrink-0 text-slate-400" />
           <input

@@ -15,4 +15,22 @@
     background: #f5f6fb;
     color: #151823;
   }
+
+  /* Unit 8 (accessibility pass): a consistent, on-brand focus ring for
+     every interactive element site-wide, so keyboard users can always
+     see where focus is -- rather than depending on each of the many
+     ad hoc `<button className="text-left">` list-item wrappers across
+     the app (org cards, application cards, table rows, etc.) to opt in
+     individually. Elements that already declare their own
+     `focus-visible:` utility (Button, Input, TRow) simply override
+     this with their own ring. */
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid #6366f1;
+    outline-offset: 2px;
+  }
 }

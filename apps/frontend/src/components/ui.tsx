@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { Check, Copy, X } from "lucide-react";
-import { useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
+import { useId, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
+import { useDialogA11y } from "@/lib/use-dialog-a11y";
 
 export function Button({
   variant = "primary",
@@ -322,7 +323,19 @@ export function TRow({
   return (
     <tr
       onClick={onClick}
-      className={`border-b border-slate-100 last:border-0 ${onClick ? "cursor-pointer hover:bg-slate-50" : ""}`}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
+      tabIndex={onClick ? 0 : undefined}
+      role={onClick ? "button" : undefined}
+      className={`border-b border-slate-100 last:border-0 ${onClick ? "cursor-pointer hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 focus-visible:-outline-offset-2" : ""}`}
     >
       {children}
     </tr>
@@ -340,13 +353,26 @@ export function Modal({
   title: string;
   children: ReactNode;
 }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  useDialogA11y(open, onClose, panelRef);
+
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
-      <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl outline-none"
+      >
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
+          <h2 id={titleId} className="text-sm font-semibold text-slate-900">
+            {title}
+          </h2>
           <button
             onClick={onClose}
             className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
