@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { RotateCw, ShieldOff } from "lucide-react";
+import { CheckCircle2, RotateCw, ShieldOff, XCircle } from "lucide-react";
 import {
   api,
   ApiError,
@@ -10,9 +10,11 @@ import {
   type Organization,
   type ResourceGrant,
 } from "@/lib/api";
+import { listOrgResources, type OrgResource } from "@/lib/org-resources";
 import {
   Badge,
   Button,
+  Card,
   ErrorBanner,
   Input,
   Label,
@@ -20,12 +22,89 @@ import {
   PageHeader,
   PageLoading,
   SecretReveal,
+  Spinner,
   Table,
   Td,
   Th,
   THead,
   TRow,
 } from "@/components/ui";
+
+const STORAGE_RESOURCE = "storage.bucket";
+const DATABASE_RESOURCE = "databases.tenant_database";
+
+function isActiveGrant(g: ResourceGrant): boolean {
+  return !g.expires_at || new Date(g.expires_at) > new Date();
+}
+
+/** Translates the application's real ResourceGrants into plain-language
+ * CAN/CANNOT statements against every resource the organization actually
+ * has (Section 16 of the professionalization brief) -- generated
+ * entirely from live grants and a live resource list, never a fixed or
+ * assumed set. Resources with no grant at all, and resources with a
+ * read-only grant missing write, both surface under CANNOT by name --
+ * not a fabricated abstract category. */
+function AccessSummary({ resources, grants }: { resources: OrgResource[]; grants: ResourceGrant[] }) {
+  const active = grants.filter(isActiveGrant);
+  const can: string[] = [];
+  const cannot: string[] = [];
+
+  for (const r of resources) {
+    const resourceType = r.kind === "bucket" ? STORAGE_RESOURCE : DATABASE_RESOURCE;
+    const readCode = r.kind === "bucket" ? "storage.read" : "database.read";
+    const writeCode = r.kind === "bucket" ? "storage.write" : "database.write";
+    const matching = active.filter((g) => g.resource_type === resourceType && g.resource_id === r.id);
+    const canRead = matching.some((g) => g.permission === readCode);
+    const canWrite = matching.some((g) => g.permission === writeCode);
+    const noun = r.kind === "bucket" ? "files in" : "data in";
+
+    if (canRead && canWrite) can.push(`Read and write ${noun} "${r.name}"`);
+    else if (canRead) can.push(`Read ${noun} "${r.name}"`);
+    else if (canWrite) can.push(`Write ${noun} "${r.name}" (without read)`);
+
+    if (!canWrite) cannot.push(`${canRead ? "Modify" : "Access"} ${noun} "${r.name}"`);
+  }
+
+  const CANNOT_LIMIT = 6;
+  const shownCannot = cannot.slice(0, CANNOT_LIMIT);
+  const hiddenCannotCount = cannot.length - shownCannot.length;
+
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <Card>
+        <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-emerald-700">
+          <CheckCircle2 className="h-4 w-4" /> This application CAN
+        </h3>
+        {can.length === 0 ? (
+          <p className="text-sm text-slate-500">Nothing yet — grant it access to a bucket or database below.</p>
+        ) : (
+          <ul className="space-y-1.5 text-sm text-slate-700">
+            {can.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        )}
+      </Card>
+      <Card>
+        <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-red-700">
+          <XCircle className="h-4 w-4" /> This application CANNOT
+        </h3>
+        {shownCannot.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            It has full read/write access to everything in this organization.
+          </p>
+        ) : (
+          <ul className="space-y-1.5 text-sm text-slate-700">
+            {shownCannot.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+            {hiddenCannotCount > 0 && <li className="text-slate-400">+{hiddenCannotCount} more</li>}
+          </ul>
+        )}
+      </Card>
+    </div>
+  );
+}
 
 function credentialStatus(c: ApplicationCredential): { label: string; tone: "success" | "danger" | "warning" } {
   if (c.revoked_at) return { label: "Revoked", tone: "danger" };
@@ -40,6 +119,7 @@ export default function ApplicationDetailClient({ applicationId }: { application
   const [credentialsError, setCredentialsError] = useState<string | null>(null);
   const [grants, setGrants] = useState<ResourceGrant[] | null>(null);
   const [grantsError, setGrantsError] = useState<string | null>(null);
+  const [resources, setResources] = useState<OrgResource[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [revealSecret, setRevealSecret] = useState<{ title: string; secret: string } | null>(null);
   const [grantModalOpen, setGrantModalOpen] = useState(false);
@@ -49,6 +129,9 @@ export default function ApplicationDetailClient({ applicationId }: { application
       const app = await api.get<Application>(`/applications/${applicationId}/`);
       setApplication(app);
       api.get<Organization>(`/organizations/${app.organization}/`).then(setOrg).catch(() => {});
+      listOrgResources(app.organization)
+        .then(setResources)
+        .catch(() => setResources([]));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load application.");
       return;
@@ -222,6 +305,19 @@ export default function ApplicationDetailClient({ applicationId }: { application
         )}
       </section>
 
+      {grants && (
+        <section>
+          <h2 className="mb-3 text-sm font-semibold text-slate-600">Access summary</h2>
+          {resources === null ? (
+            <div className="flex items-center gap-2 text-sm text-slate-400">
+              <Spinner className="h-4 w-4" /> Building access summary…
+            </div>
+          ) : (
+            <AccessSummary resources={resources} grants={grants} />
+          )}
+        </section>
+      )}
+
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-600">Resource permissions</h2>
@@ -245,18 +341,24 @@ export default function ApplicationDetailClient({ applicationId }: { application
               <Th>Granted</Th>
             </THead>
             <tbody>
-              {grants.map((g) => (
-                <TRow key={g.id}>
-                  <Td className="font-medium text-slate-900">{g.permission}</Td>
-                  <Td className="text-slate-400">
-                    {g.resource_type}:{g.resource_id}
-                  </Td>
-                  <Td className="text-slate-500">
-                    {g.expires_at ? new Date(g.expires_at).toLocaleString() : "Never"}
-                  </Td>
-                  <Td className="text-slate-500">{new Date(g.created_at).toLocaleString()}</Td>
-                </TRow>
-              ))}
+              {grants.map((g) => {
+                const kind = g.resource_type === STORAGE_RESOURCE ? "bucket" : g.resource_type === DATABASE_RESOURCE ? "database" : null;
+                const resolved = resources?.find((r) => r.kind === kind && r.id === g.resource_id);
+                return (
+                  <TRow key={g.id}>
+                    <Td className="font-medium text-slate-900">{g.permission}</Td>
+                    <Td className="text-slate-500">
+                      <span title={`${g.resource_type}:${g.resource_id}`}>
+                        {resolved ? resolved.name : `${g.resource_type}:${g.resource_id}`}
+                      </span>
+                    </Td>
+                    <Td className="text-slate-500">
+                      {g.expires_at ? new Date(g.expires_at).toLocaleString() : "Never"}
+                    </Td>
+                    <Td className="text-slate-500">{new Date(g.created_at).toLocaleString()}</Td>
+                  </TRow>
+                );
+              })}
             </tbody>
           </Table>
         )}

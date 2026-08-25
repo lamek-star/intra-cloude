@@ -145,6 +145,17 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
   endpoint that would report success even on a failed grant, fixed to
   test row access on an actual table instead. *(this session)*
 
+- AI application connection UX / permission summary (Unit 6): a
+  plain-language "This application CAN / CANNOT" section on
+  `/applications/[applicationId]`, generated entirely from live
+  `ResourceGrant`s against every real bucket/tenant-database in the
+  org -- not a fixed AI-specific concept (no `Application.type` field
+  exists). Extracted the org-resource fan-out into
+  `src/lib/org-resources.ts`, shared with Unit 5's wizard rather than
+  duplicated. Also resolves real resource names in the existing raw
+  "Resource permissions" table (previously showed a raw UUID).
+  *(this session)*
+
 ## Known pre-existing gap (not fixed by this initiative unless a unit
 targets it explicitly)
 

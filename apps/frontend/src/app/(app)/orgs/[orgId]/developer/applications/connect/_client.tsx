@@ -22,12 +22,9 @@ import {
   ApiError,
   type Application,
   type ApplicationCredential,
-  type Bucket,
   type Organization,
-  type Project,
-  type TenantDatabase,
-  type Workspace,
 } from "@/lib/api";
+import { listOrgResources, type OrgResource } from "@/lib/org-resources";
 import {
   Button,
   Card,
@@ -61,13 +58,6 @@ const APP_TYPES: AppType[] = [
   { key: "other", label: "Other", icon: Package, description: "Something else entirely.", language: "javascript" },
 ];
 
-type ResourceOption = {
-  kind: "bucket" | "database";
-  id: string;
-  name: string;
-  projectName: string;
-};
-
 const STEPS = ["Type", "Identity", "Data access", "Credential", "Connect"] as const;
 
 export default function ConnectApplicationClient({ orgId }: { orgId: string }) {
@@ -81,7 +71,7 @@ export default function ConnectApplicationClient({ orgId }: { orgId: string }) {
   const [description, setDescription] = useState("");
   const [application, setApplication] = useState<Application | null>(null);
 
-  const [resources, setResources] = useState<ResourceOption[] | null>(null);
+  const [resources, setResources] = useState<OrgResource[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [accessLevel, setAccessLevel] = useState<"read" | "write">("read");
   const [grantError, setGrantError] = useState<string | null>(null);
@@ -105,25 +95,7 @@ export default function ConnectApplicationClient({ orgId }: { orgId: string }) {
     if (step !== 2 || resources !== null) return;
     (async () => {
       try {
-        const workspaces = await api.get<Workspace[]>(`/organizations/${orgId}/workspaces/`);
-        const projectLists = await Promise.all(
-          workspaces.map((ws) => api.get<Project[]>(`/workspaces/${ws.id}/projects/`).catch(() => [])),
-        );
-        const projects = projectLists.flat();
-        const perProject = await Promise.all(
-          projects.map(async (p) => {
-            const [buckets, dbs] = await Promise.all([
-              api.get<Bucket[]>(`/projects/${p.id}/buckets/`).catch(() => []),
-              api.get<TenantDatabase[]>(`/projects/${p.id}/tenant-databases/`).catch(() => []),
-            ]);
-            const options: ResourceOption[] = [
-              ...buckets.map((b) => ({ kind: "bucket" as const, id: b.id, name: b.name, projectName: p.name })),
-              ...dbs.map((d) => ({ kind: "database" as const, id: d.id, name: d.name, projectName: p.name })),
-            ];
-            return options;
-          }),
-        );
-        setResources(perProject.flat());
+        setResources(await listOrgResources(orgId));
       } catch {
         setResources([]);
       }

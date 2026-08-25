@@ -161,10 +161,39 @@ the actual UI clicking through all five steps against the live stack,
 screenshotted at each step, including a real "Test connection" 200
 result shown in the finished UI.
 
+## Done: Unit 6 — AI application connection UX / permission summary
+
+Scoped down from a dedicated "AI application" concept (no
+`Application.type` field exists, confirmed again in Unit 5 -- adding
+one for this alone would be the same unnecessary backend scope creep)
+to what's real and valuable for *every* application, AI or not: a
+plain-language "This application CAN / CANNOT" summary on
+`/applications/[applicationId]`, generated entirely from the live
+`ResourceGrant` list against every real bucket/tenant-database in the
+org (`listOrgResources`, extracted from Unit 5's wizard into
+`src/lib/org-resources.ts` since it's now needed in two places --
+refactored the wizard to use the shared version, not a second copy).
+Read-only grants surface under CANNOT as "Modify ... " (write not
+granted); resources with zero grants surface as "Access ..." (no
+access at all) -- both listed by real resource name, never a
+fabricated abstract category, capped at 6 CANNOT lines with a
+"+N more" tail so an org with many resources doesn't produce a wall of
+text. The existing raw "Resource permissions" table also now resolves
+`resource_type:resource_id` to the real name where possible (falls
+back to the raw pair, shown as a title-attribute tooltip, for a grant
+whose resource doesn't resolve -- e.g. a resource type the summary
+doesn't cover, or one that's since been deleted).
+
+Live-verified against a real fixture: an application with one
+`storage.read` grant on one of the org's two buckets showed exactly
+"Read files in bucket A" under CAN, "Modify files in bucket A" (no
+write) and "Access files in bucket B" (the org's other, ungranted
+bucket) under CANNOT, and the raw table's resource column read the
+bucket's actual name instead of a UUID -- screenshotted, not just
+compiled.
+
 ## Queued
 
-- **Unit 6** — AI application connection UX with a permission summary
-  generated from live `ResourceGrant`/permission data.
 - **Unit 7** — Shared component library (command palette, data table,
   drawer, confirmation dialog, wizard shell, secret reveal, toasts).
   Extract from whatever ad hoc versions Units 3–6 end up needing first,
