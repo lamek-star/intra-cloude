@@ -112,15 +112,20 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
   real existing functionality where there is any, never fakes data.
   *(this session)*
 
+- Sharing UI on tenant databases (Unit 4b): `ShareSection` dropped into
+  `/tenant-databases/[dbId]`, `resourceType="databases.tenant_database"`.
+  Live-verified as real 403→200→403 enforcement with a second real
+  user at the row level (`RowListCreateView`) — the database-detail and
+  table-list endpoints turned out to be membership-gated only, not
+  `database.read`-gated, so the meaningful enforcement test was on row
+  data specifically, not the page's own visibility. *(this session)*
+
 ## Still API-only (no frontend page yet)
 
 Real and tested on the backend; tracked as Unit 3+ in `MASTER_PLAN.md`:
 
 - Dashboard *builder* UI (creating/editing widgets) — viewing is done;
   authoring is separate follow-up work.
-- Sharing UI on tenant databases specifically — `ShareSection` already
-  supports `databases.tenant_database` as a resource_type; only the
-  "drop it into `/tenant-databases/[dbId]`" step remains.
 
 ## Known pre-existing gap (not fixed by this initiative unless a unit
 targets it explicitly)

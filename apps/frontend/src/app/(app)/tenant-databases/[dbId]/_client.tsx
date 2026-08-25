@@ -3,7 +3,15 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { LayoutGrid, Table as TableIcon } from "lucide-react";
-import { api, ApiError, type Dashboard, type DBTable, type Project, type TenantDatabase } from "@/lib/api";
+import {
+  api,
+  ApiError,
+  type Dashboard,
+  type DBTable,
+  type Project,
+  type TenantDatabase,
+  type Workspace,
+} from "@/lib/api";
 import {
   Badge,
   Button,
@@ -16,11 +24,13 @@ import {
   PageHeader,
   PageLoading,
 } from "@/components/ui";
+import { ShareSection } from "@/components/ShareSection";
 
 export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
   const router = useRouter();
   const [db, setDb] = useState<TenantDatabase | null>(null);
   const [project, setProject] = useState<Project | null>(null);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [tables, setTables] = useState<DBTable[] | null>(null);
   const [dashboards, setDashboards] = useState<Dashboard[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +47,12 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
       ]);
       setProject(p);
       setTables(t);
+      // Best-effort, for the Sharing section's organization scope -- the
+      // table list above doesn't depend on this resolving.
+      api
+        .get<Workspace>(`/workspaces/${p.workspace}/`)
+        .then((ws) => setOrganizationId(ws.organization))
+        .catch(() => {});
       api
         .get<Dashboard[]>(`/tenant-databases/${dbId}/dashboards/`)
         .then(setDashboards)
@@ -147,6 +163,16 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {organizationId && (
+        <div className="mt-8">
+          <ShareSection
+            organizationId={organizationId}
+            resourceType="databases.tenant_database"
+            resourceId={dbId}
+          />
         </div>
       )}
 

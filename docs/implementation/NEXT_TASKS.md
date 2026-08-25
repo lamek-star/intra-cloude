@@ -60,11 +60,32 @@ Overview reflects both, through the new location, plus every one of
 the 12 tab routes checked for a real 200 and the old `/applications`
 URL confirmed gone (404, not silently stale).
 
+## Done: Unit 4b — sharing UI on tenant databases
+
+`ShareSection` (unmodified, resource-agnostic component from Unit 3)
+dropped into `/tenant-databases/[dbId]` with
+`resourceType="databases.tenant_database"` (verified against
+`databases/views.py`'s `RESOURCE_TYPE_TENANT_DATABASE` constant, not
+assumed from the docstring). Needed one addition the bucket page
+already had: resolving `organizationId` via a `Workspace` fetch off
+`Project.workspace`, since `TenantDatabase`/`Project` don't carry it
+directly.
+
+Live-verified as real enforcement, not just CRUD shape, same bar as
+bucket sharing: registered a second real user, added as a plain org
+member (no role assignment), confirmed `GET /tables/{id}/rows/` on a
+table in a fresh tenant database returned 403 *before* sharing — this
+required checking `databases/views.py`'s `RowListCreateView` first,
+since `TenantDatabaseDetailView`/`TableListCreateView` turned out to be
+membership-gated only (any org member can see a database's name and
+table list/schema; row *data* is what `database.read`/ShareGrant
+actually protects) — shared the database via a real
+`POST /organizations/{id}/shares/` call, confirmed the same request now
+returns 200 with real row data, revoked the share, confirmed 403 again.
+Screenshotted the page to confirm the Sharing section renders.
+
 ## Queued
 
-- **Unit 4b** — Sharing UI on tenant databases (the one remaining
-  `ShareSection` drop-in from Unit 3 item 2, deferred rather than
-  forgotten).
 - **Unit 4c** — Dashboard builder UI (create/edit widgets) — the
   authoring half of Unit 3 item 4.
 - **Unit 5** — Connect Application wizard. Depends on Unit 4 (Applications
