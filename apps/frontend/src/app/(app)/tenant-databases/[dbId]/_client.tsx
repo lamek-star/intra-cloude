@@ -35,6 +35,7 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
   const [dashboards, setDashboards] = useState<Dashboard[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [dashboardModalOpen, setDashboardModalOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   async function load() {
@@ -145,24 +146,41 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
         </div>
       )}
 
-      {dashboards && dashboards.length > 0 && (
+      {dashboards && (
         <div className="mt-8">
-          <h2 className="mb-3 text-sm font-semibold text-slate-600">Dashboards</h2>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {dashboards.map((d) => (
-              <button key={d.id} onClick={() => router.push(`/dashboards/${d.id}`)} className="text-left">
-                <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
-                  <div className="flex items-center gap-2">
-                    <LayoutGrid className="h-4 w-4 text-indigo-600" />
-                    <p className="font-medium text-slate-900">{d.name}</p>
-                  </div>
-                  <p className="mt-2 text-xs text-slate-500">
-                    {d.widgets.length} widget{d.widgets.length === 1 ? "" : "s"}
-                  </p>
-                </Card>
-              </button>
-            ))}
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-600">Dashboards</h2>
+            <Button size="sm" variant="secondary" onClick={() => setDashboardModalOpen(true)}>
+              New dashboard
+            </Button>
           </div>
+          {dashboards.length === 0 ? (
+            <EmptyState
+              title="No dashboards yet"
+              description="A dashboard is a saved set of analytics widgets over this database's tables, re-run live every time it's viewed."
+              action={
+                <Button size="sm" onClick={() => setDashboardModalOpen(true)}>
+                  New dashboard
+                </Button>
+              }
+            />
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {dashboards.map((d) => (
+                <button key={d.id} onClick={() => router.push(`/dashboards/${d.id}`)} className="text-left">
+                  <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
+                    <div className="flex items-center gap-2">
+                      <LayoutGrid className="h-4 w-4 text-indigo-600" />
+                      <p className="font-medium text-slate-900">{d.name}</p>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">
+                      {d.widgets.length} widget{d.widgets.length === 1 ? "" : "s"}
+                    </p>
+                  </Card>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -183,6 +201,16 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
         onCreated={(t) => {
           setTables((prev) => [...(prev ?? []), t]);
           setModalOpen(false);
+        }}
+      />
+      <CreateDashboardModal
+        open={dashboardModalOpen}
+        dbId={dbId}
+        onClose={() => setDashboardModalOpen(false)}
+        onCreated={(d) => {
+          setDashboards((prev) => [...(prev ?? []), d]);
+          setDashboardModalOpen(false);
+          router.push(`/dashboards/${d.id}`);
         }}
       />
     </div>
@@ -236,6 +264,76 @@ function CreateTableModal({
           />
           <p className="mt-1.5 text-xs text-slate-500">
             lowercase, starts with a letter — gets an <code>id</code> primary key automatically.
+          </p>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={submitting}>
+            {submitting ? "..." : "Create"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function CreateDashboardModal({
+  open,
+  dbId,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  dbId: string;
+  onClose: () => void;
+  onCreated: (d: Dashboard) => void;
+}) {
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const d = await api.post<Dashboard>(`/tenant-databases/${dbId}/dashboards/`, {
+        name,
+        widgets: [],
+      });
+      setName("");
+      onCreated(d);
+    } catch (err) {
+      setError(
+        err instanceof ApiError && err.status === 403
+          ? "You don't have permission to create dashboards in this database."
+          : err instanceof ApiError
+            ? err.message
+            : "Failed to create dashboard.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="New dashboard">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {error && <ErrorBanner message={error} />}
+        <div>
+          <Label htmlFor="dashboard-name">Name</Label>
+          <Input
+            id="dashboard-name"
+            autoFocus
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Orders overview"
+          />
+          <p className="mt-1.5 text-xs text-slate-500">
+            You&apos;ll add widgets after creating it.
           </p>
         </div>
         <div className="flex justify-end gap-2">

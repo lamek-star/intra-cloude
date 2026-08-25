@@ -12,10 +12,11 @@ databases, dashboards. A light-mode design-system conversion (`ui.tsx`/
 `AppShell`/`/dashboard` foundation, then Unit 4a's rollout to every
 other existing page) landed at the user's explicit request against a
 reference image, out of the unit sequence. Unit 4 (Developer portal
-shell) and Unit 4b (tenant-database sharing UI) are also done. See
-`COMPLETED.md` for detail on all of them. Unit 4c (dashboard builder UI)
-is next. See `NEXT_TASKS.md` for the full unit list and `MASTER_PLAN.md`
-for the overall initiative shape.
+shell), Unit 4b (tenant-database sharing UI), and Unit 4c (dashboard
+builder UI) are also done — all of Unit 3/4's originally scoped work is
+now complete. See `COMPLETED.md` for detail on all of them. Unit 5
+(Connect Application wizard) is next. See `NEXT_TASKS.md` for the full
+unit list and `MASTER_PLAN.md` for the overall initiative shape.
 
 ## Completed this session
 
@@ -117,10 +118,10 @@ See `TEST_STATUS.md`.
 
 ## Next safe action
 
-Start Unit 4c (`NEXT_TASKS.md`): dashboard builder UI (create/edit
-widgets) — the authoring half of Unit 3 item 4, which only shipped
-read-only rendering. Same verification pattern as every unit so far:
-real API calls through the live stack, live-verified round trip, checkpoint
-commit, update these docs. New pages should build directly in the
-light-mode design system (`ui.tsx` primitives, the accent-color mapping
-in `COMPLETED.md`'s Unit 4a entry) — there's no dark theme left to match.
+Start Unit 5 (`NEXT_TASKS.md`): Connect Application wizard, building on
+the now-complete Applications page and real credential issuance. Same
+verification pattern as every unit so far: real API calls through the
+live stack, live-verified round trip, checkpoint commit, update these
+docs. New pages should build directly in the light-mode design system
+(`ui.tsx` primitives, the accent-color mapping in `COMPLETED.md`'s
+Unit 4a entry) — there's no dark theme left to match.

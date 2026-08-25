@@ -120,12 +120,17 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
   `database.read`-gated, so the meaningful enforcement test was on row
   data specifically, not the page's own visibility. *(this session)*
 
-## Still API-only (no frontend page yet)
-
-Real and tested on the backend; tracked as Unit 3+ in `MASTER_PLAN.md`:
-
-- Dashboard *builder* UI (creating/editing widgets) — viewing is done;
-  authoring is separate follow-up work.
+- Dashboard builder UI (Unit 4c): "New dashboard" on
+  `/tenant-databases/[dbId]`, "Add widget"/remove/"Delete" on
+  `/dashboards/[dashboardId]`. The widget-authoring form (table →
+  operation → params → title → chart_type) reuses the exact
+  `OPERATIONS` spec table the analytics runner already had — extracted
+  to `src/lib/analytics-operations.ts` as a shared module instead of a
+  second copy, now that two pages need it. Live-verified against the
+  real API in the shape the UI sends (create → PATCH add widget →
+  render confirms the correct computed value → PATCH remove → delete
+  → 404), plus confirmed the extraction didn't change
+  `/tables/[tableId]/analytics`'s behavior. *(this session)*
 
 ## Known pre-existing gap (not fixed by this initiative unless a unit
 targets it explicitly)

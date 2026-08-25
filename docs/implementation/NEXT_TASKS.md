@@ -84,10 +84,31 @@ actually protects) — shared the database via a real
 returns 200 with real row data, revoked the share, confirmed 403 again.
 Screenshotted the page to confirm the Sharing section renders.
 
+## Done: Unit 4c — dashboard builder UI
+
+Authoring half of Unit 3 item 4 (viewing shipped there; creating/editing
+widgets was deferred to here). "New dashboard" on
+`/tenant-databases/[dbId]` (always shown now, not gated behind an
+existing dashboard); `/dashboards/[dashboardId]` gained "Add widget"
+(table → operation → per-operation params → title → chart_type,
+reusing the exact `OPERATIONS` spec table→operation→params flow
+`/tables/[tableId]/analytics` already had — extracted to a shared
+`src/lib/analytics-operations.ts` module rather than duplicated, since
+it's now used in two places), a remove (×) on each widget, and
+"Delete" for the whole dashboard. All three write through `PATCH`/
+`DELETE /dashboards/{id}/`, re-rendering from the live endpoint after
+each change rather than trusting the optimistic local state.
+
+Live-verified against the real API in the exact shape the UI sends:
+create empty dashboard → PATCH to add a `mean` widget over 3 real rows
+→ render returned the correct computed value (10.0, matching the real
+mean of 5/10/15) → PATCH to remove it → delete the dashboard → 404
+confirms it's gone. Screenshotted the builder page with a live widget.
+Confirmed the analytics-operations extraction didn't break
+`/tables/[tableId]/analytics` (still 200, unchanged behavior).
+
 ## Queued
 
-- **Unit 4c** — Dashboard builder UI (create/edit widgets) — the
-  authoring half of Unit 3 item 4.
 - **Unit 5** — Connect Application wizard. Depends on Unit 4 (Applications
   nav) + real credential issuance already working.
 - **Unit 6** — AI application connection UX with a permission summary
