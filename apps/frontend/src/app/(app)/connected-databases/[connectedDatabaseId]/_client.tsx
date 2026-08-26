@@ -59,6 +59,7 @@ export default function ConnectedDatabaseDetailClient({
   const [schema, setSchema] = useState<ConnectedTableSchema[] | null>(null);
   const [schemaError, setSchemaError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [testing, setTesting] = useState(false);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [rows, setRows] = useState<RowsPage | null>(null);
@@ -79,6 +80,7 @@ export default function ConnectedDatabaseDetailClient({
         .catch(() => {});
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load connected database.");
+      setErrorDetail(err);
       return;
     }
     try {
@@ -124,6 +126,7 @@ export default function ConnectedDatabaseDetailClient({
       setCdb(updated);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to test connection.");
+      setErrorDetail(err);
     } finally {
       setTesting(false);
     }
@@ -146,11 +149,12 @@ export default function ConnectedDatabaseDetailClient({
       router.push(`/projects/${cdb.project}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to remove connection.");
+      setErrorDetail(err);
     }
   }
 
   if (!cdb && !error) return <PageLoading />;
-  if (error && !cdb) return <ErrorBanner message={error} />;
+  if (error && !cdb) return <ErrorBanner message={error} error={errorDetail} />;
   if (!cdb) return null;
 
   return (
@@ -184,7 +188,7 @@ export default function ConnectedDatabaseDetailClient({
         }
       />
 
-      {error && <ErrorBanner message={error} />}
+      {error && <ErrorBanner message={error} error={errorDetail} />}
 
       <Card>
         <div className="flex flex-wrap items-center gap-6 text-sm">

@@ -37,6 +37,7 @@ export default function ImportClient({ tableId }: { tableId: string }) {
   const [database, setDatabase] = useState<TenantDatabase | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
 
   const [buckets, setBuckets] = useState<Bucket[] | null>(null);
   const [selectedBucketId, setSelectedBucketId] = useState<string>("");
@@ -70,6 +71,7 @@ export default function ImportClient({ tableId }: { tableId: string }) {
         setStep("source");
       } catch (err) {
         setError(err instanceof ApiError ? err.message : "Failed to load table.");
+        setErrorDetail(err);
       }
     })();
   }, [tableId]);
@@ -95,6 +97,7 @@ export default function ImportClient({ tableId }: { tableId: string }) {
       setNewBucketName("");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create bucket.");
+      setErrorDetail(err);
     } finally {
       setCreatingBucket(false);
     }
@@ -112,6 +115,7 @@ export default function ImportClient({ tableId }: { tableId: string }) {
       await handleSelectFile(uploaded);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Upload failed.");
+      setErrorDetail(err);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -137,6 +141,7 @@ export default function ImportClient({ tableId }: { tableId: string }) {
       setStep("preview");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to preview file.");
+      setErrorDetail(err);
     }
   }
 
@@ -168,6 +173,7 @@ export default function ImportClient({ tableId }: { tableId: string }) {
       setStep("running");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to start import.");
+      setErrorDetail(err);
     } finally {
       setSubmitting(false);
     }
@@ -194,6 +200,7 @@ export default function ImportClient({ tableId }: { tableId: string }) {
         setTimeout(poll, 1500);
       } catch (err) {
         if (!cancelled) setError(err instanceof ApiError ? err.message : "Failed to check import status.");
+ setErrorDetail(err);
       }
     };
     poll();
@@ -204,7 +211,7 @@ export default function ImportClient({ tableId }: { tableId: string }) {
   }, [step, job?.id]);
 
   if (step === "loading") return <PageLoading />;
-  if (error && !table) return <ErrorBanner message={error} />;
+  if (error && !table) return <ErrorBanner message={error} error={errorDetail} />;
   if (!table) return null;
 
   const mappableColumns = table.columns.filter((c) => !c.is_primary_key);
@@ -223,7 +230,7 @@ export default function ImportClient({ tableId }: { tableId: string }) {
 
       {error && (
         <div className="mb-4">
-          <ErrorBanner message={error} />
+          <ErrorBanner message={error} error={errorDetail} />
         </div>
       )}
 

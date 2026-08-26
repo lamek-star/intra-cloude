@@ -121,6 +121,7 @@ export default function ApplicationDetailClient({ applicationId }: { application
   const [grantsError, setGrantsError] = useState<string | null>(null);
   const [resources, setResources] = useState<OrgResource[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [revealSecret, setRevealSecret] = useState<{ title: string; secret: string } | null>(null);
   const [grantModalOpen, setGrantModalOpen] = useState(false);
 
@@ -134,6 +135,7 @@ export default function ApplicationDetailClient({ applicationId }: { application
         .catch(() => setResources([]));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load application.");
+      setErrorDetail(err);
       return;
     }
     try {
@@ -209,7 +211,7 @@ export default function ApplicationDetailClient({ applicationId }: { application
   }
 
   if (!application && !error) return <PageLoading />;
-  if (error && !application) return <ErrorBanner message={error} />;
+  if (error && !application) return <ErrorBanner message={error} error={errorDetail} />;
   if (!application) return null;
 
   return (
@@ -398,6 +400,7 @@ function GrantPermissionModal({
   const [resourceType, setResourceType] = useState("");
   const [resourceId, setResourceId] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -416,6 +419,7 @@ function GrantPermissionModal({
       onCreated(grant);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to grant permission.");
+      setErrorDetail(err);
     } finally {
       setSubmitting(false);
     }
@@ -424,7 +428,7 @@ function GrantPermissionModal({
   return (
     <Modal open={open} onClose={onClose} title="Grant permission">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <ErrorBanner message={error} />}
+        {error && <ErrorBanner message={error} error={errorDetail} />}
         <div>
           <Label htmlFor="grant-permission">Permission code</Label>
           <Input

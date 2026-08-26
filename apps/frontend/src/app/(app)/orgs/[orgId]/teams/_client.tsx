@@ -26,6 +26,7 @@ export default function TeamsClient({ orgId }: { orgId: string }) {
   const [teams, setTeams] = useState<Team[] | null>(null);
   const [members, setMembers] = useState<Membership[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [addMemberTeam, setAddMemberTeam] = useState<Team | null>(null);
 
@@ -39,6 +40,7 @@ export default function TeamsClient({ orgId }: { orgId: string }) {
       setTeams(t);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load teams.");
+      setErrorDetail(err);
       return;
     }
     // Members require users.manage -- a plain member may not have it; fail soft,
@@ -65,11 +67,12 @@ export default function TeamsClient({ orgId }: { orgId: string }) {
       );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to remove team member.");
+      setErrorDetail(err);
     }
   }
 
   if (!org && !error) return <PageLoading />;
-  if (error && !org) return <ErrorBanner message={error} />;
+  if (error && !org) return <ErrorBanner message={error} error={errorDetail} />;
   if (!org || !teams) return null;
 
   return (
@@ -91,7 +94,7 @@ export default function TeamsClient({ orgId }: { orgId: string }) {
 
       {error && (
         <div className="mb-4">
-          <ErrorBanner message={error} />
+          <ErrorBanner message={error} error={errorDetail} />
         </div>
       )}
 
@@ -187,6 +190,7 @@ function CreateTeamModal({
 }) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -199,6 +203,7 @@ function CreateTeamModal({
       onCreated(team);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create team.");
+      setErrorDetail(err);
     } finally {
       setSubmitting(false);
     }
@@ -207,7 +212,7 @@ function CreateTeamModal({
   return (
     <Modal open={open} onClose={onClose} title="New team">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <ErrorBanner message={error} />}
+        {error && <ErrorBanner message={error} error={errorDetail} />}
         <div>
           <Label htmlFor="team-name">Name</Label>
           <Input
@@ -246,6 +251,7 @@ function AddTeamMemberModal({
   const candidates = team ? members.filter((m) => m.team !== team.id) : [];
   const [userId, setUserId] = useState(() => candidates[0]?.user.id ?? "");
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -260,6 +266,7 @@ function AddTeamMemberModal({
       onAdded(membership);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to add team member.");
+      setErrorDetail(err);
     } finally {
       setSubmitting(false);
     }
@@ -268,7 +275,7 @@ function AddTeamMemberModal({
   return (
     <Modal open={team !== null} onClose={onClose} title={`Add member to ${team?.name ?? ""}`}>
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <ErrorBanner message={error} />}
+        {error && <ErrorBanner message={error} error={errorDetail} />}
         {candidates.length === 0 ? (
           <p className="text-sm text-slate-500">
             Every organization member is already in this team, or there are no other members yet.

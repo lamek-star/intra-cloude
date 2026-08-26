@@ -42,6 +42,7 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
   const [databases, setDatabases] = useState<TenantDatabase[] | null>(null);
   const [connectedDatabases, setConnectedDatabases] = useState<ConnectedDatabase[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [bucketModalOpen, setBucketModalOpen] = useState(false);
   const [dbModalOpen, setDbModalOpen] = useState(false);
   const [connectedDbModalOpen, setConnectedDbModalOpen] = useState(false);
@@ -63,6 +64,7 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
       api.get<Organization>(`/organizations/${ws.organization}/`).then(setOrg).catch(() => {});
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load project.");
+      setErrorDetail(err);
     }
   }
 
@@ -74,7 +76,7 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
   }, [projectId]);
 
   if (!project && !error) return <PageLoading />;
-  if (error && !project) return <ErrorBanner message={error} />;
+  if (error && !project) return <ErrorBanner message={error} error={errorDetail} />;
   if (!project) return null;
 
   return (
@@ -256,6 +258,7 @@ function CreateBucketModal({
 }) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -268,6 +271,7 @@ function CreateBucketModal({
       onCreated(b);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create bucket.");
+      setErrorDetail(err);
     } finally {
       setSubmitting(false);
     }
@@ -276,7 +280,7 @@ function CreateBucketModal({
   return (
     <Modal open={open} onClose={onClose} title="New bucket">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <ErrorBanner message={error} />}
+        {error && <ErrorBanner message={error} error={errorDetail} />}
         <div>
           <Label htmlFor="bucket-name">Name</Label>
           <Input
@@ -314,6 +318,7 @@ function CreateDatabaseModal({
 }) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -326,6 +331,7 @@ function CreateDatabaseModal({
       onCreated(db);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create database.");
+      setErrorDetail(err);
     } finally {
       setSubmitting(false);
     }
@@ -334,7 +340,7 @@ function CreateDatabaseModal({
   return (
     <Modal open={open} onClose={onClose} title="New database">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <ErrorBanner message={error} />}
+        {error && <ErrorBanner message={error} error={errorDetail} />}
         <div>
           <Label htmlFor="db-name">Name</Label>
           <Input
@@ -379,6 +385,7 @@ function CreateConnectedDatabaseModal({
   const [password, setPassword] = useState("");
   const [sslmode, setSslmode] = useState("require");
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -404,6 +411,7 @@ function CreateConnectedDatabaseModal({
       onCreated(cdb);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to connect to that database.");
+      setErrorDetail(err);
     } finally {
       setSubmitting(false);
     }
@@ -412,7 +420,7 @@ function CreateConnectedDatabaseModal({
   return (
     <Modal open={open} onClose={onClose} title="Connect a database">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <ErrorBanner message={error} />}
+        {error && <ErrorBanner message={error} error={errorDetail} />}
         <div>
           <Label htmlFor="cdb-name">Name</Label>
           <Input

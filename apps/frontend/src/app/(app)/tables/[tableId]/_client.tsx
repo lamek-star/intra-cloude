@@ -51,6 +51,7 @@ export default function TableDetailClient({ tableId }: { tableId: string }) {
   const [offset, setOffset] = useState(0);
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [columnModalOpen, setColumnModalOpen] = useState(false);
   const [rowModalOpen, setRowModalOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<Record<string, unknown> | null>(null);
@@ -74,6 +75,7 @@ export default function TableDetailClient({ tableId }: { tableId: string }) {
       await loadRows(0, "");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load table.");
+      setErrorDetail(err);
     }
   }
 
@@ -91,11 +93,12 @@ export default function TableDetailClient({ tableId }: { tableId: string }) {
       await loadRows();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to delete row.");
+      setErrorDetail(err);
     }
   }
 
   if (!table && !error) return <PageLoading />;
-  if (error && !table) return <ErrorBanner message={error} />;
+  if (error && !table) return <ErrorBanner message={error} error={errorDetail} />;
   if (!table) return null;
 
   const totalPages = page ? Math.max(1, Math.ceil(page.count / PAGE_SIZE)) : 1;
@@ -149,7 +152,7 @@ export default function TableDetailClient({ tableId }: { tableId: string }) {
 
       {error && (
         <div className="mb-4">
-          <ErrorBanner message={error} />
+          <ErrorBanner message={error} error={errorDetail} />
         </div>
       )}
 
@@ -322,6 +325,7 @@ function AddColumnModal({
   const [isNullable, setIsNullable] = useState(true);
   const [isUnique, setIsUnique] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -343,6 +347,7 @@ function AddColumnModal({
       onCreated(col);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create column.");
+      setErrorDetail(err);
     } finally {
       setSubmitting(false);
     }
@@ -351,7 +356,7 @@ function AddColumnModal({
   return (
     <Modal open={open} onClose={onClose} title="Add column">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <ErrorBanner message={error} />}
+        {error && <ErrorBanner message={error} error={errorDetail} />}
         <div>
           <Label htmlFor="col-name">Name</Label>
           <Input
@@ -455,6 +460,7 @@ function RowFormModal({
   const editable = columns.filter((c) => !c.is_primary_key);
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -526,6 +532,7 @@ function RowFormModal({
       onSaved();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to save row.");
+      setErrorDetail(err);
     } finally {
       setSubmitting(false);
     }
@@ -534,7 +541,7 @@ function RowFormModal({
   return (
     <Modal open={open} onClose={onClose} title={initialRow ? "Edit row" : "Add row"}>
       <form onSubmit={handleSubmit} className="max-h-[70vh] space-y-3 overflow-y-auto">
-        {error && <ErrorBanner message={error} />}
+        {error && <ErrorBanner message={error} error={errorDetail} />}
         {editable.map((c) => (
           <div key={c.id}>
             <Label htmlFor={`field-${c.name}`}>

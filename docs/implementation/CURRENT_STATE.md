@@ -17,20 +17,22 @@ builder UI), Unit 5 (Connect Application wizard), Unit 6
 (permission-summary UX), Unit 7 (shared component library, first pass:
 `ConfirmProvider`, `CommandPalette`), Unit 8 (accessibility +
 responsiveness, first pass: dialog focus trap/Escape, global focus
-ring), and Unit 9 (error-experience pass, first pass: `ErrorBanner`
-technical-details disclosure) are all done -- **the full original
-Units 3-9 list from `NEXT_TASKS.md` is now complete.** See
+ring), and Unit 9 (error-experience pass, now including the full
+`ErrorBanner` technical-details rollout across every page that catches
+`ApiError`, not just the original two representative surfaces) are all
+done -- **the full original Units 3-9 list from `NEXT_TASKS.md` is now
+complete, plus Unit 9's own same-session follow-up.** See
 `COMPLETED.md` for detail on all of them, including two real bugs Unit
 5 caught before shipping (a skipped secret-reveal, a test-connection
 check that would have false-passed) and a cross-unit authorization
 finding (organization-membership-only visibility on a couple of
-endpoints, not a fix, just flagged). Units 8 and 9 are both explicitly
-first passes, not exhaustive sweeps -- see their `COMPLETED.md`
-entries for what's still open (a page-by-page a11y audit; the other
-~18 pages' `ErrorBanner` technical-details wiring). `NEXT_TASKS.md`'s
+endpoints, not a fix, just flagged). Unit 8 remains an explicit first
+pass, not an exhaustive sweep -- see its `COMPLETED.md` entry for
+what's still open (a page-by-page a11y audit). `NEXT_TASKS.md`'s
 Queued section is now empty of new numbered units; real remaining work
-exists as "Deferred, not done" notes inside several units, or in
-`MASTER_PLAN.md`'s longer list.
+exists as a couple of "Deferred, not done" notes (Unit 4c's authoring
+constraints, Unit 8's a11y audit), or in `MASTER_PLAN.md`'s longer
+list.
 
 ## Completed this session
 
@@ -133,11 +135,13 @@ See `TEST_STATUS.md`.
 ## Next safe action
 
 No numbered unit is queued -- `NEXT_TASKS.md`'s original Units 3-9 list
-is complete. Read `NEXT_TASKS.md`'s "Deferred, not done" notes across
-Units 4c/8/9 and `MASTER_PLAN.md`'s longer list, confirm with the user
-which real remaining item to pick up next rather than assuming, then
-follow the same pattern every unit here has: real interaction through
-the live stack (Units 5, 7, 8, and 9 all surfaced something curl-only
+is complete, including Unit 9's own same-session `ErrorBanner` rollout
+follow-up. Read `NEXT_TASKS.md`'s remaining "Deferred, not done" notes
+(Unit 4c's authoring constraints, Unit 8's page-by-page a11y audit) and
+`MASTER_PLAN.md`'s longer list, confirm with the user which real
+remaining item to pick up next rather than assuming, then follow the
+same pattern every unit here has: real interaction through the live
+stack (Units 5, 7, 8, and 9 all surfaced something curl-only
 verification would have missed -- use Playwright driving the actual UI
 when the change is interactive/behavioral, not just an API shape
 check), checkpoint commit, update these docs.

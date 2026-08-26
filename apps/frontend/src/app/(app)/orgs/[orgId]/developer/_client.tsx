@@ -19,6 +19,7 @@ export default function DeveloperOverviewClient({ orgId }: { orgId: string }) {
   const [applications, setApplications] = useState<Application[] | null>(null);
   const [activeCredentials, setActiveCredentials] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
 
   useEffect(() => {
     (async () => {
@@ -45,12 +46,13 @@ export default function DeveloperOverviewClient({ orgId }: { orgId: string }) {
         setActiveCredentials(perApp.flat().filter(isActiveCredential).length);
       } catch (err) {
         setError(err instanceof ApiError ? err.message : "Failed to load developer overview.");
+        setErrorDetail(err);
       }
     })();
   }, [orgId]);
 
   if (!org && !error) return <PageLoading />;
-  if (error && !org) return <ErrorBanner message={error} />;
+  if (error && !org) return <ErrorBanner message={error} error={errorDetail} />;
   if (!org) return null;
 
   return (

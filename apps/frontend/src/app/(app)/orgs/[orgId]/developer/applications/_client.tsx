@@ -24,6 +24,7 @@ export default function ApplicationsClient({ orgId }: { orgId: string }) {
   const [org, setOrg] = useState<Organization | null>(null);
   const [applications, setApplications] = useState<Application[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
   async function load() {
@@ -36,6 +37,7 @@ export default function ApplicationsClient({ orgId }: { orgId: string }) {
       setApplications(apps);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load applications.");
+      setErrorDetail(err);
     }
   }
 
@@ -47,7 +49,7 @@ export default function ApplicationsClient({ orgId }: { orgId: string }) {
   }, [orgId]);
 
   if (!org && !error) return <PageLoading />;
-  if (error && !org) return <ErrorBanner message={error} />;
+  if (error && !org) return <ErrorBanner message={error} error={errorDetail} />;
   if (!org || !applications) return null;
 
   return (
@@ -77,7 +79,7 @@ export default function ApplicationsClient({ orgId }: { orgId: string }) {
 
       {error && (
         <div className="mb-4">
-          <ErrorBanner message={error} />
+          <ErrorBanner message={error} error={errorDetail} />
         </div>
       )}
 
@@ -140,6 +142,7 @@ function CreateApplicationModal({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -156,6 +159,7 @@ function CreateApplicationModal({
       onCreated(app);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create application.");
+      setErrorDetail(err);
     } finally {
       setSubmitting(false);
     }
@@ -164,7 +168,7 @@ function CreateApplicationModal({
   return (
     <Modal open={open} onClose={onClose} title="New application">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <ErrorBanner message={error} />}
+        {error && <ErrorBanner message={error} error={errorDetail} />}
         <div>
           <Label htmlFor="app-name">Name</Label>
           <Input

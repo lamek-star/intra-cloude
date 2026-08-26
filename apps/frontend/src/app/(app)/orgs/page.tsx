@@ -19,6 +19,7 @@ export default function OrgsPage() {
   const router = useRouter();
   const [orgs, setOrgs] = useState<Organization[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
   async function load() {
@@ -26,6 +27,7 @@ export default function OrgsPage() {
       setOrgs(await api.get<Organization[]>("/organizations/"));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load organizations.");
+      setErrorDetail(err);
     }
   }
 
@@ -47,7 +49,7 @@ export default function OrgsPage() {
 
       {error && (
         <div className="mb-4">
-          <ErrorBanner message={error} />
+          <ErrorBanner message={error} error={errorDetail} />
         </div>
       )}
 
@@ -97,6 +99,7 @@ function CreateOrgModal({
 }) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -109,6 +112,7 @@ function CreateOrgModal({
       onCreated(org);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create organization.");
+      setErrorDetail(err);
     } finally {
       setSubmitting(false);
     }
@@ -117,7 +121,7 @@ function CreateOrgModal({
   return (
     <Modal open={open} onClose={onClose} title="New organization">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <ErrorBanner message={error} />}
+        {error && <ErrorBanner message={error} error={errorDetail} />}
         <div>
           <Label htmlFor="org-name">Name</Label>
           <Input

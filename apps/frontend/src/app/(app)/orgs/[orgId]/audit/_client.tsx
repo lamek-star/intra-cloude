@@ -45,6 +45,7 @@ export default function AuditLogClient({ orgId }: { orgId: string }) {
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [pendingFilters, setPendingFilters] = useState<Filters>(EMPTY_FILTERS);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [forbidden, setForbidden] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -74,6 +75,7 @@ export default function AuditLogClient({ orgId }: { orgId: string }) {
         setEvents([]);
       } else {
         setError(err instanceof ApiError ? err.message : "Failed to load the audit log.");
+        setErrorDetail(err);
       }
     } finally {
       setLoading(false);
@@ -177,7 +179,7 @@ export default function AuditLogClient({ orgId }: { orgId: string }) {
 
           {error && (
             <div className="mb-4">
-              <ErrorBanner message={error} />
+              <ErrorBanner message={error} error={errorDetail} />
             </div>
           )}
 

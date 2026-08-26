@@ -25,16 +25,20 @@ const CURL_EXAMPLE = `curl https://<your-intracloud-host>/api/v1/buckets/<bucket
 export default function SdksClient({ orgId }: { orgId: string }) {
   const [org, setOrg] = useState<Organization | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
 
   useEffect(() => {
     api
       .get<Organization>(`/organizations/${orgId}/`)
       .then(setOrg)
-      .catch((err) => setError(err instanceof ApiError ? err.message : "Failed to load organization."));
+      .catch((err) => {
+        setError(err instanceof ApiError ? err.message : "Failed to load organization.");
+        setErrorDetail(err);
+      });
   }, [orgId]);
 
   if (!org && !error) return <PageLoading />;
-  if (error && !org) return <ErrorBanner message={error} />;
+  if (error && !org) return <ErrorBanner message={error} error={errorDetail} />;
   if (!org) return null;
 
   return (

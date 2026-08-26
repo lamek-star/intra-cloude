@@ -27,6 +27,7 @@ export default function WorkspaceDetailClient({
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
   async function load() {
@@ -41,6 +42,7 @@ export default function WorkspaceDetailClient({
       setProjects(projs);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load workspace.");
+      setErrorDetail(err);
     }
   }
 
@@ -52,7 +54,7 @@ export default function WorkspaceDetailClient({
   }, [workspaceId]);
 
   if (!workspace && !error) return <PageLoading />;
-  if (error && !workspace) return <ErrorBanner message={error} />;
+  if (error && !workspace) return <ErrorBanner message={error} error={errorDetail} />;
   if (!workspace) return null;
 
   return (
@@ -115,6 +117,7 @@ function CreateProjectModal({
 }) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -127,6 +130,7 @@ function CreateProjectModal({
       onCreated(p);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create project.");
+      setErrorDetail(err);
     } finally {
       setSubmitting(false);
     }
@@ -135,7 +139,7 @@ function CreateProjectModal({
   return (
     <Modal open={open} onClose={onClose} title="New project">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <ErrorBanner message={error} />}
+        {error && <ErrorBanner message={error} error={errorDetail} />}
         <div>
           <Label htmlFor="project-name">Name</Label>
           <Input

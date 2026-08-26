@@ -26,6 +26,7 @@ export default function DashboardClient({ dashboardId }: { dashboardId: string }
   const [tables, setTables] = useState<DBTable[]>([]);
   const [render, setRender] = useState<DashboardRenderResult | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadErrorDetail, setLoadErrorDetail] = useState<unknown>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [savingWidgets, setSavingWidgets] = useState(false);
@@ -37,6 +38,7 @@ export default function DashboardClient({ dashboardId }: { dashboardId: string }
       setRender(r);
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : "Failed to render dashboard.");
+      setLoadErrorDetail(err);
     } finally {
       setRefreshing(false);
     }
@@ -57,6 +59,7 @@ export default function DashboardClient({ dashboardId }: { dashboardId: string }
       await loadRender();
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : "Failed to load dashboard.");
+      setLoadErrorDetail(err);
     }
   }, [dashboardId, loadRender]);
 
@@ -76,6 +79,7 @@ export default function DashboardClient({ dashboardId }: { dashboardId: string }
       await loadRender();
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : "Failed to update dashboard.");
+      setLoadErrorDetail(err);
     } finally {
       setSavingWidgets(false);
     }
@@ -104,11 +108,12 @@ export default function DashboardClient({ dashboardId }: { dashboardId: string }
       router.push(`/tenant-databases/${dashboard.tenant_database}`);
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : "Failed to delete dashboard.");
+      setLoadErrorDetail(err);
     }
   }
 
   if (!dashboard && !loadError) return <PageLoading />;
-  if (loadError && !dashboard) return <ErrorBanner message={loadError} />;
+  if (loadError && !dashboard) return <ErrorBanner message={loadError} error={loadErrorDetail} />;
   if (!dashboard) return null;
 
   return (
@@ -143,7 +148,7 @@ export default function DashboardClient({ dashboardId }: { dashboardId: string }
 
       {loadError && (
         <div className="mb-4">
-          <ErrorBanner message={loadError} />
+          <ErrorBanner message={loadError} error={loadErrorDetail} />
         </div>
       )}
 

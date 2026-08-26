@@ -45,6 +45,7 @@ export default function BucketDetailClient({
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [files, setFiles] = useState<FileObject[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [uploading, setUploading] = useState(false);
   const [search, setSearch] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -70,6 +71,7 @@ export default function BucketDetailClient({
       await loadFiles();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load bucket.");
+      setErrorDetail(err);
     }
   }
 
@@ -96,6 +98,7 @@ export default function BucketDetailClient({
       await loadFiles(search || undefined);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Upload failed.");
+      setErrorDetail(err);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -117,6 +120,7 @@ export default function BucketDetailClient({
       setFiles((prev) => prev?.filter((f) => f.id !== file.id) ?? null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Delete failed.");
+      setErrorDetail(err);
     }
   }
 
@@ -156,7 +160,7 @@ export default function BucketDetailClient({
 
       {error && (
         <div className="mb-4">
-          <ErrorBanner message={error} />
+          <ErrorBanner message={error} error={errorDetail} />
         </div>
       )}
 

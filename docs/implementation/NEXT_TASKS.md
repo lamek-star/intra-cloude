@@ -326,18 +326,44 @@ expanding "View technical details" showed the real
 `status: 404 / code: error / request: eff3d784-...` -- a genuine
 request ID a user could hand to support, not a placeholder.
 
-**Deferred, not done**: the same `error` prop on the other ~18 pages
-that already catch `ApiError` into a plain message.
+**Follow-up (done, same session)**: the same `error` prop was wired
+into the remaining 16 pages that catch `ApiError` into a plain message
+(`applications/[applicationId]`, `buckets/[bucketId]`,
+`connected-databases/[connectedDatabaseId]`, `dashboards/[dashboardId]`
+(including its own `loadError`/`setLoadError`-named state, which the
+first mechanical pass correctly skipped since it doesn't match the
+literal `error`/`setError` name), `orgs`, `orgs/[orgId]` (both the org
+detail load and its create-workspace/add-member modals),
+`orgs/[orgId]/audit`, `orgs/[orgId]/developer` (overview, applications,
+docs, sdks), `orgs/[orgId]/teams`, `orgs/[orgId]/workspaces/
+[workspaceId]`, `projects/[projectId]`, `tables/[tableId]` (including
+its column/row-edit modals), `tables/[tableId]/import`). Applied via a
+script since the transform was textually identical everywhere and safe
+to run globally per file -- JS lexical scoping means the same variable
+names in different function bodies are independent, so inserting the
+paired `errorDetail` state and `setErrorDetail(err)` call next to every
+matching occurrence is correct regardless of how many scopes a file
+has. Found and fixed two things the script couldn't do blindly:
+`.catch((err) => setError(...))` arrow-without-braces call sites needed
+manual brace conversion (2 files), and the dashboard's "Add widget"
+modal had an `error` state that's pure client-side validation
+("Select a table.") and never actually catches an `ApiError` in that
+scope -- removed the unused pairing there rather than leaving dead
+state, and wired the dashboard's *real* `loadError` state instead (the
+one that actually catches render/update/delete failures). Verified:
+full build + `eslint` clean across the whole `(app)` tree, plus a
+second live 404 check on a different page
+(`/tables/<bad-uuid>`) showing the same working disclosure.
 
 ## Queued
 
 None currently -- Units 3 through 9 (the full original list) are all
-done. Real remaining work exists as explicit "Deferred, not done" notes
-inside several units above (the dashboard builder UI's authoring
-constraints, the page-by-page a11y audit, the other ~18 pages'
-`ErrorBanner` technical-details wiring, etc.) rather than as new
-numbered units -- pull from those, or from `MASTER_PLAN.md`'s longer
-list, for what's next.
+done, and Unit 9's own deferred follow-up (`ErrorBanner` wiring on the
+remaining pages) is now done too. Real remaining work exists as
+explicit "Deferred, not done" notes inside a couple of units above (the
+dashboard builder UI's authoring constraints, the page-by-page a11y
+audit) rather than as new numbered units -- pull from those, or from
+`MASTER_PLAN.md`'s longer list, for what's next.
 
 ## Explicitly out of scope for this initiative
 

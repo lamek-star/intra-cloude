@@ -193,11 +193,22 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
   backward-compatible optional `error` prop rendering a collapsed
   "View technical details" disclosure (status/code/request) --
   omitting it renders exactly as every pre-existing call site already
-  does. Wired into `/dashboard` and `/tenant-databases/[dbId]` as
-  representative high-consequence surfaces, not mechanically swept
-  across all ~20 pages that catch `ApiError` (documented as open work,
-  not claimed done). Live-verified against a real 404, not staged.
-  *(this session)*
+  does. Wired into `/dashboard` and `/tenant-databases/[dbId]` first as
+  representative high-consequence surfaces, then extended the same
+  session to the remaining 16 pages that catch `ApiError` (via a script
+  -- the transform is textually identical everywhere and JS lexical
+  scoping makes a global per-file substitution correct regardless of
+  how many function scopes a file has). Two things the script couldn't
+  do blindly: `.catch((err) => setError(...))` arrow-without-braces
+  sites needed manual brace conversion, and the dashboard's "Add
+  widget" modal had an `error` state that's pure client-side validation
+  and never actually catches an `ApiError` -- removed the unused
+  pairing there instead of leaving dead state, and wired the
+  dashboard's real `loadError` state (render/update/delete failures)
+  instead. Every `ErrorBanner` call site across the app now has this
+  disclosure available. Live-verified against two different real 404s
+  (`/tenant-databases/<bad-uuid>` and `/tables/<bad-uuid>`), not
+  staged. *(this session)*
 
 ## Known pre-existing gap (not fixed by this initiative unless a unit
 targets it explicitly)

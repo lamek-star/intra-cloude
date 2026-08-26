@@ -29,6 +29,7 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
   const [members, setMembers] = useState<Membership[] | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [wsModalOpen, setWsModalOpen] = useState(false);
   const [memberModalOpen, setMemberModalOpen] = useState(false);
 
@@ -42,6 +43,7 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
       setWorkspaces(ws);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load organization.");
+      setErrorDetail(err);
       return;
     }
     // Members and teams require users.manage — a plain member may not have
@@ -66,7 +68,7 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
   }, [orgId]);
 
   if (!org && !error) return <PageLoading />;
-  if (error && !org) return <ErrorBanner message={error} />;
+  if (error && !org) return <ErrorBanner message={error} error={errorDetail} />;
   if (!org) return null;
 
   return (
@@ -202,6 +204,7 @@ function CreateWorkspaceModal({
 }) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -214,6 +217,7 @@ function CreateWorkspaceModal({
       onCreated(ws);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create workspace.");
+      setErrorDetail(err);
     } finally {
       setSubmitting(false);
     }
@@ -222,7 +226,7 @@ function CreateWorkspaceModal({
   return (
     <Modal open={open} onClose={onClose} title="New workspace">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <ErrorBanner message={error} />}
+        {error && <ErrorBanner message={error} error={errorDetail} />}
         <div>
           <Label htmlFor="ws-name">Name</Label>
           <Input
@@ -260,6 +264,7 @@ function AddMemberModal({
 }) {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -272,6 +277,7 @@ function AddMemberModal({
       onAdded(m);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to add member.");
+      setErrorDetail(err);
     } finally {
       setSubmitting(false);
     }
@@ -280,7 +286,7 @@ function AddMemberModal({
   return (
     <Modal open={open} onClose={onClose} title="Add member">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <ErrorBanner message={error} />}
+        {error && <ErrorBanner message={error} error={errorDetail} />}
         <div>
           <Label htmlFor="member-email">Email of an existing user</Label>
           <Input
