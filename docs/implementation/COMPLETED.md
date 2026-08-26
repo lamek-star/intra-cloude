@@ -193,8 +193,23 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
   focus stayed on the trigger button outside its DOM subtree -- caught
   by a failing Playwright assertion and fixed by wiring the menu into
   the same `useDialogA11y` hook every other overlay already uses,
-  rather than a one-off handler. A full page-by-page accessibility
-  audit remains open work, not claimed done. *(this session)*
+  rather than a one-off handler. A further same-session pass audited
+  every `<nav>` landmark in the app (`AppShell`'s sidebar, `PageHeader`'s
+  breadcrumb, `DeveloperNav`'s tab bar): none had an `aria-label`
+  distinguishing it from the others (a screen reader user navigating by
+  landmark would hear multiple unlabeled "navigation" regions with no
+  way to tell them apart), and none marked the current page/tab with
+  `aria-current="page"` -- active-state was color-only (an indigo
+  background/border), which the master brief's own "non-color-only
+  status indicators" rule flags directly. All three now have a
+  distinguishing `aria-label` and `aria-current` on whichever link
+  matches the current route; decorative icons inside nav links got
+  `aria-hidden="true"`. Live-verified with Playwright across three
+  different pages -- `getByRole("navigation", { name: ... })` finds
+  each landmark by its label, and `aria-current` is `"page"` on exactly
+  the active link/tab and absent on the others, not assumed from the
+  diff. A full page-by-page accessibility audit remains open work, not
+  claimed done. *(this session)*
 
 - Error-experience pass, first real pass (Unit 9): investigated the
   "no raw backend exceptions" concern first -- `ApiError` and

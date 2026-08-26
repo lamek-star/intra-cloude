@@ -44,7 +44,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <kbd className="rounded border border-white/10 bg-black/20 px-1.5 py-0.5 text-[10px]">Ctrl K</kbd>
           </button>
 
-          <nav className="flex flex-1 flex-col gap-1 text-sm">
+          <nav aria-label="Main navigation" className="flex flex-1 flex-col gap-1 text-sm">
             <SidebarLink href="/dashboard" icon={LayoutDashboard}>
               Dashboard
             </SidebarLink>
@@ -147,11 +147,12 @@ function SidebarLink({
   return (
     <Link
       href={href}
+      aria-current={active ? "page" : undefined}
       className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors ${
         active ? "bg-indigo-500 text-white shadow-sm" : "text-slate-300 hover:bg-white/5 hover:text-white"
       }`}
     >
-      <Icon className="h-4 w-4" strokeWidth={2} />
+      <Icon aria-hidden="true" className="h-4 w-4" strokeWidth={2} />
       {children}
     </Link>
   );
