@@ -25,6 +25,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <ConfirmProvider>
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[70] focus:rounded-lg focus:bg-indigo-600 focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-white"
+      >
+        Skip to main content
+      </a>
       <CommandPalette open={paletteOpen} setOpen={setPaletteOpen} />
       <div className="flex min-h-screen bg-[#F5F6FB] text-slate-900">
         <aside className="hidden w-60 shrink-0 flex-col bg-gradient-to-b from-[#12163A] to-[#0B0E24] p-4 sm:flex">
@@ -124,7 +130,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               )}
             </div>
           </header>
-          <main className="flex-1 overflow-y-auto p-4 sm:p-8">
+          <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto p-4 sm:p-8 outline-none">
             <div className="mx-auto max-w-6xl">{children}</div>
           </main>
         </div>

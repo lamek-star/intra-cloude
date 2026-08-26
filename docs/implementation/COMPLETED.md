@@ -220,8 +220,17 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
   is unchanged -- verified both the accessible name
   (`getByRole("group", { name: "Access level:" })` finds it) and that
   the reset didn't introduce a visual regression, via a screenshot of
-  the live wizard step. A full page-by-page accessibility audit remains
-  open work, not claimed done. *(this session)*
+  the live wizard step. Also added a "Skip to main content" link (none
+  existed anywhere) -- without it, a keyboard user has to tab through
+  the entire sidebar (search, Dashboard, Organizations, the account
+  menu) on *every single page* before reaching that page's actual
+  content; now the very first Tab stop on any page jumps straight to
+  `<main>`. Visually hidden until focused (`sr-only`/`focus:not-sr-only`),
+  matching the standard pattern. Live-verified: the first Tab stop's
+  text is genuinely "Skip to main content" and pressing Enter moves
+  focus to `#main-content`, not assumed from the markup. A full
+  page-by-page accessibility audit remains open work, not claimed
+  done. *(this session)*
 
 - Error-experience pass, first real pass (Unit 9): investigated the
   "no raw backend exceptions" concern first -- `ApiError` and
