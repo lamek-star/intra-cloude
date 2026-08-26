@@ -228,9 +228,22 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
   `<main>`. Visually hidden until focused (`sr-only`/`focus:not-sr-only`),
   matching the standard pattern. Live-verified: the first Tab stop's
   text is genuinely "Skip to main content" and pressing Enter moves
-  focus to `#main-content`, not assumed from the markup. A full
-  page-by-page accessibility audit remains open work, not claimed
-  done. *(this session)*
+  focus to `#main-content`, not assumed from the markup. Also found and
+  fixed a real gap in `/tables/[tableId]`'s add/edit-row form: the
+  required-field asterisk next to a non-nullable column's label was
+  purely visual -- the actual `<input>`/`<textarea>` never got a
+  `required` attribute, so a screen reader user had no way to know a
+  field was required until after submitting and getting a rejection,
+  and there was no browser-native validation either. Fixed by deriving
+  `required` from `!column.is_nullable` in `FieldInput` (skipped for
+  the boolean field type, which renders a two-option select that's
+  never actually empty). Live-verified against a real table with a
+  real non-nullable column, not assumed from the attribute alone: the
+  input's `required` attribute is genuinely present, and attempting to
+  submit the form empty is genuinely blocked by the browser's native
+  validation (the dialog stays open) rather than silently reaching the
+  server. A full page-by-page accessibility audit remains open work,
+  not claimed done. *(this session)*
 
 - Error-experience pass, first real pass (Unit 9): investigated the
   "no raw backend exceptions" concern first -- `ApiError` and

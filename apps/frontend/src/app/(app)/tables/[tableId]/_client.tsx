@@ -588,25 +588,53 @@ function FieldInput({
       </Select>
     );
   }
+  const required = !column.is_nullable;
   if (column.data_type === "date") {
-    return <Input id={id} type="date" value={value} onChange={(e) => onChange(e.target.value)} />;
+    return (
+      <Input id={id} type="date" required={required} value={value} onChange={(e) => onChange(e.target.value)} />
+    );
   }
   if (column.data_type === "datetime") {
     return (
-      <Input id={id} type="datetime-local" value={value} onChange={(e) => onChange(e.target.value)} />
+      <Input
+        id={id}
+        type="datetime-local"
+        required={required}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
     );
   }
   if (column.data_type === "integer" || column.data_type === "bigint") {
-    return <Input id={id} type="number" step={1} value={value} onChange={(e) => onChange(e.target.value)} />;
+    return (
+      <Input
+        id={id}
+        type="number"
+        step={1}
+        required={required}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
   }
   if (column.data_type === "decimal") {
-    return <Input id={id} type="number" step="any" value={value} onChange={(e) => onChange(e.target.value)} />;
+    return (
+      <Input
+        id={id}
+        type="number"
+        step="any"
+        required={required}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
   }
   if (column.data_type === "json") {
     return (
       <textarea
         id={id}
         rows={3}
+        required={required}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="{}"
@@ -617,6 +645,7 @@ function FieldInput({
   return (
     <Input
       id={id}
+      required={required}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       maxLength={column.max_length ?? undefined}
