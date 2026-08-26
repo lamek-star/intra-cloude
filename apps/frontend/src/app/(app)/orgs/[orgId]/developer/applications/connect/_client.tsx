@@ -323,8 +323,8 @@ export default function ConnectApplicationClient({ orgId }: { orgId: string }) {
               </p>
             ) : (
               <>
-                <div className="mb-4 flex items-center gap-4 text-sm">
-                  <span className="text-slate-600">Access level:</span>
+                <fieldset className="m-0 mb-4 flex items-center gap-4 border-0 p-0 text-sm">
+                  <legend className="p-0 text-slate-600">Access level:</legend>
                   <label className="flex items-center gap-1.5">
                     <input
                       type="radio"
@@ -343,7 +343,7 @@ export default function ConnectApplicationClient({ orgId }: { orgId: string }) {
                     />
                     Read &amp; write
                   </label>
-                </div>
+                </fieldset>
                 <div className="max-h-80 space-y-1.5 overflow-y-auto">
                   {resources.map((r) => {
                     const id = `${r.kind}:${r.id}`;

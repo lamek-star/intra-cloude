@@ -208,8 +208,20 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
   different pages -- `getByRole("navigation", { name: ... })` finds
   each landmark by its label, and `aria-current` is `"page"` on exactly
   the active link/tab and absent on the others, not assumed from the
-  diff. A full page-by-page accessibility audit remains open work, not
-  claimed done. *(this session)*
+  diff. A form-labeling spot-check across the app's raw
+  `<input>`/`<Select>`/`<Checkbox>` usages found the pattern already
+  solid everywhere except one place: the Connect Application wizard's
+  "Access level" read/write radio pair had no `fieldset`/`legend` tying
+  the group name to the two options -- a screen reader user tabbing to
+  either radio would hear "Read only, radio button" with no "Access
+  level" group context. Fixed with a semantic `fieldset`/`legend`
+  (preferred over ARIA when a native element suffices), with the
+  browser's default fieldset border/margin reset so the visual layout
+  is unchanged -- verified both the accessible name
+  (`getByRole("group", { name: "Access level:" })` finds it) and that
+  the reset didn't introduce a visual regression, via a screenshot of
+  the live wizard step. A full page-by-page accessibility audit remains
+  open work, not claimed done. *(this session)*
 
 - Error-experience pass, first real pass (Unit 9): investigated the
   "no raw backend exceptions" concern first -- `ApiError` and
