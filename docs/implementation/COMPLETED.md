@@ -242,7 +242,25 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
   input's `required` attribute is genuinely present, and attempting to
   submit the form empty is genuinely blocked by the browser's native
   validation (the dialog stays open) rather than silently reaching the
-  server. A full page-by-page accessibility audit remains open work,
+  server. A mobile-viewport (390px) sweep of six more pages found no
+  page-body horizontal overflow anywhere, and `DeveloperNav`'s 12-tab
+  bar already scrolled correctly -- but found one real responsive bug:
+  the Connect Application wizard's 5-step `Stepper` had no
+  `overflow-x-auto`/`shrink-0` (unlike `DeveloperNav`'s tab bar, which
+  already had this), so at 390px its flex items shrank until steps 4
+  ("Credential") and 5 ("Connect") were illegible slivers with no way
+  to reach them -- not a false alarm like the earlier members-table
+  screenshot, a genuine layout bug caught by actually looking at the
+  screenshot rather than trusting the "no body overflow" check alone.
+  Fixed the same way `DeveloperNav` already handles it: `overflow-x-auto`
+  on the container, `shrink-0` on every step/connector, plus
+  `role="list"`/`aria-label="Wizard progress"` and `aria-current="step"`
+  on the active step while already in the component. Live-verified:
+  the stepper's own `scrollWidth` (601px) now genuinely exceeds its
+  `clientWidth` (358px) at 390px viewport width, and scrolling it
+  programmatically makes the "Connect" label visible -- confirmed
+  reachable, not just technically present in the DOM. A full
+  page-by-page accessibility/responsiveness audit remains open work,
   not claimed done. *(this session)*
 
 - Error-experience pass, first real pass (Unit 9): investigated the

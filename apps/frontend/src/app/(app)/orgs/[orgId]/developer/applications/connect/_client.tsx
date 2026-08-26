@@ -466,11 +466,12 @@ export default function ConnectApplicationClient({ orgId }: { orgId: string }) {
 
 function Stepper({ current }: { current: number }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 overflow-x-auto pb-1" role="list" aria-label="Wizard progress">
       {STEPS.map((label, i) => (
-        <div key={label} className="flex items-center gap-2">
+        <div key={label} role="listitem" className="flex shrink-0 items-center gap-2">
           <div
-            className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium ${
+            aria-hidden="true"
+            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium ${
               i < current
                 ? "bg-indigo-600 text-white"
                 : i === current
@@ -480,8 +481,13 @@ function Stepper({ current }: { current: number }) {
           >
             {i < current ? <Check className="h-3.5 w-3.5" /> : i + 1}
           </div>
-          <span className={`text-xs font-medium ${i <= current ? "text-slate-700" : "text-slate-400"}`}>{label}</span>
-          {i < STEPS.length - 1 && <div className="mx-1 h-px w-6 bg-slate-200" />}
+          <span
+            aria-current={i === current ? "step" : undefined}
+            className={`shrink-0 text-xs font-medium ${i <= current ? "text-slate-700" : "text-slate-400"}`}
+          >
+            {label}
+          </span>
+          {i < STEPS.length - 1 && <div aria-hidden="true" className="mx-1 h-px w-6 shrink-0 bg-slate-200" />}
         </div>
       ))}
     </div>
