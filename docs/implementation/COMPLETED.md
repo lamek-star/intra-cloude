@@ -180,8 +180,21 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
   `page.evaluate()` that a members table that looked clipped in a
   screenshot was actually its own `overflow-x-auto` container scrolling
   correctly, not the page body overflowing -- verified rather than
-  assumed either way. A full page-by-page accessibility audit remains
-  open work, not claimed done. *(this session)*
+  assumed either way. Same-session follow-up found and fixed two real
+  screen-reader gaps missed by the shared-primitive pass:
+  `AppShell`'s mobile account-menu button had no accessible name
+  (a screen reader would announce only the single-letter avatar, not
+  "Account menu"), no `aria-haspopup`/`aria-expanded`, and its dropdown
+  lacked `role="menu"`/`role="menuitem"`; `CommandPalette`'s search
+  input relied on a placeholder alone (a known anti-pattern) instead of
+  `aria-label`, and lacked the `role="combobox"`/`aria-activedescendant`
+  wiring. Fixing the menu surfaced a real bug in the first attempt -- a
+  bare `onKeyDown` for Escape on the menu container never fired because
+  focus stayed on the trigger button outside its DOM subtree -- caught
+  by a failing Playwright assertion and fixed by wiring the menu into
+  the same `useDialogA11y` hook every other overlay already uses,
+  rather than a one-off handler. A full page-by-page accessibility
+  audit remains open work, not claimed done. *(this session)*
 
 - Error-experience pass, first real pass (Unit 9): investigated the
   "no raw backend exceptions" concern first -- `ApiError` and

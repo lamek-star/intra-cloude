@@ -280,11 +280,42 @@ asserted true) and Escape genuinely closes it; the same for
 shows the on-brand indigo focus ring in a screenshot, not the
 browser's mismatched default.
 
+**Follow-up (done, same session)**: a targeted screen-reader-labeling
+sweep found and fixed two real gaps missed by the shared-primitive
+pass above, since they're specific instances, not something a global
+CSS rule or shared hook reaches: `AppShell`'s mobile account-menu
+button had no accessible name at all (a screen reader would announce
+only the single-letter avatar text, e.g. "T" -- not "Account menu"),
+no `aria-haspopup`/`aria-expanded`, and its dropdown had no
+`role="menu"`/`role="menuitem"`; `CommandPalette`'s search input relied
+on a placeholder alone (a known anti-pattern -- placeholders aren't
+reliably announced and vanish once text is typed) instead of a real
+`aria-label`, and lacked the `role="combobox"`/`aria-activedescendant`/
+`role="listbox"`+`role="option"` wiring that identifies which result is
+active as arrow keys move through it. Both fixed, and the account menu
+was wired into the same `useDialogA11y` hook as every other overlay in
+the app rather than a one-off `onKeyDown` — which is exactly what
+caught a real bug in the first attempt: a bare `onKeyDown={... Escape
+...}` on the menu's container never fired, because focus stayed on the
+trigger button (outside the menu's DOM subtree) after the click, so the
+keydown event never reached it. `useDialogA11y` fixed this the same way
+it already does for `Modal`/`ConfirmProvider`/`CommandPalette`: focus
+actually moves into the panel on open. Live-verified with Playwright
+(not assumed from the diff): the button is findable by
+`getByRole("button", { name: "Account menu" })`, `aria-expanded` flips
+to `"true"` on open, the menu closes on Escape (this specific assertion
+failed on the first attempt and passed after the `useDialogA11y` fix --
+a real regression caught before shipping, not a hypothetical), and the
+search input is findable by `getByRole("combobox", { name: "Search
+Intra-Cloud" })` with `aria-activedescendant` genuinely updating as the
+result list filters.
+
 **Deferred, not done**: a full page-by-page pass (every table's
-sortable-column keyboard behavior, exhaustive screen-reader labeling,
-every remaining page at every breakpoint) — the highest-value shared-
-primitive fixes are in; a page-by-page audit is real remaining work,
-not falsely claimed complete here.
+sortable-column keyboard behavior, exhaustive screen-reader labeling
+beyond the two gaps above, every remaining page at every breakpoint) —
+the highest-value shared-primitive fixes are in, plus this targeted
+follow-up; a full page-by-page audit is real remaining work, not
+falsely claimed complete here.
 
 ## Done: Unit 9 — error-experience pass (first real pass)
 

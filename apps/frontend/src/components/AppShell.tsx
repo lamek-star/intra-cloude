@@ -2,17 +2,20 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Building2, ChevronDown, LayoutDashboard, LogOut, Search, type LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { ConfirmProvider } from "@/components/ConfirmProvider";
 import { CommandPalette } from "@/components/CommandPalette";
+import { useDialogA11y } from "@/lib/use-dialog-a11y";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(menuOpen, () => setMenuOpen(false), accountMenuRef);
 
   async function handleLogout() {
     setMenuOpen(false);
@@ -82,22 +85,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="relative">
               <button
                 onClick={() => setMenuOpen((v) => !v)}
+                aria-label="Account menu"
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
                 className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
               >
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-50 text-xs font-medium text-indigo-600">
+                <span
+                  aria-hidden="true"
+                  className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-50 text-xs font-medium text-indigo-600"
+                >
                   {user?.email.slice(0, 1).toUpperCase()}
                 </span>
-                <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                <ChevronDown aria-hidden="true" className="h-3.5 w-3.5 text-slate-400" />
               </button>
               {menuOpen && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                  <div className="absolute right-0 z-20 mt-1 w-48 rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
+                  <div
+                    ref={accountMenuRef}
+                    role="menu"
+                    aria-label="Account menu"
+                    tabIndex={-1}
+                    className="absolute right-0 z-20 mt-1 w-48 rounded-xl border border-slate-200 bg-white py-1 shadow-xl outline-none"
+                  >
                     <div className="border-b border-slate-100 px-3 py-2 text-xs text-slate-400">
                       Signed in as
                       <div className="truncate text-slate-700">{user?.email}</div>
                     </div>
                     <button
+                      role="menuitem"
                       onClick={handleLogout}
                       className="block w-full px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                     >

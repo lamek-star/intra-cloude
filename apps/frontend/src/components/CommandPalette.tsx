@@ -116,26 +116,34 @@ export function CommandPalette({ open, setOpen }: { open: boolean; setOpen: (ope
               }
             }}
             placeholder="Search Intra-Cloud…"
+            aria-label="Search Intra-Cloud"
+            role="combobox"
+            aria-expanded="true"
+            aria-controls="command-palette-results"
+            aria-activedescendant={items[activeIndex] ? `command-palette-item-${items[activeIndex].id}` : undefined}
             className="w-full text-sm text-slate-900 outline-none placeholder:text-slate-400"
           />
           <kbd className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] text-slate-400">
             Esc
           </kbd>
         </div>
-        <div className="max-h-80 overflow-y-auto p-1.5">
+        <div id="command-palette-results" role="listbox" className="max-h-80 overflow-y-auto p-1.5">
           {items.length === 0 ? (
             <p className="px-3 py-6 text-center text-sm text-slate-400">No matches.</p>
           ) : (
             items.map((item, i) => (
               <button
                 key={item.id}
+                id={`command-palette-item-${item.id}`}
+                role="option"
+                aria-selected={i === activeIndex}
                 onClick={() => select(item)}
                 onMouseEnter={() => setActiveIndex(i)}
                 className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm ${
                   i === activeIndex ? "bg-indigo-50 text-indigo-700" : "text-slate-700"
                 }`}
               >
-                <item.icon className="h-4 w-4 shrink-0 text-slate-400" />
+                <item.icon aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-400" />
                 <span className="min-w-0 flex-1 truncate">{item.label}</span>
                 {item.hint && <span className="shrink-0 text-xs text-slate-400">{item.hint}</span>}
               </button>
