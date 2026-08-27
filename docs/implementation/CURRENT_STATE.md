@@ -32,16 +32,37 @@ what's still open (a page-by-page a11y audit). `NEXT_TASKS.md`'s
 Queued section is now empty of new numbered units; real remaining work
 exists as a couple of "Deferred, not done" notes (Unit 4c's authoring
 constraints, Unit 8's a11y audit), or in `MASTER_PLAN.md`'s longer
-list.
+list. **A later session (2026-08-27) picked up Unit 8's a11y audit
+note directly** (not a new numbered unit) and fixed a real, repeatable
+defect: 11 navigation cards across 9 files were fake `<button
+onClick={router.push}>` elements instead of real links. See
+"Completed this session" below and `COMPLETED.md` for detail. Not an
+exhaustive close of the audit — see "Next safe action" below for what's
+still uncovered.
 
-## Completed this session
+## Completed this session (2026-08-27, a later session)
 
-- Icon system: all emoji/glyph icons in `apps/frontend` replaced with
-  `lucide-react` (already committed as `39c19ca` before this session
-  resumed; re-verified, not re-done).
-- Per-organization Teams page (`/orgs/[orgId]/teams`): create team, add/
-  remove members, org detail page now resolves a member's team UUID to its
-  name. Committed as `ab98199` on branch `frontend-csv-import-and-analytics`.
+- Picked up Unit 8's own "Deferred, not done" page-by-page a11y audit
+  note (the one concrete open item `NEXT_TASKS.md`'s Queued section
+  pointed at). Audited real pages live with Playwright (registered a
+  throwaway test account, walked org -> workspace -> project ->
+  database -> table -> CSV import) rather than reading code in
+  isolation.
+- Found and fixed a real, repeatable defect: 11 navigation "cards"
+  across 9 files (workspace/project/bucket/tenant-database/connected-
+  database/table/dashboard/organization/application list items) were
+  `<button onClick={() => router.push(...)}>` instead of a real link —
+  breaks Ctrl/middle-click "open in new tab", right-click "copy link
+  address", and the status-bar URL hover preview, and is semantically
+  wrong (a button implies an action, not navigation). Converted all 11
+  to `next/link`'s `<Link>`. Committed `969825e`.
+- CSV import page (`/tables/[tableId]/import`) itself, and the
+  "Analytics"/"Import CSV"/"Export CSV" nav links on the table detail
+  page, were already real links / already well-structured — no defect
+  found there.
+- Older session's entries below (icon system, Teams page, and
+  everything through the previous "Completed this session" list) are
+  preserved as history, not redone.
 - Full stack rebuilt and live-verified: `docker compose build frontend` +
   `up -d frontend`, then `/healthz`, `/readyz`, `/login` all checked through
   the real Caddy TLS proxy, and the entire teams API round trip (create
@@ -92,7 +113,20 @@ an IP literal. Use `https://localhost:8443` instead — works fine, same
 Caddy cert. Confirmed this isn't a broader TLS problem (real HTTPS sites
 and plain-HTTP/TCP to the same port both work).
 
-## Files modified this session
+## Files modified this session (2026-08-27, a11y navigation-link pass)
+
+- `apps/frontend/src/app/(app)/dashboard/page.tsx`
+- `apps/frontend/src/app/(app)/orgs/[orgId]/_client.tsx`
+- `apps/frontend/src/app/(app)/orgs/[orgId]/developer/_client.tsx`
+- `apps/frontend/src/app/(app)/orgs/[orgId]/developer/applications/_client.tsx`
+- `apps/frontend/src/app/(app)/orgs/[orgId]/workspaces/[workspaceId]/_client.tsx`
+- `apps/frontend/src/app/(app)/orgs/page.tsx`
+- `apps/frontend/src/app/(app)/projects/[projectId]/_client.tsx`
+- `apps/frontend/src/app/(app)/tenant-databases/[dbId]/_client.tsx`
+
+No backend changes, no migrations, no dependency changes this session.
+
+## Files modified, earlier session
 
 - `apps/frontend/src/app/(app)/orgs/[orgId]/_client.tsx`
 - `apps/frontend/src/lib/api.ts`
@@ -121,10 +155,15 @@ serializer-only, no schema change). No dependency changes beyond
 
 ## Test data left in the dev database
 
+This session's own a11y-audit fixtures (user `a11y-audit-20260827@
+example.com`, org "A11y Audit Org" and everything created under it)
+were deleted after verification — not left behind, unlike the note
+below from an earlier session.
+
 A live-verification test org ("Teams Verify Org", id
 `82b24d90-d82a-48c4-8484-4da72aed8f0a`) and two users (`teamstest@
 example.com`, `sharetest@example.com`) exist in the running dev stack from
-this session's live curl-based verification passes. Harmless local dev
+an earlier session's live curl-based verification passes. Harmless local dev
 data, not cleaned up — matches how earlier phases' verification passes
 (per `CLAUDE.md`) were also left in place rather than torn down.
 
@@ -134,14 +173,18 @@ See `TEST_STATUS.md`.
 
 ## Next safe action
 
-No numbered unit is queued -- `NEXT_TASKS.md`'s original Units 3-9 list
-is complete, including Unit 9's own same-session `ErrorBanner` rollout
-follow-up. Read `NEXT_TASKS.md`'s remaining "Deferred, not done" notes
-(Unit 4c's authoring constraints, Unit 8's page-by-page a11y audit) and
-`MASTER_PLAN.md`'s longer list, confirm with the user which real
-remaining item to pick up next rather than assuming, then follow the
-same pattern every unit here has: real interaction through the live
-stack (Units 5, 7, 8, and 9 all surfaced something curl-only
-verification would have missed -- use Playwright driving the actual UI
-when the change is interactive/behavioral, not just an API shape
-check), checkpoint commit, update these docs.
+Unit 8's a11y audit note is partially addressed (the navigation-cards-
+as-links defect above), not exhaustively closed — this pass covered
+the pages reachable via org -> workspace -> project -> database ->
+table -> CSV import and the developer portal's Overview/Applications
+tabs, not literally every page (the remaining developer-portal
+`ComingSoon` stub tabs, `/buckets/[bucketId]`, `/dashboards/
+[dashboardId]`, `/connected-databases/[connectedDatabaseId]`,
+`/applications/[applicationId]`, and keyboard-specific behavior beyond
+link semantics — focus order, arrow-key list navigation — weren't
+covered this pass). Continuing that audit on the untouched pages is
+the most direct next step; Unit 4c's authoring constraints and
+`MASTER_PLAN.md`'s longer list are the other real remaining items.
+Same pattern as always: real interaction through the live stack via
+Playwright (not just an API shape check), checkpoint commit, update
+these docs.

@@ -263,6 +263,35 @@ tracked in `docs/architecture/ROADMAP.md`, not duplicated here.
   page-by-page accessibility/responsiveness audit remains open work,
   not claimed done. *(this session)*
 
+- Unit 8's deferred page-by-page a11y audit, continued: audited real
+  pages live with Playwright (org -> workspace -> project -> database
+  -> table -> CSV import, plus the developer portal's Overview/
+  Applications tabs), not code review in isolation. Found the exact
+  gap line 176 above already named but didn't fix -- "the many ad hoc
+  `<button>` list-item wrappers across the app" -- was worse than a
+  missing focus ring: 11 of them, across 9 files (workspace/project/
+  bucket/tenant-database/connected-database/table/dashboard/
+  organization/application list-item cards), were
+  `<button onClick={() => router.push(...)}>` standing in for real
+  navigation. A button instead of a link breaks Ctrl/middle-click
+  "open in new tab", right-click "copy link address", and the
+  status-bar URL preview on hover/focus -- and is semantically wrong,
+  since a button implies an action, not navigation. Converted all 11
+  to `next/link`'s `<Link>`, removing the now-unused `useRouter()`
+  where nothing else in the file needed it. Verified live: each
+  converted card's accessibility-tree role changed from `generic`/
+  `button` to a real `link` with a genuine `href` both before and
+  after clicking through it, confirmed navigation itself still worked
+  end to end at every level, `tsc --noEmit`/`eslint` clean. The CSV
+  import page itself, and the "Analytics"/"Import CSV"/"Export CSV"
+  links on the table detail page, were already real links -- no defect
+  there. Not exhaustive: `/buckets/[bucketId]`, `/dashboards/
+  [dashboardId]`, `/connected-databases/[connectedDatabaseId]`,
+  `/applications/[applicationId]`, the developer portal's `ComingSoon`
+  stub tabs, and keyboard-specific behavior beyond link semantics
+  (focus order, arrow-key list navigation) weren't covered this pass.
+  *(a later session, 2026-08-27)*
+
 - Error-experience pass, first real pass (Unit 9): investigated the
   "no raw backend exceptions" concern first -- `ApiError` and
   `system/exceptions.py` already handled that correctly pre-dating

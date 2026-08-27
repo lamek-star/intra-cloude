@@ -310,12 +310,25 @@ search input is findable by `getByRole("combobox", { name: "Search
 Intra-Cloud" })` with `aria-activedescendant` genuinely updating as the
 result list filters.
 
-**Deferred, not done**: a full page-by-page pass (every table's
-sortable-column keyboard behavior, exhaustive screen-reader labeling
-beyond the two gaps above, every remaining page at every breakpoint) —
-the highest-value shared-primitive fixes are in, plus this targeted
-follow-up; a full page-by-page audit is real remaining work, not
-falsely claimed complete here.
+**Deferred, not done**: a full page-by-page pass (exhaustive
+screen-reader labeling beyond the gaps already found, every remaining
+page at every breakpoint) — the highest-value shared-primitive fixes
+are in, plus this targeted follow-up; a full page-by-page audit is
+real remaining work, not falsely claimed complete here. (No sortable
+table columns actually exist anywhere in the app yet, so that specific
+example above was aspirational, not a real current gap — drop it if a
+sortable-column feature is ever added instead.)
+
+**Partially picked up, a later session (2026-08-27)**: found and fixed
+11 navigation cards across 9 files that were fake `<button
+onClick={router.push}>` elements instead of real links (breaks
+Ctrl/middle-click "open in new tab", right-click "copy link address").
+See `COMPLETED.md`'s entry for exactly which pages were and weren't
+covered — still real remaining work: `/buckets/[bucketId]`,
+`/dashboards/[dashboardId]`, `/connected-databases/
+[connectedDatabaseId]`, `/applications/[applicationId]`, the developer
+portal's `ComingSoon` stub tabs, and keyboard-specific behavior beyond
+link semantics (focus order, arrow-key list navigation).
 
 ## Done: Unit 9 — error-experience pass (first real pass)
 
