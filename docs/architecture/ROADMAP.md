@@ -1636,6 +1636,41 @@ not attempted in this pass. The WiX v6+ licensing decision
 (`installer/README.md`) remains open and is also a business decision,
 not something this phase resolves.
 
+**Re-verification pass (2026-08-27), a different session, same host.**
+Rebuilt from a clean `dotnet publish`/`dotnet build` with no code
+changes: Control Center exe (161,660,503 bytes, ~154 MB, matches the
+documented size), 14/14 xUnit tests pass (grew from Phase 16's original
+3 as Phases 18-19 added coverage), MSI (57,376,768 bytes, ~54.7 MB,
+matches documented size), opened successfully via the Windows Installer
+COM API with correct `ProductName`/`ProductVersion`/`Manufacturer`
+properties. `Test-Prerequisites.ps1` re-ran with identical results to
+Phase 16's original run. A real non-elevated `msiexec /i ... /quiet`
+attempt reproduced the exact documented outcome (Error 1925, correctly
+refuses without elevation, exit 1603) with nothing new left behind by
+*this* attempt specifically.
+
+**One new, more specific finding than "rolled back cleanly" claims
+elsewhere in this doc**: this host still carries genuine orphans from
+an *earlier* install attempt (files under `C:\Program Files\
+Intra-Cloud\` dated 8/23, days before this pass, plus a Windows
+Installer product-cache registry entry under
+`HKLM:\SOFTWARE\Classes\Installer\Products\` with no matching
+`Uninstall` key) — meaning that specific historical attempt did not
+roll back as cleanly as documented. `msiexec /x <ProductCode>` refuses
+to remove it (exit 1605, "only valid for products that are currently
+installed" — Windows Installer's own high-level view considers it not
+installed, while its low-level product cache disagrees), and direct
+file deletion under `C:\Program Files\` fails with the same
+non-elevated-session access-denied limitation Phase 16 already
+documented as not workaroundable from here. This is host-local leftover
+state, not a repository file, and doesn't affect the MSI/Control
+Center build's correctness — but it's real evidence that the
+install/rollback path can leave a machine in an inconsistent,
+not-cleanly-removable state under some sequence of attempts, worth a
+specific look during Phase 20's real elevated-session qualification
+pass rather than assuming the earlier "no orphaned files/registry
+keys" claim covers every case.
+
 ## Non-Negotiable Cross-Phase Rules
 
 - No phase ships without tenant-isolation tests for any new tenant-owned
