@@ -81,15 +81,29 @@
          here, in LaunchConditions, rejects a non-elevated attempt
          before InstallValidate/InstallFiles ever run, so nothing is
          ever staged to roll back in the first place.
-         Verified directly: double-clicking (ShellExecute-style launch,
-         no explicit "Run as administrator") does NOT trigger a UAC
-         prompt on its own for this MSI: unlike an EXE with an
-         embedded requireAdministrator manifest, a plain MSI has no such
-         manifest, and elevation is left to whatever invoked msiexec.
-         Both the interactive wizard and the silent `/quiet` path were
-         non-elevated in testing, and both are now caught by this same
-         condition: silently for /quiet, and via this condition's
-         Message text in the LaunchConditions dialog for the wizard. -->
+         Verified directly, end to end, including driving the real
+         wizard through UI Automation up to and past clicking "Install":
+         a plain double-click (ShellExecute-style launch, no explicit
+         "Run as administrator") does NOT itself trigger UAC — the
+         wizard opens non-elevated and lets the user browse Welcome/
+         License/destination-folder pages, which is harmless since no
+         execute-sequence action has run yet. Clicking "Install",
+         however, DOES trigger a real UAC consent prompt (confirmed live:
+         a genuine `consent.exe` appeared at exactly that step) —
+         Windows Installer's own COM elevation for a perMachine package
+         requests elevation there, before InstallExecuteSequence runs.
+         So the interactive wizard was never actually the vulnerable
+         path. The path this condition specifically closes is
+         `msiexec /i ... /quiet` (or /qn): quiet mode has no UI at all,
+         so Windows Installer has no way to show that same UAC prompt,
+         and previously proceeded unelevated via the always-privileged
+         Windows Installer service until the too-late Error 1925 check
+         at InstallFinalize — by which point RegisterProduct/
+         InstallFiles could already have committed. Confirmed by testing
+         both paths against this exact build: `/quiet` now fails at
+         LaunchConditions (Return value 3, exit 1603) with zero new
+         files or registry state; the interactive wizard's UAC prompt,
+         when declined, likewise leaves zero new state. -->
     <Launch Condition="Installed OR Privileged" Message="Intra-Cloud Control Center requires administrator privileges to install. Right-click the installer and choose 'Run as administrator', or if installing silently, run msiexec from an elevated (Run as administrator) command prompt." />
 
     <StandardDirectory Id="ProgramFiles64Folder">
