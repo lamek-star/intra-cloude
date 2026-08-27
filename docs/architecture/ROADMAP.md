@@ -1756,6 +1756,46 @@ that cleanup should use Windows-supported recovery (an elevated
 elevated Programs and Features removal) rather than manual registry
 surgery.
 
+**Pre-installation checker extended, same pass** (`installer/scripts/
+Test-Prerequisites.ps1`, commit `9a8966e`). Five new CIM-free checks
+alongside the original five: system memory, CPU core count, disk space/
+filesystem on the system drive, availability of port 8443 (the one host
+port `docker-compose.yml` actually publishes), and existing-installation
+state. The last one was verified directly against this host's own real,
+anomalous state (two simultaneous Uninstall registry entries for the
+same product, from the two orphans documented above) — an early version
+of the check treated "an Uninstall entry exists" as sufficient for
+Pass, which is wrong: a healthy install only ever has one (`MajorUpgrade`
+retires the old `ProductCode` before registering a new one), so two
+existing at once is itself the stale-state signal this check exists to
+surface. Caught and fixed by testing against real state, not by
+reasoning about it in the abstract.
+
+**Backup/restore (portable `.icp` export/import) re-verified live, same
+pass**, per the installer-hardening directive's explicit "test the
+restore, not merely the export": ran `exports`' existing test suite
+(`test_portable_export.py`, four tests including `test_full_round_trip`)
+against the live Docker stack, not just cited Phase 13's historical
+result. First attempt failed for an unrelated, worth-recording reason —
+`docker exec` into the `backend` container inherits its
+`DJANGO_SETTINGS_MODULE=config.settings.prod` from `docker-compose.yml`,
+and prod's `SECURE_SSL_REDIRECT` 301-redirects the Django test client's
+plain-HTTP requests before they reach any view (every test failed
+identically at the first API call). `config.settings.dev` gets past
+that but leaves Celery running for-real/async, so an export job is
+still `"pending"` when the test immediately tries to download it — only
+`config.settings.test` (`CELERY_TASK_ALWAYS_EAGER = True`) runs
+requests and their Celery tasks synchronously the way the test actually
+needs. With that settings module, all 4 export/restore tests pass —
+files restored byte-for-byte, DB schema/FK relationships/row data
+restored correctly, memberships restored, wrong-passphrase and
+tampered-package rejection both correct — and the full backend suite
+(253 tests; the documented 289 includes ClamAV-profile tests this
+`docker compose up` didn't start) passes too. Neither the settings-
+module gotcha above nor its fix is a code change — it's how this
+project's own tests must actually be invoked, worth remembering the
+next time someone reaches for `docker exec ... manage.py test` here.
+
 ## Non-Negotiable Cross-Phase Rules
 
 - No phase ships without tenant-isolation tests for any new tenant-owned
