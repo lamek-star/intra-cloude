@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LayoutGrid, Table as TableIcon } from "lucide-react";
 import {
@@ -135,7 +136,7 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {tables?.map((t) => (
-            <button key={t.id} onClick={() => router.push(`/tables/${t.id}`)} className="text-left">
+            <Link key={t.id} href={`/tables/${t.id}`} className="block text-left">
               <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
                 <div className="flex items-center gap-2">
                   <TableIcon className="h-4 w-4 text-indigo-600" />
@@ -149,7 +150,7 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
                   {t.columns.length > 4 && <Badge>+{t.columns.length - 4}</Badge>}
                 </div>
               </Card>
-            </button>
+            </Link>
           ))}
         </div>
       )}
@@ -175,7 +176,7 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
           ) : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {dashboards.map((d) => (
-                <button key={d.id} onClick={() => router.push(`/dashboards/${d.id}`)} className="text-left">
+                <Link key={d.id} href={`/dashboards/${d.id}`} className="block text-left">
                   <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
                     <div className="flex items-center gap-2">
                       <LayoutGrid className="h-4 w-4 text-indigo-600" />
@@ -185,7 +186,7 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
                       {d.widgets.length} widget{d.widgets.length === 1 ? "" : "s"}
                     </p>
                   </Card>
-                </button>
+                </Link>
               ))}
             </div>
           )}

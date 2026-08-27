@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { api, ApiError, type Membership, type Organization, type Team, type Workspace } from "@/lib/api";
 import {
   Badge,
@@ -23,7 +23,6 @@ import {
 } from "@/components/ui";
 
 export default function OrgDetailClient({ orgId }: { orgId: string }) {
-  const router = useRouter();
   const [org, setOrg] = useState<Organization | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[] | null>(null);
   const [members, setMembers] = useState<Membership[] | null>(null);
@@ -112,10 +111,10 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {workspaces?.map((ws) => (
-              <button
+              <Link
                 key={ws.id}
-                onClick={() => router.push(`/orgs/${orgId}/workspaces/${ws.id}`)}
-                className="text-left"
+                href={`/orgs/${orgId}/workspaces/${ws.id}`}
+                className="block text-left"
               >
                 <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
                   <p className="font-medium text-slate-900">{ws.name}</p>
@@ -123,7 +122,7 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
                     Created {new Date(ws.created_at).toLocaleDateString()}
                   </p>
                 </Card>
-              </button>
+              </Link>
             ))}
           </div>
         )}

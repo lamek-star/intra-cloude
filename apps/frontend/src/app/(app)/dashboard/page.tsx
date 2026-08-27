@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   Activity,
   Building2,
@@ -37,7 +36,6 @@ async function fetchHealth(path: string): Promise<{ ok: boolean; body: unknown }
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const router = useRouter();
   const [orgSummaries, setOrgSummaries] = useState<OrgSummary[] | null>(null);
   const [health, setHealth] = useState<HealthCheck[] | null>(null);
   const [recentActivity, setRecentActivity] = useState<AuditEvent[] | null>(null);
@@ -170,8 +168,8 @@ export default function DashboardPage() {
               <ul className="divide-y divide-slate-100">
                 {orgSummaries?.map(({ org, workspaceCount }) => (
                   <li key={org.id}>
-                    <button
-                      onClick={() => router.push(`/orgs/${org.id}`)}
+                    <Link
+                      href={`/orgs/${org.id}`}
                       className="flex w-full items-center gap-3 px-5 py-3.5 text-left hover:bg-slate-50"
                     >
                       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
@@ -186,7 +184,7 @@ export default function DashboardPage() {
                         </span>
                       </span>
                       <ChevronRight className="h-4 w-4 shrink-0 text-slate-600" />
-                    </button>
+                    </Link>
                   </li>
                 ))}
               </ul>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Database, Folder, Plug } from "lucide-react";
 import {
   api,
@@ -34,7 +34,6 @@ const CONNECTED_DB_STATUS_TONE = {
 } as const;
 
 export default function ProjectDetailClient({ projectId }: { projectId: string }) {
-  const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [org, setOrg] = useState<Organization | null>(null);
@@ -115,12 +114,10 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {buckets?.map((b) => (
-              <button
+              <Link
                 key={b.id}
-                onClick={() =>
-                  router.push(`/buckets/${b.id}?name=${encodeURIComponent(b.name)}&project=${b.project}`)
-                }
-                className="text-left"
+                href={`/buckets/${b.id}?name=${encodeURIComponent(b.name)}&project=${b.project}`}
+                className="block text-left"
               >
                 <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
                   <div className="flex items-center gap-2">
@@ -128,7 +125,7 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
                     <p className="font-medium text-slate-900">{b.name}</p>
                   </div>
                 </Card>
-              </button>
+              </Link>
             ))}
           </div>
         )}
@@ -154,10 +151,10 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {databases?.map((db) => (
-              <button
+              <Link
                 key={db.id}
-                onClick={() => router.push(`/tenant-databases/${db.id}`)}
-                className="text-left"
+                href={`/tenant-databases/${db.id}`}
+                className="block text-left"
               >
                 <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
                   <div className="flex items-center gap-2">
@@ -165,7 +162,7 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
                     <p className="font-medium text-slate-900">{db.name}</p>
                   </div>
                 </Card>
-              </button>
+              </Link>
             ))}
           </div>
         )}
@@ -191,10 +188,10 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {connectedDatabases?.map((cdb) => (
-              <button
+              <Link
                 key={cdb.id}
-                onClick={() => router.push(`/connected-databases/${cdb.id}`)}
-                className="text-left"
+                href={`/connected-databases/${cdb.id}`}
+                className="block text-left"
               >
                 <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
                   <div className="flex items-center justify-between gap-2">
@@ -208,7 +205,7 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
                     {cdb.host}:{cdb.port}/{cdb.database_name}
                   </p>
                 </Card>
-              </button>
+              </Link>
             ))}
           </div>
         )}

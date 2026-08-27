@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { AppWindow, ChevronRight, KeyRound } from "lucide-react";
 import { api, ApiError, type Application, type ApplicationCredential, type Organization } from "@/lib/api";
 import { Card, EmptyState, ErrorBanner, LinkButton, PageHeader, PageLoading, StatCard } from "@/components/ui";
@@ -14,7 +14,6 @@ function isActiveCredential(c: ApplicationCredential): boolean {
 }
 
 export default function DeveloperOverviewClient({ orgId }: { orgId: string }) {
-  const router = useRouter();
   const [org, setOrg] = useState<Organization | null>(null);
   const [applications, setApplications] = useState<Application[] | null>(null);
   const [activeCredentials, setActiveCredentials] = useState<number | null>(null);
@@ -101,8 +100,8 @@ export default function DeveloperOverviewClient({ orgId }: { orgId: string }) {
           <ul className="divide-y divide-slate-100">
             {applications?.slice(0, 6).map((app) => (
               <li key={app.id}>
-                <button
-                  onClick={() => router.push(`/applications/${app.id}`)}
+                <Link
+                  href={`/applications/${app.id}`}
                   className="flex w-full items-center gap-3 px-5 py-3.5 text-left hover:bg-slate-50"
                 >
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
@@ -115,7 +114,7 @@ export default function DeveloperOverviewClient({ orgId }: { orgId: string }) {
                     )}
                   </span>
                   <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
-                </button>
+                </Link>
               </li>
             ))}
           </ul>

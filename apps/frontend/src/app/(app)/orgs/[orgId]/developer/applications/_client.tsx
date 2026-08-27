@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { AppWindow } from "lucide-react";
 import { api, ApiError, type Application, type Organization } from "@/lib/api";
 import {
@@ -20,7 +20,6 @@ import {
 import { DeveloperNav } from "@/components/DeveloperNav";
 
 export default function ApplicationsClient({ orgId }: { orgId: string }) {
-  const router = useRouter();
   const [org, setOrg] = useState<Organization | null>(null);
   const [applications, setApplications] = useState<Application[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -96,11 +95,7 @@ export default function ApplicationsClient({ orgId }: { orgId: string }) {
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {applications.map((app) => (
-            <button
-              key={app.id}
-              onClick={() => router.push(`/applications/${app.id}`)}
-              className="text-left"
-            >
+            <Link key={app.id} href={`/applications/${app.id}`} className="block text-left">
               <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
                 <div className="flex items-center gap-2">
                   <AppWindow className="h-4 w-4 text-indigo-600" />
@@ -110,7 +105,7 @@ export default function ApplicationsClient({ orgId }: { orgId: string }) {
                   <p className="mt-1.5 line-clamp-2 text-xs text-slate-500">{app.description}</p>
                 )}
               </Card>
-            </button>
+            </Link>
           ))}
         </div>
       )}
