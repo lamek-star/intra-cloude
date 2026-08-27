@@ -58,6 +58,40 @@
          docs/architecture/ROADMAP.md's Phase 19 entry. -->
     <Launch Condition="Installed OR VersionNT64" Message="Intra-Cloud requires a 64-bit version of Windows." />
 
+    <!-- Root-caused during this session's re-verification pass
+         (docs/architecture/ROADMAP.md, "Re-verification pass
+         (2026-08-27)"): a non-elevated `msiexec /i ... /quiet` install
+         attempt left orphaned files under Program Files and a stray
+         Windows Installer product-cache entry. Not a custom-action bug;
+         this package has none. The actual mechanism: for a
+         Scope="perMachine" package, Windows Installer's execute-sequence
+         actions (InstallFiles, etc.) run through the Windows Installer
+         *service* impersonating SYSTEM, which can write to Program
+         Files/HKLM regardless of the calling process's own elevation.
+         The "does the caller actually have permission for a
+         per-machine install" check (Error 1925) doesn't fire until
+         InstallFinalize, by which point files are already staged. When
+         that late check fails and rollback runs, this session
+         separately reproduced rollback itself hitting access-denied
+         (verbose log: "Error in rollback skipped. Return: 5") and not
+         fully reversing those already-staged writes.
+         `Privileged` is Windows Installer's own built-in property (set
+         only when the running install session actually has
+         administrator rights for a per-machine install); checking it
+         here, in LaunchConditions, rejects a non-elevated attempt
+         before InstallValidate/InstallFiles ever run, so nothing is
+         ever staged to roll back in the first place.
+         Verified directly: double-clicking (ShellExecute-style launch,
+         no explicit "Run as administrator") does NOT trigger a UAC
+         prompt on its own for this MSI: unlike an EXE with an
+         embedded requireAdministrator manifest, a plain MSI has no such
+         manifest, and elevation is left to whatever invoked msiexec.
+         Both the interactive wizard and the silent `/quiet` path were
+         non-elevated in testing, and both are now caught by this same
+         condition: silently for /quiet, and via this condition's
+         Message text in the LaunchConditions dialog for the wizard. -->
+    <Launch Condition="Installed OR Privileged" Message="Intra-Cloud Control Center requires administrator privileges to install. Right-click the installer and choose 'Run as administrator', or if installing silently, run msiexec from an elevated (Run as administrator) command prompt." />
+
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Intra-Cloud">
         <Directory Id="ControlCenterFolder" Name="Control Center">
