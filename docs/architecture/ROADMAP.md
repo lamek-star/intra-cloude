@@ -1796,6 +1796,58 @@ module gotcha above nor its fix is a code change — it's how this
 project's own tests must actually be invoked, worth remembering the
 next time someone reaches for `docker exec ... manage.py test` here.
 
+**Release artifacts added, same pass** (`installer/release/
+New-ReleaseArtifacts.ps1`, commit `b70aff3`): packages the built MSI
+into a versioned `IntraCloud-Setup.msi` with a SHA-256 checksum (both
+`.sha256` and `CHECKSUMS.txt` forms), a `RELEASE_INFO.txt` (version,
+git commit — flagged when the working tree is dirty, so a checksum can
+never be silently attributed to an unreproducible build — build date,
+size, and an explicit unsigned-code-signing notice), and
+`RELEASE_NOTES.md` generated from the real git log since the previous
+release tag. No EXE bootstrapper: nothing in this installer needs one
+to chain ahead of the MSI (the Control Center publish is already
+self-contained), so a bare MSI is the "where appropriate" case, not a
+gap. Verified live against the real build, including confirming the
+dirty-tree detection actually fires.
+
+**Focused security review, same pass**, against the installer-
+hardening directive's checklist (privilege boundaries, service
+accounts, filesystem ACLs, database credentials, generated secrets,
+TLS certificates, localhost/LAN binding, firewall rules, uninstall
+permissions, update integrity, dependency integrity) — most of this
+was already covered by Phase 12's hardening pass and
+`docs/security/THREAT_MODEL.md`; this pass specifically re-checked the
+installer-adjacent pieces that hadn't been:
+- `New-IntraCloudEnvironmentFile.ps1`'s secret generation:
+  `RandomNumberGenerator` (a real CSPRNG, not `Get-Random`), 50
+  characters of alphanumeric output per secret (≈297 bits after the
+  charset restriction), never logged or written anywhere but the
+  output `.env`, and deliberately does not auto-generate
+  `BACKUP_ENCRYPTION_KEY` (an operator must opt into that deliberately,
+  since losing a silently-generated one would strand every encrypted
+  backup). No defect found.
+- Filesystem ACLs (`util:PermissionEx` in `Package.wxs`): `Users`
+  (BUILTIN), not `Everyone`, with Read/Write/Execute/Delete but not
+  ChangePermission/TakeOwnership — reviewed already in Phase 18, still
+  correct.
+- Firewall rules: confirmed the installer touches none at all (no
+  `netsh`/firewall calls anywhere under `installer/`) — correct for the
+  default Desktop Mode (the proxy binds `127.0.0.1` only, per
+  `docker-compose.yml`, so no inbound rule is needed). **Real, open gap
+  for LAN Server Mode specifically**: setting `PROXY_BIND_ADDRESS` to a
+  LAN interface has no accompanying Windows Firewall automation here —
+  not fixed this pass (a real feature to design, not a quick patch);
+  tracked for the offline-installation/deployment-mode work still open
+  (directive point 4).
+- Dependency integrity: `object-storage` still pins `minio/minio:latest`
+  (docker-compose.yml's own comment already flags this — "pin to a
+  specific digest before production use"), unchanged this pass, still
+  open.
+- Code signing: still blocked on a real certificate, a business asset
+  this session doesn't have and shouldn't fabricate — unchanged, and
+  now surfaced explicitly in every release build's `RELEASE_INFO.txt`
+  rather than only in this doc.
+
 ## Non-Negotiable Cross-Phase Rules
 
 - No phase ships without tenant-isolation tests for any new tenant-owned
