@@ -86,10 +86,81 @@ Describe 'Test-Wsl2Availability' {
     }
 }
 
+Describe 'Test-SystemMemory' {
+    It 'returns one of the defined statuses without throwing' {
+        { Test-SystemMemory } | Should -Not -Throw
+        $result = Test-SystemMemory
+        $result.Status | Should -BeIn @('Pass', 'Warning', 'Fail')
+    }
+}
+
+Describe 'Test-CpuCores' {
+    It 'reports Pass at or above 4 logical processors' {
+        $result = Test-CpuCores
+        if ([System.Environment]::ProcessorCount -ge 4) {
+            $result.Status | Should -Be 'Pass'
+        } else {
+            $result.Status | Should -BeIn @('Warning', 'Fail')
+        }
+    }
+}
+
+Describe 'Test-DiskSpace' {
+    It 'returns one of the defined statuses without throwing' {
+        { Test-DiskSpace } | Should -Not -Throw
+        $result = Test-DiskSpace
+        $result.Status | Should -BeIn @('Pass', 'Warning', 'Fail')
+    }
+}
+
+Describe 'Test-ProxyPortAvailable' {
+    It 'reports Warning when something is already listening on the default proxy port' {
+        # A real, direct test rather than a mock: actually bind port
+        # 8443 in-process for the duration of the assertion, matching
+        # how a live Caddy proxy (or a port-collision from something
+        # else) would occupy it.
+        $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 8443)
+        try {
+            $listener.Start()
+            $result = Test-ProxyPortAvailable
+            $result.Status | Should -Be 'Warning'
+        } finally {
+            $listener.Stop()
+        }
+    }
+
+    It 'reports Pass when the default proxy port is free' {
+        $result = Test-ProxyPortAvailable
+        $result.Status | Should -Be 'Pass'
+    }
+}
+
+Describe 'Test-ExistingInstallationState' {
+    It 'returns one of the defined statuses without throwing' {
+        { Test-ExistingInstallationState } | Should -Not -Throw
+        $result = Test-ExistingInstallationState
+        $result.Status | Should -BeIn @('Pass', 'Warning', 'Fail')
+    }
+
+    It 'reports Pass when neither files, Uninstall entries, nor a product-cache entry exist' {
+        # Real assertion against a genuinely absent product name, not a
+        # mock — proves the "nothing found" branch reports Pass without
+        # needing root/admin to fabricate registry state.
+        Mock Get-ChildItem {
+            param($Path)
+            if ($Path -like '*Uninstall*' -or $Path -like '*Installer\Products*') { return @() }
+            & (Get-Command Get-ChildItem -CommandType Cmdlet) @PSBoundParameters
+        } -ParameterFilter { $Path -like '*Uninstall*' -or $Path -like '*Installer\Products*' }
+        Mock Test-Path { $false } -ParameterFilter { $Path -like '*Intra-Cloud*' }
+        $result = Test-ExistingInstallationState
+        $result.Status | Should -Be 'Pass'
+    }
+}
+
 Describe 'Invoke-PrerequisiteChecks' {
     It 'returns exactly one result per check function, each with Name/Status/Detail' {
         $results = Invoke-PrerequisiteChecks
-        $results.Count | Should -Be 5
+        $results.Count | Should -Be 10
         foreach ($result in $results) {
             $result.Name | Should -Not -BeNullOrEmpty
             $result.Status | Should -BeIn @('Pass', 'Warning', 'Fail')

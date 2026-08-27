@@ -150,6 +150,157 @@ function Test-Wsl2Availability {
     }
 }
 
+function Test-SystemMemory {
+    # `systeminfo` (not Get-CimInstance — see script-level comment)
+    # reports "Total Physical Memory" as e.g. "16,163 MB". 8 GB is a
+    # practical floor: Docker Desktop-equivalent WSL2 workloads
+    # (PostgreSQL x2, MinIO, Redis/Valkey, Django, Celery, Next.js,
+    # Caddy — see docker-compose.yml) run, but tightly, below that.
+    $info = systeminfo 2>&1 | Out-String
+    if ($info -notmatch 'Total Physical Memory:\s*([\d,]+)\s*MB') {
+        return New-CheckResult -Name 'System memory' -Status 'Warning' `
+            -Detail 'Could not determine total physical memory from `systeminfo` output.'
+    }
+    $totalMb = [int]($Matches[1] -replace ',', '')
+    $totalGb = [math]::Round($totalMb / 1024, 1)
+    if ($totalGb -ge 8) {
+        return New-CheckResult -Name 'System memory' -Status 'Pass' -Detail "$totalGb GB total (minimum recommended: 8 GB)."
+    }
+    if ($totalGb -ge 4) {
+        return New-CheckResult -Name 'System memory' -Status 'Warning' `
+            -Detail "$totalGb GB total. Below the 8 GB recommended for the full Intra-Cloud stack (PostgreSQL, MinIO, Redis, backend, worker, frontend, proxy) under WSL2 — it may run, but tightly."
+    }
+    return New-CheckResult -Name 'System memory' -Status 'Fail' `
+        -Detail "$totalGb GB total is below the practical minimum (4 GB) for Intra-Cloud's WSL2 stack."
+}
+
+function Test-CpuCores {
+    # CIM-free: [System.Environment]::ProcessorCount reflects logical
+    # processors, matching what WSL2's own default resource allocation
+    # (up to all logical processors) actually uses.
+    $cores = [System.Environment]::ProcessorCount
+    if ($cores -ge 4) {
+        return New-CheckResult -Name 'CPU cores' -Status 'Pass' -Detail "$cores logical processors (minimum recommended: 4)."
+    }
+    if ($cores -ge 2) {
+        return New-CheckResult -Name 'CPU cores' -Status 'Warning' `
+            -Detail "$cores logical processors. Below the 4 recommended — the stack will run more slowly, particularly CSV import and analytics workloads."
+    }
+    return New-CheckResult -Name 'CPU cores' -Status 'Fail' `
+        -Detail "$cores logical processor(s) is below the practical minimum (2) for WSL2 plus the Intra-Cloud container stack."
+}
+
+function Test-DiskSpace {
+    # Checks free space on the system drive (where Program Files and,
+    # by default, %ProgramData%\IntraCloud\wsl's VHDX live —
+    # Import-IntraCloudDistro.ps1's default InstallPath). [System.IO.DriveInfo]
+    # is CIM-free. 20 GB covers the Control Center, the WSL2 distro's
+    # base VHDX, and initial container images with headroom for growth;
+    # it is not a promise about long-term data growth (buckets/backups
+    # can be pointed elsewhere — see Point 6/7 of the installer
+    # hardening pass, storage-location configuration).
+    $systemDrive = [System.IO.DriveInfo]::new($env:SystemDrive)
+    $freeGb = [math]::Round($systemDrive.AvailableFreeSpace / 1GB, 1)
+    if ($systemDrive.DriveFormat -ne 'NTFS') {
+        return New-CheckResult -Name 'Disk filesystem' -Status 'Fail' `
+            -Detail "$($env:SystemDrive) is formatted $($systemDrive.DriveFormat), not NTFS. WSL2 and Windows Installer per-machine installs both require NTFS."
+    }
+    if ($freeGb -ge 20) {
+        return New-CheckResult -Name 'Disk space' -Status 'Pass' -Detail "$freeGb GB free on $($env:SystemDrive) (minimum recommended: 20 GB)."
+    }
+    if ($freeGb -ge 10) {
+        return New-CheckResult -Name 'Disk space' -Status 'Warning' `
+            -Detail "$freeGb GB free on $($env:SystemDrive). Below the 20 GB recommended for the Control Center, the WSL2 distro's base VHDX, and initial container images."
+    }
+    return New-CheckResult -Name 'Disk space' -Status 'Fail' `
+        -Detail "$freeGb GB free on $($env:SystemDrive) is below the practical minimum (10 GB) to complete installation."
+}
+
+function Test-ProxyPortAvailable {
+    # docker-compose.yml publishes exactly one host port: PROXY_BIND_ADDRESS
+    # (default 127.0.0.1) : 8443 -> the Caddy proxy's 443. Its own
+    # comment already flags this as the one realistic port-collision
+    # risk. Binding a throwaway TcpListener (not TcpClient — a
+    # connect-based check would misreport "free" for a port nothing is
+    # listening on yet but that's still reserved/excluded) is the
+    # direct way to ask "can something claim this port," CIM-free.
+    $port = 8443
+    try {
+        $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
+        $listener.Start()
+        $listener.Stop()
+        return New-CheckResult -Name 'Network port' -Status 'Pass' -Detail "Port $port (the default proxy port) is available."
+    } catch {
+        return New-CheckResult -Name 'Network port' -Status 'Warning' `
+            -Detail "Port $port (the default proxy port) is already in use. Set PROXY_BIND_ADDRESS/the proxy port during installation, or free the port first."
+    }
+}
+
+function Test-ExistingInstallationState {
+    # Distinguishes three states Windows Installer can actually be in
+    # for this product, CIM-free (registry only): cleanly installed,
+    # genuinely absent, or stale/partial -- files and/or a product-cache
+    # entry exist with no matching Uninstall entry, meaning Windows
+    # Installer's own high-level view (Programs and Features, `msiexec
+    # /x`) does not consider it installed even though something is
+    # still on disk/in the registry. This is not a hypothetical: it is
+    # the exact condition this host is in right now, root-caused and
+    # documented in docs/architecture/ROADMAP.md's "Re-verification
+    # pass (2026-08-27)" entry, and this check's logic was verified
+    # directly against that real state before being written here — it
+    # correctly reports 'Stale' for this machine as it stands.
+    # Set-StrictMode -Version Latest (script-level) throws on reading a
+    # property a given registry key simply doesn't have (not every
+    # Uninstall/Products subkey carries DisplayName/ProductName), and
+    # even a PSObject.Properties[...] lookup throws on .Value when the
+    # entry itself is $null under strict mode — this project targets
+    # PowerShell 5.1 (#Requires above), so the `?.` null-conditional
+    # operator (7.0+) isn't available to shortcut this.
+    function Get-RegistryPropertyOrNull {
+        param($InputObject, [string]$Name)
+        if ($null -eq $InputObject) { return $null }
+        $prop = $InputObject.PSObject.Properties[$Name]
+        if ($null -eq $prop) { return $null }
+        return $prop.Value
+    }
+    $uninstallEntries = Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            $props = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
+            $displayName = Get-RegistryPropertyOrNull -InputObject $props -Name 'DisplayName'
+            if ($displayName -like '*Intra-Cloud Control Center*') { $_.PSChildName }
+        }
+    $cacheEntries = Get-ChildItem 'HKLM:\SOFTWARE\Classes\Installer\Products' -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            $props = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
+            $productName = Get-RegistryPropertyOrNull -InputObject $props -Name 'ProductName'
+            if ($productName -like '*Intra-Cloud Control Center*') { $_.PSChildName }
+        }
+    $filesPresent = Test-Path (Join-Path ${env:ProgramFiles} 'Intra-Cloud')
+
+    if (-not $uninstallEntries -and -not $cacheEntries -and -not $filesPresent) {
+        return New-CheckResult -Name 'Existing installation' -Status 'Pass' -Detail 'No existing Intra-Cloud Control Center installation detected. A clean install can proceed.'
+    }
+    # Exactly one Uninstall entry is the only shape a healthy install can
+    # take (MajorUpgrade's RemoveExistingProducts retires the old
+    # ProductCode during any successful upgrade before registering the
+    # new one). More than one existing simultaneously — confirmed
+    # directly against this host's own real state during this check's
+    # development, which currently has two — is itself the anomaly this
+    # check exists to catch, not evidence of a healthy install; treating
+    # it as Pass would have missed the exact condition this was written
+    # for.
+    if ($uninstallEntries.Count -eq 1) {
+        return New-CheckResult -Name 'Existing installation' -Status 'Pass' `
+            -Detail "An existing installation is registered and consistent. Repair/upgrade/uninstall can proceed through Programs and Features or this installer."
+    }
+    if ($uninstallEntries.Count -gt 1) {
+        return New-CheckResult -Name 'Existing installation' -Status 'Fail' `
+            -Detail "$($uninstallEntries.Count) simultaneous Windows Installer records claim Intra-Cloud Control Center is installed. A healthy install only ever has one; this points at a prior interrupted or non-elevated install attempt that didn't clean up correctly. Do not delete these manually — Windows Installer registry/cache entries require Windows-supported recovery. Use an elevated `msiexec /x <ProductCode>` for each entry (Programs and Features will list them), then reinstall. See docs/architecture/ROADMAP.md's orphaned-install-state findings for the root cause."
+    }
+    return New-CheckResult -Name 'Existing installation' -Status 'Fail' `
+        -Detail "Stale or partial installation state detected: $(if ($filesPresent) { 'files under Program Files\Intra-Cloud' }) $(if ($cacheEntries) { "$($cacheEntries.Count) orphaned Windows Installer product-cache entry/entries" }) exist with no matching Programs-and-Features entry, so `msiexec /x` cannot remove them normally. Do not delete these manually. Run this installer's repair path (elevated), or use an elevated `msiexec /fa` against the original package, before attempting a fresh install. See docs/architecture/ROADMAP.md's orphaned-install-state findings for the root cause."
+}
+
 function Invoke-PrerequisiteChecks {
     @(
         Test-WindowsVersion
@@ -157,6 +308,11 @@ function Invoke-PrerequisiteChecks {
         Test-AdministratorRights
         Test-VirtualizationSupport
         Test-Wsl2Availability
+        Test-SystemMemory
+        Test-CpuCores
+        Test-DiskSpace
+        Test-ProxyPortAvailable
+        Test-ExistingInstallationState
     )
 }
 
