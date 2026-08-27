@@ -1848,6 +1848,42 @@ installer-adjacent pieces that hadn't been:
   now surfaced explicitly in every release build's `RELEASE_INFO.txt`
   rather than only in this doc.
 
+**Installer-hardening pass status, end of this session.** Honest
+accounting against the full checklist this pass worked from, not a
+claim that everything on it is closed:
+
+*Done and verified live, this pass:* the actual release-blocking
+defect (orphaned Program Files/registry state from a non-elevated
+`msiexec /quiet` install) — root-caused, fixed, and verified through
+two independent paths (the silent path directly, the interactive
+wizard by driving it to a real UAC prompt and confirming it declines
+cleanly with zero new state); the pre-installation checker extended
+and its existing-installation-state logic corrected against this
+host's own real anomalous data; the `.icp` backup/restore round trip
+re-run live against the actual Docker stack (not cited from history);
+versioned, checksummed release artifacts; a focused installer-specific
+security review.
+
+*Genuinely environment-blocked, not pushed further by design:* full
+elevated lifecycle testing (repair, same-version reinstall, upgrade,
+downgrade rejection, clean uninstall, reinstall-after-uninstall) needs
+a real admin session this one doesn't have — the one UAC prompt this
+pass did trigger was interrupted to the user to decline, per their own
+stated boundary, rather than worked around. Clean-machine/VM
+qualification needs a VM this environment doesn't have. Both are
+tracked, not silently skipped — see Phase 20's qualification matrix.
+
+*Larger, separately-scoped follow-up work, not "installer hardening"
+in the small:* full offline installation (bundling Docker Engine's own
+`.deb` packages, not just the container images `Build-ReleaseBundle.ps1`
+already handles); the full 11-screen installer UX (Welcome/System
+Check/Deployment Mode/Storage Configuration/Network Configuration/
+Administrator Setup/Optional Components/Backup Location/Installation/
+Health Verification/Finish) against the current simpler
+`WixUI_InstallDir` flow; Windows Firewall automation for LAN Server
+Mode. None of these are the release blocker this pass started from
+(the orphan defect) — that one is closed.
+
 ## Non-Negotiable Cross-Phase Rules
 
 - No phase ships without tenant-isolation tests for any new tenant-owned
