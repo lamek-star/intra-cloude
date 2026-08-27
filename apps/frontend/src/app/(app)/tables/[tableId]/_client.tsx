@@ -27,6 +27,7 @@ import {
   THead,
   TRow,
 } from "@/components/ui";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 const DATA_TYPES = [
   "text",
@@ -50,9 +51,11 @@ export default function TableDetailClient({ tableId }: { tableId: string }) {
   const [offset, setOffset] = useState(0);
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [columnModalOpen, setColumnModalOpen] = useState(false);
   const [rowModalOpen, setRowModalOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<Record<string, unknown> | null>(null);
+  const confirm = useConfirm();
 
   async function loadTable() {
     const t = await api.get<DBTable>(`/tables/${tableId}/`);
@@ -72,6 +75,7 @@ export default function TableDetailClient({ tableId }: { tableId: string }) {
       await loadRows(0, "");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load table.");
+      setErrorDetail(err);
     }
   }
 
@@ -83,17 +87,18 @@ export default function TableDetailClient({ tableId }: { tableId: string }) {
   }, [tableId]);
 
   async function handleDeleteRow(row: Record<string, unknown>) {
-    if (!confirm("Delete this row?")) return;
+    if (!(await confirm({ title: "Delete this row?", confirmLabel: "Delete", danger: true }))) return;
     try {
       await api.del(`/tables/${tableId}/rows/${row.id}/`);
       await loadRows();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to delete row.");
+      setErrorDetail(err);
     }
   }
 
   if (!table && !error) return <PageLoading />;
-  if (error && !table) return <ErrorBanner message={error} />;
+  if (error && !table) return <ErrorBanner message={error} error={errorDetail} />;
   if (!table) return null;
 
   const totalPages = page ? Math.max(1, Math.ceil(page.count / PAGE_SIZE)) : 1;
@@ -113,8 +118,20 @@ export default function TableDetailClient({ tableId }: { tableId: string }) {
         actions={
           <>
             <a
+              href={`/tables/${tableId}/analytics`}
+              className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
+            >
+              Analytics
+            </a>
+            <a
+              href={`/tables/${tableId}/import`}
+              className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
+            >
+              Import CSV
+            </a>
+            <a
               href={`/api/v1/tables/${tableId}/rows/export/`}
-              className="inline-flex items-center rounded-md border border-white/10 bg-white/5 px-3.5 py-2 text-sm font-medium text-slate-100 hover:bg-white/10"
+              className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
             >
               Export CSV
             </a>
@@ -135,7 +152,7 @@ export default function TableDetailClient({ tableId }: { tableId: string }) {
 
       {error && (
         <div className="mb-4">
-          <ErrorBanner message={error} />
+          <ErrorBanner message={error} error={errorDetail} />
         </div>
       )}
 
@@ -205,13 +222,13 @@ export default function TableDetailClient({ tableId }: { tableId: string }) {
                           setEditingRow(row);
                           setRowModalOpen(true);
                         }}
-                        className="text-indigo-400 hover:text-indigo-300"
+                        className="text-indigo-600 hover:text-indigo-500"
                       >
                         Edit
                       </button>
                       <button
                         onClick={() => handleDeleteRow(row)}
-                        className="text-red-400 hover:text-red-300"
+                        className="text-red-600 hover:text-red-500"
                       >
                         Delete
                       </button>
@@ -308,6 +325,7 @@ function AddColumnModal({
   const [isNullable, setIsNullable] = useState(true);
   const [isUnique, setIsUnique] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -329,6 +347,7 @@ function AddColumnModal({
       onCreated(col);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create column.");
+      setErrorDetail(err);
     } finally {
       setSubmitting(false);
     }
@@ -337,7 +356,7 @@ function AddColumnModal({
   return (
     <Modal open={open} onClose={onClose} title="Add column">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <ErrorBanner message={error} />}
+        {error && <ErrorBanner message={error} error={errorDetail} />}
         <div>
           <Label htmlFor="col-name">Name</Label>
           <Input
@@ -401,11 +420,11 @@ function AddColumnModal({
           </div>
         )}
         <div className="flex gap-4">
-          <label className="flex items-center gap-2 text-sm text-slate-300">
+          <label className="flex items-center gap-2 text-sm text-slate-600">
             <Checkbox checked={isNullable} onChange={(e) => setIsNullable(e.target.checked)} />
             Nullable
           </label>
-          <label className="flex items-center gap-2 text-sm text-slate-300">
+          <label className="flex items-center gap-2 text-sm text-slate-600">
             <Checkbox checked={isUnique} onChange={(e) => setIsUnique(e.target.checked)} />
             Unique
           </label>
@@ -441,6 +460,7 @@ function RowFormModal({
   const editable = columns.filter((c) => !c.is_primary_key);
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -512,6 +532,7 @@ function RowFormModal({
       onSaved();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to save row.");
+      setErrorDetail(err);
     } finally {
       setSubmitting(false);
     }
@@ -520,12 +541,12 @@ function RowFormModal({
   return (
     <Modal open={open} onClose={onClose} title={initialRow ? "Edit row" : "Add row"}>
       <form onSubmit={handleSubmit} className="max-h-[70vh] space-y-3 overflow-y-auto">
-        {error && <ErrorBanner message={error} />}
+        {error && <ErrorBanner message={error} error={errorDetail} />}
         {editable.map((c) => (
           <div key={c.id}>
             <Label htmlFor={`field-${c.name}`}>
               {c.name}
-              {!c.is_nullable && <span className="text-red-400"> *</span>}
+              {!c.is_nullable && <span className="text-red-600"> *</span>}
             </Label>
             <FieldInput
               column={c}
@@ -567,35 +588,64 @@ function FieldInput({
       </Select>
     );
   }
+  const required = !column.is_nullable;
   if (column.data_type === "date") {
-    return <Input id={id} type="date" value={value} onChange={(e) => onChange(e.target.value)} />;
+    return (
+      <Input id={id} type="date" required={required} value={value} onChange={(e) => onChange(e.target.value)} />
+    );
   }
   if (column.data_type === "datetime") {
     return (
-      <Input id={id} type="datetime-local" value={value} onChange={(e) => onChange(e.target.value)} />
+      <Input
+        id={id}
+        type="datetime-local"
+        required={required}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
     );
   }
   if (column.data_type === "integer" || column.data_type === "bigint") {
-    return <Input id={id} type="number" step={1} value={value} onChange={(e) => onChange(e.target.value)} />;
+    return (
+      <Input
+        id={id}
+        type="number"
+        step={1}
+        required={required}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
   }
   if (column.data_type === "decimal") {
-    return <Input id={id} type="number" step="any" value={value} onChange={(e) => onChange(e.target.value)} />;
+    return (
+      <Input
+        id={id}
+        type="number"
+        step="any"
+        required={required}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
   }
   if (column.data_type === "json") {
     return (
       <textarea
         id={id}
         rows={3}
+        required={required}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="{}"
-        className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 font-mono text-xs text-slate-100 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+        className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-800 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
       />
     );
   }
   return (
     <Input
       id={id}
+      required={required}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       maxLength={column.max_length ?? undefined}

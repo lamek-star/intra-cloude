@@ -1,21 +1,36 @@
 @import "tailwindcss";
 
-/* This app is dark-only by design (bg-slate-950 throughout) — no
-   light/dark media-query switch. Set directly on `body` inside a layer
-   so Tailwind's `bg-slate-950` utility on the same element (layout.tsx)
-   cascades correctly instead of being overridden by an unlayered rule. */
+/* Light-mode design system (Section 41+ of the professionalization
+   brief): dark-navy sidebar chrome, light content area, white cards.
+   `--font-sans` is set from next/font's `--font-inter` CSS variable
+   (see layout.tsx) so Tailwind's `font-sans`/default body font resolve
+   to the self-hosted Inter build, not a system fallback. */
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+}
+
 @layer base {
   body {
-    background: #020617;
-    color: #f1f5f9;
-    font-family:
-      ui-sans-serif,
-      system-ui,
-      -apple-system,
-      "Segoe UI",
-      Roboto,
-      Helvetica,
-      Arial,
-      sans-serif;
+    background: #f5f6fb;
+    color: #151823;
+  }
+
+  /* Unit 8 (accessibility pass): a consistent, on-brand focus ring for
+     every interactive element site-wide, so keyboard users can always
+     see where focus is -- rather than depending on each of the many
+     ad hoc `<button className="text-left">` list-item wrappers across
+     the app (org cards, application cards, table rows, etc.) to opt in
+     individually. Elements that already declare their own
+     `focus-visible:` utility (Button, Input, TRow) simply override
+     this with their own ring. */
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid #6366f1;
+    outline-offset: 2px;
   }
 }

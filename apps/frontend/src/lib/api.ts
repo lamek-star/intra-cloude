@@ -12,12 +12,26 @@ const API_BASE = "/api/v1";
 export class ApiError extends Error {
   status: number;
   body: unknown;
+  /** Present when the backend used the structured `{error: {code, ...}}`
+   * shape (system/exceptions.py) -- absent for the many views that
+   * still `return Response({"detail": "..."})` or a bare status code
+   * directly. Never a stack trace either way; the backend logs those
+   * server-side only, keyed by requestId (Section 14 of the master
+   * prompt). Surfaced by ErrorBanner's optional "View technical
+   * details" disclosure, not shown by default. */
+  code: string | null;
+  requestId: string | null;
 
   constructor(status: number, body: unknown) {
     const detail = extractDetail(body);
     super(detail ?? DEFAULT_STATUS_MESSAGES[status] ?? `Request failed with status ${status}`);
     this.status = status;
     this.body = body;
+    const errorObj =
+      body && typeof body === "object" && (body as Record<string, unknown>).error;
+    const errorRecord = errorObj && typeof errorObj === "object" ? (errorObj as Record<string, unknown>) : null;
+    this.code = typeof errorRecord?.code === "string" ? errorRecord.code : null;
+    this.requestId = typeof errorRecord?.request_id === "string" ? errorRecord.request_id : null;
   }
 }
 
@@ -181,6 +195,13 @@ export type Membership = {
   created_at: string;
 };
 
+export type Team = {
+  id: string;
+  organization: string;
+  name: string;
+  created_at: string;
+};
+
 export type Workspace = {
   id: string;
   organization: string;
@@ -263,11 +284,101 @@ export type ConnectedDatabase = {
   created_at: string;
 };
 
+export type ConnectedColumn = {
+  name: string;
+  data_type: string;
+  is_nullable: boolean;
+};
+
+export type ConnectedTableSchema = {
+  name: string;
+  columns: ConnectedColumn[];
+};
+
 export type RowsPage = {
   count: number;
   limit: number;
   offset: number;
   results: Record<string, unknown>[];
+};
+
+export type ImportPreviewColumn = {
+  csv_column: string;
+  inferred_type: string;
+};
+
+export type ImportPreview = {
+  encoding: string;
+  delimiter: string;
+  headers: string[];
+  sample_rows: string[][];
+  columns: ImportPreviewColumn[];
+};
+
+export type ColumnMappingEntry = {
+  csv_column: string;
+  target_column: string;
+  target_type: string;
+};
+
+export type ImportJob = {
+  id: string;
+  file: string;
+  table: string;
+  encoding: string;
+  delimiter: string;
+  column_mapping: ColumnMappingEntry[];
+  status: "pending" | "running" | "completed" | "failed";
+  total_rows: number;
+  imported_rows: number;
+  rejected_rows: number;
+  error_message: string;
+  created_by: string;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+};
+
+export type ImportJobError = {
+  id: string;
+  row_number: number;
+  message: string;
+  raw_row: Record<string, unknown>;
+  created_at: string;
+};
+
+export type ColumnProfile = {
+  name: string;
+  data_type: string;
+  missing_count: number;
+  null_percentage: number;
+  unique_count: number;
+  min?: number;
+  max?: number;
+  mean?: number;
+  median?: number;
+  stdev?: number;
+  potential_outlier_count?: number;
+  top_values?: { value: unknown; count: number }[];
+};
+
+export type TableProfile = {
+  table: string;
+  row_count: number;
+  column_count: number;
+  truncated: boolean;
+  sampled_rows: number;
+  columns: ColumnProfile[];
+};
+
+// DRF's stock LimitOffsetPagination shape (config/settings/base.py's
+// DEFAULT_PAGINATION_CLASS) -- distinct from RowsPage above, which is a
+// bespoke shape the row-browsing endpoint returns instead.
+export type Paginated<T> = {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: T[];
 };
 
 export type AuditEvent = {
@@ -281,4 +392,81 @@ export type AuditEvent = {
   request_id: string;
   result: "success" | "denied" | "error";
   context: Record<string, unknown>;
+};
+
+export type Application = {
+  id: string;
+  organization: string;
+  name: string;
+  description: string;
+  owner: string;
+  created_at: string;
+};
+
+export type ApplicationCredential = {
+  id: string;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+  revoked_at: string | null;
+  /** Only present exactly once, in the response to create/rotate — the
+   * backend never stores or re-returns the plaintext. */
+  secret?: string;
+};
+
+export type ShareGrant = {
+  id: string;
+  organization: string;
+  resource_type: string;
+  resource_id: string;
+  principal_type: "user" | "team" | "organization";
+  user: string | null;
+  team: string | null;
+  level: "read" | "write" | "admin";
+  expires_at: string | null;
+  revoked_at: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+export type ResourceGrant = {
+  id: string;
+  permission: string;
+  resource_type: string;
+  resource_id: string;
+  granted_by: string | null;
+  expires_at: string | null;
+  created_at: string;
+};
+
+export type DashboardWidget = {
+  table_id: string;
+  operation: string;
+  params?: Record<string, unknown>;
+  chart_type?: string;
+  title?: string;
+  position?: number;
+};
+
+export type Dashboard = {
+  id: string;
+  tenant_database: string;
+  name: string;
+  widgets: DashboardWidget[];
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DashboardWidgetResult = {
+  title: string;
+  chart_type: string;
+  data?: Record<string, unknown>;
+  error?: string;
+};
+
+export type DashboardRenderResult = {
+  id: string;
+  name: string;
+  widgets: DashboardWidgetResult[];
 };
