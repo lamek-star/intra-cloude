@@ -1696,22 +1696,65 @@ verified directly, correcting an initial assumption written into the
 first draft of that comment: a plain double-click of the MSI does
 *not* trigger a UAC prompt on its own — unlike an EXE with an embedded
 `requireAdministrator` manifest, a bare MSI has none, and elevation is
-left entirely to whatever invoked `msiexec`. Both the interactive
-wizard and the silent `/quiet` path were non-elevated in testing, and
-both are now caught by the same condition: silently for `/quiet`, and
-via this condition's `Message` text in the `LaunchConditions` dialog
-for the wizard.
+left entirely to whatever invoked `msiexec`.
 
-**Still open after this fix**: the pre-existing 8/23 orphan itself
-(files under `C:\Program Files\Intra-Cloud\` and the stray product-
-cache registry entry) is untouched — cleaning it up requires a
+**Correction to the claim above, same pass, found while investigating
+a second orphan entry (below):** "both are now caught by the same
+condition" understated what's actually happening for the interactive
+wizard, and needed deeper, not shallower, verification. Drove the real
+wizard end to end via UI Automation (`System.Windows.Automation`,
+keyboard accelerators for Next/Accept/Install — the wizard's controls
+don't expose `InvokePattern`) through Welcome, License,
+destination-folder, and Ready-to-Install, then triggered "Install."
+That produced a genuine `consent.exe` UAC prompt — confirmed live,
+declined deliberately (this session cannot and should not click
+through UAC's secure desktop; the user was interrupted to decline it
+themselves, per their own stated interrupt boundary, since it was this
+session's own diagnostic wizard and not a real install to complete).
+Declining it left zero new files or registry state. So the interactive
+wizard was **never actually the vulnerable path** — Windows Installer's
+own COM elevation for a perMachine package correctly gates
+`InstallExecuteSequence` at the "Install" click, before any file or
+registry write. Browsing Welcome/License/directory pages non-elevated
+is harmless; nothing executes until elevation is granted. The
+`Privileged` launch condition's real value is closing the *other* path:
+`msiexec /i ... /quiet` has no UI at all, so Windows Installer has no
+way to *show* that same UAC prompt, and previously proceeded
+unelevated regardless, only failing (too late) at `InstallFinalize`.
+`installer/wix/Package.wxs`'s comment (commit `07f8f70`) has been
+corrected to state this precisely rather than the earlier, imprecise
+"both were non-elevated in testing" claim.
+
+**A second, directly-reproduced orphan, found while establishing the
+before/after baseline for the above test:** this host now carries not
+one but *two* stray `Installer\Products` cache entries and *two* full
+`Uninstall` registry entries claiming "Intra-Cloud Control Center" is
+installed (`{DA6BA8DB-...}`, dated 8/23 — the original, previously
+documented orphan — and `{0A88DE6E-...}`, dated 8/27, this session's
+own date). The 8/27 entry's timestamp lines up with this session's
+earlier, pre-fix `msiexec /quiet` reproduction of the original defect
+(the same reproduction step recorded above as "Error 1925 ... exit
+1603"): unlike the LaunchConditions-based rejection verified
+repeatedly since, that earlier pre-fix attempt reached far enough into
+`InstallExecuteSequence` for `RegisterProduct` to commit before the
+late permission check failed and rollback (itself failing, as
+documented above) didn't reverse it — leaving a second, "complete-
+looking" Uninstall entry for a product whose files were never fully
+usable. This is direct, first-hand confirmation of the exact failure
+mode this pass diagnosed, not just a historical claim inherited from
+an earlier session. Neither this nor the original 8/23 entry needed a
+new theory to explain — both point at the same root cause, now closed.
+
+**Still open after the fix**: both orphans (8/23 and this session's
+own 8/27 reproduction) are untouched — cleaning them up requires a
 genuinely elevated session (`msiexec /x` and/or direct deletion both
 need admin rights this session doesn't have), tracked for Phase 20's
 real elevated-session qualification pass. Per this project's own
 "do not blindly delete Windows Installer registry/cache entries" rule,
 that cleanup should use Windows-supported recovery (an elevated
-`msiexec /x <ProductCode>`, or elevated Programs and Features removal)
-rather than manual registry surgery.
+`msiexec /x <ProductCode>` for each of the two ProductCodes above, or
+elevated Programs and Features removal) rather than manual registry
+surgery.
 
 ## Non-Negotiable Cross-Phase Rules
 
