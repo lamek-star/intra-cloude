@@ -1671,6 +1671,48 @@ specific look during Phase 20's real elevated-session qualification
 pass rather than assuming the earlier "no orphaned files/registry
 keys" claim covers every case.
 
+**Root cause found and fixed, same pass (`installer/wix/Package.wxs`,
+commit `1e2fa81`).** Confirmed this package has no custom actions —
+not a custom-action bug. The actual mechanism: for a
+`Scope="perMachine"` package, Windows Installer's execute-sequence
+actions (`InstallFiles`, etc.) run through the Windows Installer
+*service* impersonating SYSTEM, which can write to Program Files/HKLM
+regardless of the calling process's own elevation. The "does the
+caller actually have permission for a per-machine install" check
+(Error 1925) doesn't fire until `InstallFinalize`, by which point
+files are already staged; this session separately reproduced rollback
+of those staged writes itself hitting access-denied and not fully
+reversing them — consistent with how the 8/23 orphan above could have
+been left behind. Fix: a `<Launch Condition>` on the built-in
+`Privileged` property rejects a non-elevated attempt at
+`LaunchConditions`, before `InstallValidate`/`InstallFiles` ever runs,
+so nothing is staged to roll back in the first place. Verified: a
+fresh non-elevated `msiexec /i ... /quiet` now fails at
+`LaunchConditions` (Return value 3, exit 1603) with the pre-existing
+8/23 orphan's file count unchanged (14 files, before and after) —
+confirming the fix adds no new orphaned state, though it does not
+retroactively clean up that pre-existing orphan (see below). Also
+verified directly, correcting an initial assumption written into the
+first draft of that comment: a plain double-click of the MSI does
+*not* trigger a UAC prompt on its own — unlike an EXE with an embedded
+`requireAdministrator` manifest, a bare MSI has none, and elevation is
+left entirely to whatever invoked `msiexec`. Both the interactive
+wizard and the silent `/quiet` path were non-elevated in testing, and
+both are now caught by the same condition: silently for `/quiet`, and
+via this condition's `Message` text in the `LaunchConditions` dialog
+for the wizard.
+
+**Still open after this fix**: the pre-existing 8/23 orphan itself
+(files under `C:\Program Files\Intra-Cloud\` and the stray product-
+cache registry entry) is untouched — cleaning it up requires a
+genuinely elevated session (`msiexec /x` and/or direct deletion both
+need admin rights this session doesn't have), tracked for Phase 20's
+real elevated-session qualification pass. Per this project's own
+"do not blindly delete Windows Installer registry/cache entries" rule,
+that cleanup should use Windows-supported recovery (an elevated
+`msiexec /x <ProductCode>`, or elevated Programs and Features removal)
+rather than manual registry surgery.
+
 ## Non-Negotiable Cross-Phase Rules
 
 - No phase ships without tenant-isolation tests for any new tenant-owned
