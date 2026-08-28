@@ -28,6 +28,19 @@ class CreateOrganizationTests(APITestCase):
         detail = self.client.get(reverse("organization-detail", args=[org_id]))
         self.assertEqual(detail.status_code, status.HTTP_200_OK)
 
+    def test_duplicate_name_gets_a_disambiguated_slug_instead_of_a_500(self):
+        first = self.client.post(reverse("organization-list-create"), {"name": "Acme Corp"})
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+
+        other_owner = User.objects.create_user(email="other-acme@example.com", password="x")
+        self.client.force_login(other_owner)
+        second = self.client.post(reverse("organization-list-create"), {"name": "Acme Corp"})
+
+        self.assertEqual(second.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second.data["name"], "Acme Corp")
+        self.assertNotEqual(second.data["slug"], first.data["slug"])
+        self.assertTrue(second.data["slug"].startswith("acme-corp"))
+
     def test_list_only_returns_orgs_the_user_belongs_to(self):
         self.client.post(reverse("organization-list-create"), {"name": "Mine"})
 
