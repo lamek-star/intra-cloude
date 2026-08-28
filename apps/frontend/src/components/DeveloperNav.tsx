@@ -79,7 +79,7 @@ export function DeveloperNav({ orgId, active }: { orgId: string; active: string 
                 aria-current={isActive ? "page" : undefined}
                 className={`flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors ${
                   isActive
-                    ? "bg-indigo-50 text-indigo-600"
+                    ? "bg-brand-50 text-brand-600"
                     : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
                 }`}
               >

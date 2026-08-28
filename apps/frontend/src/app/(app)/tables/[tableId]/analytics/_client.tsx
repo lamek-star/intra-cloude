@@ -201,7 +201,7 @@ export default function AnalyticsClient({ tableId }: { tableId: string }) {
                       type="number"
                       value={fieldValues[field.key] ?? String(field.default ?? "")}
                       onChange={(e) => setFieldValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                      className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+                      className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
                     />
                   )}
                 </div>

@@ -1,6 +1,6 @@
-# DESIGN.md — Intra-Cloud
+# DESIGN.md — IntraForge
 
-> Design source of truth for design and coding agents working on Intra-Cloud.
+> Design source of truth for design and coding agents working on IntraForge.
 > Companion to `CLAUDE.md` / `AGENTS.md` (which describe *how to build*).
 > This file describes *how it should look and feel*, with the rationale attached
 > so an agent can stay on-system when it hits a case this file never covered.
@@ -13,20 +13,34 @@
 
 ## 1. Identity
 
-**Intra-Cloud is private cloud infrastructure that organizations run on their own terms.**
-Its users are administrators, developers and data owners. They arrive with a task
-(find a file, fix a permission, read a log, import a table) and want it done with
-the fewest possible unknowns.
+**IntraForge is private business infrastructure that organizations run on their own terms.**
+Tagline: **Build. Store. Connect. Privately.** Its users are administrators, developers
+and data owners. They arrive with a task (find a file, fix a permission, read a log,
+import a table) and want it done with the fewest possible unknowns.
+
+### The mark `[shipped]`
+
+The logo is a cloud outline (blue→teal→green gradient stroke) containing a small
+connected-nodes diagram — the platform's two ideas at once: private infrastructure
+(the cloud you host yourself) and connected data (files, databases, applications
+talking to each other safely). Source asset: `design-references/brand/source/
+logo-original.jpg`; generated lockups/icons at every size the app needs:
+`apps/frontend/public/brand/`. Never stretched, redrawn, or recolored beyond the
+two sanctioned transparent variants (light-surface, dark-surface — the dark variant
+inverts only the wordmark's ink to near-white; the icon's gradient is untouched,
+since it already reads on navy). Regenerate both from the same source via
+`design-references/brand/generate_assets.py` if the source logo ever changes —
+never hand-edit a generated PNG.
 
 ### Design direction
 
-Original to Intra-Cloud, informed by — never copied from — four reference products:
+Original to IntraForge, informed by — never copied from — four reference products:
 
 | Borrowed principle | From | How it shows up here |
 |---|---|---|
 | Precise navigation, one obvious hierarchy, keyboard-first | Linear | Fixed navy rail, `Ctrl K` command palette, one primary action per view |
 | Technical surfaces treated as first-class UI, not an afterthought | Supabase | Table/database screens use real data density, monospace for identifiers |
-| Restraint — typography and spacing carry the design, not ornament | Vercel | One accent colour, near-flat surfaces, no decorative gradients in content |
+| Restraint — typography and spacing carry the design, not ornament | Vercel | One primary accent colour, near-flat surfaces, no decorative gradients in content |
 | Readable, calm content and settings screens | Notion | Generous line length limits, labelled sections, quiet dividers |
 
 **We do not** reproduce any of those companies' logos, wordmarks, brand colours,
@@ -38,22 +52,22 @@ only.
 
 1. **Certainty over delight.** If an animation, colour or flourish makes the
    user less sure about what just happened or what will happen next, remove it.
-2. **One accent.** Indigo means "this is the action" or "this is where you are."
-   If indigo is on screen three times, two of them are wrong.
+2. **One accent.** Brand blue means "this is the action" or "this is where you
+   are." If it's on screen three times, two of them are wrong. Turquoise and
+   green exist for a different job — see §2.2 — never as a second "click me."
 3. **Density is a feature.** These are working screens. Prefer showing one more
    row of real data over one more pixel of padding.
-
-### Naming note
-
-The shipped sidebar and mobile header currently read **"Private Data Cloud"**
-(`apps/frontend/src/components/AppShell.tsx`). The product is referred to as
-**Intra-Cloud** in this document. Aligning the in-product wordmark is a
-deliberate product decision and is **out of scope** for any styling task — do
-not change it as a side effect of design work.
 
 ---
 
 ## 2. Colour tokens
+
+Every value below is a stock Tailwind v4 palette swatch (`slate`/`blue`/`teal`/
+`green`/`amber`/`red`), not an invented hex — defined as named `--color-*` theme
+entries in `apps/frontend/src/app/globals.css`'s `@theme` block so a future
+palette change is a one-line edit there, not a repo-wide find/replace. WCAG AA
+verified (contrast ratios noted per token); recheck with the same method
+(relative-luminance formula, WCAG 2.x) before changing any of them.
 
 ### 2.1 Light theme `[shipped]`
 
@@ -61,53 +75,76 @@ This is the theme the application ships today.
 
 | Token | Value | Use |
 |---|---|---|
-| `--surface-canvas` | `#F5F6FB` | App background behind all content |
+| `--surface-canvas` | `#F8FAFC` | App background behind all content |
 | `--surface-raised` | `#FFFFFF` | Cards, tables, modals, inputs |
-| `--surface-sunken` | `#EEF0F7` | Wells, code blocks, inset panels |
+| `--surface-sunken` | `#F1F5F9` | Wells, code blocks, inset panels |
 | `--surface-muted` | `#F8FAFC` | Table headers, hover rows, quiet fills |
 | `--border-subtle` | `#E2E8F0` | Default border (cards use it at 70% alpha) |
 | `--border-strong` | `#CBD5E1` | Dividers that must survive a busy screen |
-| `--text-primary` | `#151823` | Headings, values, primary body |
-| `--text-secondary` | `#475569` | Body copy, table cells |
+| `--text-primary` | `#0F172A` | Headings, values, primary body — 17.06:1 on canvas |
+| `--text-secondary` | `#475569` | Body copy, table cells — 7.24:1 on canvas |
 | `--text-tertiary` | `#94A3B8` | Labels, captions, disabled, placeholder |
 | `--text-inverse` | `#FFFFFF` | Text on brand / navy fills |
 
 ### 2.2 Brand `[shipped]`
 
+**Brand blue** is the one interactive accent (buttons, links, active nav, focus
+rings) — the logo's own blue. **Teal and green are accents, not interactive
+colours**: connection/growth motifs, chart series, icon fills, status tints.
+Neither's solid swatch (`teal-500`/`green-500`) may carry small text directly —
+both fail WCAG AA as a text/fill pair (2.49:1 and 2.28:1 against white
+respectively); pair the `-700` step with the `-50` tint instead (both verified
+>5:1), or use the solid step only for large decorative elements (icon fills
+≥24px, chart fills, progress bars).
+
 | Token | Value | Use |
 |---|---|---|
-| `--brand-700` | `#4338CA` | Pressed state |
-| `--brand-600` | `#4F46E5` | Primary buttons, active nav |
-| `--brand-500` | `#6366F1` | Hover, focus ring, avatar fills |
-| `--brand-100` | `#E0E7FF` | Selected row tint |
-| `--brand-50`  | `#EEF2FF` | Info badge background |
+| `--color-brand-700` | `#1D4ED8` | Pressed state — white text 6.70:1 |
+| `--color-brand-600` | `#2563EB` | Primary buttons, active nav — white text 5.17:1, 5.17:1 on white |
+| `--color-brand-500` | `#3B82F6` | Hover, focus ring, avatar fills |
+| `--color-brand-400` | `#60A5FA` | Input focus border (lighter than the ring) |
+| `--color-brand-100` | `#DBEAFE` | Selected row tint |
+| `--color-brand-50`  | `#EFF6FF` | Info badge background |
+| `--color-teal-700` | `#0F766E` | Status/badge text on `teal-50` — 5.25:1 |
+| `--color-teal-600` | `#0D9488` | — |
+| `--color-teal-500` | `#14B8A6` | Icon fills, chart series, decorative only |
+| `--color-teal-50` | `#F0FDFA` | Tint background |
+| `--color-green-700` | `#15803D` | Status/badge text on `green-50` — 5.21:1 |
+| `--color-green-600` | `#16A34A` | Success solid (icon fills, progress) |
+| `--color-green-500` | `#22C55E` | Decorative only — 2.28:1 fails as text/fill-with-text |
+| `--color-green-50` | `#F0FDF4` | Tint background |
 
 ### 2.3 Chrome (navigation rail) `[shipped]`
 
-The navy rail is the one place a gradient is allowed. It exists to separate
-"where you are in the product" from "what you are working on."
+A flat navy fill, not a gradient — deliberately simplified from the pre-rebrand
+two-stop navy gradient: it separates "where you are in the product" from "what
+you are working on" just as well, with one fewer token, and keeps to the "avoid
+excessive gradients" brand rule (the mark's own gradient is IntraForge's one
+sanctioned gradient moment).
 
 | Token | Value | Use |
 |---|---|---|
-| `--chrome-from` | `#12163A` | Rail gradient top |
-| `--chrome-to`   | `#0B0E24` | Rail gradient bottom |
-| `--chrome-fg`   | `#FFFFFF` | Active rail label |
-| `--chrome-fg-muted` | `#94A3B8` | Inactive rail label |
-| `--chrome-fill` | `rgba(255,255,255,0.05)` | Rail search / account tiles |
-| `--chrome-fill-hover` | `rgba(255,255,255,0.10)` | Rail hover |
-| `--chrome-divider` | `rgba(255,255,255,0.10)` | Rail section rule |
+| `--color-navy` | `#172554` | Rail fill, headings, dark surfaces — white text 14.69:1 |
+| `--color-navy-800` | `#1E3A8A` | Reserved for a future rail hover/pressed step, not yet used |
+| Rail foreground | `#FFFFFF` | Active rail label |
+| Rail foreground (muted) | `text-slate-400` | Inactive rail label |
+| Rail fill (tiles/hover) | `bg-white/5`, `bg-white/10` | Rail search / account tile, hover |
+| Rail divider | `border-white/10` | Rail section rule |
 
 ### 2.4 Status `[shipped]`
 
 Status colour is always paired with a **word**. Colour alone never carries
-meaning — see §14.
+meaning — see §14. Danger/Warning/Neutral are unchanged from before the
+rebrand (already accessible, conventionally brand-independent); Info now maps
+to brand blue instead of the old indigo, Success to the brand's green family
+instead of emerald.
 
 | Intent | Solid | Tint bg | Tint fg |
 |---|---|---|---|
-| Success | `#059669` | `#ECFDF5` | `#047857` |
+| Success | `#16A34A` | `#F0FDF4` | `#15803D` |
 | Warning | `#D97706` | `#FFFBEB` | `#B45309` |
 | Danger  | `#DC2626` | `#FEF2F2` | `#B91C1C` |
-| Info    | `#4F46E5` | `#EEF2FF` | `#4338CA` |
+| Info    | `#2563EB` | `#EFF6FF` | `#1D4ED8` |
 | Neutral | `#64748B` | `#F1F5F9` | `#475569` |
 
 ### 2.5 Dark theme `[spec]`
@@ -127,13 +164,13 @@ before any component starts referencing them; do not half-adopt them.
 | `--text-primary`   | `#E8EAF6` | Never pure `#FFF` — it vibrates on navy |
 | `--text-secondary` | `#A9B0D0` | |
 | `--text-tertiary`  | `#6F779E` | |
-| `--brand-600`      | `#6366F1` | Brand lightens one step in dark |
-| `--brand-500`      | `#818CF8` | |
-| Success / Warning / Danger tints | `#064E3B` / `#4A2E05` / `#4C1417` | fg lightens to `#6EE7B7` / `#FCD34D` / `#FCA5A5` |
+| `--color-brand-600` | `#3B82F6` | Brand lightens one step in dark (today's `brand-500`) |
+| `--color-brand-500` | `#60A5FA` | |
+| Success / Warning / Danger tints | `#052E1D` / `#4A2E05` / `#4C1417` | fg lightens to `#4ADE80` / `#FCD34D` / `#FCA5A5` |
 
 **Rule:** the rail does **not** change between themes. In dark mode it stops
 being a contrast device and becomes continuous with the canvas — that is
-intended, and the rail keeps its `--chrome-divider` rules so structure survives.
+intended, and the rail keeps its divider rules so structure survives.
 
 ### 2.6 Implementation
 
@@ -141,7 +178,7 @@ Define every token once on `:root`, override only what changes in dark, and
 guard the media query so an explicit light choice still wins:
 
 ```css
-:root { --surface-canvas: #F5F6FB; /* …all light tokens… */ }
+:root { --color-surface-canvas: #F8FAFC; /* …all light tokens… */ }
 :root:not([data-theme="light"]) {
   @media (prefers-color-scheme: dark) { /* …dark overrides… */ }
 }
@@ -249,7 +286,7 @@ In dark mode, shadows do not read. Substitute a one-step-lighter
 
 ```
 Rail (navy, 240px, ≥sm)     Content
-├─ Wordmark                 ├─ PageHeader — title, description, primary action
+├─ Wordmark (logo + name)   ├─ PageHeader — title, description, primary action
 ├─ Search  (Ctrl K)         ├─ Breadcrumb / back link when nested
 ├─ Dashboard                └─ Body
 ├─ Organizations
@@ -262,14 +299,14 @@ reached from within the content area. This is deliberate: the rail must not
 grow with the data model.
 
 - **Mobile (`<sm`):** the rail is hidden and replaced by a 56px white top bar
-  with the wordmark. `[shipped]`
+  with the logo + wordmark. `[shipped]`
 - **Developer portal:** owns a secondary nav (`DeveloperNav.tsx`) rendered
   inside the content area, not in the rail. `[shipped]`
 
 ### 7.2 Rules
 
-- Exactly one nav item may be active. Active state = `--chrome-fg` text plus
-  `--chrome-fill` background plus `aria-current="page"`.
+- Exactly one nav item may be active. Active state = white text on
+  `--color-brand-500` background plus `aria-current="page"`.
 - **Every** nav landmark carries an `aria-label` (`Main navigation`, etc.) —
   already true across the app and must stay true. `[shipped]`
 - Breadcrumbs appear whenever a page is more than one level below a rail
@@ -289,7 +326,7 @@ necessary, the layout is doing too much.
 
 | Variant | Fill | Text | Border | Use |
 |---|---|---|---|---|
-| `primary` | `--brand-600` → `--brand-500` hover | inverse | none | The one action the page exists for |
+| `primary` | `--color-brand-600` → `--color-brand-500` hover | inverse | none | The one action the page exists for |
 | `secondary` | raised → `--surface-muted` hover | secondary | subtle | Everything else |
 | `danger` | `#DC2626` → `#EF4444` hover | inverse | none | Destructive, after confirmation |
 | `ghost` | transparent → `--surface-muted` hover | secondary | none | Toolbar, row-level, tertiary |
@@ -298,7 +335,7 @@ necessary, the layout is doing too much.
 - Radius `md` (8px), weight 500, `transition-colors` only.
 - **One `primary` per view.** A page with two primary buttons has an unresolved
   hierarchy problem.
-- Focus: 2px `--brand-500` ring, 2px offset against the canvas. `[shipped]`
+- Focus: 2px `--color-brand-500` ring, 2px offset against the canvas. `[shipped]`
 - Disabled: 50% opacity, pointer events off. Never hide a disabled action —
   explain why it is disabled nearby.
 - Destructive actions route through `ConfirmProvider`, never a bare `onClick`.
@@ -316,7 +353,7 @@ text. Fields stack at 16px. Related fields group inside a `fieldset` with a
 
 **Controls:** full width, raised background, subtle border, radius `md`,
 12×8 padding, 14px text, `--text-tertiary` placeholder. Focus moves the border
-to `--brand-500` and adds a 2px `--brand-500/20` ring.
+to `--color-brand-400` and adds a 2px `--color-brand-500/20` ring.
 
 **Validation rules**
 - Validate on **blur**, then on every change once a field has errored. Never
@@ -341,7 +378,7 @@ to `--brand-500` and adds a 2px `--brand-500/20` ring.
 
 ## 10. Tables `[shipped]`
 
-The densest and most important surface in Intra-Cloud.
+The densest and most important surface in IntraForge.
 
 - Container: raised, radius `xl`, subtle border, `overflow-x-auto`.
 - Header: `--surface-muted` fill, bottom border, 12px uppercase tertiary,
@@ -373,7 +410,9 @@ The densest and most important surface in Intra-Cloud.
 **`StatCard`** — icon chip (36px, radius `lg`, tinted) → 12px label → 24px value
 → optional 11px detail, closed by a 4px accent bar flush to the card's bottom
 edge. Card padding is moved inside (`!p-0` + inner `p-5`) so the bar can reach
-the edges.
+the edges. Accent options: `blue` (brand), `teal`, `green`, `amber` — pick
+whichever is visually distinct from its neighbours on the same grid, not a
+literal semantic mapping.
 
 - Stat grids are 1 / 2 / 4 columns at base / `sm` / `lg`.
 - The value is the largest text in the card. If a card needs a second value of
@@ -400,7 +439,7 @@ Routes: `/buckets/[bucketId]`
 - Path breadcrumb sits directly above the table; every segment is a link, and
   the current segment is plain text.
 - Upload is the page's one `primary` action. Drag-and-drop over the table
-  outlines the container in `--brand-500` — no full-screen overlay.
+  outlines the container in `--color-brand-500` — no full-screen overlay.
 - In-progress uploads pin to the top of the table with a determinate progress
   bar, a byte count, and a cancel control.
 - Delete is `danger`, always confirmed, and names the file in the confirmation.
@@ -473,6 +512,26 @@ database, docs, environments, sdks, storage, usage, webhooks.
 - Destructive settings live in a final "Danger zone" section: `#DC2626` border,
   every action `danger`, every action confirmed by typing the resource name.
 
+### 12.6 Public landing page `[shipped]`
+
+Route: `/` for a signed-out visitor (redirects to `/dashboard` if already
+authenticated — the marketing page never shows to a logged-in user).
+
+- Header: logo + wordmark (left), "Sign in" text link + `Get Started` primary
+  button (right). No fabricated nav items (`Products`/`Solutions`/`Pricing`) —
+  this is a single self-hosted product, not a multi-tier SaaS; only link to
+  destinations that actually exist.
+- Hero: H1 + one supporting paragraph + primary (`Get Started` → `/register`)
+  and secondary (`View Demo` → same-page anchor, not a fabricated recorded
+  demo) actions, tagline below. The logo icon at large size is the hero's one
+  decorative element — no stock illustration.
+- Three feature cards below the fold, `brand-50`/`brand-600` icon chips.
+- A capability list (six real, shipped capabilities) closes the page with a
+  second `Get Started`.
+- **Never claim "Start Free Trial," pricing, or multi-region/global
+  infrastructure** — none of those are real for a self-hosted single-tenant
+  deployment.
+
 ---
 
 ## 13. States
@@ -486,7 +545,7 @@ state is incomplete.
 | **Loading** | `PageLoading` (centred `Spinner`, 256px min-height) for a whole page; skeletons matching final layout for partial regions. Never a layout that jumps when data lands. `[shipped]` |
 | **Success** | Inline and quiet — a `success` badge or a 3s toast. Never a modal. Never block the next action. |
 | **Warning** | `warning` tint banner above the affected region, stating the consequence and what to do. Dismissible only if truly optional. |
-| **Error** | `ErrorBanner` — `#FEF2F2` fill, `#FECACA` border, `#B91C1C` text, radius `md`. Plain-language message, technical detail behind a disclosure. `[shipped]` |
+| **Error** | `ErrorBanner` — `#FEF2F2` fill, `#FECACA` border, `#B91C1C` text, radius `md`, `role="alert"`. Plain-language message, technical detail behind a disclosure. `[shipped]` |
 
 **Rules**
 - Distinguish "no data yet" (offer the action) from "no results" (offer to clear
@@ -505,10 +564,12 @@ are the invariants that pass established.
 
 - **Contrast:** 4.5:1 for text under 18px, 3:1 for large text and for the
   boundary of every interactive control. `--text-tertiary` (`#94A3B8`) passes on
-  white for 12px+ **labels only** — never for body copy.
+  white for 12px+ **labels only** — never for body copy. `--color-teal-500`/
+  `--color-green-500` fail AA as a text/small-fill colour (2.49:1 / 2.28:1) —
+  decorative or large-element use only, per §2.2.
 - **Focus:** a global `focus-visible` rule gives every interactive element a 2px
-  `#6366F1` outline at 2px offset; components may override with their own ring
-  but may never remove it. `[shipped]`
+  `--color-brand-500` (`#3B82F6`) outline at 2px offset; components may override
+  with their own ring but may never remove it. `[shipped]`
 - **Keyboard:** every interactive element is reachable and operable. Clickable
   table rows implement Enter/Space. Modals and menus trap focus, close on
   Escape, and restore focus to their trigger (`useDialogA11y`). `[shipped]`
@@ -521,7 +582,7 @@ are the invariants that pass established.
 - **Colour is never the only signal.** Status badges carry text. Log status
   codes show the number. Chart series are distinguishable without colour.
 - **Live regions:** async results announce via `aria-live="polite"`; errors via
-  `role="alert"`.
+  `role="alert"`. `[shipped]`
 - **Icons:** decorative icons are `aria-hidden="true"`; icon-only buttons carry
   an `aria-label`.
 - **Zoom:** usable at 200% zoom and at a 320px viewport with no horizontal page
@@ -547,12 +608,16 @@ are the invariants that pass established.
   when it is also reachable by expanding the row.
 - The connect wizard's stepper is already responsive; new multi-step flows
   follow it. `[shipped]`
+- The public landing page (§12.6) is verified at desktop/tablet/mobile: 3→1
+  column feature cards, 2→1 column capability list, header nav's "Sign in"
+  link hides below `sm` (the `Get Started` button alone is enough at that
+  width). `[shipped]`
 
 ---
 
 ## 16. Motion and reduced motion
 
-Motion in Intra-Cloud confirms that something happened. It never announces.
+Motion in IntraForge confirms that something happened. It never announces.
 
 | Kind | Duration | Easing |
 |---|---|---|
@@ -566,27 +631,13 @@ Motion in Intra-Cloud confirms that something happened. It never announces.
 - Nothing animates for longer than 300ms.
 - Content that has loaded never animates on arrival — it appears.
 
-**Reduced motion is mandatory.** Honour `prefers-reduced-motion: reduce`
-globally:
-
-```css
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-```
+**Reduced motion is mandatory.** Honours `prefers-reduced-motion: reduce`
+globally (`apps/frontend/src/app/globals.css`'s `@layer base`). `[shipped]`
 
 Under reduced motion, transitions become instant state changes — never removed
-feedback. The one permitted exception is the `Spinner`, which may keep rotating
-because it is the only indication that work is still in progress; if it is
-suppressed, replace it with static "Loading…" text.
-
-> This block is **`[spec]`** — `globals.css` does not currently contain it. Add
-> it before introducing any new animation.
+feedback. The one permitted exception is the `Spinner`, which keeps rotating
+(via the `.motion-safe-spin` escape hatch in the same rule) because it is the
+only indication that work is still in progress.
 
 ---
 
@@ -602,10 +653,11 @@ suppressed, replace it with static "Loading…" text.
    whole toolkit.
 4. **Accessibility invariants in §14 are not negotiable** and are not traded for
    visual preference.
-5. **Respect `[spec]` markers.** Dark mode and the reduced-motion block do not
-   exist yet. Implement them deliberately and completely, or not at all.
-6. **Do not change the wordmark, copy, or business logic** as a side effect of a
-   styling task.
+5. **Respect `[spec]` markers.** Dark mode does not exist yet (§2.5). Implement
+   it deliberately and completely, or not at all.
+6. **Do not change the wordmark, logo, or business logic** as a side effect of
+   an unrelated styling task. Logo changes go through `generate_assets.py`
+   against the real source file, never a hand-edited PNG or a redraw.
 
 ---
 
@@ -617,4 +669,4 @@ files; each entry points to its preview and download page on getdesign.md.
 
 Consult it for structural and typographic restraint. Do not copy any listed
 company's branding, wordmark, palette, proprietary typeface or copy into
-Intra-Cloud.
+IntraForge.

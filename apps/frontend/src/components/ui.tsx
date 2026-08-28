@@ -15,10 +15,10 @@ export function Button({
   size?: "sm" | "md";
 }) {
   const base =
-    "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F5F6FB]";
+    "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas";
   const sizes = { sm: "px-2.5 py-1.5 text-xs", md: "px-3.5 py-2 text-sm" };
   const variants = {
-    primary: "bg-indigo-600 text-white shadow-sm hover:bg-indigo-500 focus-visible:ring-indigo-500",
+    primary: "bg-brand-600 text-white shadow-sm hover:bg-brand-500 focus-visible:ring-brand-500",
     secondary:
       "bg-white text-slate-700 border border-slate-200 shadow-sm hover:bg-slate-50 focus-visible:ring-slate-300",
     danger: "bg-red-600 text-white shadow-sm hover:bg-red-500 focus-visible:ring-red-500",
@@ -45,7 +45,7 @@ export function LinkButton({
   const base = "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors";
   const sizes = { sm: "px-2.5 py-1.5 text-xs", md: "px-3.5 py-2 text-sm" };
   const variants = {
-    primary: "bg-indigo-600 text-white shadow-sm hover:bg-indigo-500",
+    primary: "bg-brand-600 text-white shadow-sm hover:bg-brand-500",
     secondary: "bg-white text-slate-700 border border-slate-200 shadow-sm hover:bg-slate-50",
     ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
   };
@@ -59,7 +59,7 @@ export function LinkButton({
 export function Input({ className = "", ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
-      className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 ${className}`}
+      className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 ${className}`}
       {...props}
     />
   );
@@ -71,7 +71,7 @@ export function Textarea({
 }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
-      className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 ${className}`}
+      className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 ${className}`}
       {...props}
     />
   );
@@ -83,7 +83,7 @@ export function Select({
 }: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
-      className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 ${className}`}
+      className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 ${className}`}
       {...props}
     />
   );
@@ -93,7 +93,7 @@ export function Checkbox(props: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       type="checkbox"
-      className="h-4 w-4 rounded border-slate-300 bg-white text-indigo-600 focus:ring-indigo-500/30"
+      className="h-4 w-4 rounded border-slate-300 bg-white text-brand-600 focus:ring-brand-500/30"
       {...props}
     />
   );
@@ -130,10 +130,10 @@ export function Badge({
 }) {
   const tones = {
     default: "bg-slate-100 text-slate-600",
-    success: "bg-emerald-50 text-emerald-700",
+    success: "bg-green-50 text-green-700",
     warning: "bg-amber-50 text-amber-700",
     danger: "bg-red-50 text-red-700",
-    info: "bg-indigo-50 text-indigo-700",
+    info: "bg-brand-50 text-brand-700",
   };
   return (
     <span
@@ -236,7 +236,7 @@ export function CopyButton({ value, label = "Copy" }: { value: string; label?: s
       }}
       className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"
     >
-      {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
       {copied ? "Copied" : label}
     </button>
   );
@@ -359,7 +359,7 @@ export function TRow({
       }
       tabIndex={onClick ? 0 : undefined}
       role={onClick ? "button" : undefined}
-      className={`border-b border-slate-100 last:border-0 ${onClick ? "cursor-pointer hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 focus-visible:-outline-offset-2" : ""}`}
+      className={`border-b border-slate-100 last:border-0 ${onClick ? "cursor-pointer hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500 focus-visible:-outline-offset-2" : ""}`}
     >
       {children}
     </tr>
@@ -429,20 +429,14 @@ export function ComingSoon({ title, description }: { title: string; description:
 
 const STAT_ACCENTS = {
   amber: { icon: "bg-amber-50 text-amber-600", bar: "bg-gradient-to-r from-amber-300 to-amber-500" },
-  emerald: {
-    icon: "bg-emerald-50 text-emerald-600",
-    bar: "bg-gradient-to-r from-emerald-300 to-emerald-500",
-  },
+  green: { icon: "bg-green-50 text-green-600", bar: "bg-gradient-to-r from-green-300 to-green-500" },
   blue: { icon: "bg-blue-50 text-blue-600", bar: "bg-gradient-to-r from-blue-300 to-blue-500" },
-  violet: {
-    icon: "bg-violet-50 text-violet-600",
-    bar: "bg-gradient-to-r from-violet-300 to-violet-500",
-  },
+  teal: { icon: "bg-teal-50 text-teal-600", bar: "bg-gradient-to-r from-teal-300 to-teal-500" },
 } as const;
 
 /** A colored-accent stat tile (icon badge + label + big number), matching
  * the professionalization brief's dashboard reference. Deliberately has
- * no trend/sparkline — Intra-Cloud doesn't record historical snapshots
+ * no trend/sparkline — IntraForge doesn't record historical snapshots
  * of these counts, and a fabricated trend line would misrepresent real
  * data (Section 72: never fake completion/data). The accent bar at the
  * bottom is decoration only, not a chart. */

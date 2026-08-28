@@ -209,7 +209,7 @@ export default function BucketDetailClient({
                   <div className="flex justify-end gap-3 text-xs">
                     <a
                       href={`/api/v1/files/${f.id}/download/`}
-                      className="text-indigo-600 hover:text-indigo-500"
+                      className="text-brand-600 hover:text-brand-500"
                     >
                       Download
                     </a>

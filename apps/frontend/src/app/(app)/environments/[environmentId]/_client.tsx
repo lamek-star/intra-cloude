@@ -146,7 +146,7 @@ export default function EnvironmentDetailClient({ environmentId }: { environment
             aria-current={tab === t.key ? "page" : undefined}
             className={`flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors ${
               tab === t.key
-                ? "bg-indigo-50 text-indigo-600"
+                ? "bg-brand-50 text-brand-600"
                 : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
             }`}
           >
@@ -529,7 +529,7 @@ function SecretsTab({ environmentId }: { environmentId: string }) {
                 </Td>
                 <Td>
                   <div className="flex justify-end gap-3 text-xs">
-                    <button onClick={() => rotate(s)} className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-500">
+                    <button onClick={() => rotate(s)} className="inline-flex items-center gap-1 text-brand-600 hover:text-brand-500">
                       <RotateCw className="h-3.5 w-3.5" /> Rotate
                     </button>
                     <button onClick={() => remove(s)} className="inline-flex items-center gap-1 text-slate-500 hover:text-red-600">
@@ -742,7 +742,7 @@ function ApiKeysTab({ environmentId }: { environmentId: string }) {
                   <Td>
                     {active && (
                       <div className="flex justify-end gap-3 text-xs">
-                        <button onClick={() => rotate(c)} className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-500">
+                        <button onClick={() => rotate(c)} className="inline-flex items-center gap-1 text-brand-600 hover:text-brand-500">
                           <RotateCw className="h-3.5 w-3.5" /> Rotate
                         </button>
                         <button onClick={() => revoke(c)} className="inline-flex items-center gap-1 text-slate-500 hover:text-red-600">
@@ -819,8 +819,8 @@ function DatabaseTab({
         </div>
       )}
       {environment.database_status === "connected" ? (
-        <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
-          <span className="flex items-center gap-2 text-sm text-emerald-800">
+        <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-3 py-2.5">
+          <span className="flex items-center gap-2 text-sm text-green-800">
             <Database className="h-4 w-4" /> Connected
           </span>
           <Button size="sm" variant="secondary" onClick={unbind}>
@@ -910,8 +910,8 @@ function StorageTab({
         </div>
       )}
       {environment.storage_status === "connected" ? (
-        <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
-          <span className="flex items-center gap-2 text-sm text-emerald-800">
+        <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-3 py-2.5">
+          <span className="flex items-center gap-2 text-sm text-green-800">
             <HardDrive className="h-4 w-4" /> Connected
           </span>
           <Button size="sm" variant="secondary" onClick={unbind}>

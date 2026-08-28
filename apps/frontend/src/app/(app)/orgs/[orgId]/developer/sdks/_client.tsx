@@ -66,7 +66,7 @@ export default function SdksClient({ orgId }: { orgId: string }) {
             A credential secret (starts with <code className="rounded bg-white/70 px-1 py-0.5">pdc_sk_</code>)
             grants whatever access its resource grants allow. Never put it in browser JavaScript, a mobile app
             binary, or any other client an end user can inspect — call your own backend, and have your
-            backend call Intra-Cloud with the secret.
+            backend call IntraForge with the secret.
           </p>
         </div>
       </div>

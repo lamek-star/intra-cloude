@@ -159,7 +159,7 @@ export default function DashboardClient({ dashboardId }: { dashboardId: string }
           <p className="text-sm text-slate-500">
             This dashboard has no widgets yet.{" "}
             {tables.length > 0 ? (
-              <button className="text-indigo-600 hover:text-indigo-500" onClick={() => setAddOpen(true)}>
+              <button className="text-brand-600 hover:text-brand-500" onClick={() => setAddOpen(true)}>
                 Add one
               </button>
             ) : (

@@ -137,9 +137,9 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {tables?.map((t) => (
             <Link key={t.id} href={`/tables/${t.id}`} className="block text-left">
-              <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
+              <Card className="transition-colors hover:border-brand-400/40 hover:bg-slate-50">
                 <div className="flex items-center gap-2">
-                  <TableIcon className="h-4 w-4 text-indigo-600" />
+                  <TableIcon className="h-4 w-4 text-brand-600" />
                   <p className="font-medium text-slate-900">{t.name}</p>
                 </div>
                 <p className="mt-2 text-xs text-slate-500">{t.columns.length} column(s)</p>
@@ -177,9 +177,9 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {dashboards.map((d) => (
                 <Link key={d.id} href={`/dashboards/${d.id}`} className="block text-left">
-                  <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
+                  <Card className="transition-colors hover:border-brand-400/40 hover:bg-slate-50">
                     <div className="flex items-center gap-2">
-                      <LayoutGrid className="h-4 w-4 text-indigo-600" />
+                      <LayoutGrid className="h-4 w-4 text-brand-600" />
                       <p className="font-medium text-slate-900">{d.name}</p>
                     </div>
                     <p className="mt-2 text-xs text-slate-500">

@@ -250,10 +250,10 @@ export default function ConnectApplicationClient({ orgId }: { orgId: string }) {
                 <button key={t.key} onClick={() => setAppType(t.key)} className="text-left">
                   <Card
                     className={`h-full transition-colors ${
-                      appType === t.key ? "border-indigo-400 bg-indigo-50/40" : "hover:border-indigo-400/40 hover:bg-slate-50"
+                      appType === t.key ? "border-brand-400 bg-brand-50/40" : "hover:border-brand-400/40 hover:bg-slate-50"
                     }`}
                   >
-                    <t.icon className={`h-5 w-5 ${appType === t.key ? "text-indigo-600" : "text-slate-400"}`} />
+                    <t.icon className={`h-5 w-5 ${appType === t.key ? "text-brand-600" : "text-slate-400"}`} />
                     <p className="mt-2 text-sm font-medium text-slate-900">{t.label}</p>
                     <p className="mt-1 text-xs text-slate-500">{t.description}</p>
                   </Card>
@@ -352,7 +352,7 @@ export default function ConnectApplicationClient({ orgId }: { orgId: string }) {
                       <label
                         key={id}
                         className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 ${
-                          isSelected ? "border-indigo-300 bg-indigo-50/40" : "border-slate-200 hover:bg-slate-50"
+                          isSelected ? "border-brand-300 bg-brand-50/40" : "border-slate-200 hover:bg-slate-50"
                         }`}
                       >
                         <input
@@ -366,9 +366,9 @@ export default function ConnectApplicationClient({ orgId }: { orgId: string }) {
                           }}
                         />
                         {r.kind === "bucket" ? (
-                          <Folder className="h-4 w-4 text-indigo-600" />
+                          <Folder className="h-4 w-4 text-brand-600" />
                         ) : (
-                          <Database className="h-4 w-4 text-indigo-600" />
+                          <Database className="h-4 w-4 text-brand-600" />
                         )}
                         <span className="min-w-0 flex-1">
                           <span className="block text-sm font-medium text-slate-800">{r.name}</span>
@@ -436,7 +436,7 @@ export default function ConnectApplicationClient({ orgId }: { orgId: string }) {
                   {testResult === "running" ? "Testing…" : "Test connection"}
                 </Button>
                 {testResult === "ok" && (
-                  <p className="mt-2 flex items-center gap-1.5 text-sm text-emerald-700">
+                  <p className="mt-2 flex items-center gap-1.5 text-sm text-green-700">
                     <CheckCircle2 className="h-4 w-4" /> {testDetail}
                   </p>
                 )}
@@ -473,9 +473,9 @@ function Stepper({ current }: { current: number }) {
             aria-hidden="true"
             className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium ${
               i < current
-                ? "bg-indigo-600 text-white"
+                ? "bg-brand-600 text-white"
                 : i === current
-                  ? "bg-indigo-100 text-indigo-700 ring-2 ring-indigo-300"
+                  ? "bg-brand-100 text-brand-700 ring-2 ring-brand-300"
                   : "bg-slate-100 text-slate-400"
             }`}
           >

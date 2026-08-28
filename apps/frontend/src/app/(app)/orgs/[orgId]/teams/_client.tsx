@@ -119,7 +119,7 @@ export default function TeamsClient({ orgId }: { orgId: string }) {
                   {members && (
                     <button
                       onClick={() => setAddMemberTeam(team)}
-                      className="text-xs text-indigo-600 hover:text-indigo-500"
+                      className="text-xs text-brand-600 hover:text-brand-500"
                     >
                       Add member
                     </button>

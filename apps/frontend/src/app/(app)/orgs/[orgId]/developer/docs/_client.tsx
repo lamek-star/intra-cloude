@@ -41,7 +41,7 @@ export default function DocsClient({ orgId }: { orgId: string }) {
 
       <div className="space-y-3">
         <a href="/api/v1/organizations/" target="_blank" rel="noreferrer" className="block">
-          <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
+          <Card className="transition-colors hover:border-brand-400/40 hover:bg-slate-50">
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium text-slate-900">Browsable API</p>

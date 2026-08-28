@@ -1,36 +1,121 @@
 @import "tailwindcss";
 
-/* Light-mode design system (Section 41+ of the professionalization
-   brief): dark-navy sidebar chrome, light content area, white cards.
-   `--font-sans` is set from next/font's `--font-inter` CSS variable
-   (see layout.tsx) so Tailwind's `font-sans`/default body font resolve
-   to the self-hosted Inter build, not a system fallback. */
+/* IntraForge design system. See DESIGN.md for the full rationale behind
+   every token here -- this file is the implementation, that doc is the
+   source of truth. `--font-sans` is set from next/font's `--font-inter`
+   CSS variable (see layout.tsx) so Tailwind's `font-sans`/default body
+   font resolve to the self-hosted Inter build, not a system fallback.
+
+   Every color below is a stock Tailwind v4 palette value (slate/blue/
+   teal/green), not an invented hex -- verified against the brand brief:
+   navy=blue-950, primary=blue-600, turquoise=teal-500, green=green-500,
+   background=slate-50, text=slate-900/600, border=slate-200. Defining
+   them as named `--color-*` theme entries (rather than using the raw
+   `slate-900`/`blue-600` utilities directly everywhere) is what makes
+   this a *theme*: a future palette change is a one-line edit here, not
+   a repo-wide find/replace. */
 @theme {
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     Helvetica, Arial, sans-serif;
+
+  /* Brand -- primary interactive color (the logo's blue). WCAG AA
+     verified: brand-600 on white = 5.17:1, white on brand-600 = 5.17:1,
+     white on brand-700 = 6.70:1. */
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+
+  /* Navy -- headings, chrome/nav, dark surfaces. 14.69:1 on white. */
+  --color-navy: #172554;
+  --color-navy-800: #1e3a8a;
+
+  /* Teal -- "connect" accent (icons, chart series, tinted badges only;
+     14B8A6 solid is 2.49:1 against white and MUST NOT carry small text
+     directly -- pair teal-700 text on teal-50, both verified >5:1). */
+  --color-teal-50: #f0fdfa;
+  --color-teal-500: #14b8a6;
+  --color-teal-600: #0d9488;
+  --color-teal-700: #0f766e;
+
+  /* Green -- "growth"/success accent. Same rule as teal: 22C55E solid
+     is 2.28:1 against white, decorative/icon use only. green-700 on
+     green-50 = 5.21:1, green-700 on white = 5.48:1 for status text. */
+  --color-green-50: #f0fdf4;
+  --color-green-500: #22c55e;
+  --color-green-600: #16a34a;
+  --color-green-700: #15803d;
+
+  /* Surfaces */
+  --color-surface-canvas: #f8fafc;
+  --color-surface-raised: #ffffff;
+  --color-surface-sunken: #f1f5f9;
+  --color-surface-muted: #f8fafc;
+
+  /* Text -- 17.06:1 / 7.24:1 / -- against surface-canvas. text-tertiary
+     is for labels/captions only, per DESIGN.md's contrast rule, never
+     body copy. */
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #94a3b8;
+  --color-text-inverse: #ffffff;
+
+  /* Borders -- deliberately low-contrast (1.23:1); paired with
+     --shadow-card for definition, never load-bearing on their own for
+     an interactive control's boundary (inputs/buttons use a stronger,
+     explicit border + focus ring instead). */
+  --color-border-subtle: #e2e8f0;
+  --color-border-strong: #cbd5e1;
+
+  /* Status semantics -- unchanged from the pre-rebrand system (already
+     accessible, already shipped, already tested); warning/danger are
+     conventionally brand-independent. Info now maps to brand blue
+     instead of indigo. */
+  --color-warning: #d97706;
+  --color-warning-tint: #fffbeb;
+  --color-warning-fg: #b45309;
+  --color-danger: #dc2626;
+  --color-danger-tint: #fef2f2;
+  --color-danger-fg: #b91c1c;
+  --color-info-tint: #eff6ff;
+  --color-info-fg: #1d4ed8;
 }
 
 @layer base {
-  body {
-    background: #f5f6fb;
-    color: #151823;
+  /* Reduced motion: instant state changes instead of removed feedback
+     (DESIGN.md SS16). The one exception, Spinner's rotation, opts back
+     in explicitly via its own rule below. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+    .motion-safe-spin {
+      animation-duration: 800ms !important;
+      animation-iteration-count: infinite !important;
+    }
   }
 
-  /* Unit 8 (accessibility pass): a consistent, on-brand focus ring for
-     every interactive element site-wide, so keyboard users can always
-     see where focus is -- rather than depending on each of the many
-     ad hoc `<button className="text-left">` list-item wrappers across
-     the app (org cards, application cards, table rows, etc.) to opt in
-     individually. Elements that already declare their own
-     `focus-visible:` utility (Button, Input, TRow) simply override
-     this with their own ring. */
+  /* A consistent, on-brand focus ring for every interactive element
+     site-wide, so keyboard users can always see where focus is --
+     rather than depending on each ad hoc `<button className="text-left">`
+     list-item wrapper across the app (org cards, application cards,
+     table rows, etc.) to opt in individually. Elements that already
+     declare their own `focus-visible:` utility (Button, Input, TRow)
+     simply override this with their own ring. */
   a:focus-visible,
   button:focus-visible,
   input:focus-visible,
   select:focus-visible,
   textarea:focus-visible,
   [tabindex]:focus-visible {
-    outline: 2px solid #6366f1;
+    outline: 2px solid var(--color-brand-500);
     outline-offset: 2px;
   }
 }

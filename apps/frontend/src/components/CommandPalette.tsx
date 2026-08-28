@@ -92,7 +92,7 @@ export function CommandPalette({ open, setOpen }: { open: boolean; setOpen: (ope
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label="Search Intra-Cloud"
+        aria-label="Search IntraForge"
         className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
       >
         <div className="flex items-center gap-2.5 border-b border-slate-100 px-4 py-3">
@@ -115,8 +115,8 @@ export function CommandPalette({ open, setOpen }: { open: boolean; setOpen: (ope
                 select(items[activeIndex]);
               }
             }}
-            placeholder="Search Intra-Cloud…"
-            aria-label="Search Intra-Cloud"
+            placeholder="Search IntraForge…"
+            aria-label="Search IntraForge"
             role="combobox"
             aria-expanded="true"
             aria-controls="command-palette-results"
@@ -140,7 +140,7 @@ export function CommandPalette({ open, setOpen }: { open: boolean; setOpen: (ope
                 onClick={() => select(item)}
                 onMouseEnter={() => setActiveIndex(i)}
                 className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm ${
-                  i === activeIndex ? "bg-indigo-50 text-indigo-700" : "text-slate-700"
+                  i === activeIndex ? "bg-brand-50 text-brand-700" : "text-slate-700"
                 }`}
               >
                 <item.icon aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-400" />

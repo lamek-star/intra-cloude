@@ -222,7 +222,7 @@ export default function EnvironmentsClient({ orgId }: { orgId: string }) {
                   >
                     <button
                       onClick={() => cloneEnvironment(env)}
-                      className="inline-flex items-center gap-1 text-slate-500 hover:text-indigo-600"
+                      className="inline-flex items-center gap-1 text-slate-500 hover:text-brand-600"
                       title="Clone"
                     >
                       <Copy className="h-3.5 w-3.5" />

@@ -44,10 +44,9 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-white px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center">
-          <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500 text-sm font-bold text-slate-900">
-            P
-          </div>
-          <h1 className="text-lg font-semibold text-slate-900">Private Data Cloud</h1>
+          {/* eslint-disable-next-line @next/next/no-img-element -- fixed-size static brand asset */}
+          <img src="/brand/icon-96.png" alt="IntraForge" width={44} height={44} className="mb-3 h-11 w-11" />
+          <h1 className="text-lg font-semibold text-text-primary">IntraForge</h1>
           <p className="mt-1 text-sm text-slate-500">Sign in to your organization</p>
         </div>
 
@@ -107,7 +106,7 @@ export default function LoginPage() {
 
         <p className="mt-5 text-center text-sm text-slate-500">
           Don&apos;t have an account?{" "}
-          <Link href="/register" className="text-indigo-600 hover:text-indigo-500">
+          <Link href="/register" className="text-brand-600 hover:text-brand-500">
             Create one
           </Link>
         </p>

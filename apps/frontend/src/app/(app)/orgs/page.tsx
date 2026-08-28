@@ -64,8 +64,8 @@ export default function OrgsPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {orgs?.map((org) => (
             <Link key={org.id} href={`/orgs/${org.id}`} className="block text-left">
-              <Card className="h-full transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-sm font-semibold text-indigo-600">
+              <Card className="h-full transition-colors hover:border-brand-400/40 hover:bg-slate-50">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-50 text-sm font-semibold text-brand-600">
                   {org.name.slice(0, 1).toUpperCase()}
                 </div>
                 <p className="mt-3 font-medium text-slate-900">{org.name}</p>

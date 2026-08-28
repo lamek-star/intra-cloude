@@ -116,7 +116,7 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
                 href={`/orgs/${orgId}/workspaces/${ws.id}`}
                 className="block text-left"
               >
-                <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
+                <Card className="transition-colors hover:border-brand-400/40 hover:bg-slate-50">
                   <p className="font-medium text-slate-900">{ws.name}</p>
                   <p className="mt-1 text-xs text-slate-500">
                     Created {new Date(ws.created_at).toLocaleDateString()}

@@ -141,14 +141,14 @@ export default function DashboardPage() {
           icon={HeartPulse}
           label="System health"
           value={health === null ? "…" : `${healthyCount}/${healthTotal}`}
-          accent={health === null ? "blue" : allHealthy ? "emerald" : "amber"}
+          accent={health === null ? "blue" : allHealthy ? "green" : "amber"}
           detail={health === null ? "Checking…" : allHealthy ? "All checks passing" : "Needs attention"}
         />
         <StatCard
           icon={History}
           label="Recent activity"
           value={recentActivity === null ? "…" : recentActivity.length}
-          accent="violet"
+          accent="teal"
           detail={
             orgSummaries && orgSummaries.length > 1 ? "Open an org for its log" : "Last 8 events"
           }
@@ -172,7 +172,7 @@ export default function DashboardPage() {
                       href={`/orgs/${org.id}`}
                       className="flex w-full items-center gap-3 px-5 py-3.5 text-left hover:bg-slate-50"
                     >
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
                         <Building2 className="h-4 w-4" />
                       </span>
                       <span className="min-w-0 flex-1">
@@ -214,7 +214,7 @@ export default function DashboardPage() {
               <ul className="divide-y divide-slate-100">
                 {recentActivity.map((event) => (
                   <li key={event.id} className="flex items-center gap-3 px-5 py-3.5">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-600">
                       <Activity className="h-4 w-4" />
                     </span>
                     <span className="min-w-0 flex-1">
@@ -273,7 +273,7 @@ function SectionHeader({ title, href }: { title: string; href?: string }) {
     <div className="mb-3 flex items-center justify-between">
       <h2 className="text-sm font-semibold text-slate-700">{title}</h2>
       {href && (
-        <Link href={href} className="text-xs font-medium text-indigo-600 hover:text-indigo-500">
+        <Link href={href} className="text-xs font-medium text-brand-600 hover:text-brand-500">
           View all
         </Link>
       )}

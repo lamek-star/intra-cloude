@@ -222,7 +222,7 @@ export default function TableDetailClient({ tableId }: { tableId: string }) {
                           setEditingRow(row);
                           setRowModalOpen(true);
                         }}
-                        className="text-indigo-600 hover:text-indigo-500"
+                        className="text-brand-600 hover:text-brand-500"
                       >
                         Edit
                       </button>
@@ -638,7 +638,7 @@ function FieldInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="{}"
-        className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-800 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+        className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-800 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
       />
     );
   }

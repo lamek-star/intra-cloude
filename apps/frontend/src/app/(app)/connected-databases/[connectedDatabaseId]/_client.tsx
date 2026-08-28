@@ -238,7 +238,7 @@ export default function ConnectedDatabaseDetailClient({
                   }}
                   className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm ${
                     selectedTable === t.name
-                      ? "bg-indigo-50 text-indigo-600"
+                      ? "bg-brand-50 text-brand-600"
                       : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                   }`}
                 >

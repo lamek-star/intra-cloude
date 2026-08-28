@@ -119,9 +119,9 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
                 href={`/buckets/${b.id}?name=${encodeURIComponent(b.name)}&project=${b.project}`}
                 className="block text-left"
               >
-                <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
+                <Card className="transition-colors hover:border-brand-400/40 hover:bg-slate-50">
                   <div className="flex items-center gap-2">
-                    <Folder className="h-4 w-4 text-indigo-600" />
+                    <Folder className="h-4 w-4 text-brand-600" />
                     <p className="font-medium text-slate-900">{b.name}</p>
                   </div>
                 </Card>
@@ -156,9 +156,9 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
                 href={`/tenant-databases/${db.id}`}
                 className="block text-left"
               >
-                <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
+                <Card className="transition-colors hover:border-brand-400/40 hover:bg-slate-50">
                   <div className="flex items-center gap-2">
-                    <Database className="h-4 w-4 text-indigo-600" />
+                    <Database className="h-4 w-4 text-brand-600" />
                     <p className="font-medium text-slate-900">{db.name}</p>
                   </div>
                 </Card>
@@ -193,10 +193,10 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
                 href={`/connected-databases/${cdb.id}`}
                 className="block text-left"
               >
-                <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
+                <Card className="transition-colors hover:border-brand-400/40 hover:bg-slate-50">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <Plug className="h-4 w-4 text-indigo-600" />
+                      <Plug className="h-4 w-4 text-brand-600" />
                       <p className="font-medium text-slate-900">{cdb.name}</p>
                     </div>
                     <Badge tone={CONNECTED_DB_STATUS_TONE[cdb.status]}>{cdb.status}</Badge>

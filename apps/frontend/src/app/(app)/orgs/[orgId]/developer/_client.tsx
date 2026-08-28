@@ -74,7 +74,7 @@ export default function DeveloperOverviewClient({ orgId }: { orgId: string }) {
           icon={KeyRound}
           label="Active credentials"
           value={activeCredentials === null ? "…" : activeCredentials}
-          accent="violet"
+          accent="teal"
           detail="Across all applications"
         />
       </div>

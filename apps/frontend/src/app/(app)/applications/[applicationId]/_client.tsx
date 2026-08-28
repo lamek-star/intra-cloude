@@ -75,7 +75,7 @@ function AccessSummary({ resources, grants }: { resources: OrgResource[]; grants
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <Card>
-        <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-emerald-700">
+        <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-green-700">
           <CheckCircle2 className="h-4 w-4" /> This application CAN
         </h3>
         {can.length === 0 ? (
@@ -264,10 +264,10 @@ export default function ApplicationDetailClient({ applicationId }: { application
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {environments.map((env) => (
               <Link key={env.id} href={`/environments/${env.id}`} className="block">
-                <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
+                <Card className="transition-colors hover:border-brand-400/40 hover:bg-slate-50">
                   <div className="flex items-center justify-between">
                     <span className="flex items-center gap-2 font-medium text-slate-900">
-                      <Layers3 className="h-4 w-4 text-indigo-600" />
+                      <Layers3 className="h-4 w-4 text-brand-600" />
                       {env.name}
                     </span>
                     {env.is_production_tier && <Badge tone="danger">Production</Badge>}
@@ -334,7 +334,7 @@ export default function ApplicationDetailClient({ applicationId }: { application
                         <div className="flex justify-end gap-3 text-xs">
                           <button
                             onClick={() => rotate(c)}
-                            className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-500"
+                            className="inline-flex items-center gap-1 text-brand-600 hover:text-brand-500"
                           >
                             <RotateCw className="h-3.5 w-3.5" />
                             Rotate

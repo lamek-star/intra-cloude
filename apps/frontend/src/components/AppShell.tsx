@@ -27,18 +27,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <ConfirmProvider>
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[70] focus:rounded-lg focus:bg-indigo-600 focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-white"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[70] focus:rounded-lg focus:bg-brand-600 focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-white"
       >
         Skip to main content
       </a>
       <CommandPalette open={paletteOpen} setOpen={setPaletteOpen} />
-      <div className="flex min-h-screen bg-[#F5F6FB] text-slate-900">
-        <aside className="hidden w-60 shrink-0 flex-col bg-gradient-to-b from-[#12163A] to-[#0B0E24] p-4 sm:flex">
+      <div className="flex min-h-screen bg-surface-canvas text-text-primary">
+        <aside className="hidden w-60 shrink-0 flex-col bg-navy p-4 sm:flex">
           <div className="mb-6 flex items-center gap-2.5 px-1">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-500 text-sm font-bold text-white">
-              P
-            </div>
-            <span className="text-sm font-semibold text-white">Private Data Cloud</span>
+            {/* eslint-disable-next-line @next/next/no-img-element -- fixed-size static brand asset, not user/CMS content; next/image's optimizer needs `sharp` in production, not worth the dependency for a handful of pre-sized PNGs. */}
+            <img src="/brand/icon-64.png" alt="" width={32} height={32} className="h-8 w-8 shrink-0" />
+            <span className="text-sm font-semibold text-white">IntraForge</span>
           </div>
 
           <button
@@ -62,7 +61,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {user && (
             <div className="mt-4 space-y-1 border-t border-white/10 pt-4">
               <div className="flex items-center gap-2.5 rounded-xl bg-white/5 px-2.5 py-2.5">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-500/25 text-xs font-semibold text-indigo-200">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-500/25 text-xs font-semibold text-brand-100">
                   {user.email.slice(0, 1).toUpperCase()}
                 </span>
                 <div className="min-w-0 flex-1">
@@ -84,9 +83,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 sm:hidden">
-            <Link href="/orgs" className="text-sm font-semibold text-slate-900">
-              Private Data Cloud
+          <header className="flex h-14 shrink-0 items-center justify-between border-b border-border-subtle bg-white px-4 sm:hidden">
+            <Link href="/orgs" className="flex items-center gap-2 text-sm font-semibold text-text-primary">
+              {/* eslint-disable-next-line @next/next/no-img-element -- see rail logo above */}
+              <img src="/brand/icon-48.png" alt="" width={24} height={24} className="h-6 w-6 shrink-0" />
+              IntraForge
             </Link>
             <div className="relative">
               <button
@@ -98,7 +99,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               >
                 <span
                   aria-hidden="true"
-                  className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-50 text-xs font-medium text-indigo-600"
+                  className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-50 text-xs font-medium text-brand-600"
                 >
                   {user?.email.slice(0, 1).toUpperCase()}
                 </span>
@@ -155,7 +156,7 @@ function SidebarLink({
       href={href}
       aria-current={active ? "page" : undefined}
       className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors ${
-        active ? "bg-indigo-500 text-white shadow-sm" : "text-slate-300 hover:bg-white/5 hover:text-white"
+        active ? "bg-brand-500 text-white shadow-sm" : "text-slate-300 hover:bg-white/5 hover:text-white"
       }`}
     >
       <Icon aria-hidden="true" className="h-4 w-4" strokeWidth={2} />

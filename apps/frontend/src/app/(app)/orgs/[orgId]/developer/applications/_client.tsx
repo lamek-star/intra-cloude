@@ -96,9 +96,9 @@ export default function ApplicationsClient({ orgId }: { orgId: string }) {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {applications.map((app) => (
             <Link key={app.id} href={`/applications/${app.id}`} className="block text-left">
-              <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
+              <Card className="transition-colors hover:border-brand-400/40 hover:bg-slate-50">
                 <div className="flex items-center gap-2">
-                  <AppWindow className="h-4 w-4 text-indigo-600" />
+                  <AppWindow className="h-4 w-4 text-brand-600" />
                   <p className="font-medium text-slate-900">{app.name}</p>
                 </div>
                 {app.description && (
