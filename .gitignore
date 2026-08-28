@@ -49,3 +49,10 @@ Thumbs.db
 # Local data / volumes
 /srv/
 *.sqlite3
+
+# Claude Code local tooling
+# .claude/skills/ (project-scoped skills, pinned by skills-lock.json) and
+# DESIGN.md / design-references/ (submodules) ARE tracked deliberately —
+# do not add them here.
+.agents/
+.playwright-cli/
