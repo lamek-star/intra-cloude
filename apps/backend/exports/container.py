@@ -27,6 +27,12 @@ from argon2.low_level import Type, hash_secret_raw
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+# Not renamed for the IntraForge rebrand, deliberately: this is an
+# on-disk format identifier, byte-for-byte compatible with every .icp
+# package ever written under either name. Changing it would break
+# restoring an export created before this rebrand. Same reasoning
+# applies to the JSON header's "format" value below and to
+# exports/manifest.py's FORMAT_NAME.
 MAGIC = b"ICPKG001"
 
 # Deliberately conservative-but-usable defaults (RFC 9106's "low-memory"
@@ -93,7 +99,7 @@ def write_container(zip_bytes: bytes, *, passphrase: str | None = None) -> bytes
 
 def read_container_header(data: bytes) -> dict:
     if data[:8] != MAGIC:
-        raise ContainerError("not an Intra-Cloud portable package (bad magic bytes)")
+        raise ContainerError("not a valid IntraForge portable package (bad magic bytes)")
     header_len = int.from_bytes(data[8:12], "big")
     try:
         return json.loads(data[12 : 12 + header_len])
