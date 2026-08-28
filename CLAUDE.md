@@ -1,4 +1,4 @@
-# CLAUDE.md — Engineering Guide for Private Data Cloud
+# CLAUDE.md — Engineering Guide for IntraForge
 
 This file is the standing engineering brief for this repository. It
 condenses the governing master prompt into working rules. If anything here
@@ -7,11 +7,18 @@ file should be updated to match.
 
 ## What This Project Is
 
-A self-hosted, local-first private organizational platform: secure file
-storage, a no-code relational database builder, CSV import, a spreadsheet-
-style data explorer, and a controlled application-integration layer. Full
-product vision: see `docs/architecture/ARCHITECTURE.md` Section 1 context
-and the original product brief folded into that document.
+**IntraForge** ("Build. Store. Connect. Privately.") is a self-hosted,
+local-first private organizational platform: secure file storage, a
+no-code relational database builder, CSV import, a spreadsheet-style data
+explorer, and a controlled application-integration layer. Rebranded from
+its working names "Private Data Cloud" / "Intra-Cloud" — those strings may
+still appear in historical log entries (`docs/architecture/ROADMAP.md`,
+`docs/implementation/`) describing what was true at the time; they
+describe history accurately and are not being retroactively rewritten.
+Full product vision: see `docs/architecture/ARCHITECTURE.md` Section 1
+context and the original product brief folded into that document; brand
+identity (logo, color tokens, typography, component patterns) lives in
+`DESIGN.md`.
 
 ## Current Status
 

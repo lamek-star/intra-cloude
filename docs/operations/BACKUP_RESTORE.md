@@ -1,4 +1,4 @@
-# Backup & Restore Strategy — Private Data Cloud
+# Backup & Restore Strategy — IntraForge
 
 Status: IMPLEMENTED (Phase 11 — `pg_dump`/`pg_restore` automation and the
 automated restoration test job described in Sections 6/7 are real,

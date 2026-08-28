@@ -1,4 +1,11 @@
-# Roadmap — Private Data Cloud
+# Roadmap — IntraForge
+
+> Renamed from "Private Data Cloud" / "Intra-Cloud" during the IntraForge
+> rebrand. Phase entries below are a historical log — each describes what
+> was true, and what the product was called, at the time it was written.
+> They are **not** retroactively rewritten; treat every "Private Data
+> Cloud"/"Intra-Cloud"/"IntraCloud" mention below as accurate history, not
+> a stale reference to fix.
 
 Status: All planned phases (0–11) complete and verified.
 Last updated: 2026-08-09

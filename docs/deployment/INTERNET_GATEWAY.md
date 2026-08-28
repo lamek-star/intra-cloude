@@ -1,4 +1,4 @@
-# Optional Secure Internet Gateway — Private Data Cloud
+# Optional Secure Internet Gateway — IntraForge
 
 Status: Phase 10 — opt-in, off by default; the default deployment
 described in [LOCAL_DEPLOYMENT.md](LOCAL_DEPLOYMENT.md) is unaffected by

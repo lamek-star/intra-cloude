@@ -1,4 +1,4 @@
-# Local Deployment Guide — Private Data Cloud
+# Local Deployment Guide — IntraForge
 
 Status: VERIFIED (Phase 1 — the full bring-up sequence below (build,
 migrate, `docker compose up`, request through the proxy over TLS) was
@@ -10,7 +10,7 @@ Last updated: 2026-08-08
 
 ## 1. Scope
 
-This guide covers running Private Data Cloud on a single private-network
+This guide covers running IntraForge on a single private-network
 host (a home lab server, an on-prem Linux box, or a local dev machine) using
 Docker Compose. It assumes no internet exposure by default.
 

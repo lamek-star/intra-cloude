@@ -1,4 +1,4 @@
-# Threat Model — Private Data Cloud
+# Threat Model — IntraForge
 
 Status: Living document — implemented through Phase 12 (production
 hardening); no longer a Phase 0 draft. Updated alongside the code as new

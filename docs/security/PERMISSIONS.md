@@ -1,4 +1,4 @@
-# Permissions & Authorization Model — Private Data Cloud
+# Permissions & Authorization Model — IntraForge
 
 Status: DRAFT (Phase 0)
 Last updated: 2026-08-07

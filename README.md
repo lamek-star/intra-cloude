@@ -1,10 +1,15 @@
-# Private Data Cloud
+# IntraForge
+
+**Build. Store. Connect. Privately.**
 
 A self-hosted, local-first private organizational platform combining
 secure file storage (Drive/S3-like), a no-code relational database builder
 (Airtable/Supabase-like), and a controlled application-integration layer —
 built to run on an organization's own infrastructure without depending on
-AWS, Azure, or GCP.
+AWS, Azure, or GCP. Formerly developed under the working names "Private
+Data Cloud" and "Intra-Cloud"; those names still appear in historical log
+entries (`docs/architecture/ROADMAP.md`) describing what was true at the
+time.
 
 ## Status
 
