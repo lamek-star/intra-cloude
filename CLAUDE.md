@@ -78,8 +78,21 @@ tenant-DB Postgres backups), and added optional at-rest encryption for
 all four backup types, reusing `exports/container.py`'s AES-256-GCM/
 Argon2id format. ADR-0012 decided the Windows deployment architecture
 (installer-managed WSL2 appliance by default; Control Center +
-customer-managed Linux host for Business/Enterprise) — decision made,
-installer not yet built. 289 tests total.
+customer-managed Linux host for Business/Enterprise), and Phases 16–21
+built it: build infrastructure and CI, WSL2 lifecycle scripts (start/
+stop/restart/backup/restore/uninstall), a Control Center UI, a WiX MSI
+installer experience, a written-but-not-yet-executed Windows
+Qualification Matrix (`docs/deployment/WINDOWS_QUALIFICATION_MATRIX.md`),
+and versioned/checksummed release-bundle packaging — code signing is
+implemented but unverified pending a real certificate (a business asset
+this project doesn't have and won't fabricate), and full offline
+installation is partial (container images are bundled; Docker Engine
+itself still installs via `get.docker.com`, requiring internet). See
+`docs/architecture/ROADMAP.md` Phases 16–21 for the full account,
+including a release-blocking orphaned-install-state defect found and
+fixed live. 290 backend tests pass as of the last full run against the
+live Docker stack (see `docs/implementation/TEST_STATUS.md` for
+frontend test-coverage status, which has no automated suite yet).
 
 No known, disclosed architectural gaps remain open from earlier phases:
 the tenant-Postgres-least-privilege gap tracked since Phase 2/3

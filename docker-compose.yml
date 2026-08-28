@@ -11,11 +11,14 @@
 #   - backend/worker/beat/frontend sit on the internal "app" network and
 #     talk to `proxy` for host-facing traffic.
 #
-# Verified end-to-end via `docker compose up --build` (2026-08-19): all
-# nine services build and reach a healthy state — postgres-control,
-# postgres-tenant, valkey, object-storage, backend, worker, beat,
-# frontend, and proxy (Caddy obtains its internal-CA certificate and
-# serves correctly). The full backend test suite (246 tests) passes
+# Verified end-to-end via `docker compose up --build` (most recently
+# 2026-08-28, after merging PR #2's frontend/environments work into
+# master's installer branch): all nine services build and reach a
+# healthy state — postgres-control, postgres-tenant, valkey,
+# object-storage, backend, worker, beat, frontend, and proxy (Caddy
+# obtains its internal-CA certificate and serves correctly). The full
+# backend test suite (290 tests as of that run — see
+# docs/implementation/TEST_STATUS.md for the current count) passes
 # against these live containers, not mocks. If you hit a proxy port
 # conflict on 8443, that's a host-level port collision with whatever
 # else is already bound to it, not a problem with this file.
