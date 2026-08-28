@@ -26,36 +26,50 @@ lifecycle testing and clean-VM qualification remain environment-blocked
 
 ## Frontend
 
-**No automated test framework exists yet** (`package.json` has no `test`
-script; no `*.test.*` files; no Jest/Vitest/Playwright config). Every
-frontend page to date, including this session's Teams page, has been
-verified by:
+**An automated test framework now exists** (added 2026-08-28, on
+`release/finalize-intracloud`, after the PR #2 merge):
 
-1. `docker compose build frontend` + `up -d frontend` against the real
-   stack.
-2. Direct API calls (curl, with real CSRF/session cookies) through the
-   live Caddy proxy, exercising the exact request shapes the page's code
-   sends and checking response shapes against `apps/frontend/src/lib/
-   api.ts` types field-for-field.
-3. No headless-browser screenshot verification yet — `chromium-cli` isn't
-   installed in this environment and Playwright's browser binaries aren't
-   cached, so a screenshot-based check would require a ~200MB+ one-time
-   download. Deferred; see below.
+- `npm test` (Vitest + React Testing Library + jsdom,
+  `apps/frontend/vitest.config.mts`): 5 tests, all passing, covering
+  `src/components/ui.tsx`'s shared-component contracts — the clickable
+  table row's role/tabIndex/Enter+Space keyboard handling (DESIGN.md
+  §10), Button's disabled state, CopyButton's clipboard write, and
+  Modal's focus-trap/Escape-close/focus-restore behavior (DESIGN.md
+  §14).
+- `npm run e2e` (Playwright, `apps/frontend/playwright.config.ts`): 5
+  tests, all passing live against the real Docker Compose stack (not
+  mocked) — register/login/logout (desktop and mobile account-menu
+  paths), wrong-password rejection, full org → workspace → project
+  creation, and cross-organization tenant isolation (a second user
+  cannot reach the first org's workspace by ID substitution). Serialized
+  to one worker — this is a single non-scaled local stack, not a
+  dedicated test environment.
 
-This is real verification (not "it compiled") but it is not the same as
-driving the actual rendered page. Unit 7/8 (component library,
-accessibility/responsiveness pass) should install a proper browser-driven
-check — Playwright with cached Chromium, or `chromium-cli` if it becomes
-available — rather than continuing to rely on API-shape verification alone,
-since Sections 28/29 of the standing UI/UX brief (visual quality gate,
-interaction quality gate) genuinely need a rendered page, not just a
-correct API contract.
+Both suites found real, previously-unknown bugs on their first live run,
+now fixed: `ErrorBanner` was missing `role="alert"` (DESIGN.md §14
+requires it; screen-reader users got no announcement on error), and
+`organizations.services.create_organization` crashed with an unhandled
+500 (`IntegrityError` on `Organization.slug`) whenever two organizations
+— by any two unrelated users, not just a retry — shared a name, since
+the slug was `slugify(name)` with no collision handling. Both are fixed
+and covered by regression tests (frontend and backend respectively).
+
+Still not covered by either suite: CSV import/analytics, dashboards,
+sharing/permission-denied UI, buckets/file upload-download, developer
+portal, environments, and MFA step-up (accounts has MFA; the frontend
+login flow supports it, per `src/app/login/page.tsx`, but no E2E test
+drives a real TOTP-enrolled account through it yet). No accessibility
+scanner (axe) wired in yet either, though `@axe-core/playwright` is
+already an installed devDependency, unused so far.
 
 ## Known gaps
 
-- No frontend automated test suite (see above) — recommend adding one
-  (Vitest + React Testing Library for components, Playwright for the
-  guided-workflow journeys in Section 29 of the brief) as part of Unit 7,
-  not deferred indefinitely.
-- No CI wiring for whatever frontend tests get added (check
-  `.github/workflows/` when that lands).
+- Frontend coverage above is a real start, not the full directive §7
+  workflow list (12 named workflows) — CSV import/retry, analytics,
+  dashboards, sharing/permission-denied, bucket upload/download, and
+  MFA step-up remain unautomated.
+- `@axe-core/playwright` is installed but not yet wired into any spec —
+  no automated accessibility scan runs today.
+- No CI wiring for the new frontend tests yet (`.github/workflows/ci.yml`
+  only runs backend pytest + frontend lint/build/tsc — `npm test` and
+  `npm run e2e` aren't in it).

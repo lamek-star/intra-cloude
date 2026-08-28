@@ -138,6 +138,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Component tests
+        run: npm test
+
       # Build before Type check, not after: Next.js 16 generates
       # PageProps/LayoutProps as global ambient types into
       # .next/types/**/*.ts (tsconfig.json includes that path) as a
