@@ -25,6 +25,8 @@ dist/
 build/
 coverage/
 *.tsbuildinfo
+playwright-report/
+apps/frontend/test-results/
 
 # .NET / Windows build (control-center, installer/wix)
 bin/
