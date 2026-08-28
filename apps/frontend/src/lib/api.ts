@@ -161,7 +161,7 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: "POST", body }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: "PATCH", body }),
-  del: <T = void>(path: string) => request<T>(path, { method: "DELETE" }),
+  del: <T = void>(path: string, body?: unknown) => request<T>(path, { method: "DELETE", body }),
   postForm: <T>(path: string, form: FormData) =>
     request<T>(path, { method: "POST", body: form, isFormData: true }),
 };
@@ -412,6 +412,51 @@ export type ApplicationCredential = {
   /** Only present exactly once, in the response to create/rotate — the
    * backend never stores or re-returns the plaintext. */
   secret?: string;
+};
+
+export type Environment = {
+  id: string;
+  application: string;
+  name: string;
+  slug: string;
+  environment_type: string;
+  is_production_tier: boolean;
+  status: "active" | "disabled";
+  config: Record<string, unknown>;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  last_activity_at: string | null;
+  database_status: "connected" | "not_connected";
+  storage_status: "connected" | "not_connected";
+  credential_count: number;
+};
+
+export type EnvironmentVariable = {
+  id: string;
+  key: string;
+  value: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EnvironmentSecret = {
+  id: string;
+  key: string;
+  created_at: string;
+  rotated_at: string | null;
+  /** Only present exactly once, in the response to create/rotate. */
+  value?: string;
+};
+
+export type EnvironmentWebhook = {
+  id: string;
+  url: string;
+  event_types: string[];
+  enabled: boolean;
+  created_at: string;
+  /** Only present exactly once, in the response to creation. */
+  signing_secret?: string;
 };
 
 export type ShareGrant = {

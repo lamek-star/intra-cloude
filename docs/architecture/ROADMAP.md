@@ -1636,6 +1636,158 @@ not attempted in this pass. The WiX v6+ licensing decision
 (`installer/README.md`) remains open and is also a business decision,
 not something this phase resolves.
 
+## Phase 16: Environment Management (per-application Development/Staging/Production isolation)
+
+Replaces the Developer portal's "Per-environment credentials aren't
+built yet" placeholder with a real subsystem. New app: `environments`
+(`Environment`, `EnvironmentVariable`, `EnvironmentSecret`,
+`EnvironmentWebhook`), completing the hierarchy Organization ->
+Application -> Environment. Not hardcoded to exactly three kinds:
+`environment_type` is a free-form string (`development`/`staging`/
+`production` are the first-class, UI-recognized values; anything else
+is accepted as a custom kind), and the actual security-relevant flag —
+`is_production_tier` — is a separate boolean so a future custom kind
+can opt into the same protection without a migration.
+
+**Isolation, the actual point of this phase.** `TenantDatabase` and
+`Bucket` each gained a nullable `OneToOneField` to `Environment`
+(`databases`/`storage` depend on `environments`, not the reverse — no
+FK the other way, keeping the dependency direction one-way).
+`ApplicationCredential` gained a nullable `environment` FK; when set,
+`environments.services.check_environment_scope` — called from every
+row/file-data view in `databases/views.py` and `storage/views.py` —
+requires the resource's own binding to match the credential's
+Environment exactly. An unbound resource is *not* reachable through an
+Environment-scoped credential either (explicit binding required, not
+merely "no conflicting binding"). Verified live against the real
+running stack, not just the automated suite: created an application
+with Development and Production environments, bound each to its own
+real `TenantDatabase` and `Bucket`, issued a separate credential per
+environment, granted the service account `database.read`/`write` and
+`storage.read` on *both* databases/buckets (deliberately, so the
+isolation check itself — not an absent grant — is what blocks access),
+then confirmed via direct `curl` against the live API: Development
+credential -> Development table = 200, Development credential ->
+Production table = **403**, Production credential -> Production table
+= 200, Production credential -> Development table = **403**, same
+pattern for storage. Revoking a credential live and re-testing
+confirmed rejection. A credential with no Environment (the pre-existing
+shape) is unaffected — scoping is opt-in, existing credentials keep
+working exactly as before.
+
+**RBAC** (capability-based, ADR-0008 — no role-name branching): four
+new permissions — `environment.read`, `environment.manage`,
+`environment.secrets.manage`, `environment.production.manage`.
+`organization-administrator` gets all four (its existing "everything
+except system.admin" grant already includes new permissions
+automatically); `developer` gets the first three but deliberately *not*
+`environment.production.manage`, so a Developer can manage
+Development/Staging but any mutating operation on a production-tier
+Environment additionally requires that fourth permission
+(`environments.services.can_manage_environment` enforces this as an
+extra gate on top of the base permission, not a replacement for it);
+`viewer` gets read-only. Confirmed live and via `EnvironmentRbacTests`:
+a Developer can create/edit a Development environment but gets 403
+creating, editing, or deleting a Production one; an organization
+administrator can do all of it.
+
+**Secrets** (`EnvironmentSecret`) and **webhook signing secrets**
+(`EnvironmentWebhook`) are Fernet-encrypted at rest
+(`environments/crypto.py`, same `CREDENTIAL_ENCRYPTION_KEY`-derived key
+as `accounts/crypto.py`/`databases/crypto.py` — a deliberately
+duplicated ~15-line module per that established convention, not a
+cross-app import). Values are returned exactly once, in the create/
+rotate response body, and never again — confirmed via
+`EnvironmentSecretProtectionTests`: the list endpoint's fields are
+exactly `{id, key, created_at, rotated_at}`, no `value` field exists to
+leak through it, the stored bytes don't contain the plaintext, and no
+audit event's `context` ever contains a secret value (only the key
+name). Clone deliberately does *not* copy secrets or webhook signing
+secrets to the new environment — cloning configuration shape is useful,
+silently sharing a production API key with a freshly-cloned
+"staging-2" is exactly the kind of leak this subsystem exists to
+prevent.
+
+**Delete confirmation**: typing the exact environment name is required
+for any delete; a production-tier environment additionally requires an
+explicit `confirm_production_understanding: true` the frontend can only
+satisfy via its own checkbox, not by getting the name field right
+twice — a real second confirmation, not just stronger dialog copy.
+
+**Backup/restore** (`exports` app): `builder.py`'s manifest gained an
+`applications` section (Application + each Environment's config,
+variables, webhook URLs/event types, and secret *key names only* — see
+`manifest.EXCLUDED_SCOPE`'s updated entries for exactly what's
+excluded and why). `restorer.py` recreates each Application through
+`applications.services.register_application` and each Environment
+through `environments.services.create_environment` (never a raw
+`.create()` bypassing their own bootstrap), re-links database/storage
+bindings to the *newly created* rows via an old-id lookup built while
+restoring workspaces/projects, and surfaces "N secrets were not
+restored and must be re-created" as a restore warning rather than
+creating placeholder `EnvironmentSecret` rows. Tested the actual
+restore, not merely that export produces bytes
+(`ApplicationEnvironmentExportRestoreTests`): round-tripped an
+Application with a Staging environment, a real database/bucket
+binding, a variable, a webhook, and a secret through the real
+export-job/restore-job API endpoints; confirmed the secret's plaintext
+never appears anywhere in the raw package bytes, the restored
+Environment has its own newly-created database/bucket bound (not the
+source organization's), and zero `EnvironmentSecret` rows exist on the
+restored side.
+
+**Frontend**: replaces the Environments placeholder page
+(`/orgs/[orgId]/developer/environments`) with a real list (grouped by
+application, Name/Type/Status/Application/Created/Last activity/
+Database status/Storage status/API credential status columns; Create/
+Clone/Disable-Enable/Delete actions) and a real detail page
+(`/environments/[environmentId]`) with eleven tabs — Overview,
+Configuration, Secrets, API Keys, Database, Storage, Auth, Webhooks,
+Logs, Activity, Settings — each backed by the real API, not mocked
+state. Logs/Activity reuse the existing per-organization audit
+endpoint (extended with a `resource_id` filter, additive) rather than a
+second logging path. The Application detail page gained its own
+Environments section (cards + "New environment"), completing the
+Organization -> Application -> Environment navigation the hierarchy
+implies. **Also fixed while here**: the Developer portal's sub-nav
+(`DeveloperNav.tsx`) went wider than the viewport below roughly 1024px
+(`overflow-x-auto` on a 12-item flat row), hiding Usage/SDKs/Docs
+behind an easy-to-miss horizontal scrollbar on a *tab bar* — regrouped
+into five semantic clusters with `flex-wrap` (no horizontal scroll at
+any width) instead of hiding anything behind a "More" menu. Confirmed
+live via a full-page screenshot at the default viewport: all twelve
+tabs visible, grouped, no scrollbar.
+
+**A real bug found and fixed during this phase's own live
+verification, not by inspection**: the database/storage binding
+endpoints originally called `services.update_environment(environment=
+environment, actor=request.user)` with no changed fields, intending it
+to at least bump `last_activity_at` — but `update_environment`'s
+`changed` list stays empty with no fields passed, so the whole
+save-and-audit block is skipped entirely. Live-tested by binding/
+unbinding a real database and checking the Environment's own Logs tab
+afterward: the binding change didn't appear at all. Fixed with four
+dedicated service functions (`bind_database`/`unbind_database`/
+`bind_storage`/`unbind_storage`) that explicitly save and audit-record
+an `environment.updated` event with the bound resource's id in
+`context`; re-verified live afterward that a disconnect/reconnect
+cycle now shows up correctly in the Logs tab.
+
+Exit criteria: 41 new backend tests (environments + the exports
+round-trip test) pass against real PostgreSQL, alongside all 290
+pre-existing tests (0 regressions); `ruff check .` and `mypy .` clean
+across the whole backend; frontend `npm run lint` and `npm run build`
+(real TypeScript checking, not skipped) both clean; the full isolation
+scenario verified twice — once via the automated test suite
+(`EnvironmentCredentialAndIsolationTests`), once live against the real
+running Docker stack via direct `curl` calls with real issued bearer
+tokens, not assumed from the test suite alone. **Not exercised in this
+phase**: Auth tab's `config.auth.allowed_origins` field is a real,
+persisted, non-secret setting but nothing currently reads it back
+server-side to actually enforce CORS per environment — it's storage and
+UI for a setting a future phase would need to wire into an actual
+enforcement point, tracked here rather than implied as done.
+
 ## Non-Negotiable Cross-Phase Rules
 
 - No phase ships without tenant-isolation tests for any new tenant-owned

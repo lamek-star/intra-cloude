@@ -59,7 +59,22 @@ PRODUCT_VERSION = _read_product_version()
 # manifest's "excluded" list rather than silently omitted — no export
 # should ever look "complete" when it isn't (no-silent-caps discipline).
 EXCLUDED_SCOPE = [
-    "applications",  # service accounts / API credentials
+    # Applications and their Environments (environments app) ARE
+    # included below (manifest["applications"]) -- what's specifically
+    # excluded is the credential/secret *material* itself: a bearer
+    # token's plaintext exists nowhere after issuance (not even this
+    # server keeps it -- only its hash), and an EnvironmentSecret's
+    # value is never exported even though its ciphertext could
+    # technically travel (Section 17: "do not create an export format
+    # that exposes plaintext secrets" -- and a decryptable ciphertext
+    # under this installation's own CREDENTIAL_ENCRYPTION_KEY would be
+    # exactly that, once restored on the same key). Restoring an
+    # Environment's *secret keys* (names only, no values) is exactly
+    # how the operator knows what to re-create -- see
+    # exports/restorer.py's applications restore warnings.
+    "application_credentials",  # bearer tokens -- never existed as recoverable plaintext
+    "environment_secret_values",  # keys are restored; values are not
+    "environment_webhook_signing_secrets",  # regenerated fresh on restore, never copied
     "connected_databases",  # external DB connector definitions
     "sharing",  # internal ShareGrants
     "analytics",  # not implemented anywhere in the product yet
@@ -80,6 +95,7 @@ def new_manifest(*, export_id: str, export_type: str = "organization") -> dict:
         "export_type": export_type,
         "organization": None,  # filled in by builder.py — workspaces/projects/buckets/files nested inside
         "databases": {},  # filled in by builder.py
+        "applications": [],  # filled in by builder.py — each with its environments nested inside
         "checksums": {},  # filled in as files are added to the archive
         "encryption": None,  # filled in if the caller requests encryption
         "excluded": EXCLUDED_SCOPE,

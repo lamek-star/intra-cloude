@@ -43,6 +43,10 @@ Last updated: 2026-08-07
 | `connection.manage` | Create/edit ConnectedDatabase configurations |
 | `sharing.manage` | Create/revoke ShareGrants (internal/external) |
 | `system.admin` | Platform-wide administrative operations (Super Administrator only) |
+| `environment.read` | View an Application's Environments and their non-secret configuration/status |
+| `environment.manage` | Create/update/clone/disable/delete Environments, variables, and webhooks |
+| `environment.secrets.manage` | Create/rotate/delete Environment secrets and issue/revoke environment-scoped credentials |
+| `environment.production.manage` | Required *in addition to* `environment.manage`/`environment.secrets.manage` for any mutating operation on a production-tier Environment (`environments.services.can_manage_environment`) — capability-based, not a role-name check; `is_production_tier` is the field that actually gates this, independent of the `environment_type` display string |
 
 New permissions are added by extending this table plus a migration/fixture;
 they are never invented inline in view code.
@@ -55,9 +59,9 @@ they are never invented inline in view code.
 | Organization Administrator | Org owner/IT admin | All permissions except `system.admin`, scoped to their own organization (see implementation note below) |
 | Storage Administrator | IT/ops for files | `storage.read/write/delete/share/manage` |
 | Database Administrator | Data team lead | `database.*`, `dataset.import/export/analyze`, `connection.manage` |
-| Developer | App/integration builder | `application.create`, `application.credentials.manage`, `database.read`, `database.write`, `dataset.import/export/analyze` |
+| Developer | App/integration builder | `application.create`, `application.credentials.manage`, `database.read`, `database.write`, `dataset.import/export/analyze`, `environment.read/manage/secrets.manage` (deliberately *not* `environment.production.manage` — a Developer can manage Development/Staging but any mutating operation on a production-tier Environment needs that permission too) |
 | Editor | General contributor | `storage.read/write`, `database.read/write`, `dataset.import` |
-| Viewer | Read-only staff | `storage.read`, `database.read` |
+| Viewer | Read-only staff | `storage.read`, `database.read`, `environment.read` |
 | Auditor | Compliance/security | `audit.read` only |
 | Guest | Limited external-ish internal collaborator | Permissions granted only via explicit `ResourceGrant`, no role-wide grants |
 | Service Account | Application's runtime identity | No default permissions; entirely `ResourceGrant`/scope-driven |
@@ -128,6 +132,27 @@ Applications authenticate as a `ServiceAccount`. A scope like
 This directly implements the master prompt's requirement: *"A
 `database:read` scope must not automatically authorize reading every
 organizational database."*
+
+**Environment scoping (Phase 16) is a second, independent restriction
+on top of the above, not a replacement for it.** An `ApplicationCredential`
+may optionally carry an `environment` (the `environments` app's
+`Environment`). When set, `environments.services.check_environment_scope`
+— called from every row/file-data view in `databases`/`storage` before
+the `RoleAssignment`/`ResourceGrant` check even matters — requires the
+target `TenantDatabase`/`Bucket`'s own `environment` binding to equal
+the credential's exactly. A resource that isn't bound to *any*
+Environment is unreachable through an Environment-scoped credential
+either, even with a valid `ResourceGrant` naming it directly — explicit
+binding is required, "no conflicting binding" is not enough. This is
+why the Development-vs-Production isolation test deliberately grants
+`database.read`/`storage.read` on *both* environments' resources to the
+same service account before testing: proving the Environment check
+itself blocks cross-environment access, not merely an absent grant a
+future misconfiguration could just as easily create. A credential with
+no `environment` set (every credential issued before this phase
+existed, and any current Application-level credential not created
+through an Environment's own "New credential" action) is entirely
+unaffected — this restriction is opt-in.
 
 ## 6. Enforcement Points
 

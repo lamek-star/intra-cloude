@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { CheckCircle2, RotateCw, ShieldOff, XCircle } from "lucide-react";
+import Link from "next/link";
+import { CheckCircle2, Layers3, RotateCw, ShieldOff, XCircle } from "lucide-react";
 import {
   api,
   ApiError,
   type Application,
   type ApplicationCredential,
+  type Environment,
   type Organization,
   type ResourceGrant,
 } from "@/lib/api";
@@ -21,6 +23,7 @@ import {
   Modal,
   PageHeader,
   PageLoading,
+  Select,
   SecretReveal,
   Spinner,
   Table,
@@ -120,10 +123,13 @@ export default function ApplicationDetailClient({ applicationId }: { application
   const [grants, setGrants] = useState<ResourceGrant[] | null>(null);
   const [grantsError, setGrantsError] = useState<string | null>(null);
   const [resources, setResources] = useState<OrgResource[] | null>(null);
+  const [environments, setEnvironments] = useState<Environment[] | null>(null);
+  const [environmentsError, setEnvironmentsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [revealSecret, setRevealSecret] = useState<{ title: string; secret: string } | null>(null);
   const [grantModalOpen, setGrantModalOpen] = useState(false);
+  const [createEnvOpen, setCreateEnvOpen] = useState(false);
 
   async function load() {
     try {
@@ -137,6 +143,16 @@ export default function ApplicationDetailClient({ applicationId }: { application
       setError(err instanceof ApiError ? err.message : "Failed to load application.");
       setErrorDetail(err);
       return;
+    }
+    try {
+      setEnvironments(await api.get<Environment[]>(`/applications/${applicationId}/environments/`));
+    } catch (err) {
+      setEnvironments([]);
+      setEnvironmentsError(
+        err instanceof ApiError && err.status === 403
+          ? "You don't have permission to view this application's environments."
+          : "Failed to load environments.",
+      );
     }
     try {
       setCredentials(await api.get<ApplicationCredential[]>(`/applications/${applicationId}/credentials/`));
@@ -231,6 +247,45 @@ export default function ApplicationDetailClient({ applicationId }: { application
         ]}
         description={application.description || undefined}
       />
+
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-600">Environments</h2>
+          <Button size="sm" onClick={() => setCreateEnvOpen(true)}>
+            New environment
+          </Button>
+        </div>
+        {environmentsError && (
+          <div className="mb-3">
+            <ErrorBanner message={environmentsError} />
+          </div>
+        )}
+        {environments && environments.length > 0 && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {environments.map((env) => (
+              <Link key={env.id} href={`/environments/${env.id}`} className="block">
+                <Card className="transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-2 font-medium text-slate-900">
+                      <Layers3 className="h-4 w-4 text-indigo-600" />
+                      {env.name}
+                    </span>
+                    {env.is_production_tier && <Badge tone="danger">Production</Badge>}
+                  </div>
+                  <p className="mt-1.5 text-xs text-slate-500">
+                    {env.environment_type} · {env.status === "active" ? "Active" : "Disabled"}
+                  </p>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        )}
+        {environments && environments.length === 0 && !environmentsError && (
+          <p className="text-sm text-slate-500">
+            No environments yet -- create Development, Staging, or Production for this application.
+          </p>
+        )}
+      </section>
 
       <section>
         <div className="mb-3 flex items-center justify-between">
@@ -381,6 +436,16 @@ export default function ApplicationDetailClient({ applicationId }: { application
           setGrantModalOpen(false);
         }}
       />
+
+      <CreateEnvironmentModal
+        open={createEnvOpen}
+        applicationId={applicationId}
+        onClose={() => setCreateEnvOpen(false)}
+        onCreated={(env) => {
+          setEnvironments((prev) => [...(prev ?? []), env]);
+          setCreateEnvOpen(false);
+        }}
+      />
     </div>
   );
 }
@@ -466,6 +531,81 @@ function GrantPermissionModal({
           </Button>
           <Button type="submit" disabled={submitting}>
             {submitting ? "..." : "Grant"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+const ENVIRONMENT_TYPES = ["development", "staging", "production", "custom"];
+
+function CreateEnvironmentModal({
+  open,
+  applicationId,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  applicationId: string;
+  onClose: () => void;
+  onCreated: (env: Environment) => void;
+}) {
+  const [name, setName] = useState("");
+  const [environmentType, setEnvironmentType] = useState("development");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const env = await api.post<Environment>(`/applications/${applicationId}/environments/`, {
+        name,
+        environment_type: environmentType,
+      });
+      setName("");
+      setEnvironmentType("development");
+      onCreated(env);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to create environment.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="New environment">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {error && <ErrorBanner message={error} />}
+        <div>
+          <Label htmlFor="app-env-name">Name</Label>
+          <Input
+            id="app-env-name"
+            autoFocus
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Production"
+          />
+        </div>
+        <div>
+          <Label htmlFor="app-env-type">Type</Label>
+          <Select id="app-env-type" value={environmentType} onChange={(e) => setEnvironmentType(e.target.value)}>
+            {ENVIRONMENT_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={submitting}>
+            {submitting ? "..." : "Create"}
           </Button>
         </div>
       </form>

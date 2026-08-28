@@ -143,11 +143,32 @@ pass (it touches `workspaces`, the project-creation path, and
 until it has a real fix.
 
 See `apps/frontend/README.md` for how it's built and
-`docs/guide/USER_GUIDE.md` for how to use it. Sharing, applications,
-connected databases, teams, and dashboards (the persistent declarative-
-JSON widget layer analytics also supports, not to be confused with the
-new `/dashboard` landing page above) remain reachable only through the
+`docs/guide/USER_GUIDE.md` for how to use it. Sharing, connected
+databases, teams, and dashboards (the persistent declarative-JSON
+widget layer analytics also supports, not to be confused with the
+`/dashboard` landing page above) remain reachable only through the
 browsable API (`/api/v1/`) — real and tested, just no page yet.
+
+**Phase 16 added a new `environments` app**, completing the
+Organization -> Application -> Environment hierarchy the Developer
+portal's placeholder had promised: `Environment`/`EnvironmentVariable`/
+`EnvironmentSecret`/`EnvironmentWebhook`, with real Development/
+Staging/Production isolation — `TenantDatabase` and `Bucket` each hold
+a nullable binding to an `Environment`, and an `ApplicationCredential`
+scoped to one Environment can never reach a resource bound to a
+different one, enforced in `databases`/`storage`'s row/file views and
+verified live against the running stack (not just the test suite) with
+real issued bearer tokens. Secrets are Fernet-encrypted and shown
+exactly once; a production-tier Environment gets an extra RBAC gate
+(`environment.production.manage`, capability-based per ADR-0008) and a
+second, explicit delete confirmation. `exports`' portable `.icp`
+package now includes Applications/Environments (config, variables,
+webhook URLs, secret *key names only* — never secret values or
+webhook signing secrets); restore round-tripped live through the real
+API, not just export-produces-bytes. Full detail in
+`docs/architecture/ROADMAP.md`'s Phase 16 entry, including a real bug
+(binding changes not appearing in the audit log) found and fixed during
+that phase's own live verification.
 
 ## Non-Negotiable Architectural Rules
 
@@ -191,8 +212,8 @@ secure defaults; readable code over clever code.
 
 See `README.md` for the full tree. Key rule: Django is organized into
 bounded apps (`accounts`, `organizations`, `permissions`, `workspaces`,
-`storage`, `databases`, `datasets`, `imports`, `applications`, `sharing`,
-`audit`, `system`, `exports`, `analytics`) per
+`storage`, `databases`, `datasets`, `imports`, `applications`,
+`environments`, `sharing`, `audit`, `system`, `exports`, `analytics`) per
 `docs/architecture/DATA_MODEL.md` Section 1 — not one monolithic app.
 Business logic lives in service layers, not views or
 serializers.

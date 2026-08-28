@@ -67,6 +67,7 @@ LOCAL_APPS = [
     "datasets",
     "imports",
     "applications",
+    "environments",
     "sharing",
     "audit",
     "system",

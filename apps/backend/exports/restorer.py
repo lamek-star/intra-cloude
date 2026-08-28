@@ -90,6 +90,8 @@ class RestoreReport:
     teams: int = 0
     memberships_restored: int = 0
     memberships_skipped: list[str] = field(default_factory=list)
+    applications: int = 0
+    environments: int = 0
     warnings: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
@@ -107,6 +109,8 @@ class RestoreReport:
             "teams": self.teams,
             "memberships_restored": self.memberships_restored,
             "memberships_skipped": self.memberships_skipped,
+            "applications": self.applications,
+            "environments": self.environments,
             "warnings": self.warnings,
         }
 
@@ -202,6 +206,13 @@ def restore_package(zf: zipfile.ZipFile, manifest: dict, *, actor) -> RestoreRep
             team_by_name[team_name] = Team.objects.create(organization=organization, name=team_name)
             report.teams += 1
 
+        # Keyed by the *old* manifest id (databases_manifest's key /
+        # the bucket payload's own "id" field) so an Application's
+        # Environment binding, restored afterward, can re-link to the
+        # newly created row without a second export pass.
+        tenant_database_by_old_id: dict[str, object] = {}
+        bucket_by_old_id: dict[str, object] = {}
+
         for ws_data in org_data.get("workspaces", []):
             workspace = Workspace.objects.create(
                 organization=organization, name=ws_data["name"], created_by=actor
@@ -216,12 +227,23 @@ def restore_package(zf: zipfile.ZipFile, manifest: dict, *, actor) -> RestoreRep
 
                 for db_id in proj_data.get("tenant_databases", []):
                     db_manifest_entry = manifest["databases"][db_id]
-                    _restore_tenant_database(
+                    tenant_database_by_old_id[db_id] = _restore_tenant_database(
                         zf, db_manifest_entry, project=project, actor=actor, report=report
                     )
 
                 for bucket_data in proj_data.get("buckets", []):
-                    _restore_bucket(zf, bucket_data, project=project, actor=actor, report=report)
+                    bucket = _restore_bucket(zf, bucket_data, project=project, actor=actor, report=report)
+                    if bucket_data.get("id"):
+                        bucket_by_old_id[bucket_data["id"]] = bucket
+
+        _restore_applications(
+            manifest.get("applications", []),
+            organization=organization,
+            actor=actor,
+            tenant_database_by_old_id=tenant_database_by_old_id,
+            bucket_by_old_id=bucket_by_old_id,
+            report=report,
+        )
 
         _restore_memberships(
             org_data.get("memberships", []),
@@ -233,9 +255,7 @@ def restore_package(zf: zipfile.ZipFile, manifest: dict, *, actor) -> RestoreRep
     return report
 
 
-def _restore_tenant_database(
-    zf: zipfile.ZipFile, db_entry: dict, *, project, actor, report: RestoreReport
-) -> str:
+def _restore_tenant_database(zf: zipfile.ZipFile, db_entry: dict, *, project, actor, report: RestoreReport):
     schema = json.loads(zf.read(db_entry["schema_path"]))
     tenant_db = db_services.create_tenant_database(actor=actor, project=project, name=schema["name"])
     report.tenant_databases += 1
@@ -285,7 +305,7 @@ def _restore_tenant_database(
         table = tables_by_name[table_data["name"]]
         report.rows_imported += _restore_rows(zf, table_data, table=table)
 
-    return tenant_db.schema_name
+    return tenant_db
 
 
 def _topological_order(tables_data: list[dict]) -> list[dict]:
@@ -349,7 +369,9 @@ def _restore_rows(zf: zipfile.ZipFile, table_data: dict, *, table) -> int:
     return count
 
 
-def _restore_bucket(zf: zipfile.ZipFile, bucket_data: dict, *, project, actor, report: RestoreReport) -> None:
+def _restore_bucket(
+    zf: zipfile.ZipFile, bucket_data: dict, *, project, actor, report: RestoreReport
+) -> Bucket:
     bucket = Bucket.objects.create(
         project=project,
         name=bucket_data["name"],
@@ -394,6 +416,88 @@ def _restore_bucket(zf: zipfile.ZipFile, bucket_data: dict, *, project, actor, r
                 f"{file_data['display_filename']!r} restored but checksum differs from the export "
                 "(byte-for-byte mismatch) — investigate before trusting this file"
             )
+
+    return bucket
+
+
+def _restore_applications(
+    applications_data: list[dict],
+    *,
+    organization,
+    actor,
+    tenant_database_by_old_id: dict,
+    bucket_by_old_id: dict,
+    report: RestoreReport,
+) -> None:
+    """Recreates each Application through applications.services.
+    register_application (the exact same path a real "create application"
+    API call uses -- never a raw model .create() bypassing its
+    ServiceAccount/Membership bootstrap), then each Environment through
+    environments.services.create_environment, re-linking database/
+    storage bindings by the old-id lookups built while restoring
+    workspaces/projects above. Secret keys are recreated as a warning
+    listing what must be re-entered, never as an EnvironmentSecret with
+    an empty or placeholder value -- an EnvironmentSecret row existing
+    at all is meant to mean "a real secret is stored here"."""
+    from applications import services as application_services
+    from environments import services as environment_services
+
+    for app_data in applications_data:
+        application = application_services.register_application(
+            organization=organization,
+            name=app_data["name"],
+            description=app_data.get("description", ""),
+            owner=actor,
+        )
+        report.applications += 1
+
+        for env_data in app_data.get("environments", []):
+            environment = environment_services.create_environment(
+                application=application,
+                name=env_data["name"],
+                environment_type=env_data["environment_type"],
+                is_production_tier=env_data["is_production_tier"],
+                config=env_data.get("config") or {},
+                actor=actor,
+                slug=env_data.get("slug"),
+            )
+            report.environments += 1
+
+            # Set from the *forward* side (TenantDatabase.environment /
+            # Bucket.environment own the actual FK column) and saved
+            # explicitly -- assigning through Environment's reverse
+            # one-to-one accessor only updates in-memory descriptor
+            # caches, it does not persist anything on its own.
+            tenant_database_ref = env_data.get("tenant_database_ref")
+            if tenant_database_ref and tenant_database_ref in tenant_database_by_old_id:
+                bound_database = tenant_database_by_old_id[tenant_database_ref]
+                bound_database.environment = environment
+                bound_database.save(update_fields=["environment"])
+            bucket_ref = env_data.get("bucket_ref")
+            if bucket_ref and bucket_ref in bucket_by_old_id:
+                bound_bucket = bucket_by_old_id[bucket_ref]
+                bound_bucket.environment = environment
+                bound_bucket.save(update_fields=["environment"])
+
+            for var_data in env_data.get("variables", []):
+                environment_services.set_variable(
+                    environment=environment, key=var_data["key"], value=var_data["value"], actor=actor
+                )
+            for webhook_data in env_data.get("webhooks", []):
+                environment_services.create_webhook(
+                    environment=environment,
+                    url=webhook_data["url"],
+                    event_types=webhook_data.get("event_types", []),
+                    enabled=webhook_data.get("enabled", True),
+                    actor=actor,
+                )
+            secret_keys = env_data.get("secret_keys", [])
+            if secret_keys:
+                report.warnings.append(
+                    f"environment {app_data['name']!r}/{env_data['name']!r}: "
+                    f"{len(secret_keys)} secret(s) were not restored (values are never exported) "
+                    f"and must be re-created: {', '.join(secret_keys)}"
+                )
 
 
 def _restore_memberships(

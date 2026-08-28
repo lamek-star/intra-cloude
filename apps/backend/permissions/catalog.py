@@ -30,6 +30,15 @@ PERMISSIONS = {
     "connection.manage": "Create/edit ConnectedDatabase configurations",
     "sharing.manage": "Create/revoke ShareGrants (internal/external)",
     "system.admin": "Platform-wide administrative operations (Super Administrator only)",
+    "environment.read": "View an Application's Environments and their non-secret configuration/status",
+    "environment.manage": "Create/update/clone/disable/delete Environments, variables, and webhooks",
+    "environment.secrets.manage": (
+        "Create/rotate/delete Environment secrets and issue/revoke environment-scoped credentials"
+    ),
+    "environment.production.manage": (
+        "Required in addition to environment.manage/environment.secrets.manage for any mutating "
+        "operation on a production-tier Environment"
+    ),
 }
 
 _ALL = list(PERMISSIONS.keys())
@@ -77,10 +86,18 @@ SYSTEM_ROLES: dict[str, tuple[str, list[str]]] = {
             "dataset.import",
             "dataset.export",
             "dataset.analyze",
+            "environment.read",
+            "environment.manage",
+            "environment.secrets.manage",
+            # Deliberately NOT environment.production.manage: a Developer
+            # can create/manage Development and Staging environments and
+            # their secrets, but any mutating operation on a
+            # production-tier Environment needs that separate permission
+            # too -- only organization-administrator holds it by default.
         ],
     ),
     "editor": ("Editor", [*_STORAGE_RW, *_DATABASE_RW, "dataset.import"]),
-    "viewer": ("Viewer", ["storage.read", "database.read"]),
+    "viewer": ("Viewer", ["storage.read", "database.read", "environment.read"]),
     "auditor": ("Auditor", ["audit.read"]),
     # Guest and Service Account hold no role-wide permissions by design —
     # access is entirely via ResourceGrant (docs/security/PERMISSIONS.md

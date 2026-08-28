@@ -73,6 +73,25 @@ class ApplicationCredential(models.Model):
     service_account = models.ForeignKey(
         ServiceAccount, on_delete=models.CASCADE, related_name="credentials"
     )
+    # Nullable for backward compatibility with credentials issued before
+    # Environment existed, and because an Application-level credential
+    # with no environment at all remains a valid, supported shape (not
+    # every integration needs per-environment scoping). When set, this
+    # credential's access to any Environment-bound resource (a
+    # TenantDatabase/Bucket whose own `environment` FK is set) is
+    # restricted to that exact Environment -- enforced in
+    # environments.services.check_environment_scope, called from
+    # databases/storage's row/file views. A credential with
+    # environment=None is unrestricted by this specific check (existing
+    # behavior, unchanged) but still subject to every ResourceGrant/Role
+    # check exactly as before.
+    environment = models.ForeignKey(
+        "environments.Environment",
+        on_delete=models.SET_NULL,
+        related_name="credentials",
+        null=True,
+        blank=True,
+    )
     secret_hash = models.CharField(max_length=64, unique=True)  # hex sha256
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

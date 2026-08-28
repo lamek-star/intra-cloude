@@ -62,11 +62,16 @@ def _hash_secret(secret: str) -> str:
 
 
 def issue_credential(
-    *, service_account: ServiceAccount, actor, expires_at=None
+    *, service_account: ServiceAccount, actor, expires_at=None, environment=None
 ) -> tuple[ApplicationCredential, str]:
     """Returns (credential, plaintext_token). The plaintext is never
     stored or logged — this is the only place it ever exists as a whole
-    string."""
+    string.
+
+    `environment`, if given, scopes this credential to that Environment
+    (environments app) -- enforced by environments.services.
+    check_environment_scope, called from databases/storage's row/file
+    views, not here; this function only records the binding."""
     credential_id = uuid.uuid4()
     secret = secrets.token_urlsafe(32)
     token = f"{TOKEN_PREFIX}{credential_id.hex}.{secret}"
@@ -77,6 +82,7 @@ def issue_credential(
         secret_hash=_hash_secret(secret),
         created_by=actor,
         expires_at=expires_at,
+        environment=environment,
     )
     audit.record(
         actor=actor,
@@ -84,6 +90,7 @@ def issue_credential(
         action="application.credentials.create",
         resource_type="application_credential",
         resource_id=credential.id,
+        context={"environment": str(environment.id)} if environment else None,
     )
     return credential, token
 
@@ -103,7 +110,11 @@ def revoke_credential(*, credential: ApplicationCredential, actor) -> None:
 def rotate_credential(*, credential: ApplicationCredential, actor) -> tuple[ApplicationCredential, str]:
     with transaction.atomic():
         revoke_credential(credential=credential, actor=actor)
-        new_credential, token = issue_credential(service_account=credential.service_account, actor=actor)
+        # Preserves the same Environment scope (if any) -- rotating a
+        # credential must never silently widen it to unscoped access.
+        new_credential, token = issue_credential(
+            service_account=credential.service_account, actor=actor, environment=credential.environment
+        )
     audit.record(
         actor=actor,
         organization_id=credential.organization_id,
@@ -145,4 +156,12 @@ def resolve_credential(token: str) -> ApplicationCredential:
 
     credential.last_used_at = timezone.now()
     credential.save(update_fields=["last_used_at"])
+    if credential.environment_id is not None:
+        # Best-effort "Last activity" signal for the Environment UI --
+        # not itself a security control, so a stale value here (e.g. a
+        # request that fails after auth) is an acceptable, non-critical
+        # gap.
+        from environments.models import Environment
+
+        Environment.objects.filter(id=credential.environment_id).update(last_activity_at=timezone.now())
     return credential
