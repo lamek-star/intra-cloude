@@ -3,6 +3,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from accounts.models import User
+from audit.models import AuditEvent
 from permissions.management.commands.seed_permissions import Command as SeedPermissionsCommand
 
 
@@ -27,6 +28,11 @@ class WorkspaceProjectTests(APITestCase):
         detail = self.client.get(reverse("workspace-detail", args=[workspace_id]))
         self.assertEqual(detail.status_code, status.HTTP_200_OK)
 
+        event = AuditEvent.objects.get(action="workspace.create", resource_id=workspace_id)
+        self.assertEqual(str(event.organization_id), self.org_id)
+        self.assertEqual(event.actor_id, self.user.id)
+        self.assertEqual(event.context["name"], "Marketing")
+
     def test_create_and_list_project(self):
         ws = self.client.post(
             reverse("workspace-list-create", args=[self.org_id]), {"name": "Marketing"}
@@ -41,6 +47,11 @@ class WorkspaceProjectTests(APITestCase):
 
         detail = self.client.get(reverse("project-detail", args=[project_id]))
         self.assertEqual(detail.status_code, status.HTTP_200_OK)
+
+        event = AuditEvent.objects.get(action="project.create", resource_id=project_id)
+        self.assertEqual(str(event.organization_id), self.org_id)
+        self.assertEqual(event.actor_id, self.user.id)
+        self.assertEqual(event.context["name"], "Q1 Campaign")
 
     def test_non_member_cannot_see_workspace(self):
         ws = self.client.post(

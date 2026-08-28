@@ -4,6 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from audit import services as audit
 from organizations.models import Membership
 from organizations.services import get_member_organization
 
@@ -57,6 +58,14 @@ class WorkspaceListCreateView(APIView):
         workspace = Workspace.objects.create(
             organization=org, name=serializer.validated_data["name"], created_by=request.user
         )
+        audit.record(
+            actor=request.user,
+            organization_id=org.id,
+            action="workspace.create",
+            resource_type="workspace",
+            resource_id=workspace.id,
+            context={"name": workspace.name},
+        )
         return Response(WorkspaceSerializer(workspace).data, status=status.HTTP_201_CREATED)
 
 
@@ -82,6 +91,14 @@ class ProjectListCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         project = Project.objects.create(
             workspace=workspace, name=serializer.validated_data["name"], created_by=request.user
+        )
+        audit.record(
+            actor=request.user,
+            organization_id=workspace.organization_id,
+            action="project.create",
+            resource_type="project",
+            resource_id=project.id,
+            context={"name": project.name},
         )
         return Response(ProjectSerializer(project).data, status=status.HTTP_201_CREATED)
 

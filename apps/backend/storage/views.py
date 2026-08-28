@@ -5,6 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from audit import services as audit
 from permissions.services import has_permission
 from workspaces.views import get_member_project
 
@@ -79,6 +80,14 @@ class BucketListCreateView(APIView):
             name=serializer.validated_data["name"],
             versioning_enabled=serializer.validated_data["versioning_enabled"],
             created_by=request.user,
+        )
+        audit.record(
+            actor=request.user,
+            organization_id=project.organization_id,
+            action="storage.bucket.create",
+            resource_type="bucket",
+            resource_id=bucket.id,
+            context={"name": bucket.name},
         )
         return Response(BucketSerializer(bucket).data, status=status.HTTP_201_CREATED)
 

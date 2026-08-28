@@ -7,6 +7,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from accounts.models import User
+from audit.models import AuditEvent
 from organizations.models import Membership
 from permissions.management.commands.seed_permissions import Command as SeedPermissionsCommand
 from storage import scanning
@@ -45,6 +46,11 @@ class BucketFolderTests(StorageTestBase):
     def test_bucket_was_created(self):
         listing = self.client.get(reverse("bucket-list-create", args=[self.project_id]))
         self.assertEqual([b["id"] for b in listing.data], [self.bucket_id])
+
+        event = AuditEvent.objects.get(action="storage.bucket.create", resource_id=self.bucket_id)
+        self.assertEqual(str(event.organization_id), self.org_id)
+        self.assertEqual(event.actor_id, self.admin.id)
+        self.assertEqual(event.context["name"], "docs")
 
     def test_create_and_list_folder(self):
         resp = self.client.post(reverse("folder-list-create", args=[self.bucket_id]), {"name": "reports"})

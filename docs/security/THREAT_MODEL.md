@@ -155,3 +155,21 @@ belonging to Organization B, and requests it directly via
   infrastructure-level control (LUKS/ZFS native encryption) documented in
   LOCAL_DEPLOYMENT.md rather than re-implemented in the application; this is
   called out explicitly so it isn't silently skipped.
+- **`Environment.config.auth.allowed_origins` (Phase 22) is stored and
+  editable via the Developer portal's Auth tab but has no server-side
+  enforcement point.** Deliberately not implemented as a guess: it's
+  unclear whether the intended semantics are (a) per-Environment dynamic
+  `Access-Control-Allow-Origin` for browser-originated requests bearing
+  that Environment's credential, which `django-cors-headers`' global
+  single-allowlist model doesn't support out of the box and would need
+  request-time Origin validation against the resolved Environment before
+  any custom CORS header is echoed back — a real risk of introducing a
+  CORS bypass if the matching logic is wrong — or (b) a non-CORS
+  Referer/Origin allowlist check purely for bearer-token requests
+  (`ApplicationCredential` auth is typically server-to-server and not
+  subject to browser CORS at all, so this would be an
+  application-level control, not a browser one, with a different threat
+  model). Resolve which semantics are intended — an ADR, not a quick
+  patch — before implementing either; app-wide `CORS_ALLOWED_ORIGINS`
+  (`config/settings/base.py`, `corsheaders`) remains the real, enforced
+  control in the meantime.
