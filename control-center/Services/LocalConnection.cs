@@ -145,6 +145,15 @@ public sealed class LocalConnection : IIntraCloudConnection
         return ScriptRunner.RunAsync(scriptPath, arguments, timeout, cancellationToken);
     }
 
+    // These two messages say "Intra-Cloud distribution" on purpose, not left
+    // over from the IntraForge rebrand: the actual registered WSL
+    // distribution name is still literally "IntraCloud"
+    // ($script:IntraCloudDistroName, installer/scripts/WslDistro.Common.ps1)
+    // until that PowerShell-layer rename happens as its own pass (see
+    // installer/wix/Package.wxs's ProgramData directory comment for the
+    // same reasoning). Saying "IntraForge distribution" here while
+    // `wsl --list` still shows "IntraCloud" would be a real, user-visible
+    // inconsistency, not an improvement.
     private static bool ThrowIfFailed(ScriptResult result, string actionDescription)
     {
         if (result.TimedOut)

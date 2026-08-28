@@ -25,7 +25,7 @@ public class VersionInfoTests
     {
         var title = VersionInfo.GetWindowTitle(Assembly.GetExecutingAssembly());
 
-        Assert.StartsWith("Intra-Cloud Control Center v", title);
+        Assert.StartsWith("IntraForge Control Center v", title);
     }
 
     [Fact]

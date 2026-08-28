@@ -1,4 +1,4 @@
-# Intra-Cloud Windows Build Infrastructure
+# IntraForge Windows Build Infrastructure
 
 Phase 16 (`docs/architecture/ROADMAP.md`) built the CI/build scaffolding
 for the Windows deployment work ADR-0012 decided: the build chain
@@ -35,14 +35,14 @@ Everything below was actually run on a live Windows 11 host (build
 
 - `dotnet build`/`dotnet publish` on `control-center/` — succeeds, zero
   warnings, produces a self-contained single-file
-  `IntraCloudControlCenter.exe` (~154 MB — see "Package size" below).
+  `IntraForgeControlCenter.exe` (~154 MB — see "Package size" below).
 - The published exe was actually launched (`Start-Process`), confirmed
   it stayed running and displayed the correct title
-  (`Intra-Cloud Control Center v0.1.0-dev`, sourced from `VERSION` via
+  (`IntraForge Control Center v0.1.0-dev`, sourced from `VERSION` via
   `VersionInfo.cs`), then stopped cleanly.
 - `dotnet test` on `control-center/tests/` — 3/3 pass.
 - `dotnet build` on `installer/wix/` — succeeds, zero warnings, produces
-  a real MSI (`IntraCloudControlCenter-Setup.msi`, ~54 MB), verified
+  a real MSI (`IntraForgeControlCenter-Setup.msi`, ~54 MB), verified
   from a clean checkout (no locally-cached WiX extension needed — see
   "WiX extension resolution" below).
 - `Test-Prerequisites.ps1` was actually run — correctly reported
@@ -123,7 +123,7 @@ introduced a mandatory **paid** "Open Source Maintenance Fee" for any
 revenue-generating organization — confirmed directly: running the v7
 CLI refuses to execute at all (`WIX7015`) until the EULA is accepted,
 and that EULA requires payment (tiered $10–60/month by organization
-size) for exactly the kind of commercial use Intra-Cloud is being built
+size) for exactly the kind of commercial use IntraForge is being built
 for. v5 predates this and remains free.
 
 This is a real product decision, not an engineering detail — before
@@ -195,7 +195,7 @@ dotnet test .\tests\IntraCloud.ControlCenter.Tests\
 # Installer
 cd installer\wix
 dotnet tool restore
-dotnet build -c Release   # -> bin\x64\Release\IntraCloudControlCenter-Setup.msi
+dotnet build -c Release   # -> bin\x64\Release\IntraForgeControlCenter-Setup.msi
 
 # Prerequisite check script
 .\installer\scripts\Test-Prerequisites.ps1

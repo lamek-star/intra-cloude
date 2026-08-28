@@ -19,8 +19,8 @@
     and ROADMAP.md for the concrete gotcha this caught).
 
     Writes, per release, into $OutputPath\<version>\:
-      - IntraCloud-Setup.msi        (copied from the WiX build output)
-      - IntraCloud-Setup.msi.sha256 (single-file checksum)
+      - IntraForge-Setup.msi        (copied from the WiX build output)
+      - IntraForge-Setup.msi.sha256 (single-file checksum)
       - CHECKSUMS.txt               (all artifacts, one file, the
                                       conventional multi-file format)
       - RELEASE_INFO.txt            (version, git commit, build date,
@@ -52,7 +52,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $script:RepoRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
-$script:MsiSourcePath = Join-Path $script:RepoRoot 'installer\wix\bin\x64\Release\IntraCloudControlCenter-Setup.msi'
+$script:MsiSourcePath = Join-Path $script:RepoRoot 'installer\wix\bin\x64\Release\IntraForgeControlCenter-Setup.msi'
 
 function Get-ProductVersion {
     $versionFile = Join-Path $script:RepoRoot 'VERSION'
@@ -110,19 +110,19 @@ function New-ReleaseArtifacts {
     $releaseDir = Join-Path $OutputPath $version
     New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
 
-    $msiDestPath = Join-Path $releaseDir 'IntraCloud-Setup.msi'
+    $msiDestPath = Join-Path $releaseDir 'IntraForge-Setup.msi'
     Copy-Item -Path $script:MsiSourcePath -Destination $msiDestPath -Force
 
     $msiSize = (Get-Item $msiDestPath).Length
     $msiHash = (Get-FileHash -Path $msiDestPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
-    # Single-file checksum (`certutil -hashfile IntraCloud-Setup.msi SHA256`-
+    # Single-file checksum (`certutil -hashfile IntraForge-Setup.msi SHA256`-
     # style verification) and the combined multi-file CHECKSUMS.txt
     # convention (`sha256sum -c CHECKSUMS.txt`) -- both are real,
     # commonly-expected verification paths, not just one arbitrarily
     # chosen format.
-    "$msiHash *IntraCloud-Setup.msi" | Set-Content -Path (Join-Path $releaseDir 'IntraCloud-Setup.msi.sha256') -Encoding ascii
-    "$msiHash *IntraCloud-Setup.msi" | Set-Content -Path (Join-Path $releaseDir 'CHECKSUMS.txt') -Encoding ascii
+    "$msiHash *IntraForge-Setup.msi" | Set-Content -Path (Join-Path $releaseDir 'IntraForge-Setup.msi.sha256') -Encoding ascii
+    "$msiHash *IntraForge-Setup.msi" | Set-Content -Path (Join-Path $releaseDir 'CHECKSUMS.txt') -Encoding ascii
 
     $commit = Get-BuildGitCommit
     $buildDate = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') + ' UTC'
@@ -131,25 +131,25 @@ function New-ReleaseArtifacts {
         'Windows SmartScreen will warn on first run until this is resolved.'
 
     @"
-Intra-Cloud Control Center -- Release Artifact Info
+IntraForge Control Center -- Release Artifact Info
 ====================================================
 
 Product version:    $version
 Git commit:          $commit
 Build date:           $buildDate
-Artifact:             IntraCloud-Setup.msi
+Artifact:             IntraForge-Setup.msi
 Artifact size:        $msiSize bytes
 SHA-256:              $msiHash
 
 Code signing:         $codeSigningStatus
 
 Verify on the installing machine (PowerShell):
-    (Get-FileHash .\IntraCloud-Setup.msi -Algorithm SHA256).Hash -eq '$msiHash'
+    (Get-FileHash .\IntraForge-Setup.msi -Algorithm SHA256).Hash -eq '$msiHash'
 "@ | Set-Content -Path (Join-Path $releaseDir 'RELEASE_INFO.txt') -Encoding utf8
 
     $notesBody = Get-ReleaseNotesBody
     @"
-# Intra-Cloud Control Center $version
+# IntraForge Control Center $version
 
 $notesBody
 "@ | Set-Content -Path (Join-Path $releaseDir 'RELEASE_NOTES.md') -Encoding utf8
