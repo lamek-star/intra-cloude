@@ -49,6 +49,16 @@ def _require(request, permission_code, organization_id, *, bucket_id=None):
     return has_permission(request.user, permission_code, organization_id=organization_id, resource=resource)
 
 
+def _environment_scope_denied(request, bucket: Bucket) -> bool:
+    """Same discipline as databases/views.py's helper of the same name --
+    only ever restricts a request authenticated via an Environment-scoped
+    ApplicationCredential (environments app) whose Environment doesn't
+    match the one this Bucket is bound to."""
+    from environments.services import check_environment_scope
+
+    return not check_environment_scope(request, bucket=bucket)
+
+
 class BucketListCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -115,6 +125,8 @@ class FileListCreateView(APIView):
         bucket = get_member_bucket(request.user, bucket_id)
         if not _require(request, "storage.read", bucket.organization_id, bucket_id=bucket.id):
             return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, bucket):
+            return Response(status=status.HTTP_403_FORBIDDEN)
 
         files = FileObject.objects.filter(bucket=bucket, status=FileObject.Status.ACTIVE)
 
@@ -134,6 +146,8 @@ class FileListCreateView(APIView):
     def post(self, request, bucket_id):
         bucket = get_member_bucket(request.user, bucket_id)
         if not _require(request, "storage.write", bucket.organization_id, bucket_id=bucket.id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, bucket):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
         uploaded = request.FILES.get("file")
@@ -169,11 +183,15 @@ class FileDetailView(APIView):
         file_obj = get_member_file(request.user, file_id)
         if not _require(request, "storage.read", file_obj.organization_id, bucket_id=file_obj.bucket_id):
             return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, file_obj.bucket):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         return Response(FileObjectSerializer(file_obj).data)
 
     def patch(self, request, file_id):
         file_obj = get_member_file(request.user, file_id)
         if not _require(request, "storage.write", file_obj.organization_id, bucket_id=file_obj.bucket_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, file_obj.bucket):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
         serializer = FileUpdateSerializer(data=request.data)
@@ -197,6 +215,8 @@ class FileDetailView(APIView):
         file_obj = get_member_file(request.user, file_id)
         if not _require(request, "storage.delete", file_obj.organization_id, bucket_id=file_obj.bucket_id):
             return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, file_obj.bucket):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         delete_file(file_obj, actor=request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -207,6 +227,8 @@ class FileRestoreView(APIView):
     def post(self, request, file_id):
         file_obj = get_member_file(request.user, file_id)
         if not _require(request, "storage.delete", file_obj.organization_id, bucket_id=file_obj.bucket_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, file_obj.bucket):
             return Response(status=status.HTTP_403_FORBIDDEN)
         restore_file(file_obj, actor=request.user)
         return Response(FileObjectSerializer(file_obj).data)
@@ -219,6 +241,8 @@ class FileVersionUploadView(APIView):
     def post(self, request, file_id):
         file_obj = get_member_file(request.user, file_id)
         if not _require(request, "storage.write", file_obj.organization_id, bucket_id=file_obj.bucket_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, file_obj.bucket):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
         uploaded = request.FILES.get("file")
@@ -245,6 +269,8 @@ class FileDownloadView(APIView):
     def get(self, request, file_id):
         file_obj = get_member_file(request.user, file_id)
         if not _require(request, "storage.read", file_obj.organization_id, bucket_id=file_obj.bucket_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, file_obj.bucket):
             return Response(status=status.HTTP_403_FORBIDDEN)
         if file_obj.status == FileObject.Status.QUARANTINED:
             return Response(

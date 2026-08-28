@@ -37,6 +37,6 @@ class ResourceGrantSerializer(serializers.Serializer):
     permission = serializers.CharField(source="permission_id")
     resource_type = serializers.CharField()
     resource_id = serializers.CharField()
-    granted_by = serializers.UUIDField(allow_null=True)
+    granted_by = serializers.UUIDField(source="granted_by_id", allow_null=True)
     expires_at = serializers.DateTimeField(allow_null=True)
     created_at = serializers.DateTimeField()

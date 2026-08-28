@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, ApiError, type Organization } from "@/lib/api";
 import {
@@ -19,6 +20,7 @@ export default function OrgsPage() {
   const router = useRouter();
   const [orgs, setOrgs] = useState<Organization[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
   async function load() {
@@ -26,6 +28,7 @@ export default function OrgsPage() {
       setOrgs(await api.get<Organization[]>("/organizations/"));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load organizations.");
+      setErrorDetail(err);
     }
   }
 
@@ -47,7 +50,7 @@ export default function OrgsPage() {
 
       {error && (
         <div className="mb-4">
-          <ErrorBanner message={error} />
+          <ErrorBanner message={error} error={errorDetail} />
         </div>
       )}
 
@@ -60,19 +63,15 @@ export default function OrgsPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {orgs?.map((org) => (
-            <button
-              key={org.id}
-              onClick={() => router.push(`/orgs/${org.id}`)}
-              className="text-left"
-            >
-              <Card className="h-full transition-colors hover:border-indigo-400/40 hover:bg-white/[0.05]">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500/15 text-sm font-semibold text-indigo-300">
+            <Link key={org.id} href={`/orgs/${org.id}`} className="block text-left">
+              <Card className="h-full transition-colors hover:border-indigo-400/40 hover:bg-slate-50">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-sm font-semibold text-indigo-600">
                   {org.name.slice(0, 1).toUpperCase()}
                 </div>
-                <p className="mt-3 font-medium text-white">{org.name}</p>
+                <p className="mt-3 font-medium text-slate-900">{org.name}</p>
                 <p className="mt-0.5 text-xs text-slate-500">/{org.slug}</p>
               </Card>
-            </button>
+            </Link>
           ))}
         </div>
       )}
@@ -97,6 +96,7 @@ function CreateOrgModal({
 }) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -109,6 +109,7 @@ function CreateOrgModal({
       onCreated(org);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create organization.");
+      setErrorDetail(err);
     } finally {
       setSubmitting(false);
     }
@@ -117,7 +118,7 @@ function CreateOrgModal({
   return (
     <Modal open={open} onClose={onClose} title="New organization">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <ErrorBanner message={error} />}
+        {error && <ErrorBanner message={error} error={errorDetail} />}
         <div>
           <Label htmlFor="org-name">Name</Label>
           <Input

@@ -96,12 +96,79 @@ of the master prompt's own phases):** `apps/frontend` now has a real,
 working UI — auth (including MFA step-up), organizations, workspaces/
 projects, the storage file browser, and the database builder's data
 explorer — covering the core workflow end to end, client-rendered
-against the live API through the same Caddy proxy. See
-`apps/frontend/README.md` for how it's built and
-`docs/guide/USER_GUIDE.md` for how to use it. Sharing, applications,
-connected databases, the audit log, and teams remain reachable only
-through the browsable API (`/api/v1/`) — real and tested, just no page
-yet.
+against the live API through the same Caddy proxy. A later addition
+closed the CSV-import and analytics gap: `/tables/[tableId]/import`
+(upload or pick a stored CSV, preview detected encoding/delimiter/
+headers/inferred types, map columns to an existing table, watch the
+async job through pending/running/completed) and
+`/tables/[tableId]/analytics` (an automatic per-column data-quality
+profile plus a form-driven runner over the full `analytics.OPERATIONS`
+registry — descriptive stats, correlation, regression, t-test,
+chi-square, ANOVA, time-series). Both wrap existing, already-tested
+backend endpoints; verified live end to end against the real running
+stack (real user, org, table, uploaded CSV, completed import job, and
+a profile/analyze result cross-checked against each other), not just
+compiled. A `/dashboard` landing page (shown after login instead of
+going straight to `/orgs`) followed the same standard: an overview of
+the caller's organizations (with per-org workspace counts), this
+deployment's live `/healthz`/`/readyz` status, and — only when the
+user belongs to exactly one organization, so it is never ambiguous
+whose log is shown — its 8 most recent audit events; verified live
+against the Django test client (a real registered user, a real
+created organization/workspace, and the actual `/api/v1/organizations/`,
+`/workspaces/`, `/audit/`, `/healthz`, `/readyz` responses cross-checked
+field-for-field against what the page's TypeScript types expect), not
+just compiled. All icons across the UI are `lucide-react` SVG
+components, not emoji — emoji don't render consistently across
+platforms/fonts and several code review passes flagged them; any new
+page should follow that convention rather than reintroducing emoji.
+A per-organization `/orgs/[orgId]/audit` page (linked from the org
+detail page's header) followed: filter by resource type/action/result,
+paginate through the real `LimitOffsetPagination` response (not a
+fixed slice), and a clear "you don't have permission" message on a
+real 403 rather than an empty table — distinct from a non-member's 404,
+which `get_member_organization` already returns to avoid leaking org
+existence. Verified live the same way: real registered users (one
+member, one non-member outsider), a real organization/workspace/
+project/bucket created through the actual API, and the filter/
+pagination/permission-enforcement behavior checked against the live
+response, not assumed. **That pass surfaced a real, pre-existing gap
+worth tracking**: `storage/services.py` audits file-level actions
+(upload/download/delete/restore) but organization/workspace/project/
+bucket *creation* itself is audited only for `Organization` (via
+`organizations.services.create_organization`) — a workspace, project,
+or bucket can be created with no audit trail at all. Not fixed in this
+pass (it touches `workspaces`, the project-creation path, and
+`storage`'s bucket creation, not just the frontend); tracked here
+until it has a real fix.
+
+See `apps/frontend/README.md` for how it's built and
+`docs/guide/USER_GUIDE.md` for how to use it. Sharing, connected
+databases, teams, and dashboards (the persistent declarative-JSON
+widget layer analytics also supports, not to be confused with the
+`/dashboard` landing page above) remain reachable only through the
+browsable API (`/api/v1/`) — real and tested, just no page yet.
+
+**Phase 22 added a new `environments` app**, completing the
+Organization -> Application -> Environment hierarchy the Developer
+portal's placeholder had promised: `Environment`/`EnvironmentVariable`/
+`EnvironmentSecret`/`EnvironmentWebhook`, with real Development/
+Staging/Production isolation — `TenantDatabase` and `Bucket` each hold
+a nullable binding to an `Environment`, and an `ApplicationCredential`
+scoped to one Environment can never reach a resource bound to a
+different one, enforced in `databases`/`storage`'s row/file views and
+verified live against the running stack (not just the test suite) with
+real issued bearer tokens. Secrets are Fernet-encrypted and shown
+exactly once; a production-tier Environment gets an extra RBAC gate
+(`environment.production.manage`, capability-based per ADR-0008) and a
+second, explicit delete confirmation. `exports`' portable `.icp`
+package now includes Applications/Environments (config, variables,
+webhook URLs, secret *key names only* — never secret values or
+webhook signing secrets); restore round-tripped live through the real
+API, not just export-produces-bytes. Full detail in
+`docs/architecture/ROADMAP.md`'s Phase 22 entry, including a real bug
+(binding changes not appearing in the audit log) found and fixed during
+that phase's own live verification.
 
 ## Non-Negotiable Architectural Rules
 
@@ -145,8 +212,8 @@ secure defaults; readable code over clever code.
 
 See `README.md` for the full tree. Key rule: Django is organized into
 bounded apps (`accounts`, `organizations`, `permissions`, `workspaces`,
-`storage`, `databases`, `datasets`, `imports`, `applications`, `sharing`,
-`audit`, `system`, `exports`, `analytics`) per
+`storage`, `databases`, `datasets`, `imports`, `applications`,
+`environments`, `sharing`, `audit`, `system`, `exports`, `analytics`) per
 `docs/architecture/DATA_MODEL.md` Section 1 — not one monolithic app.
 Business logic lives in service layers, not views or
 serializers.

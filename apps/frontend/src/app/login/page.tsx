@@ -41,17 +41,17 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
+    <div className="flex min-h-screen items-center justify-center bg-white px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center">
-          <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500 text-sm font-bold text-white">
+          <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500 text-sm font-bold text-slate-900">
             P
           </div>
-          <h1 className="text-lg font-semibold text-white">Private Data Cloud</h1>
+          <h1 className="text-lg font-semibold text-slate-900">Private Data Cloud</h1>
           <p className="mt-1 text-sm text-slate-500">Sign in to your organization</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-white/10 bg-white/[0.03] p-6">
+        <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-slate-200 bg-white p-6">
           {error && <ErrorBanner message={error} />}
 
           {!needsMfa ? (
@@ -107,7 +107,7 @@ export default function LoginPage() {
 
         <p className="mt-5 text-center text-sm text-slate-500">
           Don&apos;t have an account?{" "}
-          <Link href="/register" className="text-indigo-400 hover:text-indigo-300">
+          <Link href="/register" className="text-indigo-600 hover:text-indigo-500">
             Create one
           </Link>
         </p>

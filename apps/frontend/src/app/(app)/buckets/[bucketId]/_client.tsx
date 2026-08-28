@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError, ensureCsrfCookie, type FileObject, type Project } from "@/lib/api";
+import { FileText } from "lucide-react";
+import { api, ApiError, ensureCsrfCookie, type FileObject, type Project, type Workspace } from "@/lib/api";
 import {
   Button,
   EmptyState,
@@ -16,6 +17,8 @@ import {
   THead,
   TRow,
 } from "@/components/ui";
+import { ShareSection } from "@/components/ShareSection";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -39,11 +42,14 @@ export default function BucketDetailClient({
 }) {
   const [bucketName] = useState(initialName ?? "Bucket");
   const [project, setProject] = useState<Project | null>(null);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [files, setFiles] = useState<FileObject[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [uploading, setUploading] = useState(false);
   const [search, setSearch] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const confirm = useConfirm();
 
   async function loadFiles(q?: string) {
     const qs = q ? `?search=${encodeURIComponent(q)}` : "";
@@ -53,11 +59,19 @@ export default function BucketDetailClient({
   async function load() {
     try {
       if (projectId) {
-        setProject(await api.get<Project>(`/projects/${projectId}/`));
+        const p = await api.get<Project>(`/projects/${projectId}/`);
+        setProject(p);
+        // Best-effort, for the Sharing section's organization scope --
+        // the file list above doesn't depend on this resolving.
+        api
+          .get<Workspace>(`/workspaces/${p.workspace}/`)
+          .then((ws) => setOrganizationId(ws.organization))
+          .catch(() => {});
       }
       await loadFiles();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load bucket.");
+      setErrorDetail(err);
     }
   }
 
@@ -84,6 +98,7 @@ export default function BucketDetailClient({
       await loadFiles(search || undefined);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Upload failed.");
+      setErrorDetail(err);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -91,12 +106,21 @@ export default function BucketDetailClient({
   }
 
   async function handleDelete(file: FileObject) {
-    if (!confirm(`Delete "${file.display_filename}"? This can be restored via the API afterward.`)) return;
+    if (
+      !(await confirm({
+        title: `Delete "${file.display_filename}"?`,
+        description: "This can be restored via the API afterward.",
+        confirmLabel: "Delete",
+        danger: true,
+      }))
+    )
+      return;
     try {
       await api.del(`/files/${file.id}/`);
       setFiles((prev) => prev?.filter((f) => f.id !== file.id) ?? null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Delete failed.");
+      setErrorDetail(err);
     }
   }
 
@@ -136,7 +160,7 @@ export default function BucketDetailClient({
 
       {error && (
         <div className="mb-4">
-          <ErrorBanner message={error} />
+          <ErrorBanner message={error} error={errorDetail} />
         </div>
       )}
 
@@ -172,7 +196,12 @@ export default function BucketDetailClient({
           <tbody>
             {files?.map((f) => (
               <TRow key={f.id}>
-                <Td className="font-medium text-white">📄 {f.display_filename}</Td>
+                <Td className="font-medium text-slate-900">
+                  <span className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-slate-400" />
+                    {f.display_filename}
+                  </span>
+                </Td>
                 <Td className="text-slate-400">{formatBytes(f.size)}</Td>
                 <Td className="text-slate-500">{f.content_type}</Td>
                 <Td className="text-slate-500">{new Date(f.created_at).toLocaleString()}</Td>
@@ -180,13 +209,13 @@ export default function BucketDetailClient({
                   <div className="flex justify-end gap-3 text-xs">
                     <a
                       href={`/api/v1/files/${f.id}/download/`}
-                      className="text-indigo-400 hover:text-indigo-300"
+                      className="text-indigo-600 hover:text-indigo-500"
                     >
                       Download
                     </a>
                     <button
                       onClick={() => handleDelete(f)}
-                      className="text-red-400 hover:text-red-300"
+                      className="text-red-600 hover:text-red-500"
                     >
                       Delete
                     </button>
@@ -196,6 +225,16 @@ export default function BucketDetailClient({
             ))}
           </tbody>
         </Table>
+      )}
+
+      {organizationId && (
+        <div className="mt-8">
+          <ShareSection
+            organizationId={organizationId}
+            resourceType="storage.bucket"
+            resourceId={bucketId}
+          />
+        </div>
       )}
     </div>
   );

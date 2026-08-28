@@ -145,6 +145,31 @@ class CredentialLifecycleTests(ApplicationTestBase):
         )
         self.assertEqual(denied.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_resource_grant_serializes_granted_by_as_uuid_not_user_str(self):
+        """Regression: ResourceGrantSerializer.granted_by was declared a
+        UUIDField but read the related User object (via the FK descriptor)
+        rather than its id, so DRF's UUIDField.to_representation fell back
+        to `str(value)` -- the User model's __str__, i.e. its email -- not
+        a UUID. Found live via the frontend applications page (a real
+        grant's response had `"granted_by": "apps-admin@example.com"`),
+        not by static inspection."""
+        grant = self.client.post(
+            reverse("application-resource-grant-list-create", args=[self.application_id]),
+            {
+                "permission_code": "storage.read",
+                "resource_type": "storage.bucket",
+                "resource_id": self.bucket_a_id,
+            },
+            format="json",
+        )
+        self.assertEqual(grant.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(grant.data["granted_by"], str(self.admin.id))
+
+        listed = self.client.get(
+            reverse("application-resource-grant-list-create", args=[self.application_id])
+        )
+        self.assertEqual(listed.data[0]["granted_by"], str(self.admin.id))
+
     def test_revoked_credential_no_longer_authenticates(self):
         issued = self.client.post(reverse("application-credential-list-create", args=[self.application_id]))
         token = issued.data["secret"]

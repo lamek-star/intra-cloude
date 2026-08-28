@@ -118,6 +118,14 @@ def build_export(*, organization, passphrase: str | None = None) -> tuple[bytes,
                     # same-named bucket.
                     bucket_payload = [
                         {
+                            # Exported so a bound Environment can be
+                            # re-linked to the *newly created* Bucket
+                            # after restore (exports/restorer.py's
+                            # bucket_by_old_id) -- the id itself is
+                            # never reused as a real primary key on
+                            # restore, only as a lookup key within this
+                            # one package.
+                            "id": bucket.id.hex,
                             "name": bucket.name,
                             "versioning_enabled": bucket.versioning_enabled,
                             "files": _export_bucket(writer, bucket, content_hash_to_arcname),
@@ -157,6 +165,7 @@ def build_export(*, organization, passphrase: str | None = None) -> tuple[bytes,
                 "memberships": memberships_payload,
             }
             manifest["databases"] = databases_manifest
+            manifest["applications"] = _export_applications(organization)
 
             # manifest.json is written last, once everything else (and
             # therefore every other file's checksum) is known.
@@ -249,6 +258,57 @@ def _export_bucket(writer: _ArchiveWriter, bucket, content_hash_to_arcname: dict
             }
         )
     return files_payload
+
+
+def _export_applications(organization) -> list[dict]:
+    """Applications and their Environments -- metadata and non-secret
+    configuration only. Deliberately excludes (see manifest.
+    EXCLUDED_SCOPE): ApplicationCredential bearer tokens (no plaintext
+    ever exists to export -- only a hash), EnvironmentSecret *values*
+    (only key names travel, so a restore knows what to re-create), and
+    EnvironmentWebhook signing secrets (regenerated fresh on restore).
+    `tenant_database`/`bucket` bindings are recorded by the *same id*
+    already used elsewhere in this manifest (databases_manifest's key,
+    and the bucket payload's own new "id" field above) so restorer.py
+    can re-link an Environment to the newly created database/bucket
+    without a second export pass."""
+    applications_payload = []
+    for application in organization.applications.order_by("name"):
+        environments_payload = []
+        for environment in application.environments.order_by("name"):
+            environments_payload.append(
+                {
+                    "name": environment.name,
+                    "slug": environment.slug,
+                    "environment_type": environment.environment_type,
+                    "is_production_tier": environment.is_production_tier,
+                    "status": environment.status,
+                    "config": environment.config,
+                    "tenant_database_ref": (
+                        environment.tenant_database.id.hex
+                        if hasattr(environment, "tenant_database")
+                        else None
+                    ),
+                    "bucket_ref": environment.bucket.id.hex if hasattr(environment, "bucket") else None,
+                    "variables": [
+                        {"key": v.key, "value": v.value} for v in environment.variables.order_by("key")
+                    ],
+                    "webhooks": [
+                        {"url": w.url, "event_types": w.event_types, "enabled": w.enabled}
+                        for w in environment.webhooks.order_by("-created_at")
+                    ],
+                    # Names only -- see docstring above.
+                    "secret_keys": list(environment.secrets.order_by("key").values_list("key", flat=True)),
+                }
+            )
+        applications_payload.append(
+            {
+                "name": application.name,
+                "description": application.description,
+                "environments": environments_payload,
+            }
+        )
+    return applications_payload
 
 
 def _json_dumps(data: dict) -> bytes:

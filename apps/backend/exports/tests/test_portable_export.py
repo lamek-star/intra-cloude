@@ -301,3 +301,122 @@ class PortableExportRoundTripTests(APITestCase):
         with self.assertRaises(restorer.PackageValidationError):
             zf2, manifest = restorer.open_package(bytes(package_bytes), passphrase=None)
             restorer.verify_checksums(zf2, manifest)
+
+
+class ApplicationEnvironmentExportRestoreTests(APITestCase):
+    """Environment Management's own backup/restore integration (Section
+    17 of that feature's spec): an Application and its Environments --
+    config, variables, webhook config, and a real database/storage
+    binding -- must survive an export/restore round trip, with secret
+    *values* never appearing anywhere in the package. Tests the actual
+    restore, not merely that export produces bytes."""
+
+    databases = {"default", "tenant"}
+
+    def setUp(self):
+        SeedPermissionsCommand().handle()
+        self.admin = User.objects.create_user(email="env-export-admin@example.com", password="x")
+        self.client.force_login(self.admin)
+
+    def test_application_and_environment_round_trip(self):
+        org = self.client.post(reverse("organization-list-create"), {"name": "EnvExportOrg"})
+        org_id = org.data["id"]
+        ws = self.client.post(reverse("workspace-list-create", args=[org_id]), {"name": "WS"})
+        proj = self.client.post(reverse("project-list-create", args=[ws.data["id"]]), {"name": "Proj"})
+        project_id = proj.data["id"]
+
+        app = self.client.post(
+            reverse("application-list-create", args=[org_id]), {"name": "inventory-system"}
+        )
+        application_id = app.data["id"]
+
+        env = self.client.post(
+            reverse("environment-list-create", args=[application_id]),
+            {"name": "Staging", "environment_type": "staging", "config": {"region": "eu-west-1"}},
+            format="json",
+        )
+        environment_id = env.data["id"]
+
+        db = self.client.post(
+            reverse("tenant-database-list-create", args=[project_id]), {"name": "StagingDB"}
+        )
+        db_id = db.data["id"]
+        self.client.patch(
+            reverse("environment-database-binding", args=[environment_id]),
+            {"tenant_database_id": db_id},
+            format="json",
+        )
+        bucket = self.client.post(
+            reverse("bucket-list-create", args=[project_id]), {"name": "staging-files"}
+        )
+        bucket_id = bucket.data["id"]
+        self.client.patch(
+            reverse("environment-storage-binding", args=[environment_id]),
+            {"bucket_id": bucket_id},
+            format="json",
+        )
+
+        self.client.post(
+            reverse("environment-variable-list-create", args=[environment_id]),
+            {"key": "LOG_LEVEL", "value": "debug"},
+            format="json",
+        )
+        self.client.post(
+            reverse("environment-webhook-list-create", args=[environment_id]),
+            {"url": "https://hooks.example.com/staging", "event_types": ["file.uploaded"]},
+            format="json",
+        )
+        self.client.post(
+            reverse("environment-secret-list-create", args=[environment_id]),
+            {"key": "STRIPE_KEY", "value": "sk_test_should_never_travel"},
+            format="json",
+        )
+
+        export = self.client.post(reverse("export-job-list-create", args=[org_id]), {})
+        self.assertEqual(export.status_code, status.HTTP_201_CREATED)
+        download = self.client.get(reverse("export-job-download", args=[export.data["id"]]))
+        package_bytes = b"".join(download.streaming_content)
+
+        # The secret's plaintext value must not appear anywhere in the
+        # raw package bytes, encrypted-container framing aside (the
+        # container itself isn't passphrase-encrypted here, so this is
+        # a direct, meaningful check on the actual archive contents).
+        self.assertNotIn(b"sk_test_should_never_travel", package_bytes)
+
+        restore = self.client.post(
+            reverse("restore-job-list-create"),
+            {"package": SimpleUploadedFile("export.icp", package_bytes)},
+            format="multipart",
+        )
+        self.assertEqual(restore.status_code, status.HTTP_201_CREATED)
+        restore_detail = self.client.get(reverse("restore-job-detail", args=[restore.data["id"]]))
+        self.assertEqual(
+            restore_detail.data["status"], "completed", restore_detail.data.get("error_message")
+        )
+        report = restore_detail.data["report"]
+        new_org_id = report["organization_id"]
+        self.assertEqual(report["applications"], 1)
+        self.assertEqual(report["environments"], 1)
+        self.assertTrue(
+            any("STRIPE_KEY" in w and "must be re-created" in w for w in report["warnings"])
+        )
+
+        from applications.models import Application
+        from environments.models import Environment, EnvironmentSecret
+
+        new_application = Application.objects.get(organization_id=new_org_id, name="inventory-system")
+        new_environment = Environment.objects.get(application=new_application, name="Staging")
+        self.assertEqual(new_environment.environment_type, "staging")
+        self.assertEqual(new_environment.config, {"region": "eu-west-1"})
+        self.assertEqual(new_environment.variables.get(key="LOG_LEVEL").value, "debug")
+        webhook = new_environment.webhooks.get()
+        self.assertEqual(webhook.url, "https://hooks.example.com/staging")
+        self.assertEqual(webhook.event_types, ["file.uploaded"])
+        # Restored, bound to a *newly created* database/bucket, not the
+        # source organization's original rows.
+        self.assertTrue(hasattr(new_environment, "tenant_database"))
+        self.assertTrue(hasattr(new_environment, "bucket"))
+        self.assertNotEqual(str(new_environment.tenant_database.id), db_id)
+        # No secret was recreated with any value -- only the key name
+        # travels, surfaced as a restore warning above.
+        self.assertEqual(EnvironmentSecret.objects.filter(environment=new_environment).count(), 0)

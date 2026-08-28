@@ -216,6 +216,18 @@ def _database_resource(table: DBTable):
     return (RESOURCE_TYPE_TENANT_DATABASE, table.tenant_database_id)
 
 
+def _environment_scope_denied(request, table: DBTable) -> bool:
+    """True if this request must be denied: authenticated via an
+    Environment-scoped ApplicationCredential (environments app) whose
+    Environment doesn't match the one this table's TenantDatabase is
+    bound to. Only ever restricts credential-authenticated requests --
+    see environments.services.check_environment_scope's own docstring
+    for exactly why "no binding at all" also denies rather than allows."""
+    from environments.services import check_environment_scope
+
+    return not check_environment_scope(request, tenant_database=table.tenant_database)
+
+
 def _parse_filters(query_params) -> dict:
     return {
         key[len(_FILTER_PREFIX) :]: value
@@ -230,6 +242,8 @@ class RowListCreateView(APIView):
     def get(self, request, table_id):
         table = services.get_member_table(request.user, table_id)
         resource = _database_resource(table)
+        if _environment_scope_denied(request, table):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         if not has_permission(
             request.user, "database.read", organization_id=table.organization_id, resource=resource
         ):
@@ -257,6 +271,8 @@ class RowListCreateView(APIView):
     def post(self, request, table_id):
         table = services.get_member_table(request.user, table_id)
         resource = _database_resource(table)
+        if _environment_scope_denied(request, table):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         if not has_permission(
             request.user, "database.write", organization_id=table.organization_id, resource=resource
         ):
@@ -275,6 +291,8 @@ class RowDetailView(APIView):
     def get(self, request, table_id, row_id):
         table = services.get_member_table(request.user, table_id)
         resource = _database_resource(table)
+        if _environment_scope_denied(request, table):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         if not has_permission(
             request.user, "database.read", organization_id=table.organization_id, resource=resource
         ):
@@ -287,6 +305,8 @@ class RowDetailView(APIView):
     def patch(self, request, table_id, row_id):
         table = services.get_member_table(request.user, table_id)
         resource = _database_resource(table)
+        if _environment_scope_denied(request, table):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         if not has_permission(
             request.user, "database.write", organization_id=table.organization_id, resource=resource
         ):
@@ -301,6 +321,8 @@ class RowDetailView(APIView):
     def delete(self, request, table_id, row_id):
         table = services.get_member_table(request.user, table_id)
         resource = _database_resource(table)
+        if _environment_scope_denied(request, table):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         if not has_permission(
             request.user, "database.write", organization_id=table.organization_id, resource=resource
         ):
@@ -318,6 +340,8 @@ class RowExportView(APIView):
     def get(self, request, table_id):
         table = services.get_member_table(request.user, table_id)
         resource = _database_resource(table)
+        if _environment_scope_denied(request, table):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         if not has_permission(
             request.user, "dataset.export", organization_id=table.organization_id, resource=resource
         ):
