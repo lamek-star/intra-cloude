@@ -46,6 +46,26 @@ def _handle(fn):
         return None, Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
 
+# Fine-grained ResourceGrants (Phase 7) for a tenant database's contents are
+# scoped at the TenantDatabase level, matching the master prompt's own
+# example scope granularity ("database:read" — a database, not an
+# individual table).
+RESOURCE_TYPE_TENANT_DATABASE = "databases.tenant_database"
+
+
+def _tenant_database_resource(tenant_database_id):
+    return (RESOURCE_TYPE_TENANT_DATABASE, tenant_database_id)
+
+
+def _can_read_database(request, organization_id, tenant_database_id) -> bool:
+    return has_permission(
+        request.user,
+        "database.read",
+        organization_id=organization_id,
+        resource=_tenant_database_resource(tenant_database_id),
+    )
+
+
 class TenantDatabaseListCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -77,6 +97,8 @@ class TenantDatabaseDetailView(APIView):
 
     def get(self, request, tenant_database_id):
         tenant_db = services.get_member_tenant_database(request.user, tenant_database_id)
+        if not _can_read_database(request, tenant_db.organization_id, tenant_db.id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         return Response(TenantDatabaseSerializer(tenant_db).data)
 
     def delete(self, request, tenant_database_id):
@@ -96,6 +118,8 @@ class TableListCreateView(APIView):
 
     def get(self, request, tenant_database_id):
         tenant_db = services.get_member_tenant_database(request.user, tenant_database_id)
+        if not _can_read_database(request, tenant_db.organization_id, tenant_db.id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         tables = tenant_db.tables.prefetch_related("columns")
         return Response(TableSerializer(tables, many=True).data)
 
@@ -122,6 +146,8 @@ class TableDetailView(APIView):
 
     def get(self, request, table_id):
         table = services.get_member_table(request.user, table_id)
+        if not _can_read_database(request, table.organization_id, table.tenant_database_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         return Response(TableSerializer(table).data)
 
     def delete(self, request, table_id):
@@ -206,14 +232,10 @@ class ForeignKeyCreateView(APIView):
 
 _FILTER_PREFIX = "f_"
 _RESERVED_QUERY_PARAMS = {"limit", "offset", "ordering", "search"}
-# Fine-grained ResourceGrants (Phase 7) for row data are scoped at the
-# TenantDatabase level, matching the master prompt's own example scope
-# granularity ("database:read" — a database, not an individual table).
-RESOURCE_TYPE_TENANT_DATABASE = "databases.tenant_database"
 
 
 def _database_resource(table: DBTable):
-    return (RESOURCE_TYPE_TENANT_DATABASE, table.tenant_database_id)
+    return _tenant_database_resource(table.tenant_database_id)
 
 
 def _environment_scope_denied(request, table: DBTable) -> bool:
