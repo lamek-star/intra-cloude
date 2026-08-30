@@ -158,3 +158,114 @@ jobs:
 
       - name: Type check
         run: npx tsc --noEmit
+
+  e2e:
+    name: End-to-end (Playwright, live stack)
+    runs-on: ubuntu-latest
+    # Independent of backend/frontend passing — a failure here is data
+    # worth having even when a unit-level job already failed for an
+    # unrelated reason, and it makes the e2e job's own logs the one
+    # place to look when a real user journey breaks.
+    steps:
+      - uses: actions/checkout@v4
+
+      # Generates a real .env the same way a fresh installation would
+      # (installer/scripts/New-IntraCloudEnvironmentFile.ps1 -- see
+      # docs/deployment/LOCAL_DEPLOYMENT.md step 6's manual equivalent),
+      # not a parallel CI-only secret generator -- this doubles as a
+      # cross-platform smoke test of that script itself, previously only
+      # ever exercised by Pester on windows-2022, never actually used to
+      # boot a real, live stack. pwsh ships preinstalled on ubuntu-latest.
+      - name: Generate .env
+        shell: pwsh
+        run: ./installer/scripts/New-IntraCloudEnvironmentFile.ps1 -TemplatePath .env.example -OutputPath .env
+
+      # The exact bring-up sequence from docs/deployment/LOCAL_DEPLOYMENT.md
+      # Section 4 (steps 2-8), not an ad hoc CI shortcut: infra first, then
+      # migrate + seed (the backend image has no entrypoint that does this
+      # automatically -- CMD is a bare gunicorn, confirmed against
+      # apps/backend/Dockerfile), then the application services. A fresh
+      # database with no migrations applied would otherwise 500 on every
+      # request Playwright makes, and no role would have any permission
+      # until seed_permissions has run at least once.
+      - name: Build images
+        run: docker compose build
+
+      - name: Start infrastructure services
+        run: docker compose up -d postgres-control postgres-tenant valkey object-storage
+
+      - name: Wait for infrastructure health
+        run: |
+          services="postgres-control postgres-tenant valkey object-storage"
+          for i in $(seq 1 60); do
+            statuses=$(docker compose ps $services --format json | grep -o '"Health":"[a-z]*"')
+            count=$(echo "$statuses" | grep -c . || true)
+            healthy=$(echo "$statuses" | grep -c ':"healthy"' || true)
+            if [ "$count" -eq 4 ] && [ "$healthy" -eq 4 ]; then
+              echo "Infrastructure healthy."
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose ps
+          echo "Infrastructure never became healthy within 5 minutes." >&2
+          exit 1
+
+      - name: Run database migrations
+        run: docker compose run --rm backend python manage.py migrate
+
+      - name: Seed the permission catalog and system roles
+        run: docker compose run --rm backend python manage.py seed_permissions
+
+      - name: Start application services
+        run: docker compose up -d backend worker beat frontend proxy
+
+      - name: Wait for the backend to report healthy
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsk https://localhost:8443/healthz; then
+              echo; echo "Backend is healthy."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Backend never became healthy within 5 minutes." >&2
+          exit 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: apps/frontend
+        run: npm ci
+
+      - name: Install Playwright's browser
+        working-directory: apps/frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright
+        working-directory: apps/frontend
+        run: npx playwright test
+        env:
+          E2E_BASE_URL: https://localhost:8443
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail=500
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/frontend/playwright-report/
+            apps/frontend/test-results/
+          if-no-files-found: ignore
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
