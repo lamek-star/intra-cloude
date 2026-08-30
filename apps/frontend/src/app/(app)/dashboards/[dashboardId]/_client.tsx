@@ -17,6 +17,7 @@ import {
 import { OPERATIONS, type OperationSpec } from "@/lib/analytics-operations";
 import { Badge, Button, Card, ErrorBanner, Label, Modal, PageHeader, PageLoading, Select, Input } from "@/components/ui";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { AnalyticsResult } from "@/components/AnalyticsResult";
 
 export default function DashboardClient({ dashboardId }: { dashboardId: string }) {
   const router = useRouter();
@@ -229,21 +230,6 @@ function WidgetCard({
   }
 
   const result = widget.data ?? {};
-  const highlightKeys = [
-    "r",
-    "rho",
-    "p_value",
-    "statistic",
-    "slope",
-    "r_squared",
-    "value",
-    "count",
-    "distinct_count",
-    "missing_count",
-    "duplicate_rows",
-    "outlier_count",
-  ];
-  const highlights = highlightKeys.filter((k) => result[k] !== undefined).map((k) => ({ k, v: result[k] }));
 
   return (
     <Card>
@@ -258,24 +244,7 @@ function WidgetCard({
           {removeButton}
         </div>
       </div>
-      {highlights.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-2">
-          {highlights.map(({ k, v }) => (
-            <Badge key={k} tone="info">
-              {k}: {typeof v === "number" ? v.toFixed(4).replace(/\.?0+$/, "") : String(v)}
-            </Badge>
-          ))}
-        </div>
-      )}
-      {typeof result.interpretation_note === "string" && (
-        <p className="mb-2 text-xs text-amber-700">{result.interpretation_note}</p>
-      )}
-      <details className="text-xs text-slate-500">
-        <summary className="cursor-pointer select-none hover:text-slate-600">Full result</summary>
-        <pre className="mt-2 overflow-x-auto rounded-md border border-slate-200 bg-slate-50 p-3 text-[11px] text-slate-600">
-          {JSON.stringify(result, null, 2)}
-        </pre>
-      </details>
+      <AnalyticsResult result={result} display={widget.chart_type} />
     </Card>
   );
 }

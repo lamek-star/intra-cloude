@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError, type DBColumn, type DBTable, type TableProfile, type TenantDatabase } from "@/lib/api";
 import { OPERATIONS, type OperationSpec } from "@/lib/analytics-operations";
+import { AnalyticsResult } from "@/components/AnalyticsResult";
 import {
   Badge,
   Button,
@@ -248,10 +249,6 @@ function Row({ label, value }: { label: string; value: string }) {
 
 function ResultCard({ entry }: { entry: AnalysisResult }) {
   const { spec, result } = entry;
-  const highlightKeys = ["r", "rho", "p_value", "statistic", "slope", "r_squared", "value", "count", "distinct_count", "missing_count", "duplicate_rows", "outlier_count"];
-  const highlights = highlightKeys
-    .filter((k) => result[k] !== undefined)
-    .map((k) => ({ k, v: result[k] }));
 
   return (
     <Card>
@@ -263,29 +260,7 @@ function ResultCard({ entry }: { entry: AnalysisResult }) {
           </Badge>
         )}
       </div>
-      {highlights.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-2">
-          {highlights.map(({ k, v }) => (
-            <Badge key={k} tone="info">
-              {k}: {typeof v === "number" ? v.toFixed(4).replace(/\.?0+$/, "") : String(v)}
-            </Badge>
-          ))}
-        </div>
-      )}
-      {typeof result.interpretation_note === "string" && (
-        <p className="mb-2 text-xs text-amber-700">{result.interpretation_note}</p>
-      )}
-      {Array.isArray(result.assumptions) && result.assumptions.length > 0 && (
-        <p className="mb-2 text-xs text-slate-500">
-          Assumptions: {(result.assumptions as string[]).join("; ")}
-        </p>
-      )}
-      <details className="text-xs text-slate-500">
-        <summary className="cursor-pointer select-none hover:text-slate-600">Full result</summary>
-        <pre className="mt-2 overflow-x-auto rounded-md bg-slate-50 border border-slate-200 p-3 text-[11px] text-slate-600">
-          {JSON.stringify(result, null, 2)}
-        </pre>
-      </details>
+      <AnalyticsResult result={result} display="table" />
     </Card>
   );
 }

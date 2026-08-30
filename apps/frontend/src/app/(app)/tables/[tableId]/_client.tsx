@@ -328,6 +328,23 @@ function AddColumnModal({
   const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  useEffect(() => {
+    if (!open) return;
+    // Resets every field when the modal reopens. Without this, options
+    // carried over from the previously added column — a checked "Unique"
+    // would silently put a UNIQUE constraint on the next column too.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setName("");
+    setDataType("text");
+    setMaxLength("255");
+    setPrecision("10");
+    setScale("2");
+    setIsNullable(true);
+    setIsUnique(false);
+    setError(null);
+    setErrorDetail(null);
+  }, [open]);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -343,7 +360,6 @@ function AddColumnModal({
         is_unique: isUnique,
         default_value: null,
       });
-      setName("");
       onCreated(col);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create column.");
