@@ -83,6 +83,7 @@ class ImportJobListCreateView(APIView):
                 encoding=data["encoding"],
                 delimiter=data["delimiter"],
                 column_mapping=data["column_mapping"],
+                request_id=getattr(request, "request_id", "") or "",
             )
         except ImportPermissionDenied:
             return Response(status=status.HTTP_403_FORBIDDEN)

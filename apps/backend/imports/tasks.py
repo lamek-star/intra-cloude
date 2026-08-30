@@ -1,8 +1,10 @@
 from celery import shared_task
 from celery.exceptions import MaxRetriesExceededError
 
+from audit.models import AuditEvent
+
 from .models import ImportJob
-from .services import run_import
+from .services import record_import_outcome, run_import
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=30)
@@ -21,4 +23,6 @@ def run_import_task(self, job_id: str) -> None:
             ImportJob.objects.filter(id=job_id).update(
                 status=ImportJob.Status.FAILED, error_message=str(exc)[:2000]
             )
+            job = ImportJob.objects.select_related("table", "created_by").get(id=job_id)
+            record_import_outcome(job, AuditEvent.Result.ERROR)
             raise

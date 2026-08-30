@@ -14,6 +14,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from accounts.models import User
+from audit.models import AuditEvent
 from databases.models import TenantDatabase
 from imports.models import ImportJob
 from imports.services import _convert_value as real_convert_value
@@ -230,3 +231,51 @@ class ImportJobRoundTripTests(ImportTestBase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class ImportAuditTests(ImportTestBase):
+    """
+    A bulk insert writes rows straight into a tenant table, so it has to leave
+    an audit trail — previously the whole app emitted no audit events at all.
+    """
+
+    def _start_import(self):
+        return self.client.post(
+            reverse("import-job-list-create", args=[self.table_id]),
+            {
+                "file_id": self.file_id,
+                "encoding": "utf-8",
+                "delimiter": ",",
+                "column_mapping": self.column_mapping,
+            },
+            format="json",
+        )
+
+    def test_a_completed_import_records_start_and_finish_with_row_counts(self):
+        response = self._start_import()
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        job_id = response.data["id"]
+
+        start = AuditEvent.objects.get(action="dataset.import.start", resource_id=str(job_id))
+        self.assertEqual(start.result, AuditEvent.Result.SUCCESS)
+        self.assertEqual(str(start.organization_id), str(self.org_id))
+        self.assertEqual(start.context["table"], "people")
+
+        finish = AuditEvent.objects.get(action="dataset.import.finish", resource_id=str(job_id))
+        self.assertEqual(finish.result, AuditEvent.Result.SUCCESS)
+        self.assertEqual(finish.context["imported_rows"], 2)
+        self.assertEqual(finish.context["rejected_rows"], 1)
+
+    def test_a_denied_import_is_audited_as_denied(self):
+        member = User.objects.create_user(email="denied-import@example.com", password="x")
+        Membership.objects.create(
+            user=member, organization_id=self.org_id, status=Membership.Status.ACTIVE
+        )
+        self.client.force_login(member)
+
+        response = self._start_import()
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        event = AuditEvent.objects.get(action="dataset.import.start", result=AuditEvent.Result.DENIED)
+        self.assertEqual(event.actor_id, member.id)
+        self.assertEqual(event.resource_id, str(self.table_id))
