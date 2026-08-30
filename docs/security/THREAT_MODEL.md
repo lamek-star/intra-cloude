@@ -134,6 +134,63 @@ belonging to Organization B, and requests it directly via
    bounded by `ResourceGrant`s, so a compromised application credential
    cannot read every organization's databases.
 
+## 4a. Within-Organization Capability Enforcement
+
+A distinct threat from Section 4's cross-*organization* IDOR/BOLA: a
+legitimate, active member of the *correct* organization reaching data
+or actions gated by a resource-specific capability (`database.read`,
+`storage.read`, `connection.manage`, ...) that was never granted to
+them — no role, no `ResourceGrant`, no `ShareGrant`. The failure mode
+is a view fetching its object via a "does this org contain this
+resource, and is the actor an active member" helper
+(`get_member_tenant_database`, `get_member_bucket`, etc. — correct and
+necessary for Section 4's cross-org defense) and stopping there,
+never additionally checking `has_permission` for the operation itself.
+
+**Status legend:** `designed` — the capability exists in
+`permissions/catalog.py` and PERMISSIONS.md's catalog; `implemented` —
+a view actually calls `has_permission`/a service-layer `_require`
+equivalent before returning data or mutating; `tested` — a regression
+test asserts a member without the capability is denied; `live-verified`
+— confirmed against the actual running Docker stack with a second real
+user account, not only the automated suite.
+
+A live QA pass (registering a second real, unprivileged organization
+member and attempting to reach another member's resources through the
+running app, then auditing every other view module for the same
+fetch-by-membership-only pattern) found seven endpoints across five
+apps where enforcement had silently regressed to organization
+membership alone. All seven are now designed, implemented, tested, and
+live-verified:
+
+| Endpoint(s) | Exposed | Capability now enforced |
+|---|---|---|
+| `TenantDatabaseDetailView`/`TableListCreateView`/`TableDetailView` (`databases`) | Full schema: table/column names and types | `database.read` |
+| `DashboardListCreateView`/`DashboardDetailView` (`analytics`) | A dashboard's definition — which tables/columns/operations each widget queries | `database.read` |
+| `FolderListCreateView.get` (`storage`) | A bucket's folder names | `storage.read` |
+| `EnvironmentListCreateView.get` (`environments`) | Every Environment's name, type, `is_production_tier`, binding status | `environment.read` |
+| `ExportJobListCreateView.get`/`ExportJobDetailView.get` (`exports`) | Export-job status, checksum, size, error message | `export.manage` |
+| `ConnectedDatabaseListCreateView.get`/`ConnectedDatabaseDetailView.get` (`databases`) | Host, port, database name, username of an external database connection (never the password — confirmed unaffected by an existing test) | `connection.manage` |
+| `WorkspaceListCreateView.post`/`ProjectListCreateView.post` (`workspaces`) | Not a read at all — creating new organizational structure required *no permission of any kind* | New `workspace.manage` permission (a product-behavior change: a plain invited member can no longer create a workspace/project — documented, not silent) |
+
+In every case, the *data-mutating or data-returning* sibling operation
+one layer deeper (row reads, dashboard render, schema introspection,
+connection test/create/delete) already enforced the correct capability
+correctly — these were specifically the metadata/definition-reading (or,
+for workspaces, the creation) endpoints that had never been wired up,
+not a systemic failure of the permission model itself. Full evidence
+and reasoning for each: the two commits titled `fix(security):` in
+this repository's history for 2026-08-30, and `CLAUDE.md`'s narrative
+of the same session.
+
+**Operational note:** granting `workspace.manage` to additional default
+roles (`database-administrator`, `storage-administrator`, `developer`)
+only takes effect on an already-running deployment after an operator
+re-runs `manage.py seed_permissions` — the same step already documented
+as part of every upgrade in `LOCAL_DEPLOYMENT.md` Section 4, not a new
+requirement, but easy to forget and worth calling out in the upgrade
+guide explicitly.
+
 ## 5. Non-Goals / Explicitly Out of Scope (for now)
 
 - Protecting against a fully compromised host OS (out of scope — assume
