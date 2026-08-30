@@ -5,8 +5,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from audit import services as audit
+from audit.models import AuditEvent
 from organizations.models import Membership
 from organizations.services import get_member_organization
+from permissions.services import has_permission
 
 from .models import Project, Workspace
 from .serializers import (
@@ -53,6 +55,16 @@ class WorkspaceListCreateView(APIView):
 
     def post(self, request, organization_id):
         org = get_member_organization(request.user, organization_id)
+        if not has_permission(request.user, "workspace.manage", organization_id=org.id):
+            audit.record(
+                actor=request.user,
+                organization_id=org.id,
+                action="workspace.create",
+                resource_type="organization",
+                resource_id=org.id,
+                result=AuditEvent.Result.DENIED,
+            )
+            return Response(status=status.HTTP_403_FORBIDDEN)
         serializer = WorkspaceCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         workspace = Workspace.objects.create(
@@ -87,6 +99,18 @@ class ProjectListCreateView(APIView):
 
     def post(self, request, workspace_id):
         workspace = get_member_workspace(request.user, workspace_id)
+        if not has_permission(
+            request.user, "workspace.manage", organization_id=workspace.organization_id
+        ):
+            audit.record(
+                actor=request.user,
+                organization_id=workspace.organization_id,
+                action="project.create",
+                resource_type="workspace",
+                resource_id=workspace.id,
+                result=AuditEvent.Result.DENIED,
+            )
+            return Response(status=status.HTTP_403_FORBIDDEN)
         serializer = ProjectCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         project = Project.objects.create(

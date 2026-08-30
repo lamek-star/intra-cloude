@@ -7,6 +7,7 @@ in a view or migration.
 """
 
 PERMISSIONS = {
+    "workspace.manage": "Create Workspaces and Projects within an organization",
     "storage.read": "View/download files and folders",
     "storage.write": "Upload, create folders, rename, move",
     "storage.delete": "Delete/restore files and folders",
@@ -60,11 +61,19 @@ SYSTEM_ROLES: dict[str, tuple[str, list[str]]] = {
     "organization-administrator": ("Organization Administrator", [p for p in _ALL if p != "system.admin"]),
     "storage-administrator": (
         "Storage Administrator",
-        ["storage.read", "storage.write", "storage.delete", "storage.share", "storage.manage"],
+        [
+            "workspace.manage",
+            "storage.read",
+            "storage.write",
+            "storage.delete",
+            "storage.share",
+            "storage.manage",
+        ],
     ),
     "database-administrator": (
         "Database Administrator",
         [
+            "workspace.manage",
             "database.create",
             "database.read",
             "database.write",
@@ -79,6 +88,7 @@ SYSTEM_ROLES: dict[str, tuple[str, list[str]]] = {
     "developer": (
         "Developer",
         [
+            "workspace.manage",
             "application.create",
             "application.credentials.manage",
             "database.read",

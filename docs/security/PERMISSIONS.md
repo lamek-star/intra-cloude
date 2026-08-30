@@ -21,6 +21,7 @@ Last updated: 2026-08-07
 
 | Permission | Meaning |
 |---|---|
+| `workspace.manage` | Create Workspaces and Projects within an organization |
 | `storage.read` | View/download files and folders |
 | `storage.write` | Upload, create folders, rename, move |
 | `storage.delete` | Delete/restore files and folders |
@@ -57,9 +58,9 @@ they are never invented inline in view code.
 |---|---|---|
 | Super Administrator | Platform operator | `system.admin` + all permissions, all organizations |
 | Organization Administrator | Org owner/IT admin | All permissions except `system.admin`, scoped to their own organization (see implementation note below) |
-| Storage Administrator | IT/ops for files | `storage.read/write/delete/share/manage` |
-| Database Administrator | Data team lead | `database.*`, `dataset.import/export/analyze`, `connection.manage` |
-| Developer | App/integration builder | `application.create`, `application.credentials.manage`, `database.read`, `database.write`, `dataset.import/export/analyze`, `environment.read/manage/secrets.manage` (deliberately *not* `environment.production.manage` — a Developer can manage Development/Staging but any mutating operation on a production-tier Environment needs that permission too) |
+| Storage Administrator | IT/ops for files | `workspace.manage`, `storage.read/write/delete/share/manage` |
+| Database Administrator | Data team lead | `workspace.manage`, `database.*`, `dataset.import/export/analyze`, `connection.manage` |
+| Developer | App/integration builder | `workspace.manage`, `application.create`, `application.credentials.manage`, `database.read`, `database.write`, `dataset.import/export/analyze`, `environment.read/manage/secrets.manage` (deliberately *not* `environment.production.manage` — a Developer can manage Development/Staging but any mutating operation on a production-tier Environment needs that permission too) |
 | Editor | General contributor | `storage.read/write`, `database.read/write`, `dataset.import` |
 | Viewer | Read-only staff | `storage.read`, `database.read`, `environment.read` |
 | Auditor | Compliance/security | `audit.read` only |
