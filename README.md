@@ -56,10 +56,12 @@ layer) and a substantial frontend expansion — applications, sharing,
 connected databases, teams, the audit log, dashboards, a developer
 portal, and CSV import/analytics all have real pages now, plus a full
 accessibility/responsiveness pass (see `DESIGN.md` for the frontend's
-design system). The frontend still has no automated test suite
-(covered so far by live verification against the running stack, not
-Jest/Vitest/Playwright — a tracked gap). 290 tests pass against real
-PostgreSQL, MinIO, and Celery — not mocks — including cross-organization
+design system). The frontend has a real but partial automated suite
+(Vitest component tests and Playwright specs); neither is wired into
+CI yet, and the workflow coverage is incomplete — a tracked gap, see
+[docs/implementation/TEST_STATUS.md](docs/implementation/TEST_STATUS.md).
+300 backend tests pass against real PostgreSQL, MinIO, and Celery —
+not mocks — including cross-organization
 IDOR/BOLA regression tests for every tenant-owned resource type in the
 platform. Every phase's exit criteria has been confirmed against the
 actual running Docker stack, not only the automated suite — including

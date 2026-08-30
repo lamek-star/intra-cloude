@@ -56,7 +56,14 @@ import retry path (a connection failure was previously miscounted as a
 bad row, and the checkpoint had an off-by-one that would have dropped
 the in-flight row on retry), an immutable and properly filterable audit
 log, and audit coverage for storage/permissions/organizations/auth
-actions that had none before. Phase 13 added a new `exports` app:
+actions that had none before. The `imports` app was a later addition to
+that same coverage: a bulk insert writes rows straight into a tenant
+table, so `dataset.import.start` (including a `denied` event when the
+capability check refuses) and `dataset.import.finish` (carrying the
+imported/rejected row counts, and recorded as `error` when Celery's
+retries are exhausted) are emitted from `imports/services.py` — the app
+previously emitted no audit events at all. Phase 13 added a new
+`exports` app:
 portable `.icp` export/import for a whole Organization (workspace/
 project tree, tenant databases with schema+rows, object storage with
 real file bytes, membership/role metadata) — restore always creates a
@@ -97,9 +104,35 @@ installation is partial (container images are bundled; Docker Engine
 itself still installs via `get.docker.com`, requiring internet). See
 `docs/architecture/ROADMAP.md` Phases 16–21 for the full account,
 including a release-blocking orphaned-install-state defect found and
-fixed live. 290 backend tests pass as of the last full run against the
-live Docker stack (see `docs/implementation/TEST_STATUS.md` for
-frontend test-coverage status, which has no automated suite yet).
+fixed live. 300 backend tests pass as of the last full run against the
+live Docker stack. The frontend has a real but partial Vitest suite
+(`npm test`) plus Playwright specs; neither runs in CI yet — see
+`docs/implementation/TEST_STATUS.md` for exactly what is and isn't
+covered.
+
+A live QA pass over Sharing/Teams found and fixed a real within-org
+authorization gap: `TenantDatabaseDetailView`/`TableListCreateView`/
+`TableDetailView` (`databases/views.py`) and `DashboardListCreateView`/
+`DashboardDetailView` (`analytics/views.py`) checked only organization
+membership, not `database.read` — so any active member could read a
+tenant database's full schema (table/column names and types) and every
+dashboard's definition (which tables/columns/operations each widget
+queries), regardless of Sharing settings or role, contradicting
+PERMISSIONS.md's own "default-deny" principle and this module's
+docstring, which already stated viewing a dashboard requires
+`database.read` (previously true only for `render_dashboard`, i.e. a
+widget's actual data, not its definition). Row/cell data itself was
+never exposed — `RowListCreateView` and friends already enforced
+`database.read`, and the fix brings the schema/definition endpoints up
+to that same standard, and to parity with `storage`'s
+`FileListCreateView`, which already required `storage.read` before
+listing a bucket's files. Confirmed live: a second real org member with
+no role or grant was denied at every one of the newly-gated endpoints
+(matching storage's existing "you don't have permission" page, not an
+unhandled error), and access returned once a `ShareGrant` or `Viewer`
+role was actually assigned. See `databases/tests/test_databases.py`'s
+`SchemaReadVisibilityTests` and `analytics/tests/test_analytics.py`'s
+`DashboardReadVisibilityTests`.
 
 No known, disclosed architectural gaps remain open from earlier phases:
 the tenant-Postgres-least-privilege gap tracked since Phase 2/3
@@ -152,15 +185,11 @@ existence. Verified live the same way: real registered users (one
 member, one non-member outsider), a real organization/workspace/
 project/bucket created through the actual API, and the filter/
 pagination/permission-enforcement behavior checked against the live
-response, not assumed. **That pass surfaced a real, pre-existing gap
-worth tracking**: `storage/services.py` audits file-level actions
-(upload/download/delete/restore) but organization/workspace/project/
-bucket *creation* itself is audited only for `Organization` (via
-`organizations.services.create_organization`) — a workspace, project,
-or bucket can be created with no audit trail at all. Not fixed in this
-pass (it touches `workspaces`, the project-creation path, and
-`storage`'s bucket creation, not just the frontend); tracked here
-until it has a real fix.
+response, not assumed. An earlier note here tracked organization/
+workspace/project/bucket *creation* as unaudited; that gap is closed —
+`workspace.create`, `project.create`, and `storage.bucket.create` are
+all emitted and were confirmed in a live audit log, so the note has
+been removed rather than carried forward.
 
 See `apps/frontend/README.md` for how it's built and
 `docs/guide/USER_GUIDE.md` for how to use it. Sharing, connected
