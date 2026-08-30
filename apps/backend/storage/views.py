@@ -97,6 +97,8 @@ class FolderListCreateView(APIView):
 
     def get(self, request, bucket_id):
         bucket = get_member_bucket(request.user, bucket_id)
+        if not _require(request, "storage.read", bucket.organization_id, bucket_id=bucket.id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         parent_id = request.query_params.get("parent")
         folders = Folder.objects.filter(bucket=bucket, parent_id=parent_id or None)
         return Response(FolderSerializer(folders, many=True).data)

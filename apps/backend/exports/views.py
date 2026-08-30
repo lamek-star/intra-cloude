@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from organizations.services import get_member_organization
+from permissions.services import has_permission
 
 from .models import ExportJob, RestoreJob
 from .serializers import ExportJobCreateSerializer, ExportJobSerializer, RestoreJobSerializer
@@ -24,6 +25,8 @@ class ExportJobListCreateView(APIView):
 
     def get(self, request, organization_id):
         org = get_member_organization(request.user, organization_id)
+        if not has_permission(request.user, "export.manage", organization_id=org.id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         jobs = ExportJob.objects.filter(organization=org)
         return Response(ExportJobSerializer(jobs, many=True).data)
 
@@ -48,6 +51,8 @@ class ExportJobDetailView(APIView):
 
     def get(self, request, job_id):
         job = get_member_export_job(request.user, job_id)
+        if not has_permission(request.user, "export.manage", organization_id=job.organization_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         return Response(ExportJobSerializer(job).data)
 
 

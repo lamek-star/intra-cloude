@@ -401,6 +401,8 @@ class ConnectedDatabaseListCreateView(APIView):
 
     def get(self, request, project_id):
         project = get_member_project(request.user, project_id)
+        if not has_permission(request.user, "connection.manage", organization_id=project.organization_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         connected_databases = project.connected_databases.all()
         return Response(ConnectedDatabaseSerializer(connected_databases, many=True).data)
 
@@ -437,6 +439,16 @@ class ConnectedDatabaseDetailView(APIView):
         connected_database = connection_ops.get_member_connected_database(
             request.user, connected_database_id
         )
+        _, error = _handle_connection(
+            lambda: connection_ops.require_connection_manage(
+                request.user,
+                connected_database,
+                action="connection.get",
+                request_id=_request_id(request),
+            )
+        )
+        if error:
+            return error
         return Response(ConnectedDatabaseSerializer(connected_database).data)
 
     def delete(self, request, connected_database_id):

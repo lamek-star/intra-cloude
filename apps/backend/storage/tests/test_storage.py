@@ -253,3 +253,25 @@ class MalwareScanningTests(StorageTestBase):
             )
         mock_scan.assert_not_called()
         self.assertEqual(resp.data["status"], FileObject.Status.ACTIVE)
+
+
+class StoragePermissionTests(StorageTestBase):
+    """
+    FolderListCreateView.get previously listed folder names via
+    get_member_bucket only, with no storage.read check -- its sibling
+    FileListCreateView.get (same file) already required storage.read.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client.post(reverse("folder-list-create", args=[self.bucket_id]), {"name": "reports"})
+
+        self.outsider = User.objects.create_user(email="storage-outsider@example.com", password="x")
+        Membership.objects.create(
+            user=self.outsider, organization_id=self.org_id, status=Membership.Status.ACTIVE
+        )
+        self.client.force_login(self.outsider)
+
+    def test_member_without_storage_read_cannot_list_folders(self):
+        resp = self.client.get(reverse("folder-list-create", args=[self.bucket_id]))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)

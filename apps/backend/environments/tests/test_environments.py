@@ -196,6 +196,21 @@ class EnvironmentRbacTests(EnvironmentTestBase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(len(resp.data), 1)
 
+    def test_member_without_environment_read_cannot_list_environments(self):
+        # Every other view in this file (detail, variables, secrets,
+        # webhooks) already required environment.read via
+        # can_manage_environment -- the list endpoint was the one miss,
+        # letting any active member enumerate every Environment's name,
+        # type, is_production_tier, and binding status.
+        self._create_environment()
+        plain = User.objects.create_user(email="env-plain@example.com", password="x")
+        Membership.objects.create(
+            user=plain, organization_id=self.org_id, status=Membership.Status.ACTIVE
+        )
+        self.client.force_login(plain)
+        resp = self.client.get(reverse("environment-list-create", args=[self.application_id]))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_developer_can_manage_non_production_environment(self):
         developer = self._add_member("env-dev@example.com", "developer")
         self.client.force_login(developer)

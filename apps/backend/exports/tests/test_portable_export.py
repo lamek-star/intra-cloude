@@ -267,6 +267,22 @@ class PortableExportRoundTripTests(APITestCase):
         resp = self.client.post(reverse("export-job-list-create", args=[source["org_id"]]), {})
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_member_without_export_permission_cannot_list_or_view_export_jobs(self):
+        # start_export/download_export both already required export.manage
+        # (checked above and by the round-trip tests); the metadata-only
+        # list/detail endpoints -- status, checksum, size, error_message,
+        # created_by -- previously skipped that check entirely.
+        source = self._build_source_organization()
+        export = self.client.post(reverse("export-job-list-create", args=[source["org_id"]]), {})
+        self.assertEqual(export.status_code, status.HTTP_201_CREATED)
+
+        self.client.force_login(self.viewer)
+        listing = self.client.get(reverse("export-job-list-create", args=[source["org_id"]]))
+        self.assertEqual(listing.status_code, status.HTTP_403_FORBIDDEN)
+
+        detail = self.client.get(reverse("export-job-detail", args=[export.data["id"]]))
+        self.assertEqual(detail.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_tampered_package_is_rejected(self):
         # Same rationale as the wrong-passphrase test above for testing
         # restorer.py directly rather than through the async API.

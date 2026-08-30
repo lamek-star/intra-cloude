@@ -41,6 +41,10 @@ class EnvironmentListCreateView(APIView):
 
     def get(self, request, application_id):
         application = get_member_application(request.user, application_id)
+        from permissions.services import has_permission
+
+        if not has_permission(request.user, "environment.read", organization_id=application.organization_id):
+            return _forbidden()
         environments = Environment.objects.filter(application=application).select_related(
             "tenant_database", "bucket"
         )
