@@ -122,11 +122,21 @@ the suites don't yet cover.
   TOTP-enrolled account through it yet).
 - `@axe-core/playwright` is installed but not yet wired into any spec —
   no automated accessibility scan runs today.
-- The new `e2e` CI job (above) has not yet had a real GitHub Actions
-  run. Treat it as unverified-by-CI until one happens.
-- No SBOM generation, no container/dependency vulnerability scanning
-  beyond `pip-audit` (Python only — no `npm audit`, no image scanning),
-  and no license-compliance check are wired into CI yet.
+- The new `e2e` and `security-scan` CI jobs (above) have not yet had a
+  real GitHub Actions run. Treat both as unverified-by-CI until one
+  happens — every locally-verifiable piece of each was checked directly
+  (the `e2e` job's bring-up sequence and health-check logic; both
+  Dockerfiles building cleanly under `security-scan`'s exact tags and
+  commands), but the third-party actions themselves
+  (`anchore/sbom-action`, `aquasecurity/trivy-action`) were not.
+- `npm audit --omit=dev --audit-level=high` now runs in the `frontend`
+  job (0 vulnerabilities as of 2026-08-30) and a `security-scan` job
+  generates a CycloneDX SBOM for both container images and the
+  frontend's npm tree, plus a Trivy vulnerability report for both
+  images — uploaded as artifacts, not yet gating the build (no
+  vulnerability-triage/waiver process exists yet to decide what should
+  fail CI vs. be an accepted risk; see RELEASE_READINESS.md). No
+  license-compliance check is wired in yet.
 - Windows installer lifecycle testing (clean install, repair, upgrade,
   uninstall, restore-to-new-hardware, offline install) remains
   environment-blocked pending an actual clean/disposable Windows host —

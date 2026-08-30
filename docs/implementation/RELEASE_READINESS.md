@@ -59,6 +59,18 @@ assumed from an earlier doc.
 8. `docs(security): add THREAT_MODEL.md Section 4a for within-org
    capability enforcement` — evidence table for all 7 authorization
    findings above, marked designed/implemented/tested/live-verified.
+9. `docs: add RELEASE_READINESS.md as the living progress/continuation
+   checkpoint` — this file.
+10. `ci: add SBOM generation and container image scanning` — `npm
+    audit --omit=dev --audit-level=high` in the `frontend` job
+    (verified 0 vulnerabilities locally); a new `security-scan` job
+    generating a CycloneDX SBOM for both container images and the
+    frontend npm tree (`anchore/sbom-action`), plus a Trivy
+    vulnerability report for both images, uploaded as artifacts and
+    not yet build-blocking pending a real triage/waiver process. Both
+    Dockerfiles confirmed to build cleanly under this job's exact tags
+    and commands; the third-party scan actions themselves unverified
+    by an actual run (see the blockers list below).
 
 Also reverted, before any of the above: an experimental frontend
 animation-library installation (gsap/react-spring/animejs/lenis/three)
@@ -77,8 +89,10 @@ where the finding was about cross-user access.
 
 ## Not yet started / explicitly out of reach this session
 
-- **SBOM generation, container/dependency vulnerability scanning
-  beyond `pip-audit`, license-compliance review** — not wired into CI.
+- **License-compliance review** — still not wired into CI. (SBOM
+  generation, `npm audit`, and container image scanning are done as of
+  the `ci: add SBOM generation and container image scanning` commit —
+  see "Completed this session" above.)
 - **Full offline installation path** — container images bundled
   already (per ROADMAP.md Phase 16-21), but Docker Engine itself still
   installs via `get.docker.com`, requiring internet; not addressed this
@@ -106,20 +120,24 @@ where the finding was about cross-user access.
   backup encryption end to end by hand.
 - **Hardware guide, migration guide, upgrade guide, third-party
   notices, SBOM instructions** — not authored or reviewed this session.
-- **A real GitHub Actions run of the new `e2e` CI job** — written and
-  reasoned from verified pieces (see TEST_STATUS.md), but not confirmed
-  by an actual run, since that requires a push.
+- **A real GitHub Actions run of the new `e2e` and `security-scan` CI
+  jobs** — both written and reasoned from verified pieces (see
+  TEST_STATUS.md: bring-up sequence, health-check logic, and both
+  Dockerfiles building cleanly all checked directly; the third-party
+  actions themselves — `anchore/sbom-action`, `aquasecurity/
+  trivy-action` — were not), but neither confirmed by an actual run,
+  since that requires a push.
 
 ## Exact next action (for whoever/whatever resumes this)
 
-Highest-value remaining item reachable without an external blocker:
-finish the CI/CD hardening the mandate asks for that doesn't need a
-real cert or a clean VM — SBOM generation (`syft` or `cyclonedx`),
-`npm audit` for the frontend, and a container-image scan (Trivy) added
-to `.github/workflows/ci.yml`. After that, work through the
-documentation set (migration guide, upgrade guide, hardware guide,
-third-party notices) against what's actually implemented, correcting
-rather than inflating.
+CI/CD hardening reachable without an external blocker is now done
+(Playwright E2E, SBOM generation, `npm audit`, container image
+scanning — see commits above). Next highest-value item: work through
+the documentation set (migration guide, upgrade guide, hardware guide,
+third-party notices, license-compliance review) against what's
+actually implemented, correcting rather than inflating — the same
+standard applied to CLAUDE.md/README/TEST_STATUS.md/THREAT_MODEL.md
+this session.
 
 ## Blockers requiring the user's input (not proceeding past these alone)
 

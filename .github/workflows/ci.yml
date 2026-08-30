@@ -135,6 +135,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: npm audit (dependency vulnerability scan)
+        # --omit=dev: only the runtime dependency tree ships to a user's
+        # machine (this is a Next.js app users run, not a library), and
+        # dev-only tooling (eslint plugins, test runners) has historically
+        # produced most of the noisy low-severity findings that would
+        # otherwise make this step fail on things nobody can act on.
+        # high: matches the backend's pip-audit, which has no severity
+        # floor of its own but in practice only Python's ecosystem
+        # advisories reach that job -- picking `high` here keeps the two
+        # scans at a comparable bar rather than either being stricter by
+        # accident.
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Lint
         run: npm run lint
 
@@ -269,3 +282,85 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v
+
+  security-scan:
+    name: SBOM and container image scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Built directly with `docker build`, not `docker compose build`:
+      # the compose file leaves the frontend image untagged (relies on
+      # Compose's own auto-naming, which depends on the project/directory
+      # name and isn't something this job should have to guess), and a
+      # scanner needs one fixed, known tag per image regardless.
+      - name: Build backend image
+        run: docker build -t intraforge-backend:ci apps/backend
+
+      - name: Build frontend image
+        run: docker build -t intraforge-frontend:ci apps/frontend
+
+      # SBOM (CycloneDX) for each of the three dependency trees that ship
+      # in a release: the two container images (what a customer actually
+      # runs) plus the frontend's own npm tree (belt-and-suspenders --
+      # covers dev-time supply-chain review even before an image exists).
+      - name: Generate backend image SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: intraforge-backend:ci
+          format: cyclonedx-json
+          output-file: sbom-backend.cyclonedx.json
+
+      - name: Generate frontend image SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: intraforge-frontend:ci
+          format: cyclonedx-json
+          output-file: sbom-frontend.cyclonedx.json
+
+      - name: Generate frontend npm SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: apps/frontend
+          format: cyclonedx-json
+          output-file: sbom-frontend-npm.cyclonedx.json
+
+      - name: Upload SBOMs
+        uses: actions/upload-artifact@v4
+        with:
+          name: sboms
+          path: sbom-*.cyclonedx.json
+          if-no-files-found: error
+
+      # Reports every known CVE in each image (OS packages + language
+      # dependencies) but does not fail the build on its own: this
+      # project has no vulnerability-triage/waiver process yet (see
+      # RELEASE_READINESS.md), and failing CI on every base-image CVE
+      # nobody has assessed would make the gate meaningless within a
+      # week. Uploaded as a plain artifact (table format, human-
+      # readable) rather than wired into GitHub code scanning -- that
+      # integration needs its own review of category/dedup behavior
+      # across two images sharing one workflow, not a first guess.
+      - name: Scan backend image for known vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: intraforge-backend:ci
+          format: table
+          output: trivy-backend.txt
+          exit-code: "0"
+
+      - name: Scan frontend image for known vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: intraforge-frontend:ci
+          format: table
+          output: trivy-frontend.txt
+          exit-code: "0"
+
+      - name: Upload vulnerability scan reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-reports
+          path: trivy-*.txt
+          if-no-files-found: warn
