@@ -1,0 +1,83 @@
+<UserControl x:Class="IntraCloud.ControlCenter.Views.SetupView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+            <TextBlock Text="Current state: " FontWeight="Bold" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding CurrentState}" VerticalAlignment="Center" Margin="4,0,12,0" />
+            <Button Content="Refresh" Command="{Binding RefreshStateCommand}" Padding="8,2" />
+        </StackPanel>
+        <TextBlock Grid.Row="1" Text="{Binding StateDescription}" TextWrapping="Wrap" Margin="0,0,0,16" Foreground="Gray" />
+
+        <GroupBox Grid.Row="2" Header="Provision (first-time setup)" Margin="0,0,0,12" Padding="8">
+            <StackPanel>
+                <TextBlock Text="Every field below points at files already on this machine (e.g. copied from installation media) -- nothing is downloaded." TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,8" />
+                <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="140" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Rootfs (.tar)" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="1" Text="{Binding RootfsPath, UpdateSourceTrigger=PropertyChanged}" Margin="4,2" />
+                    <Button Grid.Column="2" Content="Browse..." Click="BrowseRootfs_Click" Padding="8,2" />
+                </Grid>
+                <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="140" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="App bundle folder" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="1" Text="{Binding AppBundlePath, UpdateSourceTrigger=PropertyChanged}" Margin="4,2" />
+                    <Button Grid.Column="2" Content="Browse..." Click="BrowseAppBundle_Click" Padding="8,2" />
+                </Grid>
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="140" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Install path (optional)" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="1" Text="{Binding InstallPath, UpdateSourceTrigger=PropertyChanged}" Margin="4,2" />
+                    <Button Grid.Column="2" Content="Browse..." Click="BrowseInstallPath_Click" Padding="8,2" />
+                </Grid>
+                <Button Content="Provision IntraForge Appliance" Command="{Binding ProvisionCommand}" HorizontalAlignment="Left" Padding="12,4" />
+            </StackPanel>
+        </GroupBox>
+
+        <GroupBox Grid.Row="3" Header="Remove" Margin="0,0,0,12" Padding="8">
+            <StackPanel>
+                <CheckBox Content="Delete all data immediately (skip backup) -- irreversible" IsChecked="{Binding DeleteDataOnRemove}" Margin="0,0,0,8" />
+                <TextBlock Text="Ignored below when 'delete all data immediately' is checked." FontStyle="Italic" Foreground="Gray" Margin="0,0,0,4" />
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="140" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Backup destination" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="1" Text="{Binding BackupDestination, UpdateSourceTrigger=PropertyChanged}" Margin="4,2" />
+                    <Button Grid.Column="2" Content="Browse..." Click="BrowseBackupDestination_Click" Padding="8,2" />
+                </Grid>
+                <Button Content="Remove IntraForge Appliance..." Click="Remove_Click" HorizontalAlignment="Left" Padding="12,4" Background="#FDECEA" />
+            </StackPanel>
+        </GroupBox>
+
+        <TextBlock Grid.Row="4" Text="{Binding StatusMessage}" TextWrapping="Wrap" Margin="0,0,0,8" Foreground="Gray" />
+
+        <TextBox Grid.Row="5" Text="{Binding LiveLog, Mode=OneWay}" IsReadOnly="True"
+                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                  TextWrapping="NoWrap" FontFamily="Consolas" FontSize="11" Background="#1E1E1E" Foreground="#DCDCDC"
+                  TextChanged="LiveLogTextBox_TextChanged" />
+    </Grid>
+</UserControl>

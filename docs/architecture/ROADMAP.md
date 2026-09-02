@@ -1420,6 +1420,43 @@ Docker-Engine-and-Compose-stack-inside-the-distro environment and
 remains IMPLEMENTED + REQUIRES WINDOWS VM VALIDATION, matching Phase
 17's own classification, not silently upgraded here.
 
+**Fifth screen added 2026-09-02, under the Internal Pilot v0.9 mandate
+(`docs/implementation/RELEASE_READINESS.md`): "Import/Uninstall are
+out of scope for this phase's UI" above is no longer true.** A live
+audit (auditing "safe install/uninstall/upgrade behavior") found
+`ElevationHelper` had genuinely never been called from anywhere in the
+five phases since this one — a real user had to run Import-/Initialize-/
+Uninstall-IntraCloudDistro.ps1 by hand, from an elevated prompt, with
+no button anywhere. Closed by resolving the open design question this
+phase's own entry implicitly deferred (how a `UseShellExecute=true`/
+`Verb=runas` elevated process, which cannot redirect stdout, reports
+live progress back to the parent): a new trampoline script
+(`installer/scripts/Invoke-ElevatedAction.ps1`) runs chained lifecycle
+scripts as real child `powershell.exe` processes, writing combined
+progress to a status file `ElevatedScriptRunner.cs` polls. A real bug
+surfaced building it — the first version invoked steps in-process
+(`& $scriptPath @scriptArguments`), which PowerShell binds
+*positionally*, silently breaking every named parameter (`-RootfsPath`,
+`-AppBundlePath`, `-BackupDestination`) despite looking correct;
+confirmed directly and fixed by spawning a genuine external process per
+step instead. A fifth "Setup & Removal" tab (`SetupViewModel.cs`/
+`SetupView.xaml`) wires this to Provision (Import + Initialize chained
+behind one UAC prompt) and Remove (Uninstall, gated behind a real
+confirmation dialog naming the actual consequence). Live-verified
+against the real running app (published exe, launched, screenshotted,
+driven via UI Automation): the tab renders, the Provision button
+correctly enables only once both required paths are filled in, and
+clicking Remove against a real `NotInstalled` state correctly does
+nothing — no dialog, no elevation attempt — proving the safety gate
+holds at the UI layer, not just in a unit test. 4 new Pester tests (real
+subprocess runs against the trampoline, nothing mocked) and 9 new xUnit
+tests (validation + the C#↔PowerShell JSON contract) all pass; the
+actual elevated run itself remains genuinely untestable in CI
+(`Verb=runas` always triggers a real UAC prompt) and is labeled as such
+rather than silently uncovered, matching this same phase's own
+Docker-Engine-inside-WSL2 classification above. See
+RELEASE_READINESS.md for the full account.
+
 ## Phase 19 — Windows Installer Experience — COMPLETE (scoped down from the original brief, deliberately)
 
 Two real, verified additions to `installer/wix/Package.wxs`: real

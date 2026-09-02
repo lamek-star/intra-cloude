@@ -21,6 +21,9 @@
             <TabItem Header="Status">
                 <views:StatusView DataContext="{Binding Status}" />
             </TabItem>
+            <TabItem Header="Setup &amp; Removal">
+                <views:SetupView DataContext="{Binding Setup}" />
+            </TabItem>
             <TabItem Header="Backup &amp; Restore">
                 <views:BackupView DataContext="{Binding Backup}" />
             </TabItem>

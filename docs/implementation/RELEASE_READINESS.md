@@ -233,34 +233,93 @@ parsed for syntax.
     checks `*IntraForge*`) — corrected the mock, not the product code,
     since the product code was already right.
 
-**A second, larger finding from the same audit, not yet fixed — surfaced
-for the owner rather than built blind:** the Control Center has **no UI
-for installation or removal at all.** Confirmed by reading the actual
-code, not assumed: `ElevationHelper.RunElevated` (the only elevation
-mechanism in the app) is never called from anywhere; `App.xaml.cs` has
-no command-line argument handling for an "elevated action" mode; there
-is no Import/first-run/setup-wizard view, and no Uninstall view —
-`control-center/Views/` has only Status, Backup, Logs, and Settings.
-Today, after the MSI installs the Control Center executable, a real
-user must run `Import-IntraCloudDistro.ps1` and
-`Initialize-IntraCloudDistro.ps1` **by hand, from an elevated
-PowerShell prompt**, to actually stand up the WSL2 appliance — the
-Control Center only manages a distro that already exists (Start/Stop/
-Restart/health/backup/logs). Uninstall is the same story:
-`Uninstall-IntraCloudDistro.ps1` (including the backup-path fix above)
-is real and correct, but nothing in the shipped product surfaces it —
-an internal-pilot user would need the exact script name and parameter
-syntax, not a button. Not fixed here because it's a genuinely new
-subsystem, not an audit-sized fix: relaunching elevated
-(`ElevationHelper`) uses `UseShellExecute=true`/`Verb=runas`, which
-cannot redirect stdout — so how a multi-minute, elevated
-Import/Initialize/Uninstall operation reports live progress back to
-the non-elevated parent UI is an open design question (a temp file, a
-named pipe, polling a status file, relaunching only the script rather
-than the whole GUI) that deserves a deliberate choice, not a guess
-shipped into a destructive/elevated code path. Flagged for the owner
-rather than decided unilaterally — see the question this turn ends
-with.
+**A second, larger finding from the same audit — surfaced for the owner
+first (see the question this session asked), then built once the scope
+was confirmed ("design + build it now").** The Control Center had **no
+UI for installation or removal at all**: `ElevationHelper.RunElevated`
+(the only elevation mechanism in the app) was never called from
+anywhere; `App.xaml.cs` had no command-line argument handling for an
+"elevated action" mode; there was no Import/first-run/setup view, and
+no Uninstall view. A real user had to run `Import-IntraCloudDistro.ps1`,
+`Initialize-IntraCloudDistro.ps1`, and `Uninstall-IntraCloudDistro.ps1`
+by hand, from an elevated PowerShell prompt, knowing the exact script
+names and parameter syntax.
+
+**Closed 2026-09-02.** The blocking design question (how a multi-minute
+elevated operation reports live progress back to the non-elevated
+parent, given `UseShellExecute=true`/`Verb=runas` cannot redirect
+stdout) is resolved and **live-verified, not just designed**:
+
+- **`installer/scripts/Invoke-ElevatedAction.ps1`** (new) — a
+  trampoline the elevated relaunch targets instead of the GUI exe
+  itself. Runs one or more lifecycle scripts in sequence (JSON-described
+  steps, so Import + Initialize chain behind a single UAC prompt), each
+  as a genuine child `powershell.exe -File` process, appending combined
+  output to a status file. **A real, load-bearing bug was found and
+  fixed while building this, not just an edge case**: the first version
+  invoked each step in-process (`& $scriptPath @scriptArguments`),
+  which silently binds every array element *positionally*, never by
+  parameter name — confirmed directly (`& $path @('-Name','Alice')`
+  against a one-parameter script fails with "a positional parameter
+  cannot be found"), meaning every step that needed a named parameter
+  (i.e. all of them — `-RootfsPath`, `-AppBundlePath`, `-BackupDestination`)
+  would have failed immediately in real use despite passing a
+  superficial syntax check. Fixed by spawning each step as a genuine
+  external `powershell.exe` child process instead (real argv-level
+  parsing, no PowerShell call-operator quirk) — the same shape
+  `ScriptRunner.cs` already uses successfully for non-elevated scripts.
+  4 new Pester tests, **all real subprocess runs, not mocked** (nothing
+  to mock — this script's entire job is spawning real processes):
+  named-parameter binding, multi-step chaining, stop-at-first-failure
+  (confirmed a later step genuinely never ran, not just that the exit
+  code was non-zero), and stale-log truncation. All pass.
+- **`control-center/Services/ElevatedScriptRunner.cs`** (new) — the C#
+  side: launches the trampoline elevated, polls the status file every
+  750ms, reports live text back via `IProgress<string>`, distinguishes
+  a declined UAC prompt (`Win32Exception` 1223, same convention
+  `ElevationHelper` already used) from a real failure.
+  `ApplianceProvisioningService.cs` (new) wraps it with the three
+  concrete operations (Provision = Import + Initialize chained; Remove
+  = Uninstall), enforcing the same mandatory-parameter-set contract
+  `Uninstall-IntraCloudDistro.ps1` itself has (backup destination
+  required unless deleting data) *before* an elevated process ever
+  launches. 9 new xUnit tests cover this validation and the C#↔
+  PowerShell JSON contract; **the actual elevated run itself is not
+  unit-testable** (`Verb=runas` always triggers a real UAC prompt) —
+  labeled as such rather than silently left uncovered, the same honesty
+  convention `ScriptRunnerTests.cs`/ROADMAP.md's Phase 17/20 entries
+  already established for this class of gap.
+- **New "Setup & Removal" tab** (`SetupViewModel.cs`, `SetupView.xaml`)
+  — a Provision section (rootfs/app-bundle/install-path pickers, only
+  enabled when nothing is installed yet) and a Remove section (backup-
+  destination or explicit delete-data, gated behind a real
+  `MessageBox.Show` confirmation naming the actual consequence, not a
+  bare button). **Live-verified against the actual running app, not
+  just compiled**: published and launched the real exe, confirmed the
+  tab renders (screenshot captured), confirmed typing both required
+  paths correctly enables the Provision button (was disabled with
+  either empty, per `CanProvision`), and confirmed clicking Remove
+  against a real `NotInstalled` state correctly did nothing at all — no
+  confirmation dialog, no elevation attempt — proving the `CanRemove`
+  gate actually blocks the button at the UI layer, not just in a unit
+  test. Did **not** click through an actual Provision or Remove run
+  against fake paths, since that would trigger a real UAC prompt for no
+  legitimate purpose — matches this repo's own established boundary
+  (ROADMAP.md's Phase 16 entry: a UAC prompt only gets driven for real
+  when there's a genuine reason to, and declined rather than worked
+  around otherwise).
+- Full regression check: all 23 xUnit tests pass (14 pre-existing + 9
+  new), all 4 new Pester tests pass, PSScriptAnalyzer clean at
+  Error-severity, `dotnet build`/`dotnet publish` both clean.
+
+**Not done in this pass, honestly:** a real end-to-end Provision/Remove
+run against a live WSL2 distro (needs the same disposable-machine
+authorization as Phase 20's qualification matrix — this UI makes that
+run *possible* for the first time, but running it is still gated the
+same way). The MSI/release-bundle payload-delivery question this
+screen deliberately sidesteps (RootfsPath/AppBundlePath are operator-
+supplied paths, not assumed to arrive via any particular installer
+mechanism) remains its own separate, already-tracked open item.
 
 ## What "fixed" means here, precisely
 
