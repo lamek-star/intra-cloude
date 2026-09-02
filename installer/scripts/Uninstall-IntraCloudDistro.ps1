@@ -63,19 +63,47 @@ function Backup-BeforeRemoval {
     }
 
     New-Item -ItemType Directory -Force -Path $BackupDestination | Out-Null
+
     # Backups are written by system/backups.py into the `pdc_backups`
-    # named volume, bind-mounted at /backups inside the backend/worker
-    # containers (docker-compose.yml) -- and, since named volumes live
-    # under the distribution's own filesystem, also reachable from
-    # Windows through the WSL UNC path Initialize-IntraCloudDistro.ps1
-    # uses to stage files in the other direction. Copying the whole
-    # /backups tree (not just this run's files) is deliberate: this is
-    # a pre-removal safety copy, not a space-constrained operation, and
-    # a customer who never plugged in off-host backup storage
-    # (docs/operations/BACKUP_RESTORE.md Section 4) should still walk
-    # away from an uninstall with every backup that ever existed.
-    Write-Verbose "Copying backup files to $BackupDestination..."
-    Copy-Item -Path "\\wsl.localhost\$($script:IntraCloudDistroName)\backups\*" -Destination $BackupDestination -Recurse -Force -ErrorAction Stop
+    # *named Docker volume* (docker-compose.yml), mounted at /backups
+    # only *inside* the backend/worker containers -- there is no
+    # /backups directory at the distribution's own filesystem root.
+    # A named volume's real on-disk location is Docker-managed and
+    # depends on the Compose project name (confirmed live against this
+    # repo's own docker-compose.yml: `docker volume inspect` reports
+    # Mountpoint /var/lib/docker/volumes/<project>_pdc_backups/_data,
+    # never a bare /backups). An earlier version of this script copied
+    # from \\wsl.localhost\<distro>\backups directly, which does not
+    # exist -- Copy-Item would fail with "cannot find path", correctly
+    # aborting *before* --unregister (this script's own
+    # backup-failure-aborts-removal contract held), but the default,
+    # advertised "preserve data" uninstall path could never actually
+    # succeed. Resolve the volume's real name and mountpoint through
+    # Docker itself instead of assuming either.
+    $volumeNameResult = Invoke-IntraCloudDistroCommand -Command "docker volume ls --filter label=com.docker.compose.volume=pdc_backups --format '{{.Name}}'"
+    if ($volumeNameResult.ExitCode -ne 0 -or -not $volumeNameResult.StdOut.Trim()) {
+        throw "Could not resolve the pdc_backups Docker volume inside the distribution (exit $($volumeNameResult.ExitCode)): $($volumeNameResult.StdErr). Aborting removal -- no data has been deleted."
+    }
+    $volumeName = ($volumeNameResult.StdOut.Trim() -split "`n")[0].Trim()
+
+    $mountpointResult = Invoke-IntraCloudDistroCommand -Command "docker volume inspect --format '{{.Mountpoint}}' $volumeName"
+    if ($mountpointResult.ExitCode -ne 0 -or -not $mountpointResult.StdOut.Trim()) {
+        throw "Could not resolve the '$volumeName' volume's mountpoint inside the distribution (exit $($mountpointResult.ExitCode)): $($mountpointResult.StdErr). Aborting removal -- no data has been deleted."
+    }
+    # e.g. /var/lib/docker/volumes/intracloud_pdc_backups/_data ->
+    # \var\lib\docker\volumes\intracloud_pdc_backups\_data, appended to
+    # the distribution's own WSL UNC root.
+    $mountpointUnixPath = $mountpointResult.StdOut.Trim()
+    $distroUncPath = "\\wsl.localhost\$($script:IntraCloudDistroName)" + ($mountpointUnixPath -replace '/', '\')
+
+    # Copying the whole volume (not just this run's files) is
+    # deliberate: this is a pre-removal safety copy, not a
+    # space-constrained operation, and a customer who never plugged in
+    # off-host backup storage (docs/operations/BACKUP_RESTORE.md
+    # Section 4) should still walk away from an uninstall with every
+    # backup that ever existed.
+    Write-Verbose "Copying backup files from $distroUncPath to $BackupDestination..."
+    Copy-Item -Path "$distroUncPath\*" -Destination $BackupDestination -Recurse -Force -ErrorAction Stop
     Write-Verbose "Backup complete. Files preserved at $BackupDestination."
 }
 

@@ -182,6 +182,86 @@ that is Phase 20's qualification-matrix job specifically, which needs
 the disposable/clean Windows machine already tracked as a blocker (see
 "Blockers requiring the user's input" below), not performed here.
 
+**Local Pester environment fixed mid-session, and used for everything
+below.** `Install-Module`/`Install-PSResource` both fail on this
+machine (`PackageManagement.dll`/`NuGet.Versioning` load errors — a
+local restriction, not a code issue, per item 12 above); worked around
+by downloading the exact pinned versions' `.nupkg`s directly from the
+PowerShell Gallery API and expanding them into
+`Documents/PowerShell/Modules` by hand, bypassing the broken module
+manager entirely. Pester 6.1.0 and PSScriptAnalyzer 1.21.0 (both exact
+versions `windows-installer.yml` pins) now run for real in this
+session — item 15 below and everything after it in "Completed under
+the Internal Pilot v0.9 mandate" was actually run locally, not just
+parsed for syntax.
+
+15. `fix(installer): Uninstall-IntraCloudDistro.ps1 was reading the
+    pre-removal backup from a path that does not exist` — a real bug
+    found while auditing "safe install/uninstall/upgrade behavior" (the
+    mandate's second priority item), not a hypothetical. `pdc_backups`
+    is a Docker **named volume** (`docker-compose.yml`), mounted at
+    `/backups` only *inside* the backend/worker containers — there is
+    no `/backups` directory at the distribution's own filesystem root.
+    The script copied from
+    `\\wsl.localhost\IntraCloud\backups\*` anyway, which does not
+    exist. **Live-verified the actual failure mode and the fix's
+    correctness against a real Docker daemon**, not assumed:
+    `docker volume create`/`docker volume inspect` on this machine
+    confirmed a named volume's real Mountpoint is
+    `/var/lib/docker/volumes/<name>/_data`, matching the fix (resolve
+    the volume's real name and mountpoint through `docker volume ls
+    --filter label=com.docker.compose.volume=pdc_backups` +
+    `docker volume inspect`, then build the correct UNC path, instead
+    of assuming either). Consequence of the bug, worth stating plainly:
+    the *default*, advertised "preserve data" uninstall path — the one
+    ADR-0012 specifically designed so removal is never destructive by
+    default — could never actually have succeeded; it would fail the
+    `Copy-Item` and correctly abort *before* `--unregister` (so no data
+    was ever actually lost), but the customer would hit a confusing
+    failure and might reach for `-DeleteData` (irreversible) to get
+    unstuck, exactly the outcome the safe-by-default design was meant
+    to prevent. No test exercised the successful backup-copy path
+    before this fix (only the "fails" and "-DeleteData skips it" cases
+    were covered) — two new Pester tests added for the resolved-path
+    success case and the "volume cannot be resolved" failure case,
+    **run for real (Pester 6.1.0, not just parsed)**: 5/5 relevant tests
+    pass. Also fixed in the same pass, found by running the *whole*
+    suite for the first time this session: a stale `*Intra-Cloud*` test
+    mock in `Test-Prerequisites.Tests.ps1`, left over from the
+    IntraForge rebrand, that made `Test-ExistingInstallationState`'s
+    "reports Pass" case silently fail (the real code already correctly
+    checks `*IntraForge*`) — corrected the mock, not the product code,
+    since the product code was already right.
+
+**A second, larger finding from the same audit, not yet fixed — surfaced
+for the owner rather than built blind:** the Control Center has **no UI
+for installation or removal at all.** Confirmed by reading the actual
+code, not assumed: `ElevationHelper.RunElevated` (the only elevation
+mechanism in the app) is never called from anywhere; `App.xaml.cs` has
+no command-line argument handling for an "elevated action" mode; there
+is no Import/first-run/setup-wizard view, and no Uninstall view —
+`control-center/Views/` has only Status, Backup, Logs, and Settings.
+Today, after the MSI installs the Control Center executable, a real
+user must run `Import-IntraCloudDistro.ps1` and
+`Initialize-IntraCloudDistro.ps1` **by hand, from an elevated
+PowerShell prompt**, to actually stand up the WSL2 appliance — the
+Control Center only manages a distro that already exists (Start/Stop/
+Restart/health/backup/logs). Uninstall is the same story:
+`Uninstall-IntraCloudDistro.ps1` (including the backup-path fix above)
+is real and correct, but nothing in the shipped product surfaces it —
+an internal-pilot user would need the exact script name and parameter
+syntax, not a button. Not fixed here because it's a genuinely new
+subsystem, not an audit-sized fix: relaunching elevated
+(`ElevationHelper`) uses `UseShellExecute=true`/`Verb=runas`, which
+cannot redirect stdout — so how a multi-minute, elevated
+Import/Initialize/Uninstall operation reports live progress back to
+the non-elevated parent UI is an open design question (a temp file, a
+named pipe, polling a status file, relaunching only the script rather
+than the whole GUI) that deserves a deliberate choice, not a guess
+shipped into a destructive/elevated code path. Flagged for the owner
+rather than decided unilaterally — see the question this turn ends
+with.
+
 ## What "fixed" means here, precisely
 
 Every fix above: (a) reproduced live against the running app first

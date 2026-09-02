@@ -365,4 +365,47 @@ Describe 'Uninstall-IntraCloudDistro.ps1' {
         { Uninstall-IntraCloudDistro -BackupDestination (Join-Path $TestDrive 'backup-out') } | Should -Throw '*backup*'
         Should -Invoke Invoke-Wsl -ParameterFilter { $Arguments -contains '--unregister' } -Times 0
     }
+
+    It 'resolves the pdc_backups named volume''s real mountpoint and copies from there, not a bare /backups path' {
+        # Regression test for a real bug: pdc_backups is a Docker named
+        # volume (docker-compose.yml), not a plain directory at the
+        # distribution's filesystem root -- a named volume's actual
+        # on-disk location is Docker-managed
+        # (/var/lib/docker/volumes/<project>_pdc_backups/_data,
+        # confirmed live via `docker volume inspect` against this
+        # repo's own compose file) and depends on the Compose project
+        # name, which this script must never hardcode or assume.
+        Mock Invoke-Wsl {
+            if ($Arguments -contains '--list') { return New-WslResult -StdOut "IntraCloud`tRunning`t2" }
+            New-WslResult
+        }
+        Mock Invoke-IntraCloudDistroCommand {
+            if ($Command -like 'docker volume ls*') { return New-WslResult -StdOut 'intracloud_pdc_backups' }
+            if ($Command -like 'docker volume inspect*') { return New-WslResult -StdOut '/var/lib/docker/volumes/intracloud_pdc_backups/_data' }
+            New-WslResult
+        }
+        Mock New-Item {}
+        Mock Copy-Item {}
+        Uninstall-IntraCloudDistro -BackupDestination (Join-Path $TestDrive 'backup-out') | Should -Be $true
+        Should -Invoke Copy-Item -ParameterFilter {
+            $Path -eq '\\wsl.localhost\IntraCloud\var\lib\docker\volumes\intracloud_pdc_backups\_data\*'
+        } -Times 1
+        Should -Invoke Invoke-Wsl -ParameterFilter { $Arguments -contains '--unregister' } -Times 1
+    }
+
+    It 'aborts without unregistering when the pdc_backups volume cannot be resolved' {
+        Mock Invoke-Wsl {
+            if ($Arguments -contains '--list') { return New-WslResult -StdOut "IntraCloud`tRunning`t2" }
+            New-WslResult
+        }
+        Mock Invoke-IntraCloudDistroCommand {
+            if ($Command -like 'docker volume ls*') { return New-WslResult -StdOut '' }
+            New-WslResult
+        }
+        Mock New-Item {}
+        Mock Copy-Item {}
+        { Uninstall-IntraCloudDistro -BackupDestination (Join-Path $TestDrive 'backup-out') } | Should -Throw '*pdc_backups*'
+        Should -Invoke Copy-Item -Times 0
+        Should -Invoke Invoke-Wsl -ParameterFilter { $Arguments -contains '--unregister' } -Times 0
+    }
 }

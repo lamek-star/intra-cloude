@@ -151,7 +151,7 @@ Describe 'Test-ExistingInstallationState' {
             if ($Path -like '*Uninstall*' -or $Path -like '*Installer\Products*') { return @() }
             & (Get-Command Get-ChildItem -CommandType Cmdlet) @PSBoundParameters
         } -ParameterFilter { $Path -like '*Uninstall*' -or $Path -like '*Installer\Products*' }
-        Mock Test-Path { $false } -ParameterFilter { $Path -like '*Intra-Cloud*' }
+        Mock Test-Path { $false } -ParameterFilter { $Path -like '*IntraForge*' }
         $result = Test-ExistingInstallationState
         $result.Status | Should -Be 'Pass'
     }
