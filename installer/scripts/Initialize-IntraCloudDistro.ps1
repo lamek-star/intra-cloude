@@ -19,6 +19,14 @@
     populates AppBundlePath is Phase 21's job (release/code-signing
     pipeline), not this script's.
 
+    Docker Engine is NOT installed here (ADR-0013). It ships pre-baked
+    into the WSL2 rootfs itself (Build-IntraCloudRootfs.ps1, run by the
+    release pipeline) so that installation needs no internet access.
+    This script previously ran `curl -fsSL https://get.docker.com | sh`
+    at this exact point -- removed outright, not kept as a fallback, so
+    a broken or wrong release bundle fails loudly here instead of
+    silently reaching for the internet and masking the real problem.
+
 .PARAMETER AppBundlePath
     Windows-side directory holding the release bundle: docker-compose.yml,
     infrastructure\, .env, and images\*.tar.
@@ -47,18 +55,21 @@ function Initialize-IntraCloudDistro {
     Write-Verbose 'Checking for Docker Engine inside the Intra-Cloud distribution...'
     $dockerCheck = Invoke-IntraCloudDistroCommand -Command 'command -v docker'
     if ($dockerCheck.ExitCode -ne 0) {
-        Write-Verbose 'Docker Engine not found; installing (apt, not Docker Desktop -- ADR-0012)...'
-        # Docker's own documented convenience script -- the same install
-        # path used for any Debian/Ubuntu-based server, deliberately not
-        # a hand-rolled apt pipeline that would drift from upstream's
-        # own repository/key rotation handling.
-        $installResult = Invoke-IntraCloudDistroCommand -Command 'curl -fsSL https://get.docker.com | sh'
-        if ($installResult.ExitCode -ne 0) {
-            throw "Docker Engine installation failed (exit $($installResult.ExitCode)): $($installResult.StdErr)"
-        }
-    } else {
-        Write-Verbose 'Docker Engine already present; skipping install.'
+        # ADR-0013: Docker Engine ships baked into the rootfs
+        # (Build-IntraCloudRootfs.ps1), not installed here at
+        # configure-time -- this used to run `curl -fsSL
+        # https://get.docker.com | sh` at this exact point, which made
+        # every install depend on internet access on the customer's own
+        # machine. A rootfs reaching this point without Docker already
+        # present is a release-bundle defect (wrong/corrupt rootfs, or
+        # one built without Build-IntraCloudRootfs.ps1), not something
+        # to paper over by quietly falling back to the internet.
+        throw ('Docker Engine was not found inside the Intra-Cloud distribution. The imported ' +
+            'rootfs should already have it baked in (ADR-0013, Build-IntraCloudRootfs.ps1) -- this ' +
+            'points at a release bundle that was not built by the standard pipeline. Re-import a ' +
+            'rootfs produced by Build-IntraCloudRootfs.ps1 rather than working around this here.')
     }
+    Write-Verbose 'Docker Engine already present (baked into the rootfs); skipping install.'
 
     Write-Verbose 'Ensuring systemd is enabled (so dockerd survives a distro restart)...'
     # /etc/wsl.conf's [boot] systemd=true is read on distro *start*, not

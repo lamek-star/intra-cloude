@@ -284,7 +284,7 @@ Describe 'Initialize-IntraCloudDistro.ps1' {
         { Initialize-IntraCloudDistro -AppBundlePath $script:bundlePath } | Should -Throw '*not installed*'
     }
 
-    It 'installs Docker Engine only when it is not already present, and stages the bundle' {
+    It 'throws instead of installing Docker Engine over the internet when it is missing (ADR-0013)' {
         Mock Invoke-Wsl { New-WslResult -StdOut "IntraCloud`tRunning`t2" }
         Mock Invoke-IntraCloudDistroCommand {
             if ($Command -eq 'command -v docker') { return New-WslResult -ExitCode 1 }
@@ -293,12 +293,12 @@ Describe 'Initialize-IntraCloudDistro.ps1' {
         }
         Mock Copy-Item {}
         Mock New-Item {}
-        Initialize-IntraCloudDistro -AppBundlePath $script:bundlePath | Should -Be $true
-        Should -Invoke Invoke-IntraCloudDistroCommand -ParameterFilter { $Command -like '*get.docker.com*' } -Times 1
-        Should -Invoke Copy-Item -ParameterFilter { $Path -like '*docker-compose.yml' } -Times 1
+        { Initialize-IntraCloudDistro -AppBundlePath $script:bundlePath } | Should -Throw '*Docker Engine was not found*'
+        Should -Invoke Invoke-IntraCloudDistroCommand -ParameterFilter { $Command -like '*get.docker.com*' } -Times 0
+        Should -Invoke Copy-Item -Times 0
     }
 
-    It 'skips Docker Engine install when already present' {
+    It 'proceeds and stages the bundle when Docker Engine is already present (baked into the rootfs)' {
         Mock Invoke-Wsl { New-WslResult -StdOut "IntraCloud`tRunning`t2" }
         Mock Invoke-IntraCloudDistroCommand {
             if ($Command -eq 'command -v docker') { return New-WslResult -ExitCode 0 -StdOut '/usr/bin/docker' }
@@ -309,6 +309,7 @@ Describe 'Initialize-IntraCloudDistro.ps1' {
         Mock New-Item {}
         Initialize-IntraCloudDistro -AppBundlePath $script:bundlePath | Should -Be $true
         Should -Invoke Invoke-IntraCloudDistroCommand -ParameterFilter { $Command -like '*get.docker.com*' } -Times 0
+        Should -Invoke Copy-Item -ParameterFilter { $Path -like '*docker-compose.yml' } -Times 1
     }
 
     It 'writes /etc/wsl.conf and terminates the distro only when systemd is not yet enabled' {

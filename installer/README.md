@@ -208,3 +208,51 @@ dotnet build -c Release   # -> bin\x64\Release\IntraForgeControlCenter-Setup.msi
 .\installer\scripts\Stop-IntraCloudDistro.ps1
 .\installer\scripts\Uninstall-IntraCloudDistro.ps1 -BackupDestination <path>   # or -DeleteData
 ```
+
+## Building a release (offline-capable, ADR-0013)
+
+Three release-time tools, none of them CI-wired yet (run by hand by
+whoever is cutting a release — same status as the MSI-packaging step
+below; wiring an actual release pipeline that chains all of this
+together is still an open item, see RELEASE_READINESS.md):
+
+```powershell
+# 1. Container images -> installer\release\dist\bundle\images\*.tar
+#    Requires Docker (any host).
+.\installer\release\Build-ReleaseBundle.ps1 -OutputPath installer\release\dist\bundle
+
+# 2. WSL2 rootfs with Docker Engine + Compose pre-installed
+#    (ADR-0013) -> installer\release\dist\rootfs\intracloud-rootfs.tar
+#    Requires a Docker daemon that can run real Linux containers
+#    (native Docker Engine on Linux CI; Docker Desktop's Linux-
+#    containers backend on a Windows dev machine both work -- this is
+#    how the script was first verified). Needs internet at BUILD time
+#    only (Docker's own apt repository) -- the resulting rootfs itself
+#    needs none.
+.\installer\release\Build-IntraCloudRootfs.ps1 -OutputPath installer\release\dist\rootfs
+
+# 3. Control Center + MSI (see "Building locally" above), then:
+.\installer\release\New-ReleaseArtifacts.ps1 -RootfsPath installer\release\dist\rootfs
+# -> installer\release\dist\<version>\ with IntraForge-Setup.msi,
+#    intracloud-rootfs.tar, checksums, RELEASE_INFO.txt, RELEASE_NOTES.md
+```
+
+An install from a release built this way needs no internet access at
+any point: `Import-IntraCloudDistro.ps1` imports the bundled rootfs
+(Docker Engine already inside it), `Initialize-IntraCloudDistro.ps1`
+stages the bundled container images from step 1's output and now fails
+loudly rather than falling back to `get.docker.com` if Docker is
+somehow missing (see that script's docstring and ADR-0013). Verified
+live in this repo (2026-09-02): `Build-IntraCloudRootfs.ps1` run
+against a real Docker daemon produced a 685,065,216-byte rootfs
+containing `usr/bin/docker`, `usr/bin/dockerd`, and a pre-written
+`/etc/wsl.conf` with `systemd=true` — confirmed by listing the tar's
+contents directly, not assumed. Docker Engine 29.7.2 /
+docker-compose-plugin 5.5.0 were the versions Docker's apt repository
+resolved to on that date (recorded in the rootfs's own
+`intracloud-rootfs.manifest.txt`, per ADR-0013's per-release pinning
+record — not hardcoded here, since a future rebuild will pick up
+whatever is current then). Not yet re-verified: actually `wsl --import`-ing
+this exact rootfs and confirming `dockerd` starts inside a live WSL2
+distribution end-to-end — that step needs the real WSL2 host
+qualification pass (Phase 20), not just this build step.

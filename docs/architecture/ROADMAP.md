@@ -1630,18 +1630,73 @@ real container rebuilds — not assumed from any of these individually);
 code signing is IMPLEMENTED but BLOCKED BY EXTERNAL REQUIREMENT (a
 real signing certificate, which is a business asset this development
 session neither has nor should fabricate) for actual verification.
-**Not closed by any of the above: offline installation is still
-partial.** `Initialize-IntraCloudDistro.ps1` bundles container images
-via `Build-ReleaseBundle.ps1` (no internet needed for those), but still
-installs Docker Engine itself via `curl -fsSL https://get.docker.com |
+**Was not closed by any of the above at the time this paragraph was
+first written: offline installation was still partial.**
+`Initialize-IntraCloudDistro.ps1` bundled container images via
+`Build-ReleaseBundle.ps1` (no internet needed for those), but still
+installed Docker Engine itself via `curl -fsSL https://get.docker.com |
 sh` inside the distribution — confirmed still present and still
-internet-dependent by re-reading the script during this same pass, not
-fixed here. A genuinely offline install would need Docker Engine's
-`.deb` packages (and their full dependency closure) bundled the same
-way the container images are, which is real, separate follow-up work,
-not attempted in this pass. The WiX v6+ licensing decision
-(`installer/README.md`) remains open and is also a business decision,
-not something this phase resolves.
+internet-dependent by re-reading the script during that pass, not fixed
+there. The WiX v6+ licensing decision (`installer/README.md`) remains
+open and is also a business decision, not something this phase
+resolves.
+
+**Closed 2026-09-02, under the Internal Pilot v0.9 mandate
+(`docs/implementation/RELEASE_READINESS.md`): the Docker Engine
+internet dependency above.** ADR-0013 documents the decision and
+tradeoffs (Docker Engine's version is now pinned per IntraForge
+release, not live-patched inside an installed appliance — a deliberate,
+documented choice, not an oversight). New pieces:
+
+- **`installer/release/Build-IntraCloudRootfs.ps1` — IMPLEMENTED +
+  LIVE-VERIFIED.** Release-time tool (same category as
+  `Build-ReleaseBundle.ps1`, not a customer-facing lifecycle script):
+  runs a throwaway Ubuntu container, installs Docker Engine CE +
+  the Compose plugin from Docker's own apt repository, pre-writes
+  `/etc/wsl.conf`'s `systemd=true`, then `docker export`s the result —
+  the same technique this phase's own Phase 17 entry used by hand
+  (`docker export` of `python:3.13-slim`), now automated and with
+  Docker actually installed inside it. Run for real against a live
+  Docker daemon on 2026-09-02: produced a 685,065,216-byte rootfs;
+  `tar -tf` confirmed `usr/bin/docker`, `usr/bin/dockerd`, and
+  `etc/wsl.conf` are present in the output, not assumed from the script
+  exiting 0. A real bug was caught and fixed in the same pass: the
+  first run leaked the entire `apt-get`/`docker pull` transcript into
+  the function's PowerShell return value (uncaptured native-command
+  stdout is implicitly part of a PowerShell function's output), which
+  would have corrupted `New-ReleaseArtifacts.ps1`'s use of the returned
+  path — caught by actually inspecting the polluted output, not by
+  code review alone; fixed by routing every native command's stdout
+  through `Write-Verbose` instead of leaving it bare.
+- **`installer/scripts/Initialize-IntraCloudDistro.ps1` — the
+  `get.docker.com` fallback is removed outright, not kept as a
+  fallback.** A rootfs reaching this script without Docker already
+  present now throws immediately with a message pointing at
+  `Build-IntraCloudRootfs.ps1`, instead of silently reaching for the
+  internet. `installer/tests/WslDistro.Tests.ps1` updated to match:
+  the "Docker Engine not found" case now asserts a throw and zero
+  `get.docker.com`/`Copy-Item` invocations, rather than asserting an
+  install attempt.
+- **`installer/release/New-ReleaseArtifacts.ps1`** gained an optional
+  `-RootfsPath` parameter: when supplied (from
+  `Build-IntraCloudRootfs.ps1`'s output), the rootfs tarball, its
+  checksum, and its build manifest are copied into the versioned
+  release directory and folded into `CHECKSUMS.txt`/`RELEASE_INFO.txt`;
+  omitted, a release still builds (matching the MSI-only status quo)
+  but `RELEASE_INFO.txt` and a `Write-Warning` both say plainly that
+  the release has no bundled rootfs and won't install offline.
+- **Not yet done, honestly:** no CI job builds the rootfs automatically
+  — it joins `Build-ReleaseBundle.ps1` and `New-ReleaseArtifacts.ps1`
+  as release-time tools a release engineer runs by hand; a real
+  release-triggered pipeline chaining all of them together (plus the
+  Windows MSI build) doesn't exist yet for any of the three, not just
+  this new one. Nor has this rootfs actually been `wsl --import`-ed and
+  had `dockerd` started inside a live WSL2 distribution end-to-end —
+  that step is Phase 20's qualification-matrix job, requiring the
+  disposable/clean Windows machine already tracked as a blocker there,
+  not performed here. License-compliance review of the bundled Ubuntu
+  base + Docker Engine CE packages is also still open (tracked in
+  `RELEASE_READINESS.md`).
 
 **Re-verification pass (2026-08-27), a different session, same host.**
 Rebuilt from a clean `dotnet publish`/`dotnet build` with no code

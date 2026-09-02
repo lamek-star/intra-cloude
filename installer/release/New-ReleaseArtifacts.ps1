@@ -21,6 +21,9 @@
     Writes, per release, into $OutputPath\<version>\:
       - IntraForge-Setup.msi        (copied from the WiX build output)
       - IntraForge-Setup.msi.sha256 (single-file checksum)
+      - intracloud-rootfs.tar(.sha256, .manifest.txt) (ADR-0013, only
+                                      when -RootfsPath is supplied — see
+                                      below)
       - CHECKSUMS.txt               (all artifacts, one file, the
                                       conventional multi-file format)
       - RELEASE_INFO.txt            (version, git commit, build date,
@@ -41,11 +44,24 @@
     Directory release artifacts are written under (a version-named
     subdirectory is created inside it). Defaults to installer\release\dist
     next to this script.
+
+.PARAMETER RootfsPath
+    Directory containing a rootfs already built by
+    Build-IntraCloudRootfs.ps1 (intracloud-rootfs.tar,
+    intracloud-rootfs.tar.sha256, intracloud-rootfs.manifest.txt).
+    Optional and unset by default — building it needs a Linux Docker
+    daemon (ADR-0013), which this script (run alongside the Windows MSI
+    build) does not assume is available; the release pipeline's Linux
+    job produces it separately and passes the path in. Without it, the
+    release is still produced, but a warning notes it depends on
+    whatever rootfs was staged separately (or the pre-ADR-0013 internet
+    dependency, for an old-style rootfs).
 #>
 
 [CmdletBinding()]
 param(
-    [string]$OutputPath = (Join-Path $PSScriptRoot 'dist')
+    [string]$OutputPath = (Join-Path $PSScriptRoot 'dist'),
+    [string]$RootfsPath
 )
 
 Set-StrictMode -Version Latest
@@ -97,7 +113,8 @@ function Get-ReleaseNotesBody {
 function New-ReleaseArtifacts {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)] [string]$OutputPath
+        [Parameter(Mandatory)] [string]$OutputPath,
+        [string]$RootfsPath
     )
 
     if (-not (Test-Path $script:MsiSourcePath)) {
@@ -122,13 +139,47 @@ function New-ReleaseArtifacts {
     # commonly-expected verification paths, not just one arbitrarily
     # chosen format.
     "$msiHash *IntraForge-Setup.msi" | Set-Content -Path (Join-Path $releaseDir 'IntraForge-Setup.msi.sha256') -Encoding ascii
-    "$msiHash *IntraForge-Setup.msi" | Set-Content -Path (Join-Path $releaseDir 'CHECKSUMS.txt') -Encoding ascii
+    $checksumLines = @("$msiHash *IntraForge-Setup.msi")
+
+    # ADR-0013: the rootfs is built by a separate Linux job (needs a
+    # real Docker daemon capable of `apt install docker-ce`, which this
+    # Windows-side script does not assume), so it arrives here as an
+    # already-built directory, not something this function builds
+    # itself -- same "fail loudly if missing, don't build it here"
+    # posture as the MSI check above, but non-fatal: a release without
+    # a bundled rootfs is still a valid (if not fully offline) release,
+    # unlike a release with no MSI at all.
+    if ($RootfsPath) {
+        $rootfsTarSource = Join-Path $RootfsPath 'intracloud-rootfs.tar'
+        if (-not (Test-Path $rootfsTarSource)) {
+            throw "No rootfs found at $rootfsTarSource. Build it first with Build-IntraCloudRootfs.ps1, or omit -RootfsPath."
+        }
+        foreach ($rootfsFile in @('intracloud-rootfs.tar', 'intracloud-rootfs.tar.sha256', 'intracloud-rootfs.manifest.txt')) {
+            $src = Join-Path $RootfsPath $rootfsFile
+            if (Test-Path $src) {
+                Copy-Item -Path $src -Destination $releaseDir -Force
+            }
+        }
+        $rootfsHash = (Get-FileHash -Path (Join-Path $releaseDir 'intracloud-rootfs.tar') -Algorithm SHA256).Hash.ToLowerInvariant()
+        $checksumLines += "$rootfsHash *intracloud-rootfs.tar"
+    } else {
+        Write-Warning ('No -RootfsPath supplied: this release will not include a pre-baked Docker Engine rootfs ' +
+            '(ADR-0013). Initialize-IntraCloudDistro.ps1 now fails loudly rather than falling back to installing ' +
+            'Docker over the internet, so an install from this release needs a rootfs supplied some other way.')
+    }
+
+    $checksumLines | Set-Content -Path (Join-Path $releaseDir 'CHECKSUMS.txt') -Encoding ascii
 
     $commit = Get-BuildGitCommit
     $buildDate = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') + ' UTC'
     $codeSigningStatus = 'UNSIGNED -- code signing is blocked on a real signing certificate ' +
         '(a business asset this build environment does not have), see docs/architecture/ROADMAP.md. ' +
         'Windows SmartScreen will warn on first run until this is resolved.'
+    $rootfsStatus = if ($RootfsPath) {
+        "intracloud-rootfs.tar included -- fully offline install (ADR-0013)."
+    } else {
+        "NOT INCLUDED -- Initialize-IntraCloudDistro.ps1 requires Docker Engine already present in the imported rootfs and will not install it over the internet. Supply one built by Build-IntraCloudRootfs.ps1 before installing from this release."
+    }
 
     @"
 IntraForge Control Center -- Release Artifact Info
@@ -140,6 +191,8 @@ Build date:           $buildDate
 Artifact:             IntraForge-Setup.msi
 Artifact size:        $msiSize bytes
 SHA-256:              $msiHash
+
+Offline rootfs:       $rootfsStatus
 
 Code signing:         $codeSigningStatus
 
@@ -159,6 +212,6 @@ $notesBody
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
-    $releaseDir = New-ReleaseArtifacts -OutputPath $OutputPath
+    $releaseDir = New-ReleaseArtifacts -OutputPath $OutputPath -RootfsPath $RootfsPath
     Write-Output "Release artifacts written to $releaseDir"
 }

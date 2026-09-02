@@ -99,13 +99,26 @@ installer experience, a written-but-not-yet-executed Windows
 Qualification Matrix (`docs/deployment/WINDOWS_QUALIFICATION_MATRIX.md`),
 and versioned/checksummed release-bundle packaging — code signing is
 implemented but unverified pending a real certificate (a business asset
-this project doesn't have and won't fabricate), and full offline
-installation is partial (container images are bundled; Docker Engine
-itself still installs via `get.docker.com`, requiring internet). See
-`docs/architecture/ROADMAP.md` Phases 16–21 for the full account,
-including a release-blocking orphaned-install-state defect found and
-fixed live. 300 backend tests pass as of the last full run against the
-live Docker stack. The frontend has a real but partial Vitest suite
+this project doesn't have and won't fabricate). Under the Internal
+Pilot v0.9 mandate (`docs/implementation/RELEASE_READINESS.md`),
+ADR-0013 closed the remaining offline-installation gap: container
+images were already bundled (`Build-ReleaseBundle.ps1`); the new
+`installer/release/Build-IntraCloudRootfs.ps1` now bakes Docker Engine
++ the Compose plugin directly into the WSL2 rootfs at release-build
+time (Docker Engine's version is therefore pinned per IntraForge
+release, not live-patched inside an installed appliance — a deliberate
+tradeoff ADR-0013 documents), and `Initialize-IntraCloudDistro.ps1`'s
+`get.docker.com` fallback is removed outright — a rootfs reaching it
+without Docker already present now fails loudly instead of reaching
+for the internet. Live-verified 2026-09-02 against a real Docker
+daemon (a 685,065,216-byte rootfs containing `usr/bin/docker`,
+`usr/bin/dockerd`, and `/etc/wsl.conf` with `systemd=true`, confirmed
+by listing the tar directly), but not yet actually `wsl --import`-ed
+into a running WSL2 distribution end-to-end — that remains Phase 20's
+qualification-matrix job. See `docs/architecture/ROADMAP.md` Phases
+16–21 for the full account, including a release-blocking
+orphaned-install-state defect found and fixed live. 300 backend tests
+pass as of the last full run against the live Docker stack. The frontend has a real but partial Vitest suite
 (`npm test`) plus Playwright specs; neither runs in CI yet — see
 `docs/implementation/TEST_STATUS.md` for exactly what is and isn't
 covered.
