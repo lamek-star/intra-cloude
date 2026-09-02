@@ -30,11 +30,24 @@
 .PARAMETER AppBundlePath
     Windows-side directory holding the release bundle: docker-compose.yml,
     infrastructure\, .env, and images\*.tar.
+
+.PARAMETER LanAddress
+    Optional. Forwarded to New-IntraCloudEnvironmentFile.ps1 when this
+    script generates a fresh .env (i.e. AppBundlePath has no .env of
+    its own, only .env.example) -- widens PROXY_BIND_ADDRESS/
+    PROXY_TLS_HOSTNAMES/ALLOWED_HOSTS/CSRF_TRUSTED_ORIGINS/
+    CORS_ALLOWED_ORIGINS to also accept this hostname/IP, so the stack
+    is reachable from other machines on the network, not just this
+    one. Has no effect when AppBundlePath already supplies a real
+    .env -- that file's own settings are used as-is, matching this
+    script's existing "honor an operator-supplied .env, don't
+    second-guess it" behavior.
 #>
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)] [ValidateScript({ Test-Path $_ -PathType Container })] [string]$AppBundlePath
+    [Parameter(Mandatory)] [ValidateScript({ Test-Path $_ -PathType Container })] [string]$AppBundlePath,
+    [string]$LanAddress
 )
 
 Set-StrictMode -Version Latest
@@ -45,7 +58,8 @@ $ErrorActionPreference = 'Stop'
 function Initialize-IntraCloudDistro {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)] [string]$AppBundlePath
+        [Parameter(Mandatory)] [string]$AppBundlePath,
+        [string]$LanAddress
     )
 
     if (-not (Test-IntraCloudDistroExists)) {
@@ -124,7 +138,7 @@ function Initialize-IntraCloudDistro {
             Write-Verbose 'Generating a fresh .env with unique per-install secrets...'
             $generatedEnvPath = Join-Path $env:TEMP "intracloud-generated-$([Guid]::NewGuid().ToString('N')).env"
             try {
-                & "$PSScriptRoot\New-IntraCloudEnvironmentFile.ps1" -TemplatePath $envTemplate -OutputPath $generatedEnvPath | Out-Null
+                & "$PSScriptRoot\New-IntraCloudEnvironmentFile.ps1" -TemplatePath $envTemplate -OutputPath $generatedEnvPath -LanAddress $LanAddress | Out-Null
                 Copy-Item -Path $generatedEnvPath -Destination (Join-Path $distroUncRoot '.env') -Force
             } finally {
                 # The generated file briefly exists on the Windows side
@@ -157,7 +171,7 @@ function Initialize-IntraCloudDistro {
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
-    if (Initialize-IntraCloudDistro -AppBundlePath $AppBundlePath) {
+    if (Initialize-IntraCloudDistro -AppBundlePath $AppBundlePath -LanAddress $LanAddress) {
         Write-Output 'Intra-Cloud distribution configured.'
     }
 }

@@ -50,6 +50,25 @@ public partial class SetupView : UserControl
         }
     }
 
+    // Confirmed at the moment the box is checked, not deferred to
+    // Provision-click time -- enabling LAN access changes machine-wide
+    // WSL2 networking mode (Enable-IntraCloudLanAccess.ps1 restarts
+    // every WSL2 distribution on the machine, not just this one's) and
+    // adds a firewall rule, real system state an operator should
+    // knowingly opt into, not discover after the fact.
+    private void EnableLanAccessCheckBox_Checked(object sender, RoutedEventArgs e)
+    {
+        var message = "Allowing access from other computers on this network will:\n\n" +
+            "- Enable WSL2 \"mirrored\" networking mode machine-wide (affects every WSL2 distribution on this computer, not just IntraForge, and requires restarting them)\n" +
+            "- Add a Windows Firewall rule allowing inbound access on this machine's private/domain network\n\n" +
+            "Continue?";
+        var result = MessageBox.Show(message, "Allow Network Access", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (result != MessageBoxResult.Yes)
+        {
+            EnableLanAccessCheckBox.IsChecked = false;
+        }
+    }
+
     // A real confirmation, not just a command binding: removal is
     // destructive by nature (even the "preserve data" path unregisters
     // the distribution) -- RELEASE_READINESS.md's audit specifically

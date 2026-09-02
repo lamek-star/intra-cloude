@@ -312,6 +312,43 @@ Describe 'Initialize-IntraCloudDistro.ps1' {
         Should -Invoke Copy-Item -ParameterFilter { $Path -like '*docker-compose.yml' } -Times 1
     }
 
+    It 'forwards -LanAddress through to New-IntraCloudEnvironmentFile.ps1 when generating a fresh .env' {
+        # Regression coverage for the actual integration point of the
+        # LAN-access gap fix (New-IntraCloudEnvironmentFile.Tests.ps1
+        # covers the generation logic itself in isolation; this proves
+        # Initialize-IntraCloudDistro.ps1 really wires -LanAddress
+        # through to it, not just that the parameter exists).
+        $lanBundlePath = Join-Path $TestDrive 'lan-bundle'
+        New-Item -ItemType Directory -Force -Path $lanBundlePath | Out-Null
+        Set-Content -Path (Join-Path $lanBundlePath 'docker-compose.yml') -Value 'services: {}'
+        New-Item -ItemType Directory -Force -Path (Join-Path $lanBundlePath 'infrastructure') | Out-Null
+        Set-Content -Path (Join-Path $lanBundlePath '.env.example') -Value @(
+            'SECRET_KEY=changeme'
+            'PROXY_BIND_ADDRESS=127.0.0.1'
+            'ALLOWED_HOSTS=localhost,127.0.0.1'
+        )
+
+        Mock Invoke-Wsl { New-WslResult -StdOut "IntraCloud`tRunning`t2" }
+        Mock Invoke-IntraCloudDistroCommand {
+            if ($Command -eq 'command -v docker') { return New-WslResult -ExitCode 0 }
+            if ($Command -like 'grep *wsl.conf*') { return New-WslResult -StdOut 'present' }
+            New-WslResult
+        }
+        Mock New-Item {}
+        $script:capturedEnvContent = $null
+        Mock Copy-Item {
+            if ($Destination -like '*\.env') {
+                $script:capturedEnvContent = Get-Content -Path $Path -Raw
+            }
+        }
+
+        Initialize-IntraCloudDistro -AppBundlePath $lanBundlePath -LanAddress '192.168.1.50' | Should -Be $true
+
+        $script:capturedEnvContent | Should -Not -BeNullOrEmpty
+        $script:capturedEnvContent | Should -Match 'PROXY_BIND_ADDRESS=192\.168\.1\.50'
+        $script:capturedEnvContent | Should -Match 'ALLOWED_HOSTS=localhost,127\.0\.0\.1,192\.168\.1\.50'
+    }
+
     It 'writes /etc/wsl.conf and terminates the distro only when systemd is not yet enabled' {
         Mock Invoke-Wsl { New-WslResult -StdOut "IntraCloud`tRunning`t2" }
         Mock Invoke-IntraCloudDistroCommand {

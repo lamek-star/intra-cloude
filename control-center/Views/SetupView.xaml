@@ -51,6 +51,21 @@
                     <TextBox Grid.Column="1" Text="{Binding InstallPath, UpdateSourceTrigger=PropertyChanged}" Margin="4,2" />
                     <Button Grid.Column="2" Content="Browse..." Click="BrowseInstallPath_Click" Padding="8,2" />
                 </Grid>
+
+                <CheckBox x:Name="EnableLanAccessCheckBox" Content="Allow access from other computers on this network"
+                          IsChecked="{Binding EnableLanAccess}" Checked="EnableLanAccessCheckBox_Checked" Margin="0,4,0,4" />
+                <TextBlock Text="Default is local-only (this machine only). Enabling this changes network settings machine-wide -- see the confirmation shown when you check this box."
+                           TextWrapping="Wrap" Foreground="Gray" FontStyle="Italic" Margin="0,0,0,4" />
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="140" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Network address" VerticalAlignment="Center" />
+                    <ComboBox Grid.Column="1" Text="{Binding LanAddress, UpdateSourceTrigger=PropertyChanged}"
+                              ItemsSource="{Binding DetectedLanAddresses}" IsEditable="True" Margin="4,2" />
+                </Grid>
+
                 <Button Content="Provision IntraForge Appliance" Command="{Binding ProvisionCommand}" HorizontalAlignment="Left" Padding="12,4" />
             </StackPanel>
         </GroupBox>

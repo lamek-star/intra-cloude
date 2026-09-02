@@ -321,6 +321,136 @@ screen deliberately sidesteps (RootfsPath/AppBundlePath are operator-
 supplied paths, not assumed to arrive via any particular installer
 mechanism) remains its own separate, already-tracked open item.
 
+## Completed 2026-09-03: local/LAN operation (mandate priority #3)
+
+Audited what "local/LAN operation" actually means for the Windows/
+WSL2 path specifically (the Linux/plain-Compose path was already
+correctly documented in `docs/deployment/LOCAL_DEPLOYMENT.md`). Found
+two compounding, real gaps, both now closed:
+
+1. **Every Windows-generated `.env` was hardwired to `127.0.0.1`-only,
+   regardless of operator intent.** `New-IntraCloudEnvironmentFile.ps1`
+   only ever substituted the 6 secret keys; `PROXY_BIND_ADDRESS`/
+   `PROXY_TLS_HOSTNAMES`/`ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS`/
+   `CORS_ALLOWED_ORIGINS` all passed through unchanged from
+   `.env.example`'s localhost-only defaults, on every install, always.
+   Fixed with a new `-LanAddress` parameter that widens exactly those
+   five settings (replacing `PROXY_BIND_ADDRESS` outright — a single
+   interface, not a list; appending to the other four, comma- or
+   space-delimited to match Django's `env_list()`/Caddy's site-address
+   syntax respectively, confirmed by reading `config/settings/base.py`
+   directly rather than assumed) — and threaded through
+   `Initialize-IntraCloudDistro.ps1` (which calls the generator
+   internally) end to end. **A real, pre-existing latent bug was found
+   and fixed by this same work**: the original "which secret keys are
+   missing from the template" check crashed
+   (`PropertyNotFoundException`) against a single-line template file —
+   PowerShell's `Get-Content` returns a scalar string, not a
+   one-element array, for a one-line file, and `Set-StrictMode`
+   surfaces the resulting `-match`-on-a-scalar/`.Count` mismatch as a
+   hard error. Never triggered in practice (real `.env.example` files
+   are always many lines) but a genuine bug, exposed by a new test
+   using a deliberately minimal fixture, not by production use. 4 new
+   Pester tests for the widening logic, 1 more proving
+   `Initialize-IntraCloudDistro.ps1` actually forwards `-LanAddress`
+   (not just that the parameter exists) — all real, run against Pester
+   6.1.0, not mocked at the generation-logic level (no WSL2 needed for
+   pure text-file logic).
+2. **WSL2 itself runs behind its own NAT by default — a LAN machine
+   can't reach a WSL2-hosted port regardless of what
+   `PROXY_BIND_ADDRESS` is set to, until the host bridges the two.**
+   Already flagged as a known, explicit open gap in ROADMAP.md's Phase
+   19 entry ("Real, open gap for LAN Server Mode specifically... not
+   fixed this pass"). Asked the owner which bridging approach to use
+   (WSL2 mirrored networking mode vs. NAT + `netsh portproxy`) rather
+   than deciding unilaterally, since mirrored mode is a machine-wide
+   setting affecting every WSL2 distro on the box, not just
+   IntraCloud's — **mirrored mode chosen.** New
+   `installer/scripts/Enable-IntraCloudLanAccess.ps1`: merges
+   `networkingMode=mirrored` into `%USERPROFILE%\.wslconfig` (a
+   minimal, targeted merge that preserves every other line/section —
+   not a full INI parser round-trip, deliberately, to avoid
+   reformatting content this script has no business touching), runs
+   `wsl --shutdown` only when a change was actually needed (idempotent
+   — never restarts WSL2 unnecessarily), and adds a
+   `New-NetFirewallRule` scoped to Private/Domain profiles only (never
+   Public), also idempotent. **Two more real bugs found and fixed by
+   the new Pester suite, both confirmed directly, not assumed:**
+   (a) `$existingLines = if (Test-Path ...) { @(Get-Content ...) }
+   else { @() }` — an empty array *literal* returned as an if/else
+   expression's value collapses to `$null` in PowerShell (it writes
+   zero objects to the pipeline, which the assignment then sees as
+   nothing), not an empty array; fixed with imperative assignment
+   inside each branch instead of relying on the if-statement's own
+   expression-return value, in three separate places this bug could
+   have hit; (b) `[System.Collections.Generic.List[string]]::new($array)`
+   fails to resolve a constructor overload in this environment's
+   Windows PowerShell 5.1 ("Cannot find an overload for 'new' and the
+   argument count: 1") even for a well-formed array argument — replaced
+   with plain PowerShell array index assignment/slicing, no generic
+   collection type needed for what this script actually does. 9 new
+   Pester tests, all pass.
+3. **Wired into the Setup screen's Provision flow**: a new
+   "Allow access from other computers on this network" checkbox
+   (`SetupViewModel.cs`/`SetupView.xaml`), off by default, that
+   auto-detects and pre-populates this machine's real LAN IPv4
+   addresses (`Dns.GetHostAddresses`, filtered to non-loopback IPv4) as
+   suggestions in an editable combo box, and — **live-verified against
+   the actual running app**: launched the real published exe, took a
+   screenshot, confirmed the detected address (this development
+   machine's real `192.168.70.136`) was correctly pre-populated.
+   Checking the box shows a real confirmation naming the machine-wide
+   consequence (mirrored networking + firewall rule) before the
+   ViewModel's `EnableLanAccess` even flips, matching the same
+   code-behind-confirmation pattern already used for Remove.
+   `ApplianceProvisioningService.ProvisionAsync` gained
+   `enableLanAccess`/`lanAddress` parameters with the same
+   fail-fast-before-elevation validation style as `RemoveAsync`
+   (enableLanAccess=true with no address throws immediately, covered
+   by a new xUnit test); when enabled, `Enable-IntraCloudLanAccess.ps1`
+   runs as the *first* step in the same elevated chain as Import +
+   Initialize (one UAC prompt for the whole Provision action, and any
+   `wsl --shutdown` happens before the distro is imported, not as a
+   pointless extra restart right after).
+4. **What live UI-Automation testing could and couldn't conclusively
+   verify, stated honestly rather than glossed over.** Attempting to
+   drive the actual confirmation-dialog interaction (check the box →
+   confirm a real `MessageBox` appears → decline it) via out-of-process
+   UI Automation against the real running app on this real, busy
+   development desktop produced ambiguous results: a `TogglePattern.
+   Toggle()` call reported success and left the checkbox showing
+   "checked," but no dialog window could be found, the app window was
+   later found minimized, and a stray native file-picker dialog turned
+   up unexplained — most likely artifacts of driving a live desktop
+   with other real windows (a browser playing video, an editor, Docker
+   Desktop) via an external automation client, not a defect reproduced
+   through any controlled input. Rather than keep experimenting live
+   (real risk of clicking something unintended on the actual desktop),
+   switched to a safe, isolated, zero-risk verification: a new xUnit
+   test (`CheckBoxCheckedEventTests.cs`, run on a dedicated STA thread,
+   no live app, no `MessageBox`) that creates a real WPF `CheckBox`
+   bound the same way (`IsChecked="{Binding EnableLanAccess}"`) against
+   a real `SetupViewModel`, and proves directly that setting the bound
+   ViewModel property fires the `Checked` routed event — the one fact
+   actually in question. Both new tests pass, confirming the underlying
+   mechanism the shipped code depends on is sound; the live-desktop
+   ambiguity is documented as an automation-harness artifact, not
+   asserted away.
+5. Full regression check: 27 xUnit tests pass (25 + 2 new), 92 Pester
+   tests pass (83 + 9 new; the same 2 environmental `Test-ProxyPortAvailable`
+   failures persist — this machine's own live dev stack occupying port
+   8443, unrelated to this work), PSScriptAnalyzer clean at
+   Error-severity, `dotnet build`/`dotnet publish` both clean.
+
+**Not done in this pass, honestly:** an actual end-to-end LAN-reachability
+test — enabling this for real and confirming a second machine on the
+same network can actually reach the proxy — needs a second physical/
+virtual machine on the same LAN, which this session doesn't have and
+didn't fabricate confidence about. Also not done: cleaning up the
+firewall rule / reverting `.wslconfig` on Uninstall (a real, if minor,
+hygiene gap — `Uninstall-IntraCloudDistro.ps1` doesn't touch either) —
+noted here rather than silently left for someone to discover.
+
 ## What "fixed" means here, precisely
 
 Every fix above: (a) reproduced live against the running app first
@@ -387,18 +517,35 @@ where the finding was about cross-user access.
 
 Under the v0.9 mandate's stated priority order (offline install →
 safe install/uninstall/upgrade → local/LAN operation → backup/recovery
-→ security → reliability → internal ops docs): the offline-install
-item is now substantially closed (ADR-0013, see above) modulo the
-WSL2-itself scope decision (blocker 4 below) and real WSL2-host
-verification (blocker 1). **Next highest-value item: "safe
-install/uninstall/upgrade behavior"** — audit
-`Uninstall-IntraCloudDistro.ps1`'s `-BackupDestination`/`-DeleteData`
-paths and the MSI's upgrade behavior (`installer/wix/*.wxs`,
-`MajorUpgrade`/`RemoveExistingProducts` handling) against what
-`WINDOWS_QUALIFICATION_MATRIX.md` already checklists, correcting
-anything the checklist assumes but this repo doesn't actually do yet —
-same standard as everything else in this file: verify against real
-code/behavior, don't assume from a prior doc.
+→ security → reliability → internal ops docs): the first three items
+are now substantially closed —
+
+- Offline install: ADR-0013, `Build-IntraCloudRootfs.ps1`. Open
+  remainder: the WSL2-itself scope decision (blocker 4 below) and real
+  WSL2-host verification (blocker 1).
+- Safe install/uninstall/upgrade: the `Uninstall-IntraCloudDistro.ps1`
+  backup-path bug fix, and the new Setup & Removal UI closing the
+  "no button exists for this at all" gap. Open remainder: a real MSI
+  upgrade-over-existing-install cycle has still never been run (needs
+  blocker 1), and `WINDOWS_QUALIFICATION_MATRIX.md`'s own
+  install/uninstall/upgrade checklist items haven't been re-audited
+  line-by-line against current behavior yet.
+- Local/LAN operation: `-LanAddress` threading + `Enable-IntraCloudLanAccess.ps1`
+  + the Setup screen's network-access section. Open remainder: no
+  second machine to prove actual cross-machine reachability with, and
+  firewall-rule/`.wslconfig` cleanup on Uninstall isn't implemented.
+
+**Next highest-value item: "backup and recovery."** `system/backups.py`
+and `docs/operations/BACKUP_RESTORE.md` already exist from earlier
+phases (Phase 11/15) and are described as live-verified there — but
+that predates this session's audit standard. Worth specifically
+checking, the same way the uninstall backup-path bug was found: does
+the Windows/WSL2 path's Backup & Restore Control Center tab actually
+exercise a full backup → restore → verify cycle correctly end to end,
+or does it only trigger backups (per `BackupViewModel.cs`, it currently
+has no restore action at all — worth confirming that's an intentional
+scope boundary, not an oversight, and if intentional, that it's
+actually documented as such somewhere a real operator would find it).
 
 The original mandate's remaining CI/CD hardening (Playwright E2E, SBOM
 generation, `npm audit`, container image scanning) is also still done
@@ -411,14 +558,22 @@ remains queued behind the priority-ordered items above, not dropped.
 1. A disposable/clean Windows VM (or explicit permission to test
    destructively on this machine) to execute
    `WINDOWS_QUALIFICATION_MATRIX.md` for real, including a real
-   `wsl --import` of the new Docker-Engine-baked rootfs.
+   `wsl --import` of the new Docker-Engine-baked rootfs, a real MSI
+   upgrade-over-existing-install cycle, and a real Provision/Remove run
+   through the new Setup & Removal UI.
 2. A real code-signing certificate (`WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64`
    repo secret) if signed releases are wanted before shipping.
 3. A decision on whether/when to push `rebrand/intraforge` and open a
    PR — no commits have been pushed.
-4. **New:** should "genuinely offline" extend to enabling WSL2 itself
-   (Windows optional features + kernel update) on a machine that
-   doesn't already have it, or is "WSL2 already enabled, IT prepares
-   the machine first" an acceptable prerequisite for an internal pilot
-   confined to the owner's own company? Left unresolved deliberately —
-   real new engineering either way, not decided unilaterally.
+4. Should "genuinely offline" extend to enabling WSL2 itself (Windows
+   optional features + kernel update) on a machine that doesn't already
+   have it, or is "WSL2 already enabled, IT prepares the machine first"
+   an acceptable prerequisite for an internal pilot confined to the
+   owner's own company? Left unresolved deliberately — real new
+   engineering either way, not decided unilaterally.
+5. **New:** a second machine on the same LAN (or network access to one)
+   to actually prove cross-machine reachability of the new LAN-access
+   feature end to end — everything short of that has been verified
+   (address auto-detection, the widened `.env`, the firewall rule/
+   mirrored-mode logic in isolation), but no session so far has
+   confirmed a second computer can actually reach the proxy through it.

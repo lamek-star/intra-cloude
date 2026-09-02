@@ -1932,12 +1932,27 @@ installer-adjacent pieces that hadn't been:
 - Firewall rules: confirmed the installer touches none at all (no
   `netsh`/firewall calls anywhere under `installer/`) — correct for the
   default Desktop Mode (the proxy binds `127.0.0.1` only, per
-  `docker-compose.yml`, so no inbound rule is needed). **Real, open gap
-  for LAN Server Mode specifically**: setting `PROXY_BIND_ADDRESS` to a
-  LAN interface has no accompanying Windows Firewall automation here —
-  not fixed this pass (a real feature to design, not a quick patch);
-  tracked for the offline-installation/deployment-mode work still open
-  (directive point 4).
+  `docker-compose.yml`, so no inbound rule is needed). **Was a real,
+  open gap for LAN Server Mode specifically — closed 2026-09-03 under
+  the Internal Pilot v0.9 mandate** (`docs/implementation/RELEASE_READINESS.md`):
+  `installer/scripts/Enable-IntraCloudLanAccess.ps1` (new) enables WSL2
+  mirrored networking mode (machine-wide, opt-in only) and adds a
+  scoped `New-NetFirewallRule` (Private/Domain profiles only, never
+  Public), both idempotent; `New-IntraCloudEnvironmentFile.ps1` gained
+  a `-LanAddress` parameter that widens `PROXY_BIND_ADDRESS`/
+  `PROXY_TLS_HOSTNAMES`/`ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS`/
+  `CORS_ALLOWED_ORIGINS` instead of leaving every Windows-generated
+  `.env` hardwired to `127.0.0.1`-only regardless of operator intent
+  (the actual root cause underneath this gap — the firewall rule alone
+  would not have been enough). Both wired into the Setup screen's
+  Provision flow, gated behind a real confirmation naming the
+  machine-wide consequence. See RELEASE_READINESS.md for the full
+  account, including two real PowerShell bugs found and fixed by the
+  new Pester coverage (an if/else-expression-collapses-empty-array-to-
+  $null trap, and a `List<T>::new()` overload-resolution failure — both
+  confirmed directly, not assumed) and a note on what live UI-Automation
+  testing of the confirmation dialog could and couldn't conclusively
+  verify.
 - Dependency integrity: `object-storage` still pins `minio/minio:latest`
   (docker-compose.yml's own comment already flags this — "pin to a
   specific digest before production use"), unchanged this pass, still

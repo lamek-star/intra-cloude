@@ -72,6 +72,23 @@ public sealed class SetupViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task CanProvision_requires_a_LAN_address_only_when_EnableLanAccess_is_checked()
+    {
+        var viewModel = CreateViewModel(DistroState.NotInstalled);
+        await viewModel.RefreshStateAsync();
+        viewModel.RootfsPath = @"C:\rootfs.tar";
+        viewModel.AppBundlePath = @"C:\bundle";
+        Assert.True(viewModel.CanProvision); // local-only (default) needs no address
+
+        viewModel.EnableLanAccess = true;
+        viewModel.LanAddress = string.Empty;
+        Assert.False(viewModel.CanProvision);
+
+        viewModel.LanAddress = "192.168.1.50";
+        Assert.True(viewModel.CanProvision);
+    }
+
+    [Fact]
     public async Task CanProvision_is_false_when_the_distro_already_exists_even_with_both_paths_set()
     {
         var viewModel = CreateViewModel(DistroState.Stopped);

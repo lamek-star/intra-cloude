@@ -40,6 +40,30 @@ public sealed class ApplianceProvisioningServiceTests
     }
 
     [Fact]
+    public async Task ProvisionAsync_throws_immediately_when_enableLanAccess_is_true_but_no_lanAddress_is_given()
+    {
+        // Mirrors RemoveAsync's own validation shape: LAN access is
+        // opt-in (CLAUDE.md rule 7, extended to LAN exposure), and an
+        // opt-in with no actual address to widen to is a caller bug,
+        // not something that should reach an elevated process.
+        var ex = await Assert.ThrowsAsync<ArgumentException>(
+            () => ApplianceProvisioningService.ProvisionAsync(
+                "C:\\r.tar", "C:\\bundle", enableLanAccess: true, lanAddress: null));
+        Assert.Equal("lanAddress", ex.ParamName);
+    }
+
+    // Deliberately no "ProvisionAsync succeeds validation when LAN
+    // access is off" test: unlike the validation-throws cases above,
+    // a call that passes validation falls straight through into
+    // ElevatedScriptRunner.RunAsync -- which creates a real directory
+    // under %ProgramData% and launches a real elevated process via
+    // Verb="runas", triggering an actual UAC prompt on whatever
+    // machine runs this test suite. The "local-only, no LAN address
+    // needed" case is covered instead at the ViewModel layer
+    // (SetupViewModelTests.CanProvision_is_false_until_both_paths_are_set...),
+    // which exercises the same gating logic without an elevated launch.
+
+    [Fact]
     public void ElevatedActionStep_serializes_with_the_property_names_the_PowerShell_trampoline_expects()
     {
         // Invoke-ElevatedAction.ps1 reads $step.ScriptPath / $step.Arguments

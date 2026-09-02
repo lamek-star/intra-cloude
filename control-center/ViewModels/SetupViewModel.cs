@@ -1,3 +1,7 @@
+using System.Collections.ObjectModel;
+using System.Linq;
+using System.Net;
+using System.Net.Sockets;
 using System.Windows.Input;
 using IntraCloud.ControlCenter.Models;
 using IntraCloud.ControlCenter.Mvvm;
@@ -30,6 +34,8 @@ public sealed class SetupViewModel : ObservableObject
     private string _rootfsPath = string.Empty;
     private string _appBundlePath = string.Empty;
     private string _installPath = string.Empty;
+    private bool _enableLanAccess;
+    private string _lanAddress = string.Empty;
     private bool _deleteDataOnRemove;
     private string _backupDestination = string.Empty;
     private string _liveLog = string.Empty;
@@ -41,10 +47,36 @@ public sealed class SetupViewModel : ObservableObject
         _connection = connection;
         _settingsService = settingsService;
         _backupDestination = _settingsService.Load().BackupDestination ?? string.Empty;
+        DetectedLanAddresses = new ObservableCollection<string>(DetectCandidateLanAddresses());
+        if (DetectedLanAddresses.Count > 0)
+        {
+            _lanAddress = DetectedLanAddresses[0];
+        }
 
         ProvisionCommand = new AsyncRelayCommand(ProvisionAsync, () => !IsBusy && CanProvision);
         RemoveCommand = new AsyncRelayCommand(RemoveAsync, () => !IsBusy && CanRemove);
         RefreshStateCommand = new AsyncRelayCommand(RefreshStateAsync, () => !IsBusy);
+    }
+
+    // IPv4, non-loopback, from an interface that's actually up -- the
+    // same shape of address an operator would otherwise have to find
+    // via `ipconfig` by hand. A best-effort suggestion, not validated
+    // reachability (a VPN or virtual-adapter address could show up
+    // here too) -- the operator can always type a different one.
+    private static IEnumerable<string> DetectCandidateLanAddresses()
+    {
+        try
+        {
+            return Dns.GetHostAddresses(Dns.GetHostName())
+                .Where(address => address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(address))
+                .Select(address => address.ToString())
+                .Distinct()
+                .ToList();
+        }
+        catch (SocketException)
+        {
+            return Array.Empty<string>();
+        }
     }
 
     public DistroState CurrentState { get => _currentState; private set { SetProperty(ref _currentState, value); RaiseCanExecuteChanged(); } }
@@ -53,6 +85,16 @@ public sealed class SetupViewModel : ObservableObject
     public string RootfsPath { get => _rootfsPath; set { SetProperty(ref _rootfsPath, value); RaiseCanExecuteChanged(); } }
     public string AppBundlePath { get => _appBundlePath; set { SetProperty(ref _appBundlePath, value); RaiseCanExecuteChanged(); } }
     public string InstallPath { get => _installPath; set => SetProperty(ref _installPath, value); }
+
+    // Off by default (CLAUDE.md rule 7 -- local-first, external
+    // exposure off by default, extended here to LAN exposure): opting
+    // in changes machine-wide WSL2 networking mode and adds a firewall
+    // rule (Enable-IntraCloudLanAccess.ps1) -- SetupView's code-behind
+    // shows a real confirmation naming that consequence the moment
+    // this is checked, not just at Provision time.
+    public bool EnableLanAccess { get => _enableLanAccess; set { SetProperty(ref _enableLanAccess, value); RaiseCanExecuteChanged(); } }
+    public string LanAddress { get => _lanAddress; set { SetProperty(ref _lanAddress, value); RaiseCanExecuteChanged(); } }
+    public ObservableCollection<string> DetectedLanAddresses { get; }
 
     public bool DeleteDataOnRemove { get => _deleteDataOnRemove; set { SetProperty(ref _deleteDataOnRemove, value); RaiseCanExecuteChanged(); } }
     public string BackupDestination { get => _backupDestination; set { SetProperty(ref _backupDestination, value); RaiseCanExecuteChanged(); } }
@@ -68,7 +110,8 @@ public sealed class SetupViewModel : ObservableObject
     // NotInstalled, rather than silently wiring -Force in behind a
     // button that doesn't say so.
     public bool CanProvision => CurrentState == DistroState.NotInstalled
-        && !string.IsNullOrWhiteSpace(RootfsPath) && !string.IsNullOrWhiteSpace(AppBundlePath);
+        && !string.IsNullOrWhiteSpace(RootfsPath) && !string.IsNullOrWhiteSpace(AppBundlePath)
+        && (!EnableLanAccess || !string.IsNullOrWhiteSpace(LanAddress));
 
     public bool CanRemove => CurrentState != DistroState.NotInstalled
         && (DeleteDataOnRemove || !string.IsNullOrWhiteSpace(BackupDestination));
@@ -113,6 +156,7 @@ public sealed class SetupViewModel : ObservableObject
             var result = await ApplianceProvisioningService.ProvisionAsync(
                 RootfsPath, AppBundlePath,
                 string.IsNullOrWhiteSpace(InstallPath) ? null : InstallPath,
+                EnableLanAccess, EnableLanAccess ? LanAddress : null,
                 progress: progress).ConfigureAwait(true);
 
             StatusMessage = DescribeResult(result, "Provisioning");

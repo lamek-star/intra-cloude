@@ -23,10 +23,24 @@ public static class ApplianceProvisioningService
         string rootfsPath,
         string appBundlePath,
         string? installPath = null,
+        // LAN access is opt-in and off by default (CLAUDE.md rule 7 --
+        // local-first, external exposure off by default -- extended
+        // here to LAN exposure too): enabling it changes machine-wide
+        // WSL2 networking mode and adds a firewall rule, real
+        // system-state changes the operator must deliberately choose,
+        // not a side effect of supplying a LAN address alone.
+        bool enableLanAccess = false,
+        string? lanAddress = null,
         string? scriptsDirectory = null,
         IProgress<string>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        if (enableLanAccess && string.IsNullOrWhiteSpace(lanAddress))
+        {
+            throw new ArgumentException(
+                "A LAN address is required when enableLanAccess is true.", nameof(lanAddress));
+        }
+
         var scriptsDir = scriptsDirectory ?? Path.Combine(AppContext.BaseDirectory, "scripts");
 
         var importArguments = new List<string> { "-RootfsPath", rootfsPath };
@@ -36,13 +50,26 @@ public static class ApplianceProvisioningService
             importArguments.Add(installPath);
         }
 
-        var steps = new[]
+        var initializeArguments = new List<string> { "-AppBundlePath", appBundlePath };
+        if (enableLanAccess)
         {
-            new ElevatedActionStep(Path.Combine(scriptsDir, "Import-IntraCloudDistro.ps1"), importArguments),
-            new ElevatedActionStep(
-                Path.Combine(scriptsDir, "Initialize-IntraCloudDistro.ps1"),
-                new[] { "-AppBundlePath", appBundlePath }),
-        };
+            initializeArguments.Add("-LanAddress");
+            initializeArguments.Add(lanAddress!);
+        }
+
+        var steps = new List<ElevatedActionStep>();
+        if (enableLanAccess)
+        {
+            // Runs first, in the same elevated chain (one UAC prompt for
+            // the whole Provision action) -- Enable-IntraCloudLanAccess.ps1
+            // itself may trigger `wsl --shutdown`, which must happen
+            // before Import-IntraCloudDistro.ps1 imports the distro, not
+            // after (a shutdown right after import would be a pointless
+            // extra restart of the very thing just provisioned).
+            steps.Add(new ElevatedActionStep(Path.Combine(scriptsDir, "Enable-IntraCloudLanAccess.ps1"), Array.Empty<string>()));
+        }
+        steps.Add(new ElevatedActionStep(Path.Combine(scriptsDir, "Import-IntraCloudDistro.ps1"), importArguments));
+        steps.Add(new ElevatedActionStep(Path.Combine(scriptsDir, "Initialize-IntraCloudDistro.ps1"), initializeArguments));
 
         return ElevatedScriptRunner.RunAsync(steps, scriptsDirectory, progress, cancellationToken);
     }
