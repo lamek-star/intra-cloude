@@ -117,7 +117,19 @@ by listing the tar directly), but not yet actually `wsl --import`-ed
 into a running WSL2 distribution end-to-end — that remains Phase 20's
 qualification-matrix job. See `docs/architecture/ROADMAP.md` Phases
 16–21 for the full account, including a release-blocking
-orphaned-install-state defect found and fixed live. 300 backend tests
+orphaned-install-state defect found and fixed live. The same mandate
+also closed real safe-uninstall and local/LAN-operation gaps (a
+Setup & Removal Control Center UI where none existed, a backup-path bug
+in `Uninstall-IntraCloudDistro.ps1`, WSL2 mirrored-networking LAN
+access) and, most recently, a real *production* restore capability —
+the "Backup & Restore" tab could only trigger backups and display an
+isolated restore-*test* result, never actually restore a chosen backup
+into the live target; `system/backups.py::restore_backup` now does,
+for control-plane DB/tenant DB/object storage (configuration restore
+is deliberately left manual, not automated). See
+`docs/implementation/RELEASE_READINESS.md` for the full, current
+account of all of this — it is the authoritative, continuously-updated
+checkpoint for the v0.9 mandate, not this paragraph. 320 backend tests
 pass as of the last full run against the live Docker stack. The frontend has a real but partial Vitest suite
 (`npm test`) plus Playwright specs; neither runs in CI yet — see
 `docs/implementation/TEST_STATUS.md` for exactly what is and isn't

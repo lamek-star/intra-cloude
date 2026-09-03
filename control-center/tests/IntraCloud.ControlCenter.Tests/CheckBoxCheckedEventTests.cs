@@ -99,6 +99,7 @@ public sealed class CheckBoxCheckedEventTests
             int limit = 50, string? backupType = null, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<Models.BackupRecordInfo>>(Array.Empty<Models.BackupRecordInfo>());
         public Task<bool> TriggerBackupAsync(string backupType, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task<bool> RestoreBackupAsync(string recordId, bool stopStack, CancellationToken cancellationToken = default) => Task.FromResult(true);
         public Task<string> GetContainerLogsAsync(string service, int tailLines = 200, CancellationToken cancellationToken = default) =>
             Task.FromResult(string.Empty);
     }

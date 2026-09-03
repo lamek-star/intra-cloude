@@ -43,6 +43,8 @@ class Command(BaseCommand):
                     "completed_at": record.completed_at.isoformat() if record.completed_at else None,
                     "verified_restorable": record.verified_restorable,
                     "verified_at": record.verified_at.isoformat() if record.verified_at else None,
+                    "restored_at": record.restored_at.isoformat() if record.restored_at else None,
+                    "restore_error": record.restore_error,
                 }
                 for record in records
             ]

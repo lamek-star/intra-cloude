@@ -2,16 +2,38 @@
 
 ## Backend
 
-**307 tests pass**, actually re-run 2026-08-30 against the live Docker
-stack (`docker compose exec backend python -m pytest -q` with
-`DJANGO_SETTINGS_MODULE=config.settings.test` and the real control/
-tenant Postgres credentials). `ruff check .` and `mypy .` both clean.
+**320 tests pass**, actually re-run 2026-09-03 against the live Docker
+stack (`docker compose exec -e DJANGO_SETTINGS_MODULE=config.settings.test
+backend pytest -q` — the explicit env override matters: the persistent
+`backend` container's own `DJANGO_SETTINGS_MODULE=config.settings.prod`,
+set by `docker-compose.yml` for the running service, is inherited by
+`docker compose exec`/`run` and takes precedence over `pyproject.toml`'s
+`[tool.pytest.ini_options]` test setting, so an unqualified `pytest`
+invocation against the live containers silently runs under prod
+settings — `SECURE_SSL_REDIRECT` then 301s every APIClient test. Not a
+product bug: CI's `pytest` step (`.github/workflows/ci.yml`) runs
+directly on the runner with no such override in scope, so it was never
+affected; this is purely a local Docker-exec gotcha, noted here so the
+next session doesn't lose an hour to it the way this one did) and the
+real control/tenant Postgres credentials. `ruff check .` and `mypy .`
+both clean.
 
-Includes 12 new tests added in this session, all for real authorization
-gaps found by live-testing the app as a second, less-privileged user and
-then auditing the rest of the codebase for the same anti-pattern (an
-endpoint fetching a resource via a "member of the organization" check
-only, never the resource-specific capability):
+13 of the 320 are new this session (2026-09-03), for a real production
+restore capability the Windows/WSL2 Control Center's "Backup & Restore"
+tab was missing entirely (see `RELEASE_READINESS.md`'s "real production
+restore" entry and `docs/operations/BACKUP_RESTORE.md` Section 7a):
+`system/tests/test_backups.py::RestoreBackupTests` (5, including one
+that creates a real row, backs up control_db, mutates the live database,
+then proves `restore_backup` brings the target back to the backup-point
+state — not just that it doesn't error) and `::ObjectStorageRestoreTests`
+(3), plus `system/tests/test_restore_backup_command.py` (5) for the
+`restore_backup` management command's `--yes` gate and audit event.
+
+Includes 12 further tests added in an earlier 2026-09 session, all for
+real authorization gaps found by live-testing the app as a second,
+less-privileged user and then auditing the rest of the codebase for the
+same anti-pattern (an endpoint fetching a resource via a "member of the
+organization" check only, never the resource-specific capability):
 
 - `databases/tests/test_databases.py::SchemaReadVisibilityTests`,
   `analytics/tests/test_analytics.py::DashboardReadVisibilityTests` (7
@@ -35,23 +57,35 @@ suite) before being trusted. See `CLAUDE.md`'s running narrative and
 the corresponding commits for full detail on each.
 
 Supersedes every earlier count cited in this repo (246, 252, 253, 289,
-290, 293, 300) — those were each correct for their own point in
+290, 293, 300, 307) — those were each correct for their own point in
 history, not for the current tree. Re-run the command above before
 trusting this number stale beyond a few sessions.
 
 ## Windows installer / Control Center (Pester + dotnet test)
 
-Passing as of the Phase 21 installer-hardening pass per `ROADMAP.md`;
-also runs on every push/PR touching `control-center/**` or
-`installer/**` via `.github/workflows/windows-installer.yml`
-(`windows-2022` runner: Control Center unit tests, PSScriptAnalyzer,
-Pester, WiX MSI build, checksums). Not re-run manually as part of this
-session's work. Full elevated-session lifecycle testing (install,
-repair, upgrade with data preservation, uninstall, restore-to-new-
-hardware) and clean-VM qualification remain environment-blocked — no
-clean/disposable Windows VM was available in this session either — see
+Re-run for real 2026-09-03 on this machine (not just assumed passing
+from the last CI run): **33 xUnit tests pass** (`dotnet test
+control-center/tests/IntraCloud.ControlCenter.Tests` — 28 pre-existing +
+5 new for the restore feature's `CanRestoreSelected` gate and
+`RestoreBackupAsync` record-id validation) and **89 of 91 Pester tests
+pass** (`Invoke-Pester -Path installer/tests` — 87 passed, 2 failed; the
+2 failures are the same pre-existing, environmental
+`Test-ProxyPortAvailable` cases this repo has already documented
+elsewhere — this machine's own live dev stack occupying port 8443, not
+a real defect). `Invoke-ScriptAnalyzer` clean at Error/Warning severity
+on the new script. Also runs on every push/PR touching
+`control-center/**` or `installer/**` via
+`.github/workflows/windows-installer.yml` (`windows-2022` runner:
+Control Center unit tests, PSScriptAnalyzer, Pester, WiX MSI build,
+checksums) — that workflow run itself was not re-triggered this
+session (no push), only the local equivalent above. Full elevated-
+session lifecycle testing (install, repair, upgrade with data
+preservation, uninstall, restore-to-new-hardware) and clean-VM
+qualification remain environment-blocked — no clean/disposable Windows
+VM was available in this session either — see
 `docs/deployment/WINDOWS_QUALIFICATION_MATRIX.md`, still written but
-not executed.
+not executed; its §5 now also lists a real-restore-through-the-UI
+checklist item (`docs/operations/BACKUP_RESTORE.md` Section 7a).
 
 ## Frontend
 

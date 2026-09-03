@@ -35,6 +35,8 @@ public sealed class SetupViewModelTests : IDisposable
 
         public Task<bool> TriggerBackupAsync(string backupType, CancellationToken cancellationToken = default) => Task.FromResult(true);
 
+        public Task<bool> RestoreBackupAsync(string recordId, bool stopStack, CancellationToken cancellationToken = default) => Task.FromResult(true);
+
         public Task<string> GetContainerLogsAsync(string service, int tailLines = 200, CancellationToken cancellationToken = default) =>
             Task.FromResult(string.Empty);
     }

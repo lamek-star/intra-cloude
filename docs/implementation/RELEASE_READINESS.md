@@ -50,12 +50,16 @@ framing in this file where the two conflict.
 - **Branch:** `rebrand/intraforge`. No push, no merge, no force-push —
   all work is local commits, per the mandate's explicit prohibition on
   pushing without authorization to decide that's safe.
-- **Backend:** 307 tests pass against real PostgreSQL/MinIO/Celery
-  (`docker exec ... pytest -q`, re-run 2026-08-30). `ruff check .` and
-  `mypy .` both clean.
+- **Backend:** 320 tests pass against real PostgreSQL/MinIO/Celery
+  (`docker exec ... pytest -q`, re-run 2026-09-03 — see `TEST_STATUS.md`
+  for the `DJANGO_SETTINGS_MODULE` gotcha hit while re-running this).
+  `ruff check .` and `mypy .` both clean.
 - **Frontend:** 10 Vitest tests pass, 5 Playwright E2E specs pass live
-  against the real Docker Compose stack. `npx tsc --noEmit`, `npm run
-  lint`, `npm run build` all clean.
+  against the real Docker Compose stack (not re-run 2026-09-03; last
+  actually re-run 2026-08-30, see `TEST_STATUS.md`).
+- **Windows installer / Control Center:** 33 xUnit tests, 89/91 Pester
+  tests pass (2 pre-existing environmental failures), re-run 2026-09-03
+  — see `TEST_STATUS.md`.
 - **Docker stack:** live and healthy this session (`docker compose ps`
   — proxy, backend, worker, beat, frontend, both Postgres instances,
   MinIO, Valkey all healthy).
@@ -451,6 +455,101 @@ firewall rule / reverting `.wslconfig` on Uninstall (a real, if minor,
 hygiene gap — `Uninstall-IntraCloudDistro.ps1` doesn't touch either) —
 noted here rather than silently left for someone to discover.
 
+## Completed 2026-09-03: real production restore (backup and recovery,
+   mandate priority #4)
+
+Audited the Windows/WSL2 Control Center's "Backup & Restore" tab per
+this file's own prior "exact next action" note (does it actually
+restore, or only trigger backups?). **Confirmed a real capability gap,
+not a documentation gap**: the tab was literally titled "Backup &
+Restore," but `BackupViewModel.cs` had no restore command at all, the
+backend had `run_backup`/`verify_backup_restorable` but no way to
+restore into the *live* target (only a throwaway isolated one, for the
+weekly automated restore-*test*), and neither `installer/scripts/` nor
+any management command could perform one. Surfaced to the owner before
+building (same pattern as the Setup & Removal UI decision) — **"build
+real restore" chosen.**
+
+- **`system/backups.py::restore_backup`** (new) — dispatches per
+  backup type. Control-plane/tenant PostgreSQL: `pg_restore --clean
+  --if-exists` against the real database, after force-terminating every
+  other live session against it (`_terminate_other_connections`,
+  `pg_terminate_backend`) and closing this process's own ORM connection
+  first — a defense-in-depth backstop, not a substitute for stopping
+  the app tier. Object storage: every object checksum-verified against
+  its manifest and written to its *real* key (not verify's scratch
+  prefix), additive-only by design (an object created after the backup
+  is never deleted). Configuration: **deliberately refused, not
+  automated** — applying restored configuration means writing secrets
+  into the live deployment's environment, a materially riskier
+  operation an operator should review value-by-value rather than have
+  applied automatically; the function returns a clear refusal message
+  rather than silently doing nothing.
+- **`restore_backup` management command** (new) — `manage.py
+  restore_backup <record_id> --yes`, refuses without `--yes`, emits a
+  new `system.backup.restore` audit event (success or error) — backups
+  themselves still aren't audited (a pre-existing gap, out of scope
+  here), but a real restore now is.
+- **`installer/scripts/Invoke-IntraCloudRestore.ps1`** (new) —
+  `-RecordId`/`-AcknowledgeDataLoss`/`-StopStack`/`-Json`, mirrors
+  `Invoke-IntraCloudBackup.ps1`'s shape. `-StopStack` (recommended,
+  wired as the Control Center's default) stops backend/worker/beat,
+  restores via a one-off `docker compose run --rm` container against
+  the still-running Postgres/MinIO, then brings the stack back up
+  regardless of whether the restore itself succeeded (a failed restore
+  still needs the stack back up — surfaced as a separate `Write-Warning`,
+  never silently skipped or allowed to mask the restore's own result).
+- **Control Center**: `IIntraCloudConnection.RestoreBackupAsync`,
+  `BackupViewModel.CanRestoreSelected` (nothing selected / a failed
+  backup / a configuration backup all disable the button — matches the
+  backend's own refusal rather than promising something it won't do),
+  a "Restore Selected..." button + "Stop the stack during restore"
+  checkbox (default on) in `BackupView.xaml`, and a destructive-action
+  confirmation naming the exact backup and consequence in
+  `BackupView.xaml.cs` — same pattern `SetupView`'s Remove confirmation
+  already established, not a new convention.
+- **Tests, all real, all run this session**: `system/tests/
+  test_backups.py::RestoreBackupTests` (`TransactionTestCase`, not
+  `TestCase` — confirmed directly that `TestCase`'s enclosing
+  atomic/savepoint transaction does not tolerate this code path closing
+  and reopening the ORM connection mid-test) proves a real row survives
+  a control_db restore and a row created *after* the backup vanishes —
+  an actual point-in-time round trip against live Postgres, not just
+  "didn't error." `::ObjectStorageRestoreTests` proves an overwritten
+  object comes back and an object created after the backup is left
+  alone, against real MinIO. `test_restore_backup_command.py` covers
+  the `--yes` gate and the audit event. `BackupViewModelTests.cs` (5,
+  xUnit) and 6 new Pester tests in `BackupAndLogs.Tests.ps1` (mocked
+  WSL2 calls, same convention as the existing backup script tests)
+  cover the stop/run/up sequencing and the "still brings the stack back
+  up even when the restore itself fails" case specifically.
+- **Full regression, all re-run this session, not assumed stale-clean**:
+  320 backend tests pass (`pytest` — see `TEST_STATUS.md` for a real
+  local-Docker gotcha found while re-running this: the persistent
+  `backend` container's own `DJANGO_SETTINGS_MODULE=config.settings.prod`
+  is inherited by `docker compose exec` and silently overrides
+  `pyproject.toml`'s test setting unless explicitly re-overridden — not
+  a product bug, CI is unaffected, but cost real time to diagnose here).
+  `ruff check .` and `mypy .` (with `django-stubs`) both clean. 33
+  xUnit tests pass. 89 of 91 Pester tests pass (2 pre-existing
+  environmental `Test-ProxyPortAvailable` failures, unrelated).
+  `Invoke-ScriptAnalyzer` clean on the new script.
+- Docs updated in the same pass, not left to drift:
+  `docs/operations/BACKUP_RESTORE.md` (new Section 7a, Section 6's
+  preamble and steps 2–4 corrected, Section 9 open items updated),
+  `docs/deployment/WINDOWS_QUALIFICATION_MATRIX.md` §5 (a real-restore
+  checklist item, distinct from the existing verify-only one), and
+  `TEST_STATUS.md`.
+
+**Not done in this pass, honestly**: an actual end-to-end drill — a
+Windows/WSL2 operator clicking Restore in the Control Center against a
+real provisioned appliance (not just this session's Docker-Compose-on-
+Windows dev stack and the automated test suite) — still needs the same
+disposable-machine authorization as the qualification matrix (blocker 1
+below). `/readyz` is not automatically invoked after a restore
+completes; an operator must still check it by hand. Configuration
+restore remains permanently manual by design, not a gap to close later.
+
 ## What "fixed" means here, precisely
 
 Every fix above: (a) reproduced live against the running app first
@@ -498,11 +597,15 @@ where the finding was about cross-user access.
   secret unset). Genuine external blocker, already correctly documented
   as such in `windows-installer.yml` and `ROADMAP.md`.
 - **Live backup/restore verification** — `system/tests/test_backups.py`
-  exists and is part of the 307 passing tests (real `pg_dump`/restore
-  cycles against the live Postgres containers), but this session did
-  not additionally drive a manual, live backup → restore → verify cycle
-  outside the test suite, nor exercise object-storage/configuration
-  backup encryption end to end by hand.
+  is part of the 320 passing tests, and now includes real restore-into-
+  live-target coverage for control_db/tenant_db/object_storage (2026-
+  09-03, `RestoreBackupTests`/`ObjectStorageRestoreTests` — see
+  "Completed 2026-09-03" above), not just the isolated restore-*test*
+  path. What's still not exercised: a manual, live cycle through the
+  actual Windows/WSL2 Control Center UI against a real provisioned
+  appliance (needs blocker 1 below), and object-storage/configuration
+  backup *encryption* end to end by hand (the automated tests cover
+  encryption at the `system.backups` layer, not click-through).
 - **Hardware guide, migration guide, upgrade guide, third-party
   notices, SBOM instructions** — not authored or reviewed this session.
 - **A real GitHub Actions run of the new `e2e` and `security-scan` CI
@@ -517,7 +620,7 @@ where the finding was about cross-user access.
 
 Under the v0.9 mandate's stated priority order (offline install →
 safe install/uninstall/upgrade → local/LAN operation → backup/recovery
-→ security → reliability → internal ops docs): the first three items
+→ security → reliability → internal ops docs): the first four items
 are now substantially closed —
 
 - Offline install: ADR-0013, `Build-IntraCloudRootfs.ps1`. Open
@@ -535,17 +638,21 @@ are now substantially closed —
   second machine to prove actual cross-machine reachability with, and
   firewall-rule/`.wslconfig` cleanup on Uninstall isn't implemented.
 
-**Next highest-value item: "backup and recovery."** `system/backups.py`
-and `docs/operations/BACKUP_RESTORE.md` already exist from earlier
-phases (Phase 11/15) and are described as live-verified there — but
-that predates this session's audit standard. Worth specifically
-checking, the same way the uninstall backup-path bug was found: does
-the Windows/WSL2 path's Backup & Restore Control Center tab actually
-exercise a full backup → restore → verify cycle correctly end to end,
-or does it only trigger backups (per `BackupViewModel.cs`, it currently
-has no restore action at all — worth confirming that's an intentional
-scope boundary, not an oversight, and if intentional, that it's
-actually documented as such somewhere a real operator would find it).
+**Backup and recovery: substantially closed 2026-09-03** (see
+"Completed 2026-09-03: real production restore" above) — the audit this
+file called for confirmed a real gap (no restore capability existed at
+all, not just an undocumented boundary), and it's now built: real
+restore for control_db/tenant_db/object_storage, wired through the
+Control Center with a destructive-action confirmation, configuration
+restore deliberately left manual. Open remainder: an actual end-to-end
+drill against a real provisioned WSL2 appliance (needs blocker 1
+below), and `/readyz` isn't auto-invoked after a restore.
+
+**Next highest-value item, per the mandate's priority order: "security"
+and "reliability."** No specific audit has been run yet this session
+for either beyond what backup/recovery and the earlier authorization-
+gap passes already covered. Worth starting the same way those did: live
+review against the running stack, not just reading code.
 
 The original mandate's remaining CI/CD hardening (Playwright E2E, SBOM
 generation, `npm audit`, container image scanning) is also still done
@@ -559,8 +666,10 @@ remains queued behind the priority-ordered items above, not dropped.
    destructively on this machine) to execute
    `WINDOWS_QUALIFICATION_MATRIX.md` for real, including a real
    `wsl --import` of the new Docker-Engine-baked rootfs, a real MSI
-   upgrade-over-existing-install cycle, and a real Provision/Remove run
-   through the new Setup & Removal UI.
+   upgrade-over-existing-install cycle, a real Provision/Remove run
+   through the Setup & Removal UI, and (new 2026-09-03) a real Restore
+   run through the Backup & Restore tab against a provisioned appliance
+   with real data — §5's own checklist now includes this.
 2. A real code-signing certificate (`WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64`
    repo secret) if signed releases are wanted before shipping.
 3. A decision on whether/when to push `rebrand/intraforge` and open a

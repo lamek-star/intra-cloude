@@ -15,9 +15,10 @@ import tarfile
 from pathlib import Path
 from unittest.mock import patch
 
-from django.test import TestCase, override_settings
+from django.test import TestCase, TransactionTestCase, override_settings
 
 from exports import container as backup_container
+from organizations.models import Organization
 from storage.backends import get_client
 from system import backups
 from system.models import BackupRecord
@@ -100,6 +101,72 @@ class VerifyBackupRestorableTests(BackupTestBase):
         self.assertIn("did not complete successfully", verified.verification_error)
 
 
+class RestoreBackupTests(TransactionTestCase):
+    """Real restore into the *live* target a backup came from -- not the
+    throwaway isolated target VerifyBackupRestorableTests above proves
+    restorability against. TransactionTestCase, not TestCase: restoring
+    control_db/tenant_db closes and reopens this process's own ORM
+    connection to the target mid-restore (system/backups.py::
+    _restore_postgres_backup), which TestCase's enclosing atomic
+    transaction/savepoint machinery does not tolerate -- confirmed
+    directly (TestCase raised TransactionManagementError on teardown
+    the first time this was tried), not assumed."""
+
+    databases = {"default", "tenant"}
+
+    def test_control_db_backup_restores_the_live_target_to_the_backup_point(self):
+        from accounts.models import User
+
+        user = User.objects.create_user(email="restore-fixture@example.com", password="x")
+        kept = Organization.objects.create(
+            name="kept-before-backup", slug="kept-before-backup", created_by=user
+        )
+        record = backups.run_backup(BackupRecord.BackupType.CONTROL_DB)
+
+        # Mutate the live database after the backup was taken -- this is
+        # exactly the "accidental destructive operation" scenario
+        # BACKUP_RESTORE.md Section 8 describes restore as the recovery
+        # path for.
+        Organization.objects.create(name="created-after-backup", slug="created-after-backup", created_by=user)
+        kept_id = kept.id
+        kept.delete()
+
+        restored = backups.restore_backup(record)
+
+        self.assertEqual(restored.restore_error, "", restored.restore_error)
+        self.assertIsNotNone(restored.restored_at)
+        self.assertTrue(Organization.objects.filter(id=kept_id).exists())
+        self.assertFalse(Organization.objects.filter(slug="created-after-backup").exists())
+
+    def test_tenant_db_backup_restores_into_the_live_target(self):
+        record = backups.run_backup(BackupRecord.BackupType.TENANT_DB)
+        restored = backups.restore_backup(record)
+        self.assertEqual(restored.restore_error, "", restored.restore_error)
+        self.assertIsNotNone(restored.restored_at)
+
+    def test_restoring_a_backup_with_a_missing_file_fails_gracefully(self):
+        record = BackupRecord.objects.create(
+            backup_type=BackupRecord.BackupType.CONTROL_DB,
+            status=BackupRecord.Status.SUCCESS,
+            file_path="/backups/this-file-does-not-exist.dump",
+        )
+        restored = backups.restore_backup(record)
+        self.assertTrue(restored.restore_error)
+
+    def test_restoring_a_never_completed_backup_is_rejected_without_touching_postgres(self):
+        record = BackupRecord.objects.create(
+            backup_type=BackupRecord.BackupType.CONTROL_DB, status=BackupRecord.Status.FAILED
+        )
+        restored = backups.restore_backup(record)
+        self.assertIn("did not complete successfully", restored.restore_error)
+
+    def test_configuration_restore_is_refused_by_design_not_attempted(self):
+        record = backups.run_backup(BackupRecord.BackupType.CONFIGURATION)
+        restored = backups.restore_backup(record)
+        self.assertIn("manual operator procedure", restored.restore_error)
+        self.assertIsNotNone(restored.restored_at)
+
+
 class ObjectStorageBackupTests(BackupTestBase):
     """Phase 15: real MinIO objects, archived and restored for real —
     not a fixture-free proof like the Postgres tests above, since
@@ -163,6 +230,56 @@ class ObjectStorageBackupTests(BackupTestBase):
 
         verified = backups.verify_backup_restorable(record)
         self.assertFalse(verified.verified_restorable)
+
+
+class ObjectStorageRestoreTests(BackupTestBase):
+    """Real restore into the object's actual key, not the scratch prefix
+    verify_backup_restorable uses -- proves an operator can genuinely
+    recover an overwritten/corrupted object, and that restore never
+    touches an object the backup never captured."""
+
+    def setUp(self):
+        self.client_ = get_client()
+        self.key = f"restore-test/{self.id()}.txt"
+        self.content = b"the real content as of backup time\n" * 10
+        self.client_.put_stream(self.key, io.BytesIO(self.content), "text/plain")
+
+    def tearDown(self):
+        self.client_.delete(self.key)
+
+    def test_restore_brings_back_the_backed_up_content_after_the_object_is_overwritten(self):
+        record = backups.run_backup(BackupRecord.BackupType.OBJECT_STORAGE)
+        self.client_.put_stream(self.key, io.BytesIO(b"corrupted after the backup was taken"), "text/plain")
+
+        restored = backups.restore_backup(record)
+
+        self.assertEqual(restored.restore_error, "", restored.restore_error)
+        self.assertIsNotNone(restored.restored_at)
+        self.assertEqual(self.client_.get_stream(self.key).read(), self.content)
+
+    def test_restore_does_not_delete_an_object_created_after_the_backup(self):
+        record = backups.run_backup(BackupRecord.BackupType.OBJECT_STORAGE)
+        new_key = f"restore-test/{self.id()}-created-after-backup.txt"
+        self.client_.put_stream(new_key, io.BytesIO(b"created after backup"), "text/plain")
+        try:
+            backups.restore_backup(record)
+            self.assertEqual(self.client_.get_stream(new_key).read(), b"created after backup")
+        finally:
+            self.client_.delete(new_key)
+
+    def test_restoring_a_tampered_archive_fails_gracefully_without_partial_corruption(self):
+        record = backups.run_backup(BackupRecord.BackupType.OBJECT_STORAGE)
+        with tarfile.open(record.file_path, "r") as tar:
+            member = tar.getmember(self.key)
+            offset = member.offset_data + member.size // 2
+        with open(record.file_path, "r+b") as f:
+            f.seek(offset)
+            original = f.read(1)
+            f.seek(offset)
+            f.write(bytes([original[0] ^ 0xFF]))
+
+        restored = backups.restore_backup(record)
+        self.assertTrue(restored.restore_error)
 
 
 class ConfigurationBackupTests(BackupTestBase):
