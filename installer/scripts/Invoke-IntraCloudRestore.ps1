@@ -59,6 +59,49 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 . "$PSScriptRoot\WslDistro.Common.ps1"
+. "$PSScriptRoot\Test-IntraCloudHealth.ps1"
+
+function Wait-IntraCloudHealthyAfterRestore {
+    <#
+    .SYNOPSIS
+        Best-effort, non-fatal post-restore health check -- closes the
+        gap RELEASE_READINESS.md flagged: "/readyz is not automatically
+        invoked after a restore completes; an operator must still check
+        it by hand." Reuses Test-IntraCloudHealth.ps1's existing
+        `docker compose ps` check (every service's own Docker
+        healthcheck, backend's own /healthz among them) rather than
+        curling /readyz directly -- it already covers the whole stack,
+        not just the backend, and is the same check the Control Center
+        already surfaces elsewhere, so this doesn't introduce a second,
+        parallel notion of "healthy."
+
+        Never throws: a restore that succeeded is still a successful
+        restore even if the stack takes longer than this to come back
+        up, or never does -- the operator is warned, not lied to, but
+        the restore's own result is what this script reports.
+    #>
+    [CmdletBinding()]
+    param(
+        [int]$MaxAttempts = 6,
+        [int]$DelaySeconds = 5
+    )
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        $health = Test-IntraCloudHealth
+        if ($health.Healthy) {
+            Write-Verbose "Stack reported healthy after restore (attempt $attempt of $MaxAttempts)."
+            return $true
+        }
+        if ($attempt -lt $MaxAttempts) {
+            Start-Sleep -Seconds $DelaySeconds
+        }
+    }
+
+    Write-Warning ("Restore completed, but the stack did not report healthy within " +
+        "$($MaxAttempts * $DelaySeconds)s afterward (last detail: $($health.Detail)). " +
+        'Check `docker compose ps` / the Control Center health indicator by hand.')
+    return $false
+}
 
 function Invoke-IntraCloudRestore {
     [CmdletBinding()]
@@ -88,13 +131,14 @@ function Invoke-IntraCloudRestore {
         # rather than the persistent `backend` service this just stopped.
     }
 
+    $restoreSucceeded = $false
     try {
         $runPrefix = if ($StopStack) { 'docker compose run --rm -T backend' } else { 'docker compose exec -T backend' }
         $result = Invoke-IntraCloudDistroCommand -Command "cd /opt/intracloud && $runPrefix python manage.py restore_backup $RecordId --yes"
         if ($result.ExitCode -ne 0) {
             throw "Restore failed (exit $($result.ExitCode)): $($result.StdErr)"
         }
-        return $true
+        $restoreSucceeded = $true
     } finally {
         if ($StopStack) {
             $upResult = Invoke-IntraCloudDistroCommand -Command 'cd /opt/intracloud && docker compose up -d'
@@ -108,6 +152,11 @@ function Invoke-IntraCloudRestore {
             }
         }
     }
+
+    # Only reached on the success path -- a thrown restore failure above
+    # propagates past this point (after the finally block still runs).
+    Wait-IntraCloudHealthyAfterRestore | Out-Null
+    return $restoreSucceeded
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
