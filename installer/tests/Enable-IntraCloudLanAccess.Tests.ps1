@@ -119,3 +119,23 @@ Describe 'Enable-IntraCloudLanAccess' {
         { Enable-IntraCloudLanAccess -Port 8443 } | Should -Throw '*shutdown failed*'
     }
 }
+
+Describe 'Remove-IntraCloudFirewallRule' {
+    It 'removes the rule when one exists' {
+        Mock Get-NetFirewallRule { [PSCustomObject]@{ DisplayName = 'IntraForge LAN Access' } }
+        Mock Remove-NetFirewallRule {}
+
+        Remove-IntraCloudFirewallRule | Should -Be $true
+
+        Should -Invoke Remove-NetFirewallRule -Times 1
+    }
+
+    It 'is a no-op when no rule exists' {
+        Mock Get-NetFirewallRule { $null }
+        Mock Remove-NetFirewallRule {}
+
+        Remove-IntraCloudFirewallRule | Should -Be $false
+
+        Should -Invoke Remove-NetFirewallRule -Times 0
+    }
+}

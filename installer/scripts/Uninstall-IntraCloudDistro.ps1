@@ -37,6 +37,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 . "$PSScriptRoot\WslDistro.Common.ps1"
+. "$PSScriptRoot\Enable-IntraCloudLanAccess.ps1"
 
 function Backup-BeforeRemoval {
     [CmdletBinding()]
@@ -129,6 +130,17 @@ function Uninstall-IntraCloudDistro {
     $result = Invoke-Wsl -Arguments @('--unregister', $script:IntraCloudDistroName)
     if ($result.ExitCode -ne 0) {
         throw "wsl --unregister failed (exit $($result.ExitCode)): $($result.StdErr)"
+    }
+
+    # Best-effort, non-fatal: the distribution is already gone at this
+    # point, so a failure here should not make the overall uninstall
+    # look like it failed. Deliberately does not touch .wslconfig's
+    # machine-wide mirrored-networking setting -- see
+    # Remove-IntraCloudFirewallRule's own doc comment for why.
+    try {
+        Remove-IntraCloudFirewallRule | Out-Null
+    } catch {
+        Write-Warning "Could not remove the IntraForge LAN-access firewall rule (non-fatal; the distribution has already been removed): $_"
     }
 
     Write-Verbose 'Intra-Cloud distribution removed.'

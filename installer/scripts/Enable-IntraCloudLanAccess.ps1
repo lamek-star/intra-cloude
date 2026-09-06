@@ -195,6 +195,44 @@ function Set-IntraCloudFirewallRule {
     return $true
 }
 
+function Remove-IntraCloudFirewallRule {
+    <#
+    .SYNOPSIS
+        Removes the IntraForge-specific inbound firewall rule this
+        script creates, if present. Called from
+        Uninstall-IntraCloudDistro.ps1 -- a real, if minor, hygiene gap
+        RELEASE_READINESS.md flagged: uninstalling the appliance left
+        this rule behind indefinitely.
+
+    .DESCRIPTION
+        Deliberately does NOT revert %USERPROFILE%\.wslconfig's
+        networkingMode back to NAT, even though this script is what set
+        it to 'mirrored' in the first place. That setting is
+        machine-wide (Set-WslMirroredNetworking's own docs above), and
+        by the time of an uninstall this machine may have other WSL2
+        distributions that now depend on mirrored networking for
+        reasons entirely unrelated to IntraForge -- silently reverting
+        a machine-wide setting as a side effect of removing one
+        application is exactly the kind of change CLAUDE.md's "When
+        Uncertain" rule says not to make unilaterally. The firewall
+        rule, by contrast, is uniquely IntraForge's own
+        (DisplayName-scoped, created only by this script) and safe to
+        remove unconditionally.
+    #>
+    [CmdletBinding()]
+    param()
+
+    $existingRule = Get-NetFirewallRule -DisplayName $script:FirewallRuleDisplayName -ErrorAction SilentlyContinue
+    if (-not $existingRule) {
+        Write-Verbose "Firewall rule '$script:FirewallRuleDisplayName' does not exist; nothing to remove."
+        return $false
+    }
+
+    Remove-NetFirewallRule -DisplayName $script:FirewallRuleDisplayName
+    Write-Verbose "Removed firewall rule '$script:FirewallRuleDisplayName'."
+    return $true
+}
+
 function Enable-IntraCloudLanAccess {
     [CmdletBinding()]
     param(

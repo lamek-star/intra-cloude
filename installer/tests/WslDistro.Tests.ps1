@@ -388,9 +388,32 @@ Describe 'Uninstall-IntraCloudDistro.ps1' {
             New-WslResult
         }
         Mock Invoke-IntraCloudDistroCommand { New-WslResult }
+        Mock Get-NetFirewallRule { $null }
         Uninstall-IntraCloudDistro -DeleteData | Should -Be $true
         Should -Invoke Invoke-IntraCloudDistroCommand -Times 0
         Should -Invoke Invoke-Wsl -ParameterFilter { $Arguments -contains '--unregister' } -Times 1
+    }
+
+    It 'removes the IntraForge LAN-access firewall rule after a successful unregister, if one exists' {
+        Mock Invoke-Wsl {
+            if ($Arguments -contains '--list') { return New-WslResult -StdOut "IntraCloud`tRunning`t2" }
+            New-WslResult
+        }
+        Mock Invoke-IntraCloudDistroCommand { New-WslResult }
+        Mock Get-NetFirewallRule { [PSCustomObject]@{ DisplayName = 'IntraForge LAN Access' } }
+        Mock Remove-NetFirewallRule {}
+        Uninstall-IntraCloudDistro -DeleteData | Should -Be $true
+        Should -Invoke Remove-NetFirewallRule -Times 1
+    }
+
+    It 'still reports success if firewall-rule cleanup fails -- the distribution is already gone by then' {
+        Mock Invoke-Wsl {
+            if ($Arguments -contains '--list') { return New-WslResult -StdOut "IntraCloud`tRunning`t2" }
+            New-WslResult
+        }
+        Mock Invoke-IntraCloudDistroCommand { New-WslResult }
+        Mock Get-NetFirewallRule { throw 'firewall service unavailable' }
+        Uninstall-IntraCloudDistro -DeleteData | Should -Be $true
     }
 
     It 'aborts without unregistering when a pre-removal backup fails' {
@@ -423,6 +446,7 @@ Describe 'Uninstall-IntraCloudDistro.ps1' {
         }
         Mock New-Item {}
         Mock Copy-Item {}
+        Mock Get-NetFirewallRule { $null }
         Uninstall-IntraCloudDistro -BackupDestination (Join-Path $TestDrive 'backup-out') | Should -Be $true
         Should -Invoke Copy-Item -ParameterFilter {
             $Path -eq '\\wsl.localhost\IntraCloud\var\lib\docker\volumes\intracloud_pdc_backups\_data\*'
