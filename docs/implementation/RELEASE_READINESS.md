@@ -47,19 +47,24 @@ framing in this file where the two conflict.
 
 ## Current state
 
-- **Branch:** `rebrand/intraforge`. No push, no merge, no force-push —
-  all work is local commits, per the mandate's explicit prohibition on
-  pushing without authorization to decide that's safe.
+- **Branch:** `rebrand/intraforge`. Pushed to `origin` and a PR opened
+  into `master` 2026-09-06, under the owner's explicit authorization
+  that session (blocker 3 below) — still no merge, no force-push; the
+  merge decision remains the owner's own review, not something this
+  authorization extended to.
 - **Backend:** 320 tests pass against real PostgreSQL/MinIO/Celery
-  (`docker exec ... pytest -q`, re-run 2026-09-03 — see `TEST_STATUS.md`
-  for the `DJANGO_SETTINGS_MODULE` gotcha hit while re-running this).
-  `ruff check .` and `mypy .` both clean.
-- **Frontend:** 10 Vitest tests pass, 5 Playwright E2E specs pass live
-  against the real Docker Compose stack (not re-run 2026-09-03; last
-  actually re-run 2026-08-30, see `TEST_STATUS.md`).
-- **Windows installer / Control Center:** 33 xUnit tests, 89/91 Pester
-  tests pass (2 pre-existing environmental failures), re-run 2026-09-03
-  — see `TEST_STATUS.md`.
+  (`docker exec ... pytest -q`, re-run 2026-09-06 against a freshly
+  rebuilt image — see `TEST_STATUS.md`'s "local Docker gotcha" section).
+  `ruff check .` and `mypy .` both genuinely clean as of 2026-09-06 (a
+  real `mypy` gap was found and fixed this session — see "Completed
+  2026-09-06" below). `pip-audit`: no known vulnerabilities.
+- **Frontend:** 10 Vitest tests pass, lint/typecheck clean, re-run
+  2026-09-06. 5 Playwright E2E specs pass live against the real Docker
+  Compose stack (not re-run 2026-09-06; last actually re-run 2026-08-30,
+  see `TEST_STATUS.md`).
+- **Windows installer / Control Center:** 33 xUnit tests, 94/94 Pester
+  tests pass (89 + 5 new this session), re-run 2026-09-06 — see
+  `TEST_STATUS.md`.
 - **Docker stack:** live and healthy this session (`docker compose ps`
   — proxy, backend, worker, beat, frontend, both Postgres instances,
   MinIO, Valkey all healthy).
@@ -546,9 +551,120 @@ Windows/WSL2 operator clicking Restore in the Control Center against a
 real provisioned appliance (not just this session's Docker-Compose-on-
 Windows dev stack and the automated test suite) — still needs the same
 disposable-machine authorization as the qualification matrix (blocker 1
-below). `/readyz` is not automatically invoked after a restore
-completes; an operator must still check it by hand. Configuration
-restore remains permanently manual by design, not a gap to close later.
+below). Configuration restore remains permanently manual by design, not
+a gap to close later. (The "`/readyz` is not automatically invoked
+after a restore completes" gap noted here in the prior session is
+closed — see "Completed 2026-09-06" below.)
+
+## Completed 2026-09-06: re-verification, a real mypy gap, local/LAN
+   hygiene, post-restore health check, and internal-ops docs
+
+Asked to "finalize" the project. Interpreted, with the owner's explicit
+confirmation, as: harden what's genuinely closeable locally (the
+mandate's remaining "security"/"reliability"/"internal operational
+documentation" priorities), not attempt anything requiring the still-
+open blockers below. No push/merge happened until this section's work
+was done and re-verified — see the commit log for the exact sequence.
+
+**Re-verification, not assumed.** Docker Desktop was not running at
+the start of this session; started it, brought the full
+`docker-compose.yml` stack up, and re-ran everything possible without
+the still-open blockers:
+
+- **A real, previously-undetected `mypy` gap, found and fixed.** Ran
+  the full backend suite (320 pass), `ruff check .`, and `mypy .`
+  against a freshly rebuilt `pdc-backend:latest` image — deliberately
+  rebuilt, not reused, after discovering mid-session that the
+  previously-running container was stale relative to the current git
+  tree (see `TEST_STATUS.md`'s new "local Docker gotcha" section for
+  the full account, including how that staleness was actually caught:
+  a `ruff check .` failure on lines that, read directly from disk,
+  were already correctly wrapped). Against the exact pinned dev-tool
+  versions (not whatever latest happened to install), `mypy` found a
+  real `var-annotated` error on `authentication_classes = []` in
+  `accounts/views.py` and `system/views.py` (3 views) — fixed with an
+  explicit `list[type[BaseAuthentication]]` annotation matching DRF's
+  own `APIView` attribute. 320 tests still pass after the fix. This
+  means the "`mypy .` clean" claim carried in this file and
+  `TEST_STATUS.md` since an earlier session had never actually been
+  checked against these exact pinned versions before now.
+- **`ruff check .`, `mypy .`: clean** (with the fix above). **320
+  backend tests pass.** **10 frontend Vitest tests pass**, `npm run
+  lint`/`npx tsc --noEmit` clean. **33 xUnit tests pass** (unchanged —
+  no C# touched this session). **94 of 94 Pester tests pass** (89 + 5
+  new — see below; re-run twice, once with this machine's own dev
+  stack occupying port 8443 to confirm the 2 `Test-ProxyPortAvailable`
+  failures other sessions have already documented are exactly that
+  environmental case and not a real regression, and once with the
+  stack's proxy stopped to confirm all 94 genuinely pass when nothing
+  else holds that port).
+- **`pip-audit -r requirements/prod.txt`: no known vulnerabilities.**
+
+**Local/LAN-operation hygiene gap partially closed.** The prior
+session's own "Not done in this pass" note flagged: "cleaning up the
+firewall rule / reverting `.wslconfig` on Uninstall... `Uninstall-
+IntraCloudDistro.ps1` doesn't touch either." Closed the firewall-rule
+half: `Uninstall-IntraCloudDistro.ps1` now calls a new
+`Remove-IntraCloudFirewallRule` (in `Enable-IntraCloudLanAccess.ps1`)
+after a successful unregister, best-effort and non-fatal (the
+distribution is already gone by that point, so a firewall-cleanup
+failure shouldn't make the overall uninstall look like it failed).
+**Deliberately did not** revert `.wslconfig`'s machine-wide
+`networkingMode=mirrored` setting — per CLAUDE.md's "When Uncertain"
+rule, silently reverting a machine-wide setting (which may now be
+relied on by other WSL2 distributions entirely unrelated to
+IntraForge) as a side effect of removing one application is a real
+design decision, not a hygiene fix to make unilaterally. Documented in
+the function's own doc comment, not silently left ambiguous. 4 new
+Pester tests (2 in `Enable-IntraCloudLanAccess.Tests.ps1` for the
+removal function itself, 2 in `WslDistro.Tests.ps1` for the uninstall
+script actually calling it and tolerating its failure).
+
+**Backup and recovery: the remaining "`/readyz` not auto-invoked after
+a restore" gap closed.** `Invoke-IntraCloudRestore.ps1` now calls a new
+`Wait-IntraCloudHealthyAfterRestore` after a successful restore — reuses
+`Test-IntraCloudHealth.ps1`'s existing `docker compose ps`-based check
+(every service's own Docker healthcheck, backend's `/healthz` among
+them) rather than curling `/readyz` directly, since it already covers
+the whole stack and is the same notion of "healthy" the Control Center
+already surfaces elsewhere. Polls up to 6 times / 30s, non-fatal —
+warns rather than throws if the stack hasn't reported healthy by then,
+since a restore that succeeded is still a successful restore regardless
+of how long the stack takes to come back up. 1 new Pester test (mocks
+`Start-Sleep` so the retry-and-warn path is actually exercised without
+the suite spending 25 real seconds asleep).
+
+**Internal operational documentation — three of the four items this
+file's own "Not yet started" list had been carrying since the original
+mandate.** `docs/deployment/HARDWARE_GUIDE.md` (measured — `docker
+stats`/`docker system df -v` against the real running stack, not
+guessed — container memory/disk footprint, minimum/recommended tiers,
+what actually drives usage up), `docs/deployment/UPGRADE_GUIDE.md`
+(the Linux/Compose path is a real, executable procedure today; the
+Windows/WSL2 Control Center app upgrade via the MSI's `MajorUpgrade`
+is designed but unverified pending blocker 1; the WSL2 appliance's
+*application content* upgrade — as opposed to the Control Center app
+itself — is stated plainly as a genuinely open design problem, not
+glossed over, per ADR-0013's own "release-pinned, not live-patched"
+tradeoff), and `docs/legal/THIRD_PARTY_NOTICES.md` (see the
+license-compliance entry above). **Migration guide** deliberately not
+written — nothing to migrate from yet, v0.9 being the first release.
+
+**Full regression, all re-run this session**: 320 backend tests, `ruff`/
+`mypy` clean, 10 frontend Vitest tests, frontend lint/typecheck clean,
+33 xUnit tests, 94 Pester tests (twice, see above),
+`Invoke-ScriptAnalyzer` at Warning/Error severity showing only the same
+pre-existing, CI-non-blocking warnings already present before this
+session (no new Error-severity findings).
+
+**Not done in this pass, honestly**: no security-specific audit beyond
+the `pip-audit`/license review above (a broader "security" pass — e.g.
+a live penetration-test-style review — remains open, distinct from the
+authorization-gap audits earlier sessions already did); no "reliability"
+audit beyond the mypy/lint/test re-verification above (e.g. no chaos/
+failure-injection testing was performed). Both remain the mandate's
+next-highest-priority open items, per the "Exact next action" section
+below.
 
 ## What "fixed" means here, precisely
 
@@ -562,10 +678,20 @@ where the finding was about cross-user access.
 
 ## Not yet started / explicitly out of reach this session
 
-- **License-compliance review** — still not wired into CI. (SBOM
-  generation, `npm audit`, and container image scanning are done as of
-  the `ci: add SBOM generation and container image scanning` commit —
-  see "Completed this session" above.)
+- **License-compliance review** — a real manual review is done
+  2026-09-06 (`docs/legal/THIRD_PARTY_NOTICES.md`: backend/frontend
+  license inventory, `pip-audit` clean, the two non-permissive
+  licenses in the dependency tree — LGPL `psycopg`/`clamd` on the
+  backend, LGPL `sharp`'s native binary + CC-BY-4.0 `caniuse-lite` on
+  the frontend — reviewed and found compliant as unmodified/
+  dynamically-linked dependencies, plus a genuine open item: MinIO's
+  floating `:latest` tag means its exact license terms aren't
+  re-verified). **Still not wired into CI** as an automated gate (no
+  check fails a build if a new dependency introduces a GPL/AGPL
+  license) — that part of this item remains open. SBOM generation,
+  `npm audit`, and container image scanning are done as of the `ci:
+  add SBOM generation and container image scanning` commit — see
+  "Completed this session" above.
 - **Full offline installation path — closed 2026-09-02 (ADR-0013,
   `Build-IntraCloudRootfs.ps1`, see "Completed under the Internal Pilot
   v0.9 mandate" above).** Container images were already bundled (per
@@ -606,8 +732,17 @@ where the finding was about cross-user access.
   appliance (needs blocker 1 below), and object-storage/configuration
   backup *encryption* end to end by hand (the automated tests cover
   encryption at the `system.backups` layer, not click-through).
-- **Hardware guide, migration guide, upgrade guide, third-party
-  notices, SBOM instructions** — not authored or reviewed this session.
+- **Hardware guide, upgrade guide, third-party notices** — closed
+  2026-09-06, see "Completed 2026-09-06" below
+  (`docs/deployment/HARDWARE_GUIDE.md`, `docs/deployment/
+  UPGRADE_GUIDE.md`, `docs/legal/THIRD_PARTY_NOTICES.md`). **Migration
+  guide** deliberately not authored — v0.9 is this project's first
+  internal release, so there is nothing to migrate from yet; revisit
+  once a second version exists to migrate between. **SBOM
+  instructions** (as in: a written how-to for a human running the SBOM
+  process by hand) still not authored — the SBOM generation itself
+  already runs in CI (`ci: add SBOM generation and container image
+  scanning`, above), which is a different thing.
 - **A real GitHub Actions run of the new `e2e` and `security-scan` CI
   jobs** — both written and reasoned from verified pieces (see
   TEST_STATUS.md: bring-up sequence, health-check logic, and both
@@ -635,30 +770,43 @@ are now substantially closed —
   line-by-line against current behavior yet.
 - Local/LAN operation: `-LanAddress` threading + `Enable-IntraCloudLanAccess.ps1`
   + the Setup screen's network-access section. Open remainder: no
-  second machine to prove actual cross-machine reachability with, and
-  firewall-rule/`.wslconfig` cleanup on Uninstall isn't implemented.
+  second machine to prove actual cross-machine reachability with.
+  Firewall-rule cleanup on Uninstall is now implemented (2026-09-06,
+  `Remove-IntraCloudFirewallRule`); `.wslconfig`'s machine-wide
+  mirrored-networking setting is deliberately left untouched on
+  uninstall, not an oversight — see "Completed 2026-09-06" above for
+  why.
 
-**Backup and recovery: substantially closed 2026-09-03** (see
-"Completed 2026-09-03: real production restore" above) — the audit this
-file called for confirmed a real gap (no restore capability existed at
-all, not just an undocumented boundary), and it's now built: real
-restore for control_db/tenant_db/object_storage, wired through the
-Control Center with a destructive-action confirmation, configuration
-restore deliberately left manual. Open remainder: an actual end-to-end
-drill against a real provisioned WSL2 appliance (needs blocker 1
-below), and `/readyz` isn't auto-invoked after a restore.
+**Backup and recovery: substantially closed 2026-09-03, and further
+closed 2026-09-06** (see "Completed 2026-09-03: real production
+restore" and "Completed 2026-09-06" above) — the audit this file
+called for confirmed a real gap (no restore capability existed at all,
+not just an undocumented boundary), and it's now built: real restore
+for control_db/tenant_db/object_storage, wired through the Control
+Center with a destructive-action confirmation, configuration restore
+deliberately left manual, and a post-restore health check (reusing
+`Test-IntraCloudHealth.ps1`) now runs automatically rather than
+requiring the operator to check by hand. Open remainder: an actual
+end-to-end drill against a real provisioned WSL2 appliance (needs
+blocker 1 below).
 
 **Next highest-value item, per the mandate's priority order: "security"
-and "reliability."** No specific audit has been run yet this session
-for either beyond what backup/recovery and the earlier authorization-
-gap passes already covered. Worth starting the same way those did: live
-review against the running stack, not just reading code.
+and "reliability."** Still the top open item after 2026-09-06's pass —
+that session did `pip-audit` + a manual license-compliance review (see
+above) and a disciplined lint/type/test re-verification (which itself
+found and fixed a real `mypy` gap), but neither is the "live review
+against the running stack" style security/reliability audit the
+mandate's priority order calls for next. Worth starting the same way
+the authorization-gap audits did: exercise the app live as a real user
+looking for gaps, not just reading code or running existing tooling.
 
 The original mandate's remaining CI/CD hardening (Playwright E2E, SBOM
 generation, `npm audit`, container image scanning) is also still done
-and unchanged; the documentation-set pass (migration guide, upgrade
-guide, hardware guide, third-party notices, license-compliance review)
-remains queued behind the priority-ordered items above, not dropped.
+and unchanged. The documentation-set pass is now mostly done: hardware
+guide, upgrade guide, and third-party notices closed 2026-09-06 (see
+above); migration guide deliberately skipped (nothing to migrate from
+yet); license-compliance review done manually but still not wired into
+CI as an automated gate.
 
 ## Blockers requiring the user's input (not proceeding past these alone)
 
@@ -672,8 +820,12 @@ remains queued behind the priority-ordered items above, not dropped.
    with real data — §5's own checklist now includes this.
 2. A real code-signing certificate (`WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64`
    repo secret) if signed releases are wanted before shipping.
-3. A decision on whether/when to push `rebrand/intraforge` and open a
-   PR — no commits have been pushed.
+3. ~~A decision on whether/when to push `rebrand/intraforge` and open a
+   PR~~ — **resolved 2026-09-06**: the owner explicitly authorized
+   pushing this branch and opening a PR into `master` this session (via
+   the same "finalize the project" request this section documents).
+   The PR does not merge itself — that's still the owner's own review
+   decision, not something this authorization extends to.
 4. Should "genuinely offline" extend to enabling WSL2 itself (Windows
    optional features + kernel update) on a machine that doesn't already
    have it, or is "WSL2 already enabled, IT prepares the machine first"

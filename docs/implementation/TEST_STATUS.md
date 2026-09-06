@@ -1,9 +1,32 @@
 # Test Status
 
+## A local Docker gotcha that cost real time twice now (2026-09-06)
+
+**`pdc-backend:latest` is built once and reused across sessions — it is
+NOT a live bind mount of `apps/backend`.** A `docker compose exec
+backend ruff check .`/`mypy .`/`pytest` run against a container started
+from a *stale* image silently checks whatever source was on disk the
+last time someone ran `docker compose build backend`, not the current
+git working tree. This actually happened in this session: `ruff check
+.` against a stale container reported 3 line-length errors in test
+files that, on disk, were already correctly wrapped — the stale image
+predated a commit that had already fixed them. **Always `docker compose
+build backend && docker compose up -d --force-recreate backend worker
+beat` before trusting a lint/type/test run's result as being about the
+current tree**, the same way `TEST_STATUS.md` already warns about the
+`DJANGO_SETTINGS_MODULE` override below. Also: the runtime image only
+installs `requirements/prod.txt` (deliberately — no dev tooling in the
+shipped image), so `ruff`/`mypy`/`pytest`/`pip-audit`/etc. aren't
+present in a freshly built container at all; install
+`requirements/dev.txt` (or the specific pinned tool versions from it)
+into the running container first, e.g. `docker compose exec -u root
+backend pip install --no-cache-dir -r requirements/dev.txt`.
+
 ## Backend
 
-**320 tests pass**, actually re-run 2026-09-03 against the live Docker
-stack (`docker compose exec -e DJANGO_SETTINGS_MODULE=config.settings.test
+**320 tests pass**, re-run 2026-09-06 against a freshly rebuilt image
+(not a stale one — see the gotcha above) on the live Docker stack
+(`docker compose exec -e DJANGO_SETTINGS_MODULE=config.settings.test
 backend pytest -q` — the explicit env override matters: the persistent
 `backend` container's own `DJANGO_SETTINGS_MODULE=config.settings.prod`,
 set by `docker-compose.yml` for the running service, is inherited by
@@ -13,10 +36,24 @@ invocation against the live containers silently runs under prod
 settings — `SECURE_SSL_REDIRECT` then 301s every APIClient test. Not a
 product bug: CI's `pytest` step (`.github/workflows/ci.yml`) runs
 directly on the runner with no such override in scope, so it was never
-affected; this is purely a local Docker-exec gotcha, noted here so the
-next session doesn't lose an hour to it the way this one did) and the
-real control/tenant Postgres credentials. `ruff check .` and `mypy .`
-both clean.
+affected; this is purely a local Docker-exec gotcha) and the real
+control/tenant Postgres credentials. `ruff check .` clean; `mypy .`
+found (and this session fixed) a real, previously-undetected issue —
+see below.
+
+**A real mypy gap, found and fixed 2026-09-06**: `accounts/views.py`
+and `system/views.py` (3 views) each declared `authentication_classes =
+[]` with no type annotation. Against the exact pinned tool versions
+(`mypy==1.20.2`, `django-stubs==5.2.9`, matching `requirements/dev.txt`
+precisely — an unpinned/latest `mypy` install briefly used earlier in
+this same session did *not* surface this, so version-fidelity mattered
+here), this is a real `var-annotated` error, not a false positive: mypy
+cannot infer an element type for an empty list literal. Fixed by
+annotating both as `list[type[BaseAuthentication]] = []`, matching
+`rest_framework.views.APIView`'s own attribute. This means the
+"`mypy .` clean" claim in prior sessions' notes was never actually
+checked against these exact pinned versions before — now it is, and
+now it's true. All 320 tests still pass after the fix.
 
 13 of the 320 are new this session (2026-09-03), for a real production
 restore capability the Windows/WSL2 Control Center's "Backup & Restore"
@@ -63,17 +100,31 @@ trusting this number stale beyond a few sessions.
 
 ## Windows installer / Control Center (Pester + dotnet test)
 
-Re-run for real 2026-09-03 on this machine (not just assumed passing
-from the last CI run): **33 xUnit tests pass** (`dotnet test
-control-center/tests/IntraCloud.ControlCenter.Tests` — 28 pre-existing +
-5 new for the restore feature's `CanRestoreSelected` gate and
-`RestoreBackupAsync` record-id validation) and **89 of 91 Pester tests
-pass** (`Invoke-Pester -Path installer/tests` — 87 passed, 2 failed; the
-2 failures are the same pre-existing, environmental
-`Test-ProxyPortAvailable` cases this repo has already documented
-elsewhere — this machine's own live dev stack occupying port 8443, not
-a real defect). `Invoke-ScriptAnalyzer` clean at Error/Warning severity
-on the new script. Also runs on every push/PR touching
+Re-run for real 2026-09-06 on this machine (not just assumed passing
+from the last session): **33 xUnit tests pass** (`dotnet test
+control-center/tests/IntraCloud.ControlCenter.Tests`, unchanged this
+session — no C# code was touched) and **92 of 94 Pester tests pass**
+(`Invoke-Pester -Path installer/tests` — 2 failed; the 2 failures are
+the same pre-existing, environmental `Test-ProxyPortAvailable` cases
+this repo has already documented elsewhere — this machine's own live
+dev stack occupying port 8443, not a real defect. Confirmed directly
+this session: re-running with the dev stack stopped, all 94 pass). 5
+new tests this session (89 -> 94): 2 for
+`Remove-IntraCloudFirewallRule` (Enable-IntraCloudLanAccess.Tests.ps1),
+2 for `Uninstall-IntraCloudDistro.ps1` actually calling it on a
+successful unregister (WslDistro.Tests.ps1), and 1 for
+`Invoke-IntraCloudRestore.ps1`'s new post-restore health check
+(BackupAndLogs.Tests.ps1) — see "Completed 2026-09-06" in
+`RELEASE_READINESS.md` for both. `Invoke-ScriptAnalyzer` at
+Warning/Error severity: same pre-existing, non-blocking
+`PSUseShouldProcessForStateChangingFunctions`/`PSReviewUnusedParameter`
+warnings as before (CI's own gate only fails on Error severity, per
+`.github/workflows/windows-installer.yml`), no new Error-severity
+findings from this session's changes; the new
+`Remove-IntraCloudFirewallRule` function adds one more instance of the
+same already-accepted `PSUseShouldProcessForStateChangingFunctions`
+pattern its two siblings in the same file already carry, not a new
+category of issue. Also runs on every push/PR touching
 `control-center/**` or `installer/**` via
 `.github/workflows/windows-installer.yml` (`windows-2022` runner:
 Control Center unit tests, PSScriptAnalyzer, Pester, WiX MSI build,
@@ -88,6 +139,10 @@ not executed; its §5 now also lists a real-restore-through-the-UI
 checklist item (`docs/operations/BACKUP_RESTORE.md` Section 7a).
 
 ## Frontend
+
+Re-confirmed 2026-09-06 (`npm test -- --run`, `npm run lint`, `npx tsc
+--noEmit`, all re-run this session, not assumed stale-clean): unchanged
+from below, still 10/10 Vitest passing and lint/typecheck clean.
 
 - `npm test` (Vitest + React Testing Library + jsdom): **10 tests, all
   passing** (5 original `src/components/ui.tsx` contract tests, plus 5
