@@ -279,3 +279,225 @@ class ImportAuditTests(ImportTestBase):
         event = AuditEvent.objects.get(action="dataset.import.start", result=AuditEvent.Result.DENIED)
         self.assertEqual(event.actor_id, member.id)
         self.assertEqual(event.resource_id, str(self.table_id))
+
+
+class ImportReadVisibilityTests(ImportTestBase):
+    """An active organization member with no role/grant covering
+    `database.read` must not be able to list/view import jobs or their
+    per-row errors — matching the same class of gap already closed for
+    databases/analytics/storage/environments/exports/applications
+    (THREAT_MODEL.md Section 4a). ImportJobListCreateView.get/
+    ImportJobDetailView.get/ImportJobErrorListView.get previously checked
+    only organization membership via get_member_table/
+    get_member_import_job, exposing job status and — via
+    ImportJobErrorSerializer's `raw_row` field — the literal rejected CSV
+    row content (real tenant data, not just metadata) to any member
+    regardless of role or Sharing settings."""
+
+    def setUp(self):
+        super().setUp()
+        created = self.client.post(
+            reverse("import-job-list-create", args=[self.table_id]),
+            {
+                "file_id": self.file_id,
+                "encoding": "utf-8",
+                "delimiter": ",",
+                "column_mapping": self.column_mapping,
+            },
+            format="json",
+        )
+        self.job_id = created.data["id"]
+
+        self.outsider = User.objects.create_user(email="import-outsider@example.com", password="x")
+        Membership.objects.create(
+            user=self.outsider, organization_id=self.org_id, status=Membership.Status.ACTIVE
+        )
+        self.client.force_login(self.outsider)
+
+    def test_member_without_database_read_cannot_list_import_jobs(self):
+        resp = self.client.get(reverse("import-job-list-create", args=[self.table_id]))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_member_without_database_read_cannot_view_job_detail(self):
+        resp = self.client.get(reverse("import-job-detail", args=[self.job_id]))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_member_without_database_read_cannot_view_job_errors(self):
+        """The most sensitive of the three: raw_row exposes actual
+        rejected data values, not just status metadata."""
+        resp = self.client.get(reverse("import-job-error-list", args=[self.job_id]))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_database_read_permission_restores_access(self):
+        from organizations.models import Organization
+        from permissions.services import assign_role
+
+        assign_role(
+            user=self.outsider,
+            role_slug="viewer",
+            organization=Organization.objects.get(id=self.org_id),
+        )
+
+        listed = self.client.get(reverse("import-job-list-create", args=[self.table_id]))
+        self.assertEqual(listed.status_code, status.HTTP_200_OK)
+
+        detail = self.client.get(reverse("import-job-detail", args=[self.job_id]))
+        self.assertEqual(detail.status_code, status.HTTP_200_OK)
+
+        errors = self.client.get(reverse("import-job-error-list", args=[self.job_id]))
+        self.assertEqual(errors.status_code, status.HTTP_200_OK)
+
+
+class ImportEnvironmentScopeTests(APITestCase):
+    """The Phase 22 invariant ('an ApplicationCredential scoped to one
+    Environment can never reach a resource bound to a different one') was
+    enforced in databases'/storage's row/file views but never wired into
+    the imports app at all — a Development-scoped credential could import
+    a CSV from a Production-bound bucket into a Production-bound table
+    (or vice versa) with a real database.read/write + storage.read
+    ResourceGrant on both sides, since nothing in imports/views.py ever
+    called check_environment_scope. Mirrors environments/tests/
+    test_environments.py's EnvironmentCredentialAndIsolationTests setup."""
+
+    databases = {"default", "tenant"}
+
+    def setUp(self):
+        SeedPermissionsCommand().handle()
+        self.admin = User.objects.create_user(email="import-env-admin@example.com", password="x")
+        self.client.force_login(self.admin)
+
+        org = self.client.post(reverse("organization-list-create"), {"name": "Acme"})
+        self.org_id = org.data["id"]
+        ws = self.client.post(reverse("workspace-list-create", args=[self.org_id]), {"name": "WS"})
+        proj = self.client.post(reverse("project-list-create", args=[ws.data["id"]]), {"name": "Proj"})
+        self.project_id = proj.data["id"]
+
+        app = self.client.post(reverse("application-list-create", args=[self.org_id]), {"name": "etl-bot"})
+        self.application_id = app.data["id"]
+
+        dev_env = self.client.post(
+            reverse("environment-list-create", args=[self.application_id]),
+            {"name": "Development", "environment_type": "development"},
+            format="json",
+        ).data
+        prod_env = self.client.post(
+            reverse("environment-list-create", args=[self.application_id]),
+            {"name": "Production", "environment_type": "production"},
+            format="json",
+        ).data
+
+        self.dev_db_id = self._create_tenant_database("dev-db")
+        self.prod_db_id = self._create_tenant_database("prod-db")
+        self.client.patch(
+            reverse("environment-database-binding", args=[dev_env["id"]]),
+            {"tenant_database_id": self.dev_db_id},
+            format="json",
+        )
+        self.client.patch(
+            reverse("environment-database-binding", args=[prod_env["id"]]),
+            {"tenant_database_id": self.prod_db_id},
+            format="json",
+        )
+
+        self.dev_bucket_id = self._create_bucket("dev-files")
+        self.prod_bucket_id = self._create_bucket("prod-files")
+        self.client.patch(
+            reverse("environment-storage-binding", args=[dev_env["id"]]),
+            {"bucket_id": self.dev_bucket_id},
+            format="json",
+        )
+        self.client.patch(
+            reverse("environment-storage-binding", args=[prod_env["id"]]),
+            {"bucket_id": self.prod_bucket_id},
+            format="json",
+        )
+
+        dev_cred = self.client.post(
+            reverse("environment-credential-list-create", args=[dev_env["id"]])
+        )
+        self.dev_token = dev_cred.data["secret"]
+
+        table = self.client.post(reverse("table-list-create", args=[self.prod_db_id]), {"name": "people"})
+        self.prod_table_id = table.data["id"]
+        self.client.post(
+            reverse("column-create", args=[self.prod_table_id]),
+            {"name": "name", "data_type": "text"},
+            format="json",
+        )
+
+        upload = self.client.post(
+            reverse("file-list-create", args=[self.prod_bucket_id]),
+            {"file": SimpleUploadedFile("people.csv", b"name\nAlice\n", content_type="text/csv")},
+            format="multipart",
+        )
+        self.prod_file_id = upload.data["id"]
+
+        # A real, broad ResourceGrant on the *Production* database/bucket
+        # for the Development credential's identity — proves the
+        # environment-scope check itself is what blocks access below, not
+        # merely an absent grant a misconfiguration could just as easily
+        # supply by mistake (same discipline as environments' own
+        # isolation test).
+        from applications.models import Application
+        from permissions.services import grant_resource_permission
+
+        identity_user = Application.objects.get(id=self.application_id).service_account.identity_user
+        for perm in ("database.read", "database.write"):
+            grant_resource_permission(
+                user=identity_user,
+                permission_code=perm,
+                organization_id=self.org_id,
+                resource_type="databases.tenant_database",
+                resource_id=self.prod_db_id,
+                granted_by=self.admin,
+            )
+        grant_resource_permission(
+            user=identity_user,
+            permission_code="storage.read",
+            organization_id=self.org_id,
+            resource_type="storage.bucket",
+            resource_id=self.prod_bucket_id,
+            granted_by=self.admin,
+        )
+        self.client.logout()
+
+    def _create_tenant_database(self, name):
+        resp = self.client.post(
+            reverse("tenant-database-list-create", args=[self.project_id]), {"name": name}
+        )
+        return resp.data["id"]
+
+    def _create_bucket(self, name):
+        resp = self.client.post(reverse("bucket-list-create", args=[self.project_id]), {"name": name})
+        return resp.data["id"]
+
+    def _auth_headers(self, token):
+        return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
+
+    def test_development_credential_cannot_preview_a_production_bucket_file(self):
+        resp = self.client.get(
+            reverse("import-preview", args=[self.prod_file_id]), **self._auth_headers(self.dev_token)
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_development_credential_cannot_list_import_jobs_on_a_production_table(self):
+        resp = self.client.get(
+            reverse("import-job-list-create", args=[self.prod_table_id]), **self._auth_headers(self.dev_token)
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_development_credential_cannot_import_into_a_production_table(self):
+        """The write path: despite holding real database.write on the
+        production TenantDatabase and storage.read on the production
+        Bucket (see setUp), the environment-scope check must still block
+        this — otherwise a Development integration could bulk-write into
+        Production data through the CSV import path alone."""
+        mapping = [{"csv_column": "name", "target_column": "name", "target_type": "text"}]
+        resp = self.client.post(
+            reverse("import-job-list-create", args=[self.prod_table_id]),
+            {"file_id": self.prod_file_id, "encoding": "utf-8", "delimiter": ",", "column_mapping": mapping},
+            format="json",
+            **self._auth_headers(self.dev_token),
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(ImportJob.objects.filter(table_id=self.prod_table_id).count(), 0)
