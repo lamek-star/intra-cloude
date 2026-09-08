@@ -24,6 +24,18 @@ backend pip install --no-cache-dir -r requirements/dev.txt`.
 
 ## Backend
 
+**335 tests pass**, re-run 2026-09-08 against a freshly rebuilt image
+(`docker compose exec -e DJANGO_SETTINGS_MODULE=config.settings.test
+backend python manage.py test --noinput`) — unchanged count from
+2026-09-07 (the 2026-09-08 exports/system Celery crash-recovery audit
+below added no new unit tests, for the same reason the 2026-09-07
+`acks_late` fix didn't: Celery runs eager/synchronous under
+`CELERY_TASK_ALWAYS_EAGER` in the test suite, so broker-redelivery timing
+is untestable that way by construction — its verification is a live
+SIGKILL experiment against the real worker container instead, documented
+in `THREAT_MODEL.md` Section 4c). `ruff check .` and `mypy .` both clean
+against the same rebuilt image.
+
 **335 tests pass**, re-run 2026-09-07 against a freshly rebuilt image
 (`docker compose exec -e DJANGO_SETTINGS_MODULE=config.settings.test
 backend python manage.py test --noinput`). 15 new this session, for the

@@ -53,17 +53,17 @@ framing in this file where the two conflict.
   merge decision remains the owner's own review, not something this
   authorization extended to.
 - **Backend:** 335 tests pass against real PostgreSQL/MinIO/Celery
-  (`docker exec ... manage.py test`, re-run 2026-09-07 against a freshly
+  (`docker exec ... manage.py test`, re-run 2026-09-08 against a freshly
   rebuilt image — see `TEST_STATUS.md`'s "local Docker gotcha" section).
-  `ruff check .` and `mypy .` both genuinely clean as of 2026-09-07.
-  `pip-audit`: no known vulnerabilities.
+  `ruff check .` and `mypy .` both genuinely clean as of 2026-09-08.
+  `pip-audit`: no known vulnerabilities (last run 2026-09-07).
 - **Frontend:** 10 Vitest tests pass, lint/typecheck clean, re-run
-  2026-09-06 (not touched 2026-09-07 — this session's findings were all
-  backend). 5 Playwright E2E specs pass live against the real Docker
-  Compose stack (not re-run 2026-09-06/07; last actually re-run
+  2026-09-06 (not touched 2026-09-07/08 — those sessions' findings were
+  all backend). 5 Playwright E2E specs pass live against the real Docker
+  Compose stack (not re-run 2026-09-06/07/08; last actually re-run
   2026-08-30, see `TEST_STATUS.md`).
 - **Windows installer / Control Center:** 33 xUnit tests, 94/94 Pester
-  tests pass (89 + 5 new 2026-09-06), unchanged 2026-09-07 — see
+  tests pass (89 + 5 new 2026-09-06), unchanged 2026-09-07/08 — see
   `TEST_STATUS.md`.
 - **Docker stack:** live and healthy this session (`docker compose ps`
   — proxy, backend, worker, beat, frontend, both Postgres instances,
@@ -814,6 +814,91 @@ path exists in this codebase, deliberately), so cleaning them up would
 need the same explicit, reviewed deletion path a real operator would use
 rather than a raw ORM cascade; left in place rather than forced.
 
+## Completed 2026-09-08: exports/system Celery crash-recovery audit
+
+Picked up the exact open item the 2026-09-07 pass left ("`exports`/
+`system` Celery tasks weren't audited to the same depth as `imports`")
+rather than mechanically copying that session's `acks_late` fix onto
+`exports/tasks.py`'s two tasks. Read `run_export_task`/`run_restore_task`
+and the service functions underneath them first, then live-verified
+before changing anything, per this file's own "what 'fixed' means"
+standard below.
+
+**`run_export_task`: same gap, same fix, live-verified.** No `acks_late`
+meant a worker killed mid-export left the `ExportJob` stuck at `RUNNING`
+forever, identical to the pre-fix `imports` bug. Confirmed this is safe
+to fix the same way `run_import_task` was: `run_export` rebuilds the
+`.icp` from the organization's *current* data and writes it to a
+deterministic `object_key` (`{prefix}/{org_id}/{job_id}.icp`), so a
+redelivered retry-from-scratch just overwrites the same key — nothing is
+duplicated. Added `acks_late=True, reject_on_worker_lost=True` to
+`run_export_task`'s decorator (`exports/tasks.py`), reusing the
+`CELERY_BROKER_TRANSPORT_OPTIONS` visibility timeout the 2026-09-07 pass
+already added. **Live-verified against the real worker container**, same
+method as the `imports` experiment: created a real Organization with a
+~900MB random (incompressible, so the DEFLATE step actually takes real
+time) file in a bucket, dispatched `run_export_task`, `docker kill -s
+SIGKILL` on the worker container while the job was confirmed `status=
+running`, restarted the worker, and — at a temporarily shortened
+`CELERY_VISIBILITY_TIMEOUT_SECONDS=20` (reverted immediately after,
+matching the 2026-09-07 pass's own method) — watched the job go from
+stuck at `running` to redelivered and `COMPLETED` with a real 944,007,374
+-byte `.icp` and a real checksum, roughly 30 seconds after the restart.
+
+**`run_restore_task`: audited, deliberately NOT given the same fix — a
+real correctness hazard, not just caution for its own sake.**
+`restorer.restore_package` wraps the whole restore in
+`transaction.atomic` on both connections, so a worker killed *during*
+that block is the safe, common case (Postgres rolls back the uncommitted
+transaction on its own; a redelivered retry-from-scratch is clean).
+The gap is narrower but real: `run_restore`'s `finally` block
+unconditionally deletes the staged `.icp` from object storage, and the
+`RestoreJob` isn't saved as `COMPLETED` until *after* that `finally`
+runs — so a worker killed in the gap between "the restore's transaction
+committed" and "the job row was saved as `COMPLETED`" would, on a naive
+`acks_late` redelivery, either find the staged file already gone (raises
+cleanly, but wrongly marks an *actually-successful* restore as `FAILED`)
+or — if the delete/save order were simply flipped to dodge that — find
+it still present and silently create a **second** brand-new Organization
+for the same package, since `restore_package` has no way to detect "this
+package was already restored" and always creates a fresh one. Neither
+ordering makes redelivery actually safe; the real fix needs a durable
+idempotency marker (e.g. persisting the new `organization_id` inside the
+same atomic block that creates it, so a resumed run can detect
+"already restored" before calling `restore_package` again a second
+time) plus its own live SIGKILL experiment once that exists — not
+something to ship as a guess for a code path whose failure mode is
+silent data duplication, not just a stuck job. `exports/tasks.py`'s
+`run_restore_task` now carries this full reasoning as an inline comment
+in place of the older, vaguer "far less safe... in principle... could be
+re-attempted" note, and one-retry-only (for genuine in-process
+exceptions, not crash recovery) remains unchanged.
+
+**`system`'s Celery tasks** (`system/tasks.py`): both are simple,
+idempotent scheduled jobs (no equivalent in-flight-mutation risk was
+found reading them) — not the same category of gap as `imports`/
+`exports`, so no fix was needed there; noted here so this isn't silently
+skipped.
+
+**Regression, re-run after the change**: 335 backend tests still pass
+(unchanged count — this fix has no unit-test coverage of its own, same
+`CELERY_TASK_ALWAYS_EAGER`-in-tests limitation `imports`' `acks_late` fix
+already documented; its verification is the live experiment above),
+`ruff check .` and `mypy .` both clean. Left two disposable test
+organizations (`ExportCrashTest-*`/`ExportCrashTest2-*`, clearly named)
+in the local dev stack from the live experiments, for the same reason
+the 2026-09-07 pass left its `ReliabilityTest*` orgs in place.
+
+**"Reliability" priority item**: now fully closed for the Celery-
+crash-recovery angle specifically — every task in this codebase that
+mutates state has been read and either fixed (`imports`, `exports`
+export) or found already safe (`system`), and the one deliberately-not-
+fixed case (`exports` restore) has its exact remaining blocker written
+down rather than left implicit. No broader chaos/failure-injection
+testing (Postgres/MinIO/Valkey connection loss, as opposed to a Celery
+worker crash specifically) has been done — that part of "reliability"
+remains open.
+
 ## What "fixed" means here, precisely
 
 Every fix above: (a) reproduced live against the running app first
@@ -955,16 +1040,21 @@ crash mid-import silently and permanently losing the task). Full detail,
 evidence, and live-verification method for all nine:
 `docs/security/THREAT_MODEL.md` Sections 4a/4b.
 
-**Open remainder of "reliability" specifically**: `exports`/`system`
-Celery tasks weren't audited to the same depth as `imports` for the
-acks_late/worker-crash gap — `run_restore_task` has its own, different,
-already-documented narrower retry-safety reasoning that needs its own
-live-verification pass, not a mechanical copy of the `imports` fix (see
-THREAT_MODEL.md 4b's last paragraph). No broader chaos/failure-injection
+**Open remainder of "reliability" specifically, closed 2026-09-08**:
+`exports`/`system` Celery tasks are now audited to the same depth as
+`imports` (see "Completed 2026-09-08" above) — `run_export_task` got the
+identical `acks_late` fix, live-verified with a real worker SIGKILL;
+`run_restore_task` was deliberately left as-is after the audit surfaced
+a genuine correctness hazard a naive copy of the fix would have
+introduced (possible duplicate-Organization creation on redelivery,
+since `restore_package` always creates a new one and has no idempotency
+check), written down as its own tracked item rather than shipped as a
+guess; `system`'s tasks were read and found already safe. What's still
+open: `run_restore_task` itself needs a durable idempotency marker
+before it can safely get crash-recovery redelivery (see the 2026-09-08
+entry for the exact mechanism), and no broader chaos/failure-injection
 testing (Postgres/MinIO/Valkey connection loss, as opposed to a Celery
-worker crash specifically) has been done. Worth continuing the same
-way: exercise the app/infrastructure live, looking for gaps, not just
-reading code.
+worker crash specifically) has been done.
 
 The original mandate's remaining CI/CD hardening (Playwright E2E, SBOM
 generation, `npm audit`, container image scanning) is also still done

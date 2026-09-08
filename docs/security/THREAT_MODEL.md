@@ -343,6 +343,61 @@ documented retry-safety reasoning (see the comment in
 override without the same live-verification discipline applied here —
 tracked as an open item, not silently assumed safe.
 
+## 4c. exports/system Celery crash-recovery audit (2026-09-08)
+
+Closed the item Section 4b left open, by actually auditing rather than
+mechanically copying. Two tasks, two different outcomes:
+
+**`run_export_task` — same gap as `run_import_task`, same fix, same
+live-verification standard.** No `acks_late` meant a worker killed
+mid-export left the `ExportJob` stuck at `RUNNING` forever. Confirmed
+safe to fix identically: `run_export` rebuilds the `.icp` from the
+organization's *current* data and writes it to a deterministic
+`object_key`, so a redelivered retry-from-scratch overwrites the same
+key rather than duplicating anything. Added `acks_late=True,
+reject_on_worker_lost=True`. **Live-verified against the real worker
+container**: a real Organization with a ~900MB random (incompressible —
+so the DEFLATE step actually takes measurable time) file in a bucket,
+`run_export_task` dispatched, `docker kill -s SIGKILL` on the worker
+while the job was confirmed `status=running`, worker restarted, and — at
+a temporarily shortened `CELERY_VISIBILITY_TIMEOUT_SECONDS=20` (reverted
+immediately after) — the job went from stuck at `running` to redelivered
+and `COMPLETED` with a real 944,007,374-byte `.icp` and checksum.
+
+**`run_restore_task` — audited and deliberately left unfixed: a real
+correctness hazard, not just inherited caution.** `restorer.restore_package`
+is wrapped in `transaction.atomic` on both connections, so a worker
+killed *during* that block is actually the safe case — Postgres rolls
+back the uncommitted transaction on its own, and a redelivered
+retry-from-scratch is clean. The real gap is narrower: `run_restore`'s
+`finally` block unconditionally deletes the staged `.icp` from object
+storage, and the job isn't saved as `COMPLETED` until *after* that
+`finally` runs. A worker killed in the gap between "the restore's
+transaction committed" and "the job row was saved as `COMPLETED`" would,
+under a naive `acks_late` redelivery, either find the staged file
+already gone (raises cleanly, but wrongly marks an *actually-successful*
+restore as `FAILED`) or — if that delete/save ordering were flipped to
+close the gap — find it still present and silently create a **second**
+brand-new Organization for the same package, since `restore_package` has
+no way to detect "this package was already restored" and always creates
+a fresh one. Neither reordering makes redelivery safe; a real fix needs
+a durable idempotency marker (e.g. persisting the new `organization_id`
+inside the same atomic block that creates it, so a resumed run can
+detect "already restored" before calling `restore_package` again) plus
+its own live SIGKILL experiment once that exists. Not shipped as a
+guess — this is a silent-data-duplication risk, not merely a stuck job,
+which is a strictly worse failure mode to introduce. `exports/tasks.py`
+now documents this full reasoning inline in place of the older, vaguer
+note; one-retry-only (for genuine in-process exceptions) is unchanged.
+
+**`system/tasks.py`** — both scheduled tasks are simple and idempotent;
+reading them found no equivalent in-flight-mutation risk, so no fix was
+needed there.
+
+Full session narrative, test/lint re-verification, and the disposable
+test organizations left behind: `docs/implementation/RELEASE_READINESS.md`'s
+"Completed 2026-09-08" entry.
+
 ## 5. Non-Goals / Explicitly Out of Scope (for now)
 
 - Protecting against a fully compromised host OS (out of scope — assume

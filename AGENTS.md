@@ -183,6 +183,18 @@ redelivered it). Full evidence and live-verification method for all
 nine: `docs/security/THREAT_MODEL.md` Sections 4a (capability gaps) and
 4b (shared-infrastructure gaps, a new subsection this pass added).
 
+A follow-up pass (2026-09-08) picked up that session's one explicitly
+open item — `exports`/`system`'s Celery tasks hadn't been audited for
+the same worker-crash gap `imports` was fixed for — and closed it by
+auditing rather than copying: `run_export_task` got the identical
+`acks_late` fix, live-verified with a real worker SIGKILL producing a
+real completed export; `run_restore_task` was deliberately left as-is
+after the audit found that redelivering it naively risks silently
+creating a duplicate Organization (`restorer.restore_package` always
+creates a new one with no idempotency check), a worse failure mode than
+the stuck job it would fix — tracked as its own open item rather than
+guessed at. Full detail: `docs/security/THREAT_MODEL.md` Section 4c.
+
 No known, disclosed architectural gaps remain open from earlier phases:
 the tenant-Postgres-least-privilege gap tracked since Phase 2/3
 (THREAT_MODEL.md TB3) now has a real, live-verified mitigation
