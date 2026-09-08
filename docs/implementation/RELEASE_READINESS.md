@@ -977,12 +977,21 @@ where the finding was about cross-user access.
   already runs in CI (`ci: add SBOM generation and container image
   scanning`, above), which is a different thing.
 - **A real GitHub Actions run of the new `e2e` and `security-scan` CI
-  jobs** — both written and reasoned from verified pieces (see
-  TEST_STATUS.md: bring-up sequence, health-check logic, and both
-  Dockerfiles building cleanly all checked directly; the third-party
-  actions themselves — `anchore/sbom-action`, `aquasecurity/
-  trivy-action` — were not), but neither confirmed by an actual run,
-  since that requires a push.
+  jobs** — happened (PR #3, run 34029975571, 2026-09-06) and surfaced a
+  real bug this doc hadn't caught: `security-scan` failed outright,
+  `Unable to resolve action 'aquasecurity/trivy-action@0.28.0', unable
+  to find version '0.28.0'` — the workflow pinned the bare version
+  number instead of the tag (`v0.28.0`), which doesn't exist as a ref at
+  all. `e2e`, `Frontend`, and `Backend` all passed on that same run.
+  Fixed 2026-09-08 by re-pinning to `aquasecurity/trivy-action@v0.36.0`
+  (confirmed against the GitHub API as a real, non-prerelease tag
+  published 2026-04-22 — the currently-supported release at the time of
+  this fix, per this file's own version-selection rule, not just the
+  next tag after the broken one). **Still needs a fresh push to actually
+  confirm the fixed job runs green** — not done in this pass; the
+  correction is code-reviewed and the tag verified to exist, but "the
+  YAML is now plausible" and "a real Actions run passed" are different
+  claims, and only the first one is true as of this entry.
 
 ## Exact next action (for whoever/whatever resumes this)
 
@@ -1056,9 +1065,14 @@ entry for the exact mechanism), and no broader chaos/failure-injection
 testing (Postgres/MinIO/Valkey connection loss, as opposed to a Celery
 worker crash specifically) has been done.
 
-The original mandate's remaining CI/CD hardening (Playwright E2E, SBOM
-generation, `npm audit`, container image scanning) is also still done
-and unchanged. The documentation-set pass is now mostly done: hardware
+The original mandate's CI/CD hardening (Playwright E2E, SBOM generation,
+`npm audit`, container image scanning) was already implemented before
+this session (`ci: wire Playwright E2E into CI`/`ci: add SBOM generation
+and container image scanning`) — but a real CI run of it (PR #3,
+2026-09-06) had actually failed on the `security-scan` job the whole
+time, from a bad `trivy-action` version pin; see the "A real GitHub
+Actions run" bullet above for the fix and what's still unconfirmed. The
+documentation-set pass is now mostly done: hardware
 guide, upgrade guide, and third-party notices closed 2026-09-06 (see
 above); migration guide deliberately skipped (nothing to migrate from
 yet); license-compliance review done manually but still not wired into

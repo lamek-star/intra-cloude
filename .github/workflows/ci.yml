@@ -342,7 +342,7 @@ jobs:
       # integration needs its own review of category/dedup behavior
       # across two images sharing one workflow, not a first guess.
       - name: Scan backend image for known vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: intraforge-backend:ci
           format: table
@@ -350,7 +350,7 @@ jobs:
           exit-code: "0"
 
       - name: Scan frontend image for known vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: intraforge-frontend:ci
           format: table
