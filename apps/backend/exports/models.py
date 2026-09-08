@@ -68,10 +68,15 @@ class RestoreJob(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="restore_jobs_created"
     )
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
-    # The uploaded .icp package, staged in object storage until the
-    # restore either completes or fails (then it's deleted either way —
-    # it isn't a backup of itself).
+    # Retain input after failure for retry/review. Delete only after the
+    # catalog and completion marker have durably committed together.
     source_object_key = models.CharField(max_length=255)
+    # Immutable input and recovery namespace for retries. Migration leaves
+    # old rows at version 0: their partial side effects cannot be inferred.
+    recovery_version = models.PositiveSmallIntegerField(default=1)
+    source_sha256 = models.CharField(max_length=64, blank=True)
+    idempotency_key = models.UUIDField(null=True, blank=True)
+    request_fingerprint = models.CharField(max_length=64, blank=True)
     # Populated on completion: what was restored, what was skipped and
     # why (e.g. a membership whose user has no account on this
     # installation) — Section 17's "final restore report", never silent
@@ -83,6 +88,11 @@ class RestoreJob(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["created_by", "idempotency_key"], name="unique_restore_request_per_actor"
+            ),
+        ]
 
     def __str__(self):
         return f"Restore {self.id} — {self.status}"

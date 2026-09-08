@@ -45,6 +45,44 @@ framing in this file where the two conflict.
   verification unless a step is called out as requiring that
   authorization.
 
+## Restore idempotency follow-up (2026-09-08)
+
+The restore reliability task is implemented and verified locally: **404
+backend/root-security tests passed, 0 failed, 0 skipped** (including both
+real Celery SIGKILL probes), Ruff/mypy clean, migration checks clean, and
+backend runtime image build successful. Exact commands and evidence are
+recorded in `RESTORE_RELIABILITY_REPORT.md`. This entry supersedes the
+older notes below that leave `run_restore_task` unsafe for redelivery.
+
+- `RestoreJob.id` plus immutable package hash supplies durable operation
+  identity; an optional actor-scoped UUID `Idempotency-Key` prevents duplicate
+  HTTP submissions. Conflicting inputs under one key return 409.
+- File validation/scanning/upload is split from metadata publication, using
+  the shared storage pipeline. Repeatable job-owned object keys are prepared
+  before database transactions. Tenant schema IDs are also operation-derived.
+- The restored catalog, completed marker/report, and success audit publish
+  in one control transaction under a job-row lock. A separate tenant
+  transaction lock serializes surviving tenant work; tenant-only committed
+  schemas are safely reconciled on retry. No distributed atomicity is claimed.
+- Source packages survive failed attempts; cleanup waits for the outermost
+  catalog commit. Completed deliveries return the existing result. A late
+  failure cannot downgrade a success. Celery late acknowledgement and
+  worker-loss redelivery are enabled specifically for restore.
+- Migration `exports.0002_restore_recovery_identity` preserves existing rows
+  as legacy version 0. Incomplete legacy jobs require operator review, not
+  blind replay. Drain old workers before deploying the new executor.
+- Regression tests use real separate PostgreSQL connections, real MinIO,
+  a real process SIGKILL, and opt-in real Celery prefork/Valkey SIGKILL at
+  both the tenant-only and completed-commit boundaries. No live/user data
+  is migrated or restored by this verification.
+
+Full semantics, A-J crash-window table, resource classification, API contract,
+transaction boundaries and remaining limits:
+[Portable restore recovery](../operations/RESTORE_IDEMPOTENCY.md).
+Windows/WSL2 UI qualification, signing, second-machine LAN evidence, the WSL2
+scope decision and the human merge decision are unchanged. No App Platform
+implementation is part of this task.
+
 ## Current state
 
 - **Branch:** `rebrand/intraforge`. Pushed to `origin` and a PR opened
@@ -1053,21 +1091,12 @@ crash mid-import silently and permanently losing the task). Full detail,
 evidence, and live-verification method for all nine:
 `docs/security/THREAT_MODEL.md` Sections 4a/4b.
 
-**Open remainder of "reliability" specifically, closed 2026-09-08**:
-`exports`/`system` Celery tasks are now audited to the same depth as
-`imports` (see "Completed 2026-09-08" above) — `run_export_task` got the
-identical `acks_late` fix, live-verified with a real worker SIGKILL;
-`run_restore_task` was deliberately left as-is after the audit surfaced
-a genuine correctness hazard a naive copy of the fix would have
-introduced (possible duplicate-Organization creation on redelivery,
-since `restore_package` always creates a new one and has no idempotency
-check), written down as its own tracked item rather than shipped as a
-guess; `system`'s tasks were read and found already safe. What's still
-open: `run_restore_task` itself needs a durable idempotency marker
-before it can safely get crash-recovery redelivery (see the 2026-09-08
-entry for the exact mechanism), and no broader chaos/failure-injection
-testing (Postgres/MinIO/Valkey connection loss, as opposed to a Celery
-worker crash specifically) has been done.
+**Restore reliability follow-up:** the durable idempotency work is now
+implemented and verified as recorded in the new entry above and
+`RESTORE_RELIABILITY_REPORT.md`. The older exports/system audit remains
+historical evidence of why blindly copying `acks_late` was unsafe. Broader
+PostgreSQL/MinIO/Valkey outage and network-interruption qualification remains
+incomplete; focused restore crash/retry tests do not stand in for that work.
 
 The original mandate's CI/CD hardening (Playwright E2E, SBOM generation,
 `npm audit`, container image scanning) was already implemented before
@@ -1075,7 +1104,7 @@ this session (`ci: wire Playwright E2E into CI`/`ci: add SBOM generation
 and container image scanning`) — but a real CI run of it (PR #3,
 2026-09-06) had actually failed on the `security-scan` job the whole
 time, from a bad `trivy-action` version pin; see the "A real GitHub
-Actions run" bullet above for the fix and what's still unconfirmed. The
+Actions run" bullet above for the fix and its confirmed green CI run. The
 documentation-set pass is now mostly done: hardware
 guide, upgrade guide, and third-party notices closed 2026-09-06 (see
 above); migration guide deliberately skipped (nothing to migrate from

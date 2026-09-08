@@ -1,5 +1,5 @@
 from django.http import Http404, StreamingHttpResponse
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -12,6 +12,7 @@ from .models import ExportJob, RestoreJob
 from .serializers import ExportJobCreateSerializer, ExportJobSerializer, RestoreJobSerializer
 from .services import (
     ExportPermissionDenied,
+    RestoreRequestConflict,
     RestoreValidationError,
     download_export,
     get_member_export_job,
@@ -90,8 +91,16 @@ class RestoreJobListCreateView(APIView):
             return Response({"detail": "No package file provided."}, status=status.HTTP_400_BAD_REQUEST)
 
         passphrase = request.data.get("passphrase") or None
+        key_header = request.headers.get("Idempotency-Key")
+        key = serializers.UUIDField().run_validation(key_header) if key_header is not None else None
         try:
-            job = stage_restore_upload(actor=request.user, uploaded_file=uploaded, passphrase=passphrase)
+            job = stage_restore_upload(
+                actor=request.user, uploaded_file=uploaded, passphrase=passphrase, idempotency_key=key
+            )
+        except RestoreRequestConflict as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        except ExportPermissionDenied:
+            return Response(status=status.HTTP_403_FORBIDDEN)
         except RestoreValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
         return Response(RestoreJobSerializer(job).data, status=status.HTTP_201_CREATED)

@@ -282,3 +282,11 @@ manually (System.Windows.MessageBox, not unit-testable, same convention
   point-in-time recovery finer than nightly) remain a future upgrade
   over the current nightly logical `pg_dump` — unchanged from the
   Phase 11 decision, not revisited in Phase 15.
+
+## 10. Portable organization restore is a separate operation
+
+The `.icp` import endpoint creates a new organization; it does not replace
+a production backup target. Its durable retry/concurrency protocol is
+specified in [RESTORE_IDEMPOTENCY.md](RESTORE_IDEMPOTENCY.md). Backend
+SIGKILL/recovery verification does not qualify the Windows Backup & Restore
+UI, which remains subject to the Windows qualification matrix.

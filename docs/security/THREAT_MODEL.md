@@ -364,31 +364,28 @@ a temporarily shortened `CELERY_VISIBILITY_TIMEOUT_SECONDS=20` (reverted
 immediately after) — the job went from stuck at `running` to redelivered
 and `COMPLETED` with a real 944,007,374-byte `.icp` and checksum.
 
-**`run_restore_task` — audited and deliberately left unfixed: a real
-correctness hazard, not just inherited caution.** `restorer.restore_package`
-is wrapped in `transaction.atomic` on both connections, so a worker
-killed *during* that block is actually the safe case — Postgres rolls
-back the uncommitted transaction on its own, and a redelivered
-retry-from-scratch is clean. The real gap is narrower: `run_restore`'s
-`finally` block unconditionally deletes the staged `.icp` from object
-storage, and the job isn't saved as `COMPLETED` until *after* that
-`finally` runs. A worker killed in the gap between "the restore's
-transaction committed" and "the job row was saved as `COMPLETED`" would,
-under a naive `acks_late` redelivery, either find the staged file
-already gone (raises cleanly, but wrongly marks an *actually-successful*
-restore as `FAILED`) or — if that delete/save ordering were flipped to
-close the gap — find it still present and silently create a **second**
-brand-new Organization for the same package, since `restore_package` has
-no way to detect "this package was already restored" and always creates
-a fresh one. Neither reordering makes redelivery safe; a real fix needs
-a durable idempotency marker (e.g. persisting the new `organization_id`
-inside the same atomic block that creates it, so a resumed run can
-detect "already restored" before calling `restore_package` again) plus
-its own live SIGKILL experiment once that exists. Not shipped as a
-guess — this is a silent-data-duplication risk, not merely a stuck job,
-which is a strictly worse failure mode to introduce. `exports/tasks.py`
-now documents this full reasoning inline in place of the older, vaguer
-note; one-retry-only (for genuine in-process exceptions) is unchanged.
+**`run_restore_task`: durable recovery implemented in the follow-up pass.**
+The earlier decision not to copy `acks_late` blindly was correct, but
+its proposed two-connection atomicity was overstated: tenant and control
+PostgreSQL commit separately. The new `exports/recovery.py` uses the
+RestoreJob UUID and checksum-pinned input, deterministic tenant schema
+and file identities, catalog-row publication locking, and a tenant
+transaction lock. MinIO preparation happens before the database locks;
+all catalog children, the completion marker, report, and success audit
+commit together. A tenant-only commit is reconciled before a retry;
+completed deliveries cannot republish or downgrade the result. The source
+package survives failures. Late acknowledgement/worker-loss redelivery is
+now enabled. Caller-scoped optional HTTP idempotency keys also protect
+repeated submissions without sharing jobs across accounts.
+
+Real PostgreSQL/MinIO regression tests and real Celery prefork SIGKILL
+probes cover the tenant/control commit gap and the already-completed
+redelivery window. Legacy incomplete jobs are not blindly replayed;
+failed artifacts are retained for retry/review. Full state machine,
+crash-window table, constraints, authorization, transaction boundaries,
+operator semantics, and remaining limits:
+[Portable restore recovery](../operations/RESTORE_IDEMPOTENCY.md).
+See RELEASE_READINESS.md for exact verification commands/results.
 
 **`system/tasks.py`** — both scheduled tasks are simple and idempotent;
 reading them found no equivalent in-flight-mutation risk, so no fix was

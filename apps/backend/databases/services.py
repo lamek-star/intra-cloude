@@ -113,7 +113,11 @@ def get_member_column(user, column_id) -> DBColumn:
         raise Http404 from exc
 
 
-def create_tenant_database(*, actor, project, name: str, request_id: str = "") -> TenantDatabase:
+def create_tenant_database(
+    *, actor, project, name: str, request_id: str = "", _database_id: uuid.UUID | None = None
+) -> TenantDatabase:
+    # Restore supplies a server-derived operation UUID, never an ID from
+    # a request/archive. The public API does not expose this parameter.
     org_id = project.organization_id
     _require(
         actor,
@@ -129,7 +133,7 @@ def create_tenant_database(*, actor, project, name: str, request_id: str = "") -
         raise SchemaValidationError("name must be between 1 and 200 characters")
 
     tenant_db = TenantDatabase(
-        id=uuid.uuid4(), project=project, name=name, created_by=actor
+        id=_database_id or uuid.uuid4(), project=project, name=name, created_by=actor
     )
     tenant_db.schema_name = f"db_{tenant_db.id.hex}"
 

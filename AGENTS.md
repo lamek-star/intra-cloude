@@ -195,6 +195,16 @@ creates a new one with no idempotency check), a worse failure mode than
 the stuck job it would fix — tracked as its own open item rather than
 guessed at. Full detail: `docs/security/THREAT_MODEL.md` Section 4c.
 
+A subsequent restore-reliability pass (2026-09-08) implements durable
+`run_restore_task` recovery: operation-derived file/schema identities,
+transactional catalog publication with the completed marker and success
+audit, tenant-only commit reconciliation, retained retry input, and
+actor-scoped API idempotency keys. Real process and Celery worker SIGKILL
+regressions verify duplicate-free recovery. Legacy incomplete jobs require
+review. See `docs/operations/RESTORE_IDEMPOTENCY.md` and
+`docs/implementation/RESTORE_RELIABILITY_REPORT.md` for exact evidence and
+limits; the earlier paragraph describes the state before this fix.
+
 No known, disclosed architectural gaps remain open from earlier phases:
 the tenant-Postgres-least-privilege gap tracked since Phase 2/3
 (THREAT_MODEL.md TB3) now has a real, live-verified mitigation

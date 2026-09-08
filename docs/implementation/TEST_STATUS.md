@@ -1,5 +1,24 @@
 # Test Status
 
+## Restore recovery follow-up (2026-09-08)
+
+**404 backend/root-security tests passed, 0 failed, 0 skipped** in 255.91s,
+with 25 new regressions and both real Celery SIGKILL probes enabled. Ruff
+and mypy (199 files) pass; migration checks and runtime image build pass.
+Two expected `AlwaysEagerIgnored` warnings document intentional real-broker
+dispatch. New restore coverage and exact final commands/counts are recorded
+in [RESTORE_RELIABILITY_REPORT.md](RESTORE_RELIABILITY_REPORT.md). The
+historical counts below describe their earlier runs, not this new tree.
+The added tests exercise real PostgreSQL/MinIO, concurrent executions,
+API idempotency/ownership, migration compatibility, and process SIGKILL.
+Two real Celery/Valkey probes require `RUN_RESTORE_WORKER_TESTS=1`; without
+that flag they are explicitly skipped, not silently assumed tested.
+
+The verification container bind-mounts the current `apps/backend` source
+explicitly and uses separate test databases and an isolated MinIO bucket.
+It does not rely on the live deployment's potentially stale image, and it
+does not migrate/restart the user's live application.
+
 ## A local Docker gotcha that cost real time twice now (2026-09-06)
 
 **`pdc-backend:latest` is built once and reused across sessions — it is

@@ -10,21 +10,10 @@ add_foreign_key`, `storage.services.upload_file`) — restore never
 executes raw DDL or SQL text from the package (Section 17 of the master
 prompt: "restore never executes raw SQL from the package").
 
-Because the target organization doesn't exist until this function
-returns, "staged" restore here means exactly that: nothing is visible
-or reachable until the whole thing succeeds. Unlike the live schema
-builder's one-edit-at-a-time "compensating DROP, not a guarantee"
-(`databases/services.py::_write_catalog` — necessary there because
-each edit commits independently as a user makes it), a restore is one
-bulk operation: PostgreSQL supports transactional DDL, so wrapping the
-whole thing in a single `transaction.atomic(using="tenant")` alongside
-`transaction.atomic(using="default")` for the catalog gives a real
-all-or-nothing guarantee on both connections, not a best-effort one.
-The one exception is object storage (uploaded file bytes): it isn't
-transactional at all, so a rolled-back restore can leave orphaned
-objects behind — wasted storage, not a correctness problem, since no
-catalog row ever references them. A cleanup sweep for that is a known
-gap, not implemented here.
+Publication is managed by recovery.py: MinIO preparation happens first,
+then the catalog and success marker commit together. Tenant PostgreSQL
+commits separately; deterministic job-owned schemas are reconciled on
+retry. This is NOT a distributed transaction. See RESTORE_IDEMPOTENCY.md.
 """
 
 import csv
@@ -36,8 +25,7 @@ import zipfile
 import zlib
 from dataclasses import dataclass, field
 
-from django.core.files.base import ContentFile
-from django.db import connections, transaction
+from django.db import connections
 from django.utils.text import slugify
 from psycopg import sql
 
@@ -48,11 +36,12 @@ from organizations.models import Membership, Organization, Team
 from organizations.services import create_organization
 from permissions.services import assign_role
 from storage.models import Bucket, Folder
-from storage.services import UploadTooLarge, upload_file
+from storage.services import publish_upload
 from workspaces.models import Project, Workspace
 
 from . import container
 from .manifest import validate_manifest_shape
+from .preparation import RestorePlan
 
 
 class RestoreError(Exception):
@@ -167,97 +156,95 @@ def verify_checksums(zf: zipfile.ZipFile, manifest: dict) -> None:
             )
 
 
-def restore_package(zf: zipfile.ZipFile, manifest: dict, *, actor) -> RestoreReport:
-    """The actual restore, wrapped in one real transaction on *each* of
-    the two physical connections involved (`default` for the catalog,
-    `tenant` for schema DDL + row data — ADR-0001's control-plane/data-
-    plane separation means these are genuinely separate databases, so
-    one transaction can't span both). Unlike the live, one-operation-
-    at-a-time schema builder (databases/services.py's "compensating
-    DROP, not a guarantee" — necessary there because each edit commits
-    independently as a user makes it), a restore is one bulk operation
-    end to end: PostgreSQL supports transactional DDL, so wrapping all
-    of it in a single `transaction.atomic(using="tenant")` gives a real
-    all-or-nothing guarantee here, not a best-effort one. Every call
-    into `databases.services`/`storage.services` below opens its own
-    nested `atomic()` block on one of these same connections, which
-    Django correctly turns into a savepoint rather than a competing
-    transaction."""
+def restore_package(zf: zipfile.ZipFile, manifest: dict, *, actor, plan: RestorePlan) -> RestoreReport:
+    """Publish a prepared package inside recovery.py's database transactions.
+
+    No external uploads occur here. Catalog children roll back together;
+    deterministic tenant schema IDs allow reconciliation after a tenant-only
+    commit. Do not call outside the recovery orchestrator.
+    """
     report = RestoreReport()
     org_data = manifest["organization"]
 
-    with transaction.atomic(using="default"), transaction.atomic(using="tenant"):
-        # A restore's whole point is to reproduce the source
-        # organization, name included — but `Organization.slug` is
-        # globally unique, and the source organization (this is a
-        # brand-new one, not a replacement) very plausibly still exists
-        # with that exact slug, whether on this installation or because
-        # the same package is imported twice. create_organization's own
-        # slugify(name) default would collide; generate one that can't.
+    # A restore's whole point is to reproduce the source
+    # organization, name included — but `Organization.slug` is
+    # globally unique, and the source organization (this is a
+    # brand-new one, not a replacement) very plausibly still exists
+    # with that exact slug, whether on this installation or because
+    # the same package is imported twice. create_organization's own
+    # slugify(name) default would collide; generate one that can't.
+    slug = f"{slugify(org_data['name'])}-{uuid.uuid4().hex[:8]}"
+    while Organization.objects.filter(slug=slug).exists():
         slug = f"{slugify(org_data['name'])}-{uuid.uuid4().hex[:8]}"
-        while Organization.objects.filter(slug=slug).exists():
-            slug = f"{slugify(org_data['name'])}-{uuid.uuid4().hex[:8]}"
-        organization = create_organization(name=org_data["name"], created_by=actor, slug=slug)
-        report.organization_id = str(organization.id)
-        report.organization_name = organization.name
+    organization = create_organization(name=org_data["name"], created_by=actor, slug=slug)
+    report.organization_id = str(organization.id)
+    report.organization_name = organization.name
 
-        team_by_name = {}
-        for team_name in org_data.get("teams", []):
-            team_by_name[team_name] = Team.objects.create(organization=organization, name=team_name)
-            report.teams += 1
+    team_by_name = {}
+    for team_name in org_data.get("teams", []):
+        team_by_name[team_name] = Team.objects.create(organization=organization, name=team_name)
+        report.teams += 1
 
-        # Keyed by the *old* manifest id (databases_manifest's key /
-        # the bucket payload's own "id" field) so an Application's
-        # Environment binding, restored afterward, can re-link to the
-        # newly created row without a second export pass.
-        tenant_database_by_old_id: dict[str, object] = {}
-        bucket_by_old_id: dict[str, object] = {}
+    # Keyed by the *old* manifest id (databases_manifest's key /
+    # the bucket payload's own "id" field) so an Application's
+    # Environment binding, restored afterward, can re-link to the
+    # newly created row without a second export pass.
+    tenant_database_by_old_id: dict[str, object] = {}
+    bucket_by_old_id: dict[str, object] = {}
 
-        for ws_data in org_data.get("workspaces", []):
-            workspace = Workspace.objects.create(
-                organization=organization, name=ws_data["name"], created_by=actor
+    for wi, ws_data in enumerate(org_data.get("workspaces", [])):
+        workspace = Workspace.objects.create(
+            organization=organization, name=ws_data["name"], created_by=actor
+        )
+        report.workspaces += 1
+
+        for pi, proj_data in enumerate(ws_data.get("projects", [])):
+            project = Project.objects.create(
+                workspace=workspace, name=proj_data["name"], created_by=actor
             )
-            report.workspaces += 1
+            report.projects += 1
 
-            for proj_data in ws_data.get("projects", []):
-                project = Project.objects.create(
-                    workspace=workspace, name=proj_data["name"], created_by=actor
+            for di, db_id in enumerate(proj_data.get("tenant_databases", [])):
+                db_manifest_entry = manifest["databases"][db_id]
+                tenant_database_by_old_id[db_id] = _restore_tenant_database(
+                    zf, db_manifest_entry, project=project, actor=actor, report=report,
+                    database_id=plan.databases[wi, pi, di],
                 )
-                report.projects += 1
 
-                for db_id in proj_data.get("tenant_databases", []):
-                    db_manifest_entry = manifest["databases"][db_id]
-                    tenant_database_by_old_id[db_id] = _restore_tenant_database(
-                        zf, db_manifest_entry, project=project, actor=actor, report=report
-                    )
+            for bi, bucket_data in enumerate(proj_data.get("buckets", [])):
+                bucket = _restore_bucket(
+                    bucket_data, project=project, actor=actor, report=report,
+                    prepared_files=[plan.files[wi, pi, bi, fi] for fi in range(len(bucket_data["files"]))],
+                )
+                if bucket_data.get("id"):
+                    bucket_by_old_id[bucket_data["id"]] = bucket
 
-                for bucket_data in proj_data.get("buckets", []):
-                    bucket = _restore_bucket(zf, bucket_data, project=project, actor=actor, report=report)
-                    if bucket_data.get("id"):
-                        bucket_by_old_id[bucket_data["id"]] = bucket
+    _restore_applications(
+        manifest.get("applications", []),
+        organization=organization,
+        actor=actor,
+        tenant_database_by_old_id=tenant_database_by_old_id,
+        bucket_by_old_id=bucket_by_old_id,
+        report=report,
+    )
 
-        _restore_applications(
-            manifest.get("applications", []),
-            organization=organization,
-            actor=actor,
-            tenant_database_by_old_id=tenant_database_by_old_id,
-            bucket_by_old_id=bucket_by_old_id,
-            report=report,
-        )
-
-        _restore_memberships(
-            org_data.get("memberships", []),
-            organization=organization,
-            team_by_name=team_by_name,
-            report=report,
-        )
+    _restore_memberships(
+        org_data.get("memberships", []),
+        organization=organization,
+        team_by_name=team_by_name,
+        report=report,
+    )
 
     return report
 
 
-def _restore_tenant_database(zf: zipfile.ZipFile, db_entry: dict, *, project, actor, report: RestoreReport):
+def _restore_tenant_database(
+    zf: zipfile.ZipFile, db_entry: dict, *, project, actor, report: RestoreReport, database_id: uuid.UUID
+):
     schema = json.loads(zf.read(db_entry["schema_path"]))
-    tenant_db = db_services.create_tenant_database(actor=actor, project=project, name=schema["name"])
+    tenant_db = db_services.create_tenant_database(
+        actor=actor, project=project, name=schema["name"], _database_id=database_id
+    )
     report.tenant_databases += 1
 
     tables_by_name = {}
@@ -370,7 +357,7 @@ def _restore_rows(zf: zipfile.ZipFile, table_data: dict, *, table) -> int:
 
 
 def _restore_bucket(
-    zf: zipfile.ZipFile, bucket_data: dict, *, project, actor, report: RestoreReport
+    bucket_data: dict, *, project, actor, report: RestoreReport, prepared_files
 ) -> Bucket:
     bucket = Bucket.objects.create(
         project=project,
@@ -390,22 +377,17 @@ def _restore_bucket(
         folder_cache[path] = folder
         return folder
 
-    for file_data in bucket_data["files"]:
+    for file_data, prepared in zip(bucket_data["files"], prepared_files, strict=True):
         folder = _get_or_create_folder(tuple(file_data["folder_path"]))
-        content = zf.read(file_data["content_ref"])
-        try:
-            file_obj = upload_file(
-                bucket=bucket,
-                folder=folder,
-                uploaded_file=ContentFile(content, name=file_data["original_filename"]),
-                display_filename=file_data["display_filename"],
-                creator=actor,
-            )
-        except UploadTooLarge:
+        if prepared is None:
             report.warnings.append(
                 f"skipped {file_data['display_filename']!r}: exceeds this installation's upload size limit"
             )
             continue
+        file_obj = publish_upload(
+            bucket=bucket, folder=folder, prepared=prepared,
+            display_filename=file_data["display_filename"], creator=actor,
+        )
 
         if file_obj.status == "quarantined":
             report.files_quarantined += 1
