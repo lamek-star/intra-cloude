@@ -1,5 +1,15 @@
 # API Documentation — IntraForge
 
+## App Platform Phase 1 foundation
+
+The human-session metadata API adds organization `app-templates`, template
+`versions`, project `app-instances`, and instance `models`/`relationships`
+plus model `fields`. All lists use limit/offset pagination. Detail UUIDs are
+organization-scoped server-side. The exact routes, accepted properties,
+capability checks, immutable fields, and deferred runtime behavior are in
+[App Platform architecture](../APP_PLATFORM_ARCHITECTURE.md). Existing
+`applications` routes still represent integration identities.
+
 Status: Phase 11 (all planned phases complete) — accounts (including
 TOTP MFA), organizations (including Teams), permissions, workspaces,
 storage, the database builder (schema *and* row data), audit, CSV

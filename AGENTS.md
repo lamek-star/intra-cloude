@@ -22,6 +22,16 @@ identity (logo, color tokens, typography, component patterns) lives in
 
 ## Current Status
 
+**App Platform Phase 1** is a separate metadata foundation in `app_platform`:
+organization templates, immutable versions, project-owned instances, and
+generic model/field/relationship definitions. Existing `applications.Application`
+remains an integration identity. See `docs/APP_PLATFORM_ARCHITECTURE.md`,
+ADR-0014, and `docs/implementation/APP_PLATFORM_PHASE1.md`. No business-record
+runtime or visual builder exists yet. Full control-plane backups cover the
+new metadata; portable `.icp` explicitly excludes it. New endpoints use shared
+capabilities/ResourceGrants and require human sessions; environment-bound
+integration access is deferred. Fresh full gate: 436 tests pass, zero skips.
+
 **All 12 planned phases (0–11) are complete and verified end-to-end.**
 Full history, bugs found and fixed, and exact verification method for
 every phase lives in `docs/architecture/ROADMAP.md` — this section stays

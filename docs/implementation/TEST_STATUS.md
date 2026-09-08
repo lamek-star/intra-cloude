@@ -1,5 +1,15 @@
 # Test Status
 
+## App Platform Phase 1 (2026-09-08)
+
+Fresh full gate: **436 passed, 0 failed, 0 skipped** in 242.06s, including
+32 new foundation tests and both real restore worker-kill probes. Ruff/Mypy
+pass (212 source files); migration checks and real migration/backup tests pass.
+Two expected AlwaysEagerIgnored warnings remain. A separate real HTTPS session/
+CSRF API smoke passed against isolated production settings. Frontend unchanged.
+Exact commands, scope and Docker build result:
+[Phase 1 implementation evidence](APP_PLATFORM_PHASE1.md).
+
 ## Pre-App-Platform health check (2026-09-08)
 
 Fresh verification of `56c34a8`: **404 passed, 0 failed, 0 skipped**, 167.52s;

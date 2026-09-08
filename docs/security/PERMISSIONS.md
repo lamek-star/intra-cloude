@@ -1,5 +1,22 @@
 # Permissions & Authorization Model — IntraForge
 
+## App Platform Phase 1
+
+Per [ADR-0014](../architecture/adr/0014-app-platform-foundation.md),
+`app_template.read`, `app_template.manage`, `app_template.publish`,
+`app_instance.read`, `app_instance.manage`, `app_instance.schema.manage`
+extend the existing catalog. Organization administrators receive them through
+the catalog's all-organization-capabilities rule; no other organization role
+gets implicit new grants. Re-run `seed_permissions` on upgrade.
+
+Exact `app_template` and `app_instance` ResourceGrants are supported; instance
+children use the instance resource scope. Creation/installation requires an
+organization-wide manage capability. Install also requires template read and
+same-organization project/template ownership. Membership alone grants no read
+or write; lists filter before pagination. Phase 1 denies service-account
+principals until an explicit environment binding contract is designed.
+See [App Platform architecture](../APP_PLATFORM_ARCHITECTURE.md).
+
 Status: DRAFT (Phase 0)
 Last updated: 2026-08-07
 

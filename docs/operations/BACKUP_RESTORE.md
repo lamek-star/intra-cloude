@@ -1,5 +1,12 @@
 # Backup & Restore Strategy — IntraForge
 
+App Platform Phase 1: full control-plane PostgreSQL backups preserve templates,
+versions, installed definitions, UUID lineage, constraints, and database guards.
+This was verified by a real pg_dump/pg_restore round trip. Portable `.icp`
+exports **exclude App Platform metadata** and report that limitation; they are
+not a complete backup of installed business applications. See
+[Phase 1 evidence](../implementation/APP_PLATFORM_PHASE1.md).
+
 Current assurance checkpoint: [pre-App-Platform health check](../implementation/PRE_APP_PLATFORM_HEALTH_CHECK.md).
 Fresh automated/local integration checks do not qualify Windows UI lifecycle
 or whole-infrastructure outage recovery. Configuration restore remains manual;

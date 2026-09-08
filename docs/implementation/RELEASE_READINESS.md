@@ -1,5 +1,16 @@
 # Release-Readiness Report (living document)
 
+## App Platform Phase 1 checkpoint (2026-09-08)
+
+The definition/template foundation is implemented on isolated branch
+`feature/app-platform`; it does not complete the App Runtime or later phases.
+Fresh backend gate: 436 passed, zero failures/skips, including 32 new tests
+and the real restore worker probes. New metadata uses full control-plane
+backup; portable `.icp` explicitly excludes it. The existing release blockers
+and health-check P2 backlog remain unchanged. See
+[Phase 1 evidence](APP_PLATFORM_PHASE1.md) and
+[architecture](../APP_PLATFORM_ARCHITECTURE.md).
+
 ## Current checkpoint: pre-App-Platform health check, 2026-09-08
 
 **B — READY WITH NON-BLOCKING OPEN ITEMS** for scoped App Platform development;

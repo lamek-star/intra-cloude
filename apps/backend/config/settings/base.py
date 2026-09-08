@@ -58,6 +58,7 @@ THIRD_PARTY_APPS = [
 # Bounded Django apps per docs/architecture/DATA_MODEL.md Section 1.
 # Each owns its own models/services/serializers/tests; no giant shared app.
 LOCAL_APPS = [
+    "app_platform",
     "accounts",
     "organizations",
     "permissions",

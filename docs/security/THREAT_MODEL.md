@@ -1,5 +1,20 @@
 # Threat Model — IntraForge
 
+## App Platform Phase 1 boundary
+
+New metadata uses active membership plus `app_template.*`/`app_instance.*`
+capabilities and exact ResourceGrants; no role-name bypass or parallel policy
+engine. Service-account principals are denied until an explicit environment
+binding contract exists. Definitions use immutable UUIDs; keys are validated
+server-side, labels never become SQL, and no record DDL executes in Phase 1.
+Strict input schemas reject mass-assigned ownership and lineage. PostgreSQL
+guards reject version mutation, ownership changes, and cross-instance
+relationships. Published provenance and referenced models use PROTECT;
+archive is the supported removal operation. Portable export explicitly
+excludes these definitions; only full control-plane backups cover them.
+Regression evidence: `app_platform/tests/`; design:
+[ADR-0014](../architecture/adr/0014-app-platform-foundation.md).
+
 Status: Living document — implemented through Phase 12 (production
 hardening); no longer a Phase 0 draft. Updated alongside the code as new
 phases land, per CLAUDE.md's engineering process.

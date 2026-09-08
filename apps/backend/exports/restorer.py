@@ -164,6 +164,11 @@ def restore_package(zf: zipfile.ZipFile, manifest: dict, *, actor, plan: Restore
     commit. Do not call outside the recovery orchestrator.
     """
     report = RestoreReport()
+    if "app_platform" in manifest.get("excluded", []):
+        report.warnings.append(
+            "App Platform definitions are excluded from this portable package; "
+            "no templates or app instances were restored."
+        )
     org_data = manifest["organization"]
 
     # A restore's whole point is to reproduce the source
