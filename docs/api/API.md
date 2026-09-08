@@ -1,4 +1,4 @@
-# API Documentation — Private Data Cloud
+# API Documentation — IntraForge
 
 Status: Phase 11 (all planned phases complete) — accounts (including
 TOTP MFA), organizations (including Teams), permissions, workspaces,

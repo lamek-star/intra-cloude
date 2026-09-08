@@ -5,6 +5,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -16,10 +17,18 @@
             <Button Content="Refresh" Command="{Binding RefreshCommand}" Padding="12,4" />
         </StackPanel>
 
-        <TextBlock Grid.Row="1" Text="{Binding StatusMessage}" TextWrapping="Wrap" Margin="0,0,0,8" Foreground="Gray" />
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
+            <Button x:Name="RestoreSelectedButton" Content="Restore Selected..." Click="RestoreSelected_Click"
+                    IsEnabled="{Binding CanRestoreSelected}" Margin="0,0,8,0" Padding="12,4" />
+            <CheckBox Content="Stop the stack during restore (recommended for database restores)"
+                      IsChecked="{Binding StopStackDuringRestore}" VerticalAlignment="Center" />
+        </StackPanel>
 
-        <DataGrid Grid.Row="2" ItemsSource="{Binding History}" AutoGenerateColumns="False"
-                  IsReadOnly="True" CanUserAddRows="False" HeadersVisibility="Column">
+        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" TextWrapping="Wrap" Margin="0,0,0,8" Foreground="Gray" />
+
+        <DataGrid Grid.Row="3" ItemsSource="{Binding History}" SelectedItem="{Binding SelectedRecord}"
+                  AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" HeadersVisibility="Column"
+                  SelectionMode="Single">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="Type" Binding="{Binding BackupType}" Width="*" />
                 <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*" />
@@ -27,6 +36,7 @@
                 <DataGridTextColumn Header="Started" Binding="{Binding StartedAt}" Width="1.5*" />
                 <DataGridTextColumn Header="Completed" Binding="{Binding CompletedAt}" Width="1.5*" />
                 <DataGridCheckBoxColumn Header="Verified" Binding="{Binding VerifiedRestorable}" Width="Auto" />
+                <DataGridTextColumn Header="Restored" Binding="{Binding RestoredAt}" Width="1.5*" />
             </DataGrid.Columns>
         </DataGrid>
     </Grid>

@@ -1,10 +1,15 @@
-# Private Data Cloud
+# IntraForge
+
+**Build. Store. Connect. Privately.**
 
 A self-hosted, local-first private organizational platform combining
 secure file storage (Drive/S3-like), a no-code relational database builder
 (Airtable/Supabase-like), and a controlled application-integration layer —
 built to run on an organization's own infrastructure without depending on
-AWS, Azure, or GCP.
+AWS, Azure, or GCP. Formerly developed under the working names "Private
+Data Cloud" and "Intra-Cloud"; those names still appear in historical log
+entries (`docs/architecture/ROADMAP.md`) describing what was true at the
+time.
 
 ## Status
 
@@ -36,13 +41,32 @@ configuration joined the automated nightly-backup/weekly-restore-test
 system alongside the two Postgres backups, and every backup type can
 now be encrypted at rest) have also landed since. A Windows deployment
 architecture is decided (ADR-0012 — an installer-managed WSL2 appliance
-by default) but not yet built. 289 tests pass against real PostgreSQL,
-MinIO, and Celery — not mocks — including cross-organization IDOR/BOLA regression
-tests for every tenant-owned resource type in the platform. Every
-phase's exit criteria has been confirmed against the actual running
-Docker stack, not only the automated suite — including, in the final
-phase, driving a real backup through `pg_dump`, restoring it into an
-isolated database, and validating the restore, exactly as
+by default) **and built** (Phases 16–21): build infrastructure, WSL2
+lifecycle scripts, a Control Center UI, a WiX MSI installer, and
+versioned/checksummed release packaging. Two things keep it from being
+release-ready: the [Windows Qualification
+Matrix](docs/deployment/WINDOWS_QUALIFICATION_MATRIX.md) is written but
+not yet executed on real/virtual Windows hosts, and code signing is
+implemented but unverified pending a real commercial certificate. Full
+offline installation is partial — container images are bundled, but
+Docker Engine itself still installs via `get.docker.com`. A Phase 22
+pass added a new `environments` app (per-application Development/
+Staging/Production isolation, enforced down to the row/file-data
+layer) and a substantial frontend expansion — applications, sharing,
+connected databases, teams, the audit log, dashboards, a developer
+portal, and CSV import/analytics all have real pages now, plus a full
+accessibility/responsiveness pass (see `DESIGN.md` for the frontend's
+design system). The frontend has a real but partial automated suite
+(Vitest component tests and Playwright specs); neither is wired into
+CI yet, and the workflow coverage is incomplete — a tracked gap, see
+[docs/implementation/TEST_STATUS.md](docs/implementation/TEST_STATUS.md).
+300 backend tests pass against real PostgreSQL, MinIO, and Celery —
+not mocks — including cross-organization
+IDOR/BOLA regression tests for every tenant-owned resource type in the
+platform. Every phase's exit criteria has been confirmed against the
+actual running Docker stack, not only the automated suite — including
+driving a real backup through `pg_dump`, restoring it into an isolated
+database, and validating the restore, exactly as
 `docs/operations/BACKUP_RESTORE.md` specifies. Full phase-by-phase
 history — what was built, how it was verified, and every real bug found
 along the way — lives in

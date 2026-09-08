@@ -67,6 +67,7 @@ LOCAL_APPS = [
     "datasets",
     "imports",
     "applications",
+    "environments",
     "sharing",
     "audit",
     "system",
@@ -220,6 +221,27 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "system.exceptions.structured_exception_handler",
 }
 
+# --- Cache (DRF throttling, and anything else Django's cache framework
+# backs) -- gunicorn runs multiple worker processes (Dockerfile: --workers
+# 3), each with its own memory. Without an explicit CACHES setting here,
+# Django silently falls back to LocMemCache, which is per-process: DRF's
+# rate-limit counters (ScopedRateThrottle "auth" scope, OrganizationRateThrottle
+# "import" scope) each only ever see the fraction of requests gunicorn's
+# round-robin happened to route to that one worker, so the real,
+# live-verified effective budget was inconsistent and roughly workers-times
+# looser than DEFAULT_THROTTLE_RATES actually states -- exactly the
+# credential-stuffing/brute-force protection the "auth" scope's own
+# comment above exists for. A separate Valkey DB index (1, not 0) keeps
+# cache keys out of Celery's broker/result-backend namespace on the same
+# instance -- no new datastore per CLAUDE.md rule 6, boring technology
+# already running.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": env("CACHE_URL", "redis://localhost:6379/1"),
+    }
+}
+
 # --- Celery (broker/result backend: Valkey, Redis-protocol — see ADR-0011) ---
 CELERY_BROKER_URL = env("REDIS_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = env("REDIS_URL", "redis://localhost:6379/0")
@@ -228,6 +250,23 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
+
+# How long the Redis/Valkey broker transport waits before treating an
+# unacknowledged message as abandoned and redelivering it -- the
+# complement imports/tasks.py's run_import_task acks_late=True actually
+# needs to matter in practice. Redis-transport Celery defaults this to
+# 3600s (1 hour) when unset; live-verified that acks_late alone, at that
+# default, left a worker-killed import job stuck for the full hour before
+# ever becoming redeliverable, which defeats the point for an operator
+# watching a job that should self-heal in minutes, not defeat the point
+# by silently keeping the 1-hour default. Set comfortably above
+# CELERY_TASK_TIME_LIMIT above (never redeliver a task that's still
+# legitimately within its own allowed runtime -- that would risk two
+# workers running the same import concurrently) but well short of an
+# hour.
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "visibility_timeout": int(env("CELERY_VISIBILITY_TIMEOUT_SECONDS", str(40 * 60)))
+}
 
 # Nightly full backups, weekly automated restoration tests (Phase 11;
 # docs/operations/BACKUP_RESTORE.md Sections 3 and 7 — "a recurring job

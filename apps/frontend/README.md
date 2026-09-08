@@ -1,9 +1,10 @@
 # Frontend (TypeScript + React + Next.js)
 
 A real, working UI over the backend API: sign-in/registration (including
-the MFA step-up flow), organizations, workspaces/projects, the storage
-bucket file browser, and the database builder's data explorer
-(columns + row browse/add/edit/delete/export). See
+the MFA step-up flow), a dashboard landing page, organizations,
+workspaces/projects, the storage bucket file browser, the database
+builder's data explorer (columns + row browse/add/edit/delete/export),
+CSV import, and per-table analytics. See
 [docs/guide/USER_GUIDE.md](../../docs/guide/USER_GUIDE.md) for how to use
 it, and this file for how it's built.
 
@@ -16,9 +17,16 @@ the `csrftoken` cookie via `GET /auth/csrf/` before the first mutating
 request and echoes it back as `X-CSRFToken` on every one after.
 
 Not every backend feature has a page yet — sharing, applications/service
-accounts, connected databases, the audit log, and teams are real and
-tested on the server but only reachable through the browsable API
-(`/api/v1/`) for now; see `docs/guide/USER_GUIDE.md` Section 8.
+accounts, connected databases, teams, and the persistent declarative-JSON
+dashboard-widget layer are real and tested on the server but only
+reachable through the browsable API (`/api/v1/`) for now; see
+`docs/guide/USER_GUIDE.md` Section 8.
+
+Icons are [`lucide-react`](https://lucide.dev) SVG components throughout
+— no emoji. Import the specific icon needed (e.g.
+`import { Folder } from "lucide-react"`) and size it with Tailwind
+(`className="h-4 w-4"`), matching the existing usage in `AppShell.tsx`
+and `ui.tsx`.
 
 ## Notes on Generated Files
 
@@ -45,19 +53,23 @@ apps/frontend/
             AppShell.tsx          # sidebar + topbar chrome for authenticated pages
         app/
             layout.tsx            # root layout, wraps everything in AuthProvider
-            page.tsx                # redirects to /orgs or /login based on auth state
+            page.tsx                # redirects to /dashboard or /login based on auth state
             login/page.tsx
             register/page.tsx
             (app)/                  # route group: AppShell + auth-redirect guard
                 layout.tsx
+                dashboard/page.tsx                                # orgs overview + system health + recent activity
                 orgs/
                     page.tsx                                    # list + create organizations
                     [orgId]/page.tsx + _client.tsx                # workspaces + members
+                    [orgId]/audit/page.tsx + _client.tsx           # filterable, paginated audit log
                     [orgId]/workspaces/[workspaceId]/page.tsx + _client.tsx   # projects
                 projects/[projectId]/page.tsx + _client.tsx        # buckets + databases
                 buckets/[bucketId]/page.tsx + _client.tsx           # file browser
                 tenant-databases/[dbId]/page.tsx + _client.tsx       # tables
                 tables/[tableId]/page.tsx + _client.tsx               # data explorer: columns + rows
+                tables/[tableId]/import/page.tsx + _client.tsx         # CSV upload/preview/column-map/job status
+                tables/[tableId]/analytics/page.tsx + _client.tsx       # data-quality profile + OPERATIONS runner
     public/               # static assets (currently empty — .gitkeep only)
     next.config.ts          # output: "standalone" for a lean Docker image
     eslint.config.mjs

@@ -82,7 +82,7 @@ jobs:
       - name: Smoke-test the published executable
         shell: pwsh
         run: |
-          $exePath = "control-center\bin\Release\net8.0-windows\win-x64\publish\IntraCloudControlCenter.exe"
+          $exePath = "control-center\bin\Release\net8.0-windows\win-x64\publish\IntraForgeControlCenter.exe"
           if (-not (Test-Path $exePath)) {
             Write-Error "Published executable not found at $exePath"
             exit 1
@@ -190,7 +190,7 @@ jobs:
           [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64))
           try {
             $filesToSign = @(
-              'control-center\bin\Release\net8.0-windows\win-x64\publish\IntraCloudControlCenter.exe'
+              'control-center\bin\Release\net8.0-windows\win-x64\publish\IntraForgeControlCenter.exe'
               (Get-ChildItem -Path installer\wix\bin\x64\Release -Filter *.msi | Select-Object -First 1).FullName
             )
             foreach ($file in $filesToSign) {
@@ -216,7 +216,7 @@ jobs:
           $msi = Get-ChildItem -Path installer\wix\bin\x64\Release -Filter *.msi | Select-Object -First 1
           $exe = Get-ChildItem -Path control-center\bin\Release\net8.0-windows\win-x64\publish -Filter *.exe | Select-Object -First 1
           Copy-Item $msi.FullName -Destination artifacts\
-          Copy-Item $exe.FullName -Destination "artifacts\IntraCloudControlCenter-standalone.exe"
+          Copy-Item $exe.FullName -Destination "artifacts\IntraForgeControlCenter-standalone.exe"
           Get-ChildItem artifacts | ForEach-Object {
             $hash = Get-FileHash $_.FullName -Algorithm SHA256
             "$($hash.Hash)  $($_.Name)" | Out-File -Append -Encoding ascii artifacts\SHA256SUMS.txt

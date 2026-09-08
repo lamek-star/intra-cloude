@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 
 from databases.models import DBTable
 from databases.services import get_member_table
+from environments.services import check_environment_scope
 from permissions.services import has_permission
 from storage.backends import get_client
 from storage.services import get_member_file
@@ -20,12 +21,26 @@ from .services import (
 )
 
 
+def _environment_scope_denied(request, *, tenant_database=None, bucket=None) -> bool:
+    """Same discipline as databases/storage's helper of the same name --
+    only ever restricts a request authenticated via an Environment-scoped
+    ApplicationCredential (environments app) whose Environment doesn't
+    match the one this resource is bound to. imports reads from a Bucket
+    (the source CSV) and writes into a TenantDatabase (the target table),
+    so both bindings must be checked -- omitting either would let a
+    Development-scoped credential read a Production file, or write into a
+    Production table, through the import path alone."""
+    return not check_environment_scope(request, tenant_database=tenant_database, bucket=bucket)
+
+
 class ImportPreviewView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, file_id):
         file_obj = get_member_file(request.user, file_id)
         if not has_permission(request.user, "dataset.import", organization_id=file_obj.organization_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, bucket=file_obj.bucket):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
         head = get_client().get_prefix(file_obj.object_key, SAMPLE_BYTES)
@@ -59,11 +74,17 @@ class ImportJobListCreateView(APIView):
 
     def get(self, request, table_id):
         table = get_member_table(request.user, table_id)
+        if not has_permission(request.user, "database.read", organization_id=table.organization_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, tenant_database=table.tenant_database):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         jobs = table.import_jobs.all()
         return Response(ImportJobSerializer(jobs, many=True).data)
 
     def post(self, request, table_id):
         table = get_member_table(request.user, table_id)
+        if _environment_scope_denied(request, tenant_database=table.tenant_database):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         serializer = ImportJobCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
@@ -74,6 +95,8 @@ class ImportJobListCreateView(APIView):
                 {"detail": "file and table must belong to the same organization"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if _environment_scope_denied(request, bucket=file_obj.bucket):
+            return Response(status=status.HTTP_403_FORBIDDEN)
 
         try:
             job = start_import(
@@ -83,6 +106,7 @@ class ImportJobListCreateView(APIView):
                 encoding=data["encoding"],
                 delimiter=data["delimiter"],
                 column_mapping=data["column_mapping"],
+                request_id=getattr(request, "request_id", "") or "",
             )
         except ImportPermissionDenied:
             return Response(status=status.HTTP_403_FORBIDDEN)
@@ -97,6 +121,10 @@ class ImportJobDetailView(APIView):
 
     def get(self, request, job_id):
         job = get_member_import_job(request.user, job_id)
+        if not has_permission(request.user, "database.read", organization_id=job.organization_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, tenant_database=job.table.tenant_database):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         return Response(ImportJobSerializer(job).data)
 
 
@@ -105,5 +133,9 @@ class ImportJobErrorListView(APIView):
 
     def get(self, request, job_id):
         job = get_member_import_job(request.user, job_id)
+        if not has_permission(request.user, "database.read", organization_id=job.organization_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, tenant_database=job.table.tenant_database):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         errors = job.errors.all()[:200]
         return Response(ImportJobErrorSerializer(errors, many=True).data)

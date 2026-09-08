@@ -60,7 +60,7 @@ def verify_totp(secret_b32: str, code: str, *, for_time: float | None = None) ->
     )
 
 
-def provisioning_uri(secret_b32: str, *, account_name: str, issuer: str = "Private Data Cloud") -> str:
+def provisioning_uri(secret_b32: str, *, account_name: str, issuer: str = "IntraForge") -> str:
     """`otpauth://` URI an authenticator app can scan as a QR code (the
     caller renders the QR code; this module only produces the URI)."""
     label = urllib.parse.quote(f"{issuer}:{account_name}")

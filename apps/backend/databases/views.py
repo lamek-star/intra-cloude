@@ -46,12 +46,45 @@ def _handle(fn):
         return None, Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
 
+# Fine-grained ResourceGrants (Phase 7) for a tenant database's contents are
+# scoped at the TenantDatabase level, matching the master prompt's own
+# example scope granularity ("database:read" — a database, not an
+# individual table).
+RESOURCE_TYPE_TENANT_DATABASE = "databases.tenant_database"
+
+
+def _tenant_database_resource(tenant_database_id):
+    return (RESOURCE_TYPE_TENANT_DATABASE, tenant_database_id)
+
+
+def _can_read_database(request, organization_id, tenant_database_id) -> bool:
+    return has_permission(
+        request.user,
+        "database.read",
+        organization_id=organization_id,
+        resource=_tenant_database_resource(tenant_database_id),
+    )
+
+
 class TenantDatabaseListCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, project_id):
         project = get_member_project(request.user, project_id)
-        databases = project.tenant_databases.all()
+        # Filtered per-database, not a single role-wide check --
+        # database.read is resource-scoped at the TenantDatabase level
+        # (RESOURCE_TYPE_TENANT_DATABASE), so a member holding only a
+        # per-database ResourceGrant (no role-wide database.read) can
+        # still see that one database, matching what
+        # TenantDatabaseDetailView/TableListCreateView already let them
+        # reach once they know its id -- a blanket 403 here would be a
+        # stricter, inconsistent gate for the exact same access this
+        # list is meant to summarize. Previously had no check at all.
+        databases = [
+            db
+            for db in project.tenant_databases.all()
+            if _can_read_database(request, project.organization_id, db.id)
+        ]
         return Response(TenantDatabaseSerializer(databases, many=True).data)
 
     def post(self, request, project_id):
@@ -77,6 +110,8 @@ class TenantDatabaseDetailView(APIView):
 
     def get(self, request, tenant_database_id):
         tenant_db = services.get_member_tenant_database(request.user, tenant_database_id)
+        if not _can_read_database(request, tenant_db.organization_id, tenant_db.id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         return Response(TenantDatabaseSerializer(tenant_db).data)
 
     def delete(self, request, tenant_database_id):
@@ -96,6 +131,8 @@ class TableListCreateView(APIView):
 
     def get(self, request, tenant_database_id):
         tenant_db = services.get_member_tenant_database(request.user, tenant_database_id)
+        if not _can_read_database(request, tenant_db.organization_id, tenant_db.id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         tables = tenant_db.tables.prefetch_related("columns")
         return Response(TableSerializer(tables, many=True).data)
 
@@ -122,6 +159,8 @@ class TableDetailView(APIView):
 
     def get(self, request, table_id):
         table = services.get_member_table(request.user, table_id)
+        if not _can_read_database(request, table.organization_id, table.tenant_database_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         return Response(TableSerializer(table).data)
 
     def delete(self, request, table_id):
@@ -206,14 +245,22 @@ class ForeignKeyCreateView(APIView):
 
 _FILTER_PREFIX = "f_"
 _RESERVED_QUERY_PARAMS = {"limit", "offset", "ordering", "search"}
-# Fine-grained ResourceGrants (Phase 7) for row data are scoped at the
-# TenantDatabase level, matching the master prompt's own example scope
-# granularity ("database:read" — a database, not an individual table).
-RESOURCE_TYPE_TENANT_DATABASE = "databases.tenant_database"
 
 
 def _database_resource(table: DBTable):
-    return (RESOURCE_TYPE_TENANT_DATABASE, table.tenant_database_id)
+    return _tenant_database_resource(table.tenant_database_id)
+
+
+def _environment_scope_denied(request, table: DBTable) -> bool:
+    """True if this request must be denied: authenticated via an
+    Environment-scoped ApplicationCredential (environments app) whose
+    Environment doesn't match the one this table's TenantDatabase is
+    bound to. Only ever restricts credential-authenticated requests --
+    see environments.services.check_environment_scope's own docstring
+    for exactly why "no binding at all" also denies rather than allows."""
+    from environments.services import check_environment_scope
+
+    return not check_environment_scope(request, tenant_database=table.tenant_database)
 
 
 def _parse_filters(query_params) -> dict:
@@ -230,6 +277,8 @@ class RowListCreateView(APIView):
     def get(self, request, table_id):
         table = services.get_member_table(request.user, table_id)
         resource = _database_resource(table)
+        if _environment_scope_denied(request, table):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         if not has_permission(
             request.user, "database.read", organization_id=table.organization_id, resource=resource
         ):
@@ -257,6 +306,8 @@ class RowListCreateView(APIView):
     def post(self, request, table_id):
         table = services.get_member_table(request.user, table_id)
         resource = _database_resource(table)
+        if _environment_scope_denied(request, table):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         if not has_permission(
             request.user, "database.write", organization_id=table.organization_id, resource=resource
         ):
@@ -275,6 +326,8 @@ class RowDetailView(APIView):
     def get(self, request, table_id, row_id):
         table = services.get_member_table(request.user, table_id)
         resource = _database_resource(table)
+        if _environment_scope_denied(request, table):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         if not has_permission(
             request.user, "database.read", organization_id=table.organization_id, resource=resource
         ):
@@ -287,6 +340,8 @@ class RowDetailView(APIView):
     def patch(self, request, table_id, row_id):
         table = services.get_member_table(request.user, table_id)
         resource = _database_resource(table)
+        if _environment_scope_denied(request, table):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         if not has_permission(
             request.user, "database.write", organization_id=table.organization_id, resource=resource
         ):
@@ -301,6 +356,8 @@ class RowDetailView(APIView):
     def delete(self, request, table_id, row_id):
         table = services.get_member_table(request.user, table_id)
         resource = _database_resource(table)
+        if _environment_scope_denied(request, table):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         if not has_permission(
             request.user, "database.write", organization_id=table.organization_id, resource=resource
         ):
@@ -318,6 +375,8 @@ class RowExportView(APIView):
     def get(self, request, table_id):
         table = services.get_member_table(request.user, table_id)
         resource = _database_resource(table)
+        if _environment_scope_denied(request, table):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         if not has_permission(
             request.user, "dataset.export", organization_id=table.organization_id, resource=resource
         ):
@@ -355,6 +414,8 @@ class ConnectedDatabaseListCreateView(APIView):
 
     def get(self, request, project_id):
         project = get_member_project(request.user, project_id)
+        if not has_permission(request.user, "connection.manage", organization_id=project.organization_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         connected_databases = project.connected_databases.all()
         return Response(ConnectedDatabaseSerializer(connected_databases, many=True).data)
 
@@ -391,6 +452,16 @@ class ConnectedDatabaseDetailView(APIView):
         connected_database = connection_ops.get_member_connected_database(
             request.user, connected_database_id
         )
+        _, error = _handle_connection(
+            lambda: connection_ops.require_connection_manage(
+                request.user,
+                connected_database,
+                action="connection.get",
+                request_id=_request_id(request),
+            )
+        )
+        if error:
+            return error
         return Response(ConnectedDatabaseSerializer(connected_database).data)
 
     def delete(self, request, connected_database_id):

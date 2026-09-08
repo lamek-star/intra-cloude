@@ -1,4 +1,4 @@
-# Backup & Restore Strategy — Private Data Cloud
+# Backup & Restore Strategy — IntraForge
 
 Status: IMPLEMENTED (Phase 11 — `pg_dump`/`pg_restore` automation and the
 automated restoration test job described in Sections 6/7 are real,
@@ -8,10 +8,15 @@ see `system/backups.py`, `system/tasks.py`, and
 how it was verified. Phase 15 extended the same automated backup +
 weekly restore-test pattern to object storage and configuration, and
 added optional at-rest encryption for every backup type — see
-`docs/architecture/ROADMAP.md` Phase 15). Off-host shipping (Section 4)
-remains a deployment-time operator responsibility, not automated by the
-platform itself — see Section 9.
-Last updated: 2026-08-21
+`docs/architecture/ROADMAP.md` Phase 15). A real production restore —
+restoring a chosen backup into the live target it came from, not just
+an isolated restore-test target — is now also implemented for
+control-plane DB, tenant DB, and object storage (Section 7a); the
+Windows/WSL2 Control Center's "Backup & Restore" tab exposes it behind
+an explicit destructive-action confirmation. Off-host shipping
+(Section 4) remains a deployment-time operator responsibility, not
+automated by the platform itself — see Section 9.
+Last updated: 2026-09-03
 
 ## 1. Principle
 
@@ -63,10 +68,17 @@ shipped elsewhere).
 
 ## 6. Restoration Procedure
 
-Steps 2/3/4/5/7/8 below are implemented and automated (`system/backups.py`:
-`run_backup`/`verify_backup_restorable`, dispatching per backup type);
-steps 1/6 remain deployment-level operator responsibility, not something
-application code can safely automate (see Section 9).
+Steps 2/3/4/5/7/8 below are implemented and automated for the
+*restore-test* path (`system/backups.py`: `run_backup`/
+`verify_backup_restorable`, dispatching per backup type, against a
+throwaway isolated target — Section 7); steps 2/3/4 are additionally
+implemented for a *real* restore into the live target itself
+(`restore_backup` — Section 7a). Step 1 remains deployment-level
+operator responsibility, not something application code can safely
+automate. Step 6's stop/restart-the-stack half is scripted for the
+Windows/WSL2 path (`Invoke-IntraCloudRestore.ps1 -StopStack`, Section
+7a); the health-check half remains a manual operator step (see Section
+9).
 
 1. Provision a clean target environment (or a dedicated restore-test
    environment — never restore-test against production). **Implemented,
@@ -79,9 +91,9 @@ application code can safely automate (see Section 9).
    automated check specifically. Full-environment restoration drills
    (rebuilding onto new/different hardware) remain a manual/operator
    exercise per Section 8.
-2. Restore control-plane PostgreSQL from the chosen backup point. **Implemented** (`pg_restore`, custom-format dump).
-3. Restore tenant PostgreSQL from the chosen backup point. **Implemented.**
-4. Restore object storage data. **Implemented, Phase 15**: `_verify_object_storage_backup_restorable` extracts the tar archive, checks every object against its manifest sha256, re-uploads it to a scratch key prefix in the same bucket (the object-storage equivalent of the Postgres restore-test's isolated same-server database), reads it back, and confirms the round trip — a genuine restore into the real target system. A full production restore additionally means re-uploading to the *real* (non-scratch) keys, which the automated weekly check deliberately doesn't do against a live bucket — see Section 7.
+2. Restore control-plane PostgreSQL from the chosen backup point. **Implemented** (`pg_restore`, custom-format dump) — both the restore-test path (Section 7, throwaway target) and real restore into the live target (Section 7a).
+3. Restore tenant PostgreSQL from the chosen backup point. **Implemented**, same two paths as control-plane above.
+4. Restore object storage data. **Implemented, Phase 15** for the restore-test path: `_verify_object_storage_backup_restorable` extracts the tar archive, checks every object against its manifest sha256, re-uploads it to a scratch key prefix in the same bucket (the object-storage equivalent of the Postgres restore-test's isolated same-server database), reads it back, and confirms the round trip. **Real restore to the actual (non-scratch) keys is implemented as of this section's Section 7a addition** (`restore_backup` / `_restore_object_storage_backup`).
 5. Restore configuration and secrets. **Implemented, Phase 15**, when `BACKUP_ENCRYPTION_KEY` is set: `_verify_configuration_backup_restorable` decrypts and parses the backup, confirming every expected configuration key is present. Without `BACKUP_ENCRYPTION_KEY`, secret values were never captured in the first place (redacted at backup time — Section 2), so there is nothing to restore from this backup for those keys; an operator's own separately-secured secret record remains the recovery path in that configuration.
 6. Bring the stack up pointed at restored data; run health checks. Use `/readyz` (Phase 1) — already checks exactly this (control-plane DB, tenant DB, Valkey reachability).
 7. Run a scripted validation pass: can a known test user log in, can a
@@ -125,6 +137,85 @@ scope the Postgres restore-test already uses, and cleaned up
 immediately after (Section 6, step 4). A full disaster-recovery drill
 onto replacement infrastructure remains a Section 8 exercise.
 
+## 7a. Real Production Restore — IMPLEMENTED for control-plane DB,
+   tenant DB, and object storage; deliberately not automated for
+   configuration
+
+Everything in Sections 6/7 above proves a backup is *restorable* —
+always against a throwaway, isolated target, per Section 1's "never
+restore-test against production." Until this section, nothing in the
+platform could actually restore a chosen backup into the real target it
+came from; an operator's only path to a real recovery was the manual
+`pg_restore`/re-upload procedure this document already described in
+prose. `system/backups.py::restore_backup` (dispatched from
+`python manage.py restore_backup <record_id> --yes`, and from the
+Windows/WSL2 Control Center's Backup & Restore tab via
+`installer/scripts/Invoke-IntraCloudRestore.ps1`) closes that gap for
+three of the four backup types:
+
+- **Control-plane / tenant PostgreSQL**: `pg_restore --clean --if-exists`
+  against the real database (not a fresh throwaway one) — existing
+  objects captured in the dump are dropped and recreated from it. Every
+  other live session against the target database is force-terminated
+  first (`pg_terminate_backend`, `system/backups.py::
+  _terminate_other_connections`) and this process's own ORM connection
+  to it is explicitly closed before `pg_restore` runs — a defense-in-
+  depth backstop, not a substitute for actually stopping the app tier
+  first (see below). An object created after the backup was taken (a
+  tenant schema for an organization that signed up since) is untouched,
+  since `pg_restore --clean` only ever drops/recreates objects that are
+  part of the archive being restored.
+- **Object storage**: every object in the archive is checksum-verified
+  against its manifest and written to its *real* key (not a scratch
+  prefix), then read back and re-verified. Deliberately additive-only:
+  an object currently in the bucket but absent from the backup archive
+  is left alone, never deleted — a full mirror-delete restore is a
+  materially more destructive operation than "bring back what this
+  backup captured."
+- **Configuration**: **not automated, by design.** Applying restored
+  configuration means writing secrets into the live deployment's
+  environment — a host-level `.env` file this platform's own containers
+  have no write access to, or re-launching containers with new
+  environment variables — a materially different, riskier operation
+  than restoring a database or object storage into the same running
+  system, and one an operator should review value-by-value rather than
+  have applied automatically. `restore_backup` refuses this type
+  outright with a message pointing back to Section 6 step 5's manual
+  procedure; the Control Center's Restore button is disabled for a
+  selected configuration backup rather than offering something the
+  backend will refuse.
+
+**Stopping the app tier first is strongly recommended and the Windows/
+WSL2 path automates it**: `Invoke-IntraCloudRestore.ps1 -StopStack`
+stops the `backend`/`worker`/`beat` containers, runs the restore as a
+one-off container against the still-running Postgres/MinIO services,
+then brings the stack back up regardless of whether the restore
+succeeded (a failed restore still needs the stack back up, surfaced as
+a separate warning rather than silently skipped). Without `-StopStack`,
+the connection-termination backstop above still runs, but an in-flight
+request on a connection it kills still fails — this is why the Control
+Center's confirmation dialog and this script both make `-StopStack`
+the recommended path, not the only one, for an operator who has already
+stopped the stack some other way. This satisfies Section 6 step 6
+("bring the stack up... run health checks") for the stop/restart half;
+running `/readyz` afterward remains a manual operator check, not
+auto-invoked by the script.
+
+Tested against the real live control-plane/tenant PostgreSQL and MinIO
+this platform's own test suite already uses for Sections 6/7's restore-
+test coverage (`system/tests/test_backups.py`), proving an actual
+restore into the real (test-run) target — not a second throwaway one —
+round-trips real data. The `-StopStack` stop/run/up sequencing and the
+`-AcknowledgeDataLoss` confirmation gate are covered by
+`installer/tests/BackupAndLogs.Tests.ps1` (Pester, mocked WSL2 calls —
+this class of test never runs a real WSL2 distribution, per
+`WslDistro.Tests.ps1`'s own established reasoning). The Control Center's
+`CanRestoreSelected` gate (nothing selected / a failed backup / a
+configuration backup all disable the button) is covered by
+`BackupViewModelTests.cs`; the confirmation dialog itself is exercised
+manually (System.Windows.MessageBox, not unit-testable, same convention
+`SetupView`'s Remove confirmation already established).
+
 ## 8. Disaster Recovery Scenarios to Document (Phase 11 deliverable,
    tracked here so it isn't forgotten)
 
@@ -143,6 +234,16 @@ onto replacement infrastructure remains a Section 8 exercise.
 
 ## 9. Open Items (post-Phase-11)
 
+- **Real production restore for control-plane DB, tenant DB, and object
+  storage: implemented (Section 7a).** Configuration restore remains a
+  deliberate manual procedure (Section 7a explains why); no plan to
+  automate it. Genuinely still open: an actual end-to-end drill — a
+  Windows/WSL2 operator clicking Restore in the Control Center against
+  a real appliance with real data, not just the automated test suite's
+  live-Postgres/MinIO coverage — has not been run this session; and
+  `/readyz` is not automatically invoked after a restore, so an
+  operator must still check it by hand (or via the Status tab) before
+  declaring the restore complete.
 - **Database backup tooling: decided.** Plain `pg_dump`/`pg_restore`
   (custom format, `-Fc`) — "boring technology first" (CLAUDE.md); no
   concrete requirement surfaced during implementation that plain

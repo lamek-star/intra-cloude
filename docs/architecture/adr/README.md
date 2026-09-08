@@ -14,6 +14,7 @@
 | [0010](0010-async-job-processing-celery-redis.md) | Asynchronous job processing — Celery + Redis | Accepted |
 | [0011](0011-valkey-over-redis.md) | Use Valkey instead of Redis for the broker/cache (licensing) | Accepted |
 | [0012](0012-windows-deployment-architecture.md) | Windows deployment — installer-managed WSL2 appliance (default) + Control Center/customer-managed Linux host (Business/Enterprise) | Accepted |
+| [0013](0013-docker-engine-bundled-in-wsl2-rootfs.md) | Bundle Docker Engine into the WSL2 rootfs, release-pinned not live-updated | Accepted |
 
 New architecturally significant decisions get a new numbered ADR here
 rather than silently changing behavior described in an existing one.

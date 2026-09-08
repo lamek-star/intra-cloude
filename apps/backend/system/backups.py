@@ -337,6 +337,10 @@ def _run_configuration_backup() -> BackupRecord:
     return record
 
 
+def _alias_for(backup_type: str) -> str:
+    return "default" if backup_type == BackupRecord.BackupType.CONTROL_DB else "tenant"
+
+
 def _admin_connect(db: dict) -> psycopg.Connection:
     # CREATE DATABASE/DROP DATABASE can't run against the database being
     # created/dropped — connect to Postgres's own always-present "postgres"
@@ -458,6 +462,157 @@ def _verify_postgres_backup_restorable(record: BackupRecord) -> BackupRecord:
 
     record.verified_at = timezone.now()
     record.save(update_fields=["verified_restorable", "verification_error", "verified_at"])
+    return record
+
+
+def _terminate_other_connections(db: dict, dbname: str) -> None:
+    """Forcibly drops every other session connected to `dbname` before a
+    real restore -- a production restore replaces the database's actual
+    content, so a stale connection (a backend/worker container the
+    operator forgot to stop) holding a lock on a table `pg_restore
+    --clean` needs to drop would otherwise hang or fail the whole
+    restore. This is a defense-in-depth backstop, not a substitute for
+    stopping the app stack first (BACKUP_RESTORE.md Section 6 step 6) --
+    an in-flight request on a connection this kills still fails."""
+    with _admin_connect(db) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+            "WHERE datname = %s AND pid <> pg_backend_pid()",
+            [dbname],
+        )
+
+
+def restore_backup(record: BackupRecord) -> BackupRecord:
+    """Restores `record` into the real, live target it was backed up
+    from -- unlike `verify_backup_restorable`, which only ever proves
+    restorability against a throwaway isolated target and never touches
+    production data. Destructive: replaces the target's actual current
+    content. Never raises -- the outcome is always recorded on
+    `record.restored_at`/`record.restore_error` and the record returned,
+    matching `run_backup`/`verify_backup_restorable`'s own convention so
+    a scripted caller (the `restore_backup` management command, the
+    Control Center) never has to catch an exception to know what
+    happened."""
+    if record.status != BackupRecord.Status.SUCCESS or not record.file_path:
+        return _restore_not_possible(record, "backup did not complete successfully; nothing to restore")
+    if record.backup_type in (BackupRecord.BackupType.CONTROL_DB, BackupRecord.BackupType.TENANT_DB):
+        return _restore_postgres_backup(record)
+    if record.backup_type == BackupRecord.BackupType.OBJECT_STORAGE:
+        return _restore_object_storage_backup(record)
+    if record.backup_type == BackupRecord.BackupType.CONFIGURATION:
+        # Deliberately not automated -- see docs/operations/BACKUP_RESTORE.md
+        # Section 6 step 5. Applying restored configuration means writing
+        # secrets into the live deployment's environment (a host-level
+        # .env file this container doesn't have write access to, or
+        # re-launching containers with new environment variables) --  a
+        # materially different, riskier operation than restoring a
+        # database or object storage into the same running system, and
+        # one an operator should review value-by-value before applying.
+        return _restore_not_possible(
+            record,
+            "configuration restore is a manual operator procedure, not automated by this platform "
+            "-- see docs/operations/BACKUP_RESTORE.md Section 6 step 5",
+        )
+    return _restore_not_possible(record, f"unsupported backup_type: {record.backup_type!r}")
+
+
+def _restore_not_possible(record: BackupRecord, reason: str) -> BackupRecord:
+    record.restore_error = reason
+    record.restored_at = timezone.now()
+    record.save(update_fields=["restored_at", "restore_error"])
+    return record
+
+
+def _restore_postgres_backup(record: BackupRecord) -> BackupRecord:
+    """Restores directly into the real control-plane or tenant database
+    (`--clean --if-exists`, so existing objects captured in the dump are
+    dropped and recreated from it -- objects created after the backup
+    was taken, e.g. a per-organization tenant schema for an org that
+    signed up since, are untouched, since they were never part of the
+    archive). Closes this process's own ORM connection to the target
+    first and terminates every other session against it
+    (`_terminate_other_connections`) so `pg_restore` never blocks on a
+    lock held by a connection that should already be gone."""
+    db = _db_settings(record.backup_type)
+    target_db_name = db["NAME"]
+    alias = _alias_for(record.backup_type)
+
+    try:
+        connections[alias].close()
+        _terminate_other_connections(db, target_db_name)
+        with _DecryptedTempFile(record.file_path) as plain_path:
+            cmd = [
+                "pg_restore",
+                "-h", db["HOST"] or "localhost",
+                "-p", str(db["PORT"] or 5432),
+                "-U", db["USER"],
+                "-d", target_db_name,
+                "--clean", "--if-exists",
+                plain_path,
+            ]
+            _run(cmd, password=db["PASSWORD"], timeout=PG_RESTORE_TIMEOUT_SECONDS)
+        _validate_restored_database(db, target_db_name, record.backup_type)
+    except Exception as exc:  # noqa: BLE001 - always record, never propagate
+        record.restore_error = str(exc)[:2000]
+        logger.error("Restore failed for backup %s (%s): %s", record.id, record.backup_type, exc)
+    else:
+        record.restore_error = ""
+
+    record.restored_at = timezone.now()
+    record.save(update_fields=["restored_at", "restore_error"])
+    return record
+
+
+def _restore_object_storage_backup(record: BackupRecord) -> BackupRecord:
+    """Restores every object in the archive to its real key in the live
+    bucket (checksum-verified against the manifest before and after the
+    write, same as `_verify_object_storage_backup_restorable`), not a
+    scratch prefix. Deliberately additive-only: an object currently in
+    the bucket but absent from the backup archive (created after the
+    backup was taken) is left alone, never deleted -- a full mirror-
+    delete restore is a materially more destructive operation than
+    "bring back what this backup captured" and isn't what an operator
+    reaching for a single backup record would expect."""
+    client = get_storage_client()
+    restored_keys: list[str] = []
+
+    try:
+        with _DecryptedTempFile(record.file_path) as plain_path, tarfile.open(plain_path, "r") as tar:
+            members = tar.getmembers()
+            manifest_member = next((m for m in members if m.name == "_manifest.json"), None)
+            if manifest_member is None:
+                raise BackupError("archive is missing _manifest.json")
+            manifest_file = tar.extractfile(manifest_member)
+            manifest = json.loads(manifest_file.read()) if manifest_file else {}
+
+            for member in members:
+                if member.name == "_manifest.json":
+                    continue
+                fileobj = tar.extractfile(member)
+                if fileobj is None:
+                    continue
+                data = fileobj.read()
+                actual = hashlib.sha256(data).hexdigest()
+                expected = manifest.get(member.name)
+                if expected != actual:
+                    raise BackupError(f"checksum mismatch for {member.name!r} inside the backup archive")
+
+                client.put_stream(member.name, io.BytesIO(data), "application/octet-stream")
+                restored_keys.append(member.name)
+                reread = client.get_stream(member.name).read()
+                if hashlib.sha256(reread).hexdigest() != actual:
+                    raise BackupError(f"restored object {member.name!r} did not read back correctly")
+    except Exception as exc:  # noqa: BLE001 - always record, never propagate
+        record.restore_error = str(exc)[:2000]
+        logger.error(
+            "Object storage restore failed for backup %s after restoring %d object(s): %s",
+            record.id, len(restored_keys), exc,
+        )
+    else:
+        record.restore_error = ""
+
+    record.restored_at = timezone.now()
+    record.save(update_fields=["restored_at", "restore_error"])
     return record
 
 

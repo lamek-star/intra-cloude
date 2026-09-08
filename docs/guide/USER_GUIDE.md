@@ -1,4 +1,4 @@
-# User Guide — Private Data Cloud
+# User Guide — IntraForge
 
 Status: VERIFIED (the frontend described below was built and the flows in
 this guide were driven end-to-end against the real backend through the

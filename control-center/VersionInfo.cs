@@ -32,5 +32,5 @@ public static class VersionInfo
     }
 
     public static string GetWindowTitle(Assembly? assembly = null) =>
-        $"Intra-Cloud Control Center v{GetInformationalVersion(assembly)}";
+        $"IntraForge Control Center v{GetInformationalVersion(assembly)}";
 }

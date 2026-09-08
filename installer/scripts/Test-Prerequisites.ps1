@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Checks this machine's readiness to run Intra-Cloud (engineering brief
+    Checks this machine's readiness to run IntraForge (engineering brief
     Section 4's installer compatibility scan). Read-only — never enables
     a feature or changes system state; that's Install-Wsl.ps1 (Phase 17).
 
@@ -63,7 +63,7 @@ function Test-Is64BitOS {
         return New-CheckResult -Name '64-bit Windows' -Status 'Pass' -Detail 'Operating system is 64-bit.'
     }
     return New-CheckResult -Name '64-bit Windows' -Status 'Fail' `
-        -Detail 'Intra-Cloud requires 64-bit Windows; this machine is running a 32-bit installation.'
+        -Detail 'IntraForge requires 64-bit Windows; this machine is running a 32-bit installation.'
 }
 
 function Test-AdministratorRights {
@@ -142,7 +142,7 @@ function Test-Wsl2Availability {
         }
         if ($statusOutput -match 'Default Version:\s*1') {
             return New-CheckResult -Name 'WSL2' -Status 'Warning' `
-                -Detail 'WSL is installed, but the default version is WSL1, not WSL2. Intra-Cloud requires WSL2.'
+                -Detail 'WSL is installed, but the default version is WSL1, not WSL2. IntraForge requires WSL2.'
         }
         return New-CheckResult -Name 'WSL2' -Status 'Warning' -Detail 'wsl.exe is present but its status could not be parsed.'
     } finally {
@@ -168,10 +168,10 @@ function Test-SystemMemory {
     }
     if ($totalGb -ge 4) {
         return New-CheckResult -Name 'System memory' -Status 'Warning' `
-            -Detail "$totalGb GB total. Below the 8 GB recommended for the full Intra-Cloud stack (PostgreSQL, MinIO, Redis, backend, worker, frontend, proxy) under WSL2 — it may run, but tightly."
+            -Detail "$totalGb GB total. Below the 8 GB recommended for the full IntraForge stack (PostgreSQL, MinIO, Redis, backend, worker, frontend, proxy) under WSL2 — it may run, but tightly."
     }
     return New-CheckResult -Name 'System memory' -Status 'Fail' `
-        -Detail "$totalGb GB total is below the practical minimum (4 GB) for Intra-Cloud's WSL2 stack."
+        -Detail "$totalGb GB total is below the practical minimum (4 GB) for IntraForge's WSL2 stack."
 }
 
 function Test-CpuCores {
@@ -187,7 +187,7 @@ function Test-CpuCores {
             -Detail "$cores logical processors. Below the 4 recommended — the stack will run more slowly, particularly CSV import and analytics workloads."
     }
     return New-CheckResult -Name 'CPU cores' -Status 'Fail' `
-        -Detail "$cores logical processor(s) is below the practical minimum (2) for WSL2 plus the Intra-Cloud container stack."
+        -Detail "$cores logical processor(s) is below the practical minimum (2) for WSL2 plus the IntraForge container stack."
 }
 
 function Test-DiskSpace {
@@ -267,18 +267,18 @@ function Test-ExistingInstallationState {
         ForEach-Object {
             $props = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
             $displayName = Get-RegistryPropertyOrNull -InputObject $props -Name 'DisplayName'
-            if ($displayName -like '*Intra-Cloud Control Center*') { $_.PSChildName }
+            if ($displayName -like '*IntraForge Control Center*') { $_.PSChildName }
         }
     $cacheEntries = Get-ChildItem 'HKLM:\SOFTWARE\Classes\Installer\Products' -ErrorAction SilentlyContinue |
         ForEach-Object {
             $props = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
             $productName = Get-RegistryPropertyOrNull -InputObject $props -Name 'ProductName'
-            if ($productName -like '*Intra-Cloud Control Center*') { $_.PSChildName }
+            if ($productName -like '*IntraForge Control Center*') { $_.PSChildName }
         }
-    $filesPresent = Test-Path (Join-Path ${env:ProgramFiles} 'Intra-Cloud')
+    $filesPresent = Test-Path (Join-Path ${env:ProgramFiles} 'IntraForge')
 
     if (-not $uninstallEntries -and -not $cacheEntries -and -not $filesPresent) {
-        return New-CheckResult -Name 'Existing installation' -Status 'Pass' -Detail 'No existing Intra-Cloud Control Center installation detected. A clean install can proceed.'
+        return New-CheckResult -Name 'Existing installation' -Status 'Pass' -Detail 'No existing IntraForge Control Center installation detected. A clean install can proceed.'
     }
     # Exactly one Uninstall entry is the only shape a healthy install can
     # take (MajorUpgrade's RemoveExistingProducts retires the old
@@ -295,10 +295,10 @@ function Test-ExistingInstallationState {
     }
     if ($uninstallEntries.Count -gt 1) {
         return New-CheckResult -Name 'Existing installation' -Status 'Fail' `
-            -Detail "$($uninstallEntries.Count) simultaneous Windows Installer records claim Intra-Cloud Control Center is installed. A healthy install only ever has one; this points at a prior interrupted or non-elevated install attempt that didn't clean up correctly. Do not delete these manually — Windows Installer registry/cache entries require Windows-supported recovery. Use an elevated `msiexec /x <ProductCode>` for each entry (Programs and Features will list them), then reinstall. See docs/architecture/ROADMAP.md's orphaned-install-state findings for the root cause."
+            -Detail "$($uninstallEntries.Count) simultaneous Windows Installer records claim IntraForge Control Center is installed. A healthy install only ever has one; this points at a prior interrupted or non-elevated install attempt that didn't clean up correctly. Do not delete these manually — Windows Installer registry/cache entries require Windows-supported recovery. Use an elevated `msiexec /x <ProductCode>` for each entry (Programs and Features will list them), then reinstall. See docs/architecture/ROADMAP.md's orphaned-install-state findings for the root cause."
     }
     return New-CheckResult -Name 'Existing installation' -Status 'Fail' `
-        -Detail "Stale or partial installation state detected: $(if ($filesPresent) { 'files under Program Files\Intra-Cloud' }) $(if ($cacheEntries) { "$($cacheEntries.Count) orphaned Windows Installer product-cache entry/entries" }) exist with no matching Programs-and-Features entry, so `msiexec /x` cannot remove them normally. Do not delete these manually. Run this installer's repair path (elevated), or use an elevated `msiexec /fa` against the original package, before attempting a fresh install. See docs/architecture/ROADMAP.md's orphaned-install-state findings for the root cause."
+        -Detail "Stale or partial installation state detected: $(if ($filesPresent) { 'files under Program Files\IntraForge' }) $(if ($cacheEntries) { "$($cacheEntries.Count) orphaned Windows Installer product-cache entry/entries" }) exist with no matching Programs-and-Features entry, so `msiexec /x` cannot remove them normally. Do not delete these manually. Run this installer's repair path (elevated), or use an elevated `msiexec /fa` against the original package, before attempting a fresh install. See docs/architecture/ROADMAP.md's orphaned-install-state findings for the root cause."
 }
 
 function Invoke-PrerequisiteChecks {

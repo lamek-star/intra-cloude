@@ -144,6 +144,24 @@ class ConnectionLifecycleTests(ConnectedDatabaseTestBase):
         self.assertEqual(detail.status_code, status.HTTP_200_OK)
         self.assertNotIn("password", detail.data)
 
+    def test_member_without_connection_manage_cannot_list_or_view_connections(self):
+        # Never the password (asserted above), but host/port/database_name/
+        # username -- a real external network endpoint and the account
+        # name it authenticates as -- previously leaked to any org member
+        # via get_member_project/get_member_connected_database with no
+        # connection.manage check at all.
+        member = User.objects.create_user(email="conn-outsider@example.com", password="x")
+        Membership.objects.create(user=member, organization_id=self.org_id, status=Membership.Status.ACTIVE)
+        self.client.force_login(member)
+
+        listing = self.client.get(reverse("connected-database-list-create", args=[self.project_id]))
+        self.assertEqual(listing.status_code, status.HTTP_403_FORBIDDEN)
+
+        detail = self.client.get(
+            reverse("connected-database-detail", args=[self.connected_database_id])
+        )
+        self.assertEqual(detail.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_schema_introspection_returns_real_table_and_columns(self):
         resp = self.client.get(reverse("connected-database-schema", args=[self.connected_database_id]))
         self.assertEqual(resp.status_code, status.HTTP_200_OK)

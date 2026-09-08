@@ -1,4 +1,6 @@
-from django.db import transaction
+import secrets
+
+from django.db import IntegrityError, transaction
 from django.http import Http404
 from django.utils.text import slugify
 
@@ -28,19 +30,38 @@ def create_organization(*, name: str, created_by, slug: str | None = None) -> Or
     """Creates an Organization, makes the creator an active member, and
     grants them the Organization Administrator role — all in one
     transaction so an org can never exist without an owner able to manage
-    it."""
-    slug = slug or slugify(name)
-    with transaction.atomic():
-        org = Organization.objects.create(name=name, slug=slug, created_by=created_by)
-        Membership.objects.create(
-            user=created_by, organization=org, status=Membership.Status.ACTIVE
-        )
-        assign_role(
-            user=created_by,
-            role_slug="organization-administrator",
-            organization=org,
-            granted_by=created_by,
-        )
+    it.
+
+    `Organization.slug` is globally unique (not scoped to the creator), so
+    any two organizations sharing a name -- by unrelated users, not just a
+    retry -- collide. When the caller doesn't pass an explicit `slug` (the
+    normal create-org API path; `exports/restorer.py`'s restore path
+    already resolves its own collision-free slug and passes it through
+    unchanged), retry with a random suffix on collision rather than let a
+    same-named organization crash the request with an unhandled 500."""
+    explicit_slug = slug is not None
+    base_slug = slug or slugify(name) or "organization"
+    attempts = 1 if explicit_slug else 6
+    for attempt in range(attempts):
+        candidate_slug = base_slug if attempt == 0 else f"{base_slug}-{secrets.token_hex(3)}"
+        try:
+            with transaction.atomic():
+                org = Organization.objects.create(name=name, slug=candidate_slug, created_by=created_by)
+                Membership.objects.create(
+                    user=created_by, organization=org, status=Membership.Status.ACTIVE
+                )
+                assign_role(
+                    user=created_by,
+                    role_slug="organization-administrator",
+                    organization=org,
+                    granted_by=created_by,
+                )
+            break
+        except IntegrityError:
+            # The only unique constraint this transaction can hit for a
+            # brand-new org/membership/role-assignment triple is the slug.
+            if attempt == attempts - 1:
+                raise
     audit.record(
         actor=created_by,
         organization_id=org.id,

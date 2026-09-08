@@ -1,4 +1,11 @@
-# Roadmap — Private Data Cloud
+# Roadmap — IntraForge
+
+> Renamed from "Private Data Cloud" / "Intra-Cloud" during the IntraForge
+> rebrand. Phase entries below are a historical log — each describes what
+> was true, and what the product was called, at the time it was written.
+> They are **not** retroactively rewritten; treat every "Private Data
+> Cloud"/"Intra-Cloud"/"IntraCloud" mention below as accurate history, not
+> a stale reference to fix.
 
 Status: All planned phases (0–11) complete and verified.
 Last updated: 2026-08-09
@@ -1413,6 +1420,43 @@ Docker-Engine-and-Compose-stack-inside-the-distro environment and
 remains IMPLEMENTED + REQUIRES WINDOWS VM VALIDATION, matching Phase
 17's own classification, not silently upgraded here.
 
+**Fifth screen added 2026-09-02, under the Internal Pilot v0.9 mandate
+(`docs/implementation/RELEASE_READINESS.md`): "Import/Uninstall are
+out of scope for this phase's UI" above is no longer true.** A live
+audit (auditing "safe install/uninstall/upgrade behavior") found
+`ElevationHelper` had genuinely never been called from anywhere in the
+five phases since this one — a real user had to run Import-/Initialize-/
+Uninstall-IntraCloudDistro.ps1 by hand, from an elevated prompt, with
+no button anywhere. Closed by resolving the open design question this
+phase's own entry implicitly deferred (how a `UseShellExecute=true`/
+`Verb=runas` elevated process, which cannot redirect stdout, reports
+live progress back to the parent): a new trampoline script
+(`installer/scripts/Invoke-ElevatedAction.ps1`) runs chained lifecycle
+scripts as real child `powershell.exe` processes, writing combined
+progress to a status file `ElevatedScriptRunner.cs` polls. A real bug
+surfaced building it — the first version invoked steps in-process
+(`& $scriptPath @scriptArguments`), which PowerShell binds
+*positionally*, silently breaking every named parameter (`-RootfsPath`,
+`-AppBundlePath`, `-BackupDestination`) despite looking correct;
+confirmed directly and fixed by spawning a genuine external process per
+step instead. A fifth "Setup & Removal" tab (`SetupViewModel.cs`/
+`SetupView.xaml`) wires this to Provision (Import + Initialize chained
+behind one UAC prompt) and Remove (Uninstall, gated behind a real
+confirmation dialog naming the actual consequence). Live-verified
+against the real running app (published exe, launched, screenshotted,
+driven via UI Automation): the tab renders, the Provision button
+correctly enables only once both required paths are filled in, and
+clicking Remove against a real `NotInstalled` state correctly does
+nothing — no dialog, no elevation attempt — proving the safety gate
+holds at the UI layer, not just in a unit test. 4 new Pester tests (real
+subprocess runs against the trampoline, nothing mocked) and 9 new xUnit
+tests (validation + the C#↔PowerShell JSON contract) all pass; the
+actual elevated run itself remains genuinely untestable in CI
+(`Verb=runas` always triggers a real UAC prompt) and is labeled as such
+rather than silently uncovered, matching this same phase's own
+Docker-Engine-inside-WSL2 classification above. See
+RELEASE_READINESS.md for the full account.
+
 ## Phase 19 — Windows Installer Experience — COMPLETE (scoped down from the original brief, deliberately)
 
 Two real, verified additions to `installer/wix/Package.wxs`: real
@@ -1623,18 +1667,73 @@ real container rebuilds — not assumed from any of these individually);
 code signing is IMPLEMENTED but BLOCKED BY EXTERNAL REQUIREMENT (a
 real signing certificate, which is a business asset this development
 session neither has nor should fabricate) for actual verification.
-**Not closed by any of the above: offline installation is still
-partial.** `Initialize-IntraCloudDistro.ps1` bundles container images
-via `Build-ReleaseBundle.ps1` (no internet needed for those), but still
-installs Docker Engine itself via `curl -fsSL https://get.docker.com |
+**Was not closed by any of the above at the time this paragraph was
+first written: offline installation was still partial.**
+`Initialize-IntraCloudDistro.ps1` bundled container images via
+`Build-ReleaseBundle.ps1` (no internet needed for those), but still
+installed Docker Engine itself via `curl -fsSL https://get.docker.com |
 sh` inside the distribution — confirmed still present and still
-internet-dependent by re-reading the script during this same pass, not
-fixed here. A genuinely offline install would need Docker Engine's
-`.deb` packages (and their full dependency closure) bundled the same
-way the container images are, which is real, separate follow-up work,
-not attempted in this pass. The WiX v6+ licensing decision
-(`installer/README.md`) remains open and is also a business decision,
-not something this phase resolves.
+internet-dependent by re-reading the script during that pass, not fixed
+there. The WiX v6+ licensing decision (`installer/README.md`) remains
+open and is also a business decision, not something this phase
+resolves.
+
+**Closed 2026-09-02, under the Internal Pilot v0.9 mandate
+(`docs/implementation/RELEASE_READINESS.md`): the Docker Engine
+internet dependency above.** ADR-0013 documents the decision and
+tradeoffs (Docker Engine's version is now pinned per IntraForge
+release, not live-patched inside an installed appliance — a deliberate,
+documented choice, not an oversight). New pieces:
+
+- **`installer/release/Build-IntraCloudRootfs.ps1` — IMPLEMENTED +
+  LIVE-VERIFIED.** Release-time tool (same category as
+  `Build-ReleaseBundle.ps1`, not a customer-facing lifecycle script):
+  runs a throwaway Ubuntu container, installs Docker Engine CE +
+  the Compose plugin from Docker's own apt repository, pre-writes
+  `/etc/wsl.conf`'s `systemd=true`, then `docker export`s the result —
+  the same technique this phase's own Phase 17 entry used by hand
+  (`docker export` of `python:3.13-slim`), now automated and with
+  Docker actually installed inside it. Run for real against a live
+  Docker daemon on 2026-09-02: produced a 685,065,216-byte rootfs;
+  `tar -tf` confirmed `usr/bin/docker`, `usr/bin/dockerd`, and
+  `etc/wsl.conf` are present in the output, not assumed from the script
+  exiting 0. A real bug was caught and fixed in the same pass: the
+  first run leaked the entire `apt-get`/`docker pull` transcript into
+  the function's PowerShell return value (uncaptured native-command
+  stdout is implicitly part of a PowerShell function's output), which
+  would have corrupted `New-ReleaseArtifacts.ps1`'s use of the returned
+  path — caught by actually inspecting the polluted output, not by
+  code review alone; fixed by routing every native command's stdout
+  through `Write-Verbose` instead of leaving it bare.
+- **`installer/scripts/Initialize-IntraCloudDistro.ps1` — the
+  `get.docker.com` fallback is removed outright, not kept as a
+  fallback.** A rootfs reaching this script without Docker already
+  present now throws immediately with a message pointing at
+  `Build-IntraCloudRootfs.ps1`, instead of silently reaching for the
+  internet. `installer/tests/WslDistro.Tests.ps1` updated to match:
+  the "Docker Engine not found" case now asserts a throw and zero
+  `get.docker.com`/`Copy-Item` invocations, rather than asserting an
+  install attempt.
+- **`installer/release/New-ReleaseArtifacts.ps1`** gained an optional
+  `-RootfsPath` parameter: when supplied (from
+  `Build-IntraCloudRootfs.ps1`'s output), the rootfs tarball, its
+  checksum, and its build manifest are copied into the versioned
+  release directory and folded into `CHECKSUMS.txt`/`RELEASE_INFO.txt`;
+  omitted, a release still builds (matching the MSI-only status quo)
+  but `RELEASE_INFO.txt` and a `Write-Warning` both say plainly that
+  the release has no bundled rootfs and won't install offline.
+- **Not yet done, honestly:** no CI job builds the rootfs automatically
+  — it joins `Build-ReleaseBundle.ps1` and `New-ReleaseArtifacts.ps1`
+  as release-time tools a release engineer runs by hand; a real
+  release-triggered pipeline chaining all of them together (plus the
+  Windows MSI build) doesn't exist yet for any of the three, not just
+  this new one. Nor has this rootfs actually been `wsl --import`-ed and
+  had `dockerd` started inside a live WSL2 distribution end-to-end —
+  that step is Phase 20's qualification-matrix job, requiring the
+  disposable/clean Windows machine already tracked as a blocker there,
+  not performed here. License-compliance review of the bundled Ubuntu
+  base + Docker Engine CE packages is also still open (tracked in
+  `RELEASE_READINESS.md`).
 
 **Re-verification pass (2026-08-27), a different session, same host.**
 Rebuilt from a clean `dotnet publish`/`dotnet build` with no code
@@ -1833,12 +1932,27 @@ installer-adjacent pieces that hadn't been:
 - Firewall rules: confirmed the installer touches none at all (no
   `netsh`/firewall calls anywhere under `installer/`) — correct for the
   default Desktop Mode (the proxy binds `127.0.0.1` only, per
-  `docker-compose.yml`, so no inbound rule is needed). **Real, open gap
-  for LAN Server Mode specifically**: setting `PROXY_BIND_ADDRESS` to a
-  LAN interface has no accompanying Windows Firewall automation here —
-  not fixed this pass (a real feature to design, not a quick patch);
-  tracked for the offline-installation/deployment-mode work still open
-  (directive point 4).
+  `docker-compose.yml`, so no inbound rule is needed). **Was a real,
+  open gap for LAN Server Mode specifically — closed 2026-09-03 under
+  the Internal Pilot v0.9 mandate** (`docs/implementation/RELEASE_READINESS.md`):
+  `installer/scripts/Enable-IntraCloudLanAccess.ps1` (new) enables WSL2
+  mirrored networking mode (machine-wide, opt-in only) and adds a
+  scoped `New-NetFirewallRule` (Private/Domain profiles only, never
+  Public), both idempotent; `New-IntraCloudEnvironmentFile.ps1` gained
+  a `-LanAddress` parameter that widens `PROXY_BIND_ADDRESS`/
+  `PROXY_TLS_HOSTNAMES`/`ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS`/
+  `CORS_ALLOWED_ORIGINS` instead of leaving every Windows-generated
+  `.env` hardwired to `127.0.0.1`-only regardless of operator intent
+  (the actual root cause underneath this gap — the firewall rule alone
+  would not have been enough). Both wired into the Setup screen's
+  Provision flow, gated behind a real confirmation naming the
+  machine-wide consequence. See RELEASE_READINESS.md for the full
+  account, including two real PowerShell bugs found and fixed by the
+  new Pester coverage (an if/else-expression-collapses-empty-array-to-
+  $null trap, and a `List<T>::new()` overload-resolution failure — both
+  confirmed directly, not assumed) and a note on what live UI-Automation
+  testing of the confirmation dialog could and couldn't conclusively
+  verify.
 - Dependency integrity: `object-storage` still pins `minio/minio:latest`
   (docker-compose.yml's own comment already flags this — "pin to a
   specific digest before production use"), unchanged this pass, still
@@ -1883,6 +1997,167 @@ Health Verification/Finish) against the current simpler
 `WixUI_InstallDir` flow; Windows Firewall automation for LAN Server
 Mode. None of these are the release blocker this pass started from
 (the orphan defect) — that one is closed.
+
+## Phase 22 — Environment Management (per-application Development/Staging/Production isolation) — COMPLETE
+
+> Numbered 22, not 16: this phase and Phase 16 ("Windows Build
+> Infrastructure", above) were developed on two branches that both
+> continued the phase counter from the same Phase-15 base and each
+> independently picked "16" for unrelated work — this frontend/
+> environments initiative, and the Windows installer effort. Renumbered
+> at merge time (`release/finalize-intracloud`) to keep phase numbers
+> unique; no content changed. `CLAUDE.md` and
+> `docs/security/PERMISSIONS.md` were corrected to match.
+
+Replaces the Developer portal's "Per-environment credentials aren't
+built yet" placeholder with a real subsystem. New app: `environments`
+(`Environment`, `EnvironmentVariable`, `EnvironmentSecret`,
+`EnvironmentWebhook`), completing the hierarchy Organization ->
+Application -> Environment. Not hardcoded to exactly three kinds:
+`environment_type` is a free-form string (`development`/`staging`/
+`production` are the first-class, UI-recognized values; anything else
+is accepted as a custom kind), and the actual security-relevant flag —
+`is_production_tier` — is a separate boolean so a future custom kind
+can opt into the same protection without a migration.
+
+**Isolation, the actual point of this phase.** `TenantDatabase` and
+`Bucket` each gained a nullable `OneToOneField` to `Environment`
+(`databases`/`storage` depend on `environments`, not the reverse — no
+FK the other way, keeping the dependency direction one-way).
+`ApplicationCredential` gained a nullable `environment` FK; when set,
+`environments.services.check_environment_scope` — called from every
+row/file-data view in `databases/views.py` and `storage/views.py` —
+requires the resource's own binding to match the credential's
+Environment exactly. An unbound resource is *not* reachable through an
+Environment-scoped credential either (explicit binding required, not
+merely "no conflicting binding"). Verified live against the real
+running stack, not just the automated suite: created an application
+with Development and Production environments, bound each to its own
+real `TenantDatabase` and `Bucket`, issued a separate credential per
+environment, granted the service account `database.read`/`write` and
+`storage.read` on *both* databases/buckets (deliberately, so the
+isolation check itself — not an absent grant — is what blocks access),
+then confirmed via direct `curl` against the live API: Development
+credential -> Development table = 200, Development credential ->
+Production table = **403**, Production credential -> Production table
+= 200, Production credential -> Development table = **403**, same
+pattern for storage. Revoking a credential live and re-testing
+confirmed rejection. A credential with no Environment (the pre-existing
+shape) is unaffected — scoping is opt-in, existing credentials keep
+working exactly as before.
+
+**RBAC** (capability-based, ADR-0008 — no role-name branching): four
+new permissions — `environment.read`, `environment.manage`,
+`environment.secrets.manage`, `environment.production.manage`.
+`organization-administrator` gets all four (its existing "everything
+except system.admin" grant already includes new permissions
+automatically); `developer` gets the first three but deliberately *not*
+`environment.production.manage`, so a Developer can manage
+Development/Staging but any mutating operation on a production-tier
+Environment additionally requires that fourth permission
+(`environments.services.can_manage_environment` enforces this as an
+extra gate on top of the base permission, not a replacement for it);
+`viewer` gets read-only. Confirmed live and via `EnvironmentRbacTests`:
+a Developer can create/edit a Development environment but gets 403
+creating, editing, or deleting a Production one; an organization
+administrator can do all of it.
+
+**Secrets** (`EnvironmentSecret`) and **webhook signing secrets**
+(`EnvironmentWebhook`) are Fernet-encrypted at rest
+(`environments/crypto.py`, same `CREDENTIAL_ENCRYPTION_KEY`-derived key
+as `accounts/crypto.py`/`databases/crypto.py` — a deliberately
+duplicated ~15-line module per that established convention, not a
+cross-app import). Values are returned exactly once, in the create/
+rotate response body, and never again — confirmed via
+`EnvironmentSecretProtectionTests`: the list endpoint's fields are
+exactly `{id, key, created_at, rotated_at}`, no `value` field exists to
+leak through it, the stored bytes don't contain the plaintext, and no
+audit event's `context` ever contains a secret value (only the key
+name). Clone deliberately does *not* copy secrets or webhook signing
+secrets to the new environment — cloning configuration shape is useful,
+silently sharing a production API key with a freshly-cloned
+"staging-2" is exactly the kind of leak this subsystem exists to
+prevent.
+
+**Delete confirmation**: typing the exact environment name is required
+for any delete; a production-tier environment additionally requires an
+explicit `confirm_production_understanding: true` the frontend can only
+satisfy via its own checkbox, not by getting the name field right
+twice — a real second confirmation, not just stronger dialog copy.
+
+**Backup/restore** (`exports` app): `builder.py`'s manifest gained an
+`applications` section (Application + each Environment's config,
+variables, webhook URLs/event types, and secret *key names only* — see
+`manifest.EXCLUDED_SCOPE`'s updated entries for exactly what's
+excluded and why). `restorer.py` recreates each Application through
+`applications.services.register_application` and each Environment
+through `environments.services.create_environment` (never a raw
+`.create()` bypassing their own bootstrap), re-links database/storage
+bindings to the *newly created* rows via an old-id lookup built while
+restoring workspaces/projects, and surfaces "N secrets were not
+restored and must be re-created" as a restore warning rather than
+creating placeholder `EnvironmentSecret` rows. Tested the actual
+restore, not merely that export produces bytes
+(`ApplicationEnvironmentExportRestoreTests`): round-tripped an
+Application with a Staging environment, a real database/bucket
+binding, a variable, a webhook, and a secret through the real
+export-job/restore-job API endpoints; confirmed the secret's plaintext
+never appears anywhere in the raw package bytes, the restored
+Environment has its own newly-created database/bucket bound (not the
+source organization's), and zero `EnvironmentSecret` rows exist on the
+restored side.
+
+**Frontend**: replaces the Environments placeholder page
+(`/orgs/[orgId]/developer/environments`) with a real list (grouped by
+application, Name/Type/Status/Application/Created/Last activity/
+Database status/Storage status/API credential status columns; Create/
+Clone/Disable-Enable/Delete actions) and a real detail page
+(`/environments/[environmentId]`) with eleven tabs — Overview,
+Configuration, Secrets, API Keys, Database, Storage, Auth, Webhooks,
+Logs, Activity, Settings — each backed by the real API, not mocked
+state. Logs/Activity reuse the existing per-organization audit
+endpoint (extended with a `resource_id` filter, additive) rather than a
+second logging path. The Application detail page gained its own
+Environments section (cards + "New environment"), completing the
+Organization -> Application -> Environment navigation the hierarchy
+implies. **Also fixed while here**: the Developer portal's sub-nav
+(`DeveloperNav.tsx`) went wider than the viewport below roughly 1024px
+(`overflow-x-auto` on a 12-item flat row), hiding Usage/SDKs/Docs
+behind an easy-to-miss horizontal scrollbar on a *tab bar* — regrouped
+into five semantic clusters with `flex-wrap` (no horizontal scroll at
+any width) instead of hiding anything behind a "More" menu. Confirmed
+live via a full-page screenshot at the default viewport: all twelve
+tabs visible, grouped, no scrollbar.
+
+**A real bug found and fixed during this phase's own live
+verification, not by inspection**: the database/storage binding
+endpoints originally called `services.update_environment(environment=
+environment, actor=request.user)` with no changed fields, intending it
+to at least bump `last_activity_at` — but `update_environment`'s
+`changed` list stays empty with no fields passed, so the whole
+save-and-audit block is skipped entirely. Live-tested by binding/
+unbinding a real database and checking the Environment's own Logs tab
+afterward: the binding change didn't appear at all. Fixed with four
+dedicated service functions (`bind_database`/`unbind_database`/
+`bind_storage`/`unbind_storage`) that explicitly save and audit-record
+an `environment.updated` event with the bound resource's id in
+`context`; re-verified live afterward that a disconnect/reconnect
+cycle now shows up correctly in the Logs tab.
+
+Exit criteria: 41 new backend tests (environments + the exports
+round-trip test) pass against real PostgreSQL, alongside all 290
+pre-existing tests (0 regressions); `ruff check .` and `mypy .` clean
+across the whole backend; frontend `npm run lint` and `npm run build`
+(real TypeScript checking, not skipped) both clean; the full isolation
+scenario verified twice — once via the automated test suite
+(`EnvironmentCredentialAndIsolationTests`), once live against the real
+running Docker stack via direct `curl` calls with real issued bearer
+tokens, not assumed from the test suite alone. **Not exercised in this
+phase**: Auth tab's `config.auth.allowed_origins` field is a real,
+persisted, non-secret setting but nothing currently reads it back
+server-side to actually enforce CORS per environment — it's storage and
+UI for a setting a future phase would need to wire into an actual
+enforcement point, tracked here rather than implied as done.
 
 ## Non-Negotiable Cross-Phase Rules
 

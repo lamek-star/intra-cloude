@@ -110,6 +110,37 @@ public sealed class LocalConnection : IIntraCloudConnection
         return ThrowIfFailed(result, $"back up '{backupType}'");
     }
 
+    public async Task<bool> RestoreBackupAsync(string recordId, bool stopStack, CancellationToken cancellationToken = default)
+    {
+        // -RecordId ends up inside a command line executed *inside* the
+        // distro (Invoke-IntraCloudDistroCommand), same reasoning as
+        // TriggerBackupAsync's -ValidateSet check above -- a fast,
+        // friendly failure before spawning a process for an obviously-
+        // wrong value, not the real enforcement point (the PowerShell
+        // script's own [System.Guid]::Parse, and ultimately Django's
+        // uuid.UUID() in the management command, are).
+        if (!Guid.TryParse(recordId, out _))
+        {
+            throw new ArgumentException($"'{recordId}' is not a valid backup record id.", nameof(recordId));
+        }
+
+        var arguments = new List<string> { "-RecordId", recordId, "-AcknowledgeDataLoss" };
+        if (stopStack)
+        {
+            arguments.Add("-StopStack");
+        }
+
+        // Longest of the four backup/restore-adjacent operations this
+        // class runs: a real restore can include a full docker compose
+        // stop + pg_restore + docker compose up cycle, not just the
+        // pg_restore step TriggerBackupAsync's own 10-minute budget was
+        // sized for.
+        var result = await RunAsync(
+            "Invoke-IntraCloudRestore.ps1", arguments, TimeSpan.FromMinutes(15), cancellationToken)
+            .ConfigureAwait(false);
+        return ThrowIfFailed(result, $"restore backup '{recordId}'");
+    }
+
     public async Task<string> GetContainerLogsAsync(
         string service, int tailLines = 200, CancellationToken cancellationToken = default)
     {
@@ -145,6 +176,15 @@ public sealed class LocalConnection : IIntraCloudConnection
         return ScriptRunner.RunAsync(scriptPath, arguments, timeout, cancellationToken);
     }
 
+    // These two messages say "Intra-Cloud distribution" on purpose, not left
+    // over from the IntraForge rebrand: the actual registered WSL
+    // distribution name is still literally "IntraCloud"
+    // ($script:IntraCloudDistroName, installer/scripts/WslDistro.Common.ps1)
+    // until that PowerShell-layer rename happens as its own pass (see
+    // installer/wix/Package.wxs's ProgramData directory comment for the
+    // same reasoning). Saying "IntraForge distribution" here while
+    // `wsl --list` still shows "IntraCloud" would be a real, user-visible
+    // inconsistency, not an improvement.
     private static bool ThrowIfFailed(ScriptResult result, string actionDescription)
     {
         if (result.TimedOut)

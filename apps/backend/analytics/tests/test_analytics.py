@@ -336,3 +336,64 @@ class DashboardTests(AnalyticsTestBase):
         )
         resp = self.client.delete(reverse("dashboard-detail", args=[create.data["id"]]))
         self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+
+
+class DashboardReadVisibilityTests(AnalyticsTestBase):
+    """
+    This module's own docstring states viewing a dashboard requires
+    `database.read` on its underlying table — previously true only for
+    render_dashboard, not for the endpoints that list a database's
+    dashboards or return one dashboard's definition (name + widget
+    configs: which tables/columns/operations it queries).
+    """
+
+    def setUp(self):
+        super().setUp()
+        create = self.client.post(
+            reverse("dashboard-list-create", args=[self.tenant_database_id]),
+            {
+                "name": "Sales Overview",
+                "widgets": [
+                    {
+                        "title": "Average order quantity",
+                        "chart_type": "kpi",
+                        "table_id": self.table_id,
+                        "operation": "mean",
+                        "params": {"column": "quantity"},
+                    }
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(create.status_code, status.HTTP_201_CREATED, create.data)
+        self.dashboard_id = create.data["id"]
+
+        self.outsider = User.objects.create_user(email="dashboard-outsider@example.com", password="x")
+        Membership.objects.create(
+            user=self.outsider, organization_id=self.org_id, status=Membership.Status.ACTIVE
+        )
+        self.client.force_login(self.outsider)
+
+    def test_member_without_database_read_cannot_list_dashboards(self):
+        resp = self.client.get(reverse("dashboard-list-create", args=[self.tenant_database_id]))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_member_without_database_read_cannot_view_dashboard_detail(self):
+        resp = self.client.get(reverse("dashboard-detail", args=[self.dashboard_id]))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_viewer_role_can_list_and_view_the_dashboard(self):
+        from organizations.models import Organization
+        from permissions.services import assign_role
+
+        assign_role(
+            user=self.outsider, role_slug="viewer", organization=Organization.objects.get(id=self.org_id)
+        )
+
+        listing = self.client.get(reverse("dashboard-list-create", args=[self.tenant_database_id]))
+        self.assertEqual(listing.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(listing.data), 1)
+
+        detail = self.client.get(reverse("dashboard-detail", args=[self.dashboard_id]))
+        self.assertEqual(detail.status_code, status.HTTP_200_OK)
+        self.assertEqual(detail.data["name"], "Sales Overview")

@@ -32,5 +32,15 @@ public interface IIntraCloudConnection
 
     Task<bool> TriggerBackupAsync(string backupType, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Restores one backup record into the real, live target it was
+    /// backed up from -- destructive, replaces the target's current
+    /// data. <paramref name="stopStack"/> stops backend/worker/beat
+    /// before restoring and brings the stack back up afterward
+    /// (recommended for control_db/tenant_db; see
+    /// Invoke-IntraCloudRestore.ps1's own doc comment for why).
+    /// </summary>
+    Task<bool> RestoreBackupAsync(string recordId, bool stopStack, CancellationToken cancellationToken = default);
+
     Task<string> GetContainerLogsAsync(string service, int tailLines = 200, CancellationToken cancellationToken = default);
 }

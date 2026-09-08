@@ -284,7 +284,7 @@ Describe 'Initialize-IntraCloudDistro.ps1' {
         { Initialize-IntraCloudDistro -AppBundlePath $script:bundlePath } | Should -Throw '*not installed*'
     }
 
-    It 'installs Docker Engine only when it is not already present, and stages the bundle' {
+    It 'throws instead of installing Docker Engine over the internet when it is missing (ADR-0013)' {
         Mock Invoke-Wsl { New-WslResult -StdOut "IntraCloud`tRunning`t2" }
         Mock Invoke-IntraCloudDistroCommand {
             if ($Command -eq 'command -v docker') { return New-WslResult -ExitCode 1 }
@@ -293,12 +293,12 @@ Describe 'Initialize-IntraCloudDistro.ps1' {
         }
         Mock Copy-Item {}
         Mock New-Item {}
-        Initialize-IntraCloudDistro -AppBundlePath $script:bundlePath | Should -Be $true
-        Should -Invoke Invoke-IntraCloudDistroCommand -ParameterFilter { $Command -like '*get.docker.com*' } -Times 1
-        Should -Invoke Copy-Item -ParameterFilter { $Path -like '*docker-compose.yml' } -Times 1
+        { Initialize-IntraCloudDistro -AppBundlePath $script:bundlePath } | Should -Throw '*Docker Engine was not found*'
+        Should -Invoke Invoke-IntraCloudDistroCommand -ParameterFilter { $Command -like '*get.docker.com*' } -Times 0
+        Should -Invoke Copy-Item -Times 0
     }
 
-    It 'skips Docker Engine install when already present' {
+    It 'proceeds and stages the bundle when Docker Engine is already present (baked into the rootfs)' {
         Mock Invoke-Wsl { New-WslResult -StdOut "IntraCloud`tRunning`t2" }
         Mock Invoke-IntraCloudDistroCommand {
             if ($Command -eq 'command -v docker') { return New-WslResult -ExitCode 0 -StdOut '/usr/bin/docker' }
@@ -309,6 +309,44 @@ Describe 'Initialize-IntraCloudDistro.ps1' {
         Mock New-Item {}
         Initialize-IntraCloudDistro -AppBundlePath $script:bundlePath | Should -Be $true
         Should -Invoke Invoke-IntraCloudDistroCommand -ParameterFilter { $Command -like '*get.docker.com*' } -Times 0
+        Should -Invoke Copy-Item -ParameterFilter { $Path -like '*docker-compose.yml' } -Times 1
+    }
+
+    It 'forwards -LanAddress through to New-IntraCloudEnvironmentFile.ps1 when generating a fresh .env' {
+        # Regression coverage for the actual integration point of the
+        # LAN-access gap fix (New-IntraCloudEnvironmentFile.Tests.ps1
+        # covers the generation logic itself in isolation; this proves
+        # Initialize-IntraCloudDistro.ps1 really wires -LanAddress
+        # through to it, not just that the parameter exists).
+        $lanBundlePath = Join-Path $TestDrive 'lan-bundle'
+        New-Item -ItemType Directory -Force -Path $lanBundlePath | Out-Null
+        Set-Content -Path (Join-Path $lanBundlePath 'docker-compose.yml') -Value 'services: {}'
+        New-Item -ItemType Directory -Force -Path (Join-Path $lanBundlePath 'infrastructure') | Out-Null
+        Set-Content -Path (Join-Path $lanBundlePath '.env.example') -Value @(
+            'SECRET_KEY=changeme'
+            'PROXY_BIND_ADDRESS=127.0.0.1'
+            'ALLOWED_HOSTS=localhost,127.0.0.1'
+        )
+
+        Mock Invoke-Wsl { New-WslResult -StdOut "IntraCloud`tRunning`t2" }
+        Mock Invoke-IntraCloudDistroCommand {
+            if ($Command -eq 'command -v docker') { return New-WslResult -ExitCode 0 }
+            if ($Command -like 'grep *wsl.conf*') { return New-WslResult -StdOut 'present' }
+            New-WslResult
+        }
+        Mock New-Item {}
+        $script:capturedEnvContent = $null
+        Mock Copy-Item {
+            if ($Destination -like '*\.env') {
+                $script:capturedEnvContent = Get-Content -Path $Path -Raw
+            }
+        }
+
+        Initialize-IntraCloudDistro -AppBundlePath $lanBundlePath -LanAddress '192.168.1.50' | Should -Be $true
+
+        $script:capturedEnvContent | Should -Not -BeNullOrEmpty
+        $script:capturedEnvContent | Should -Match 'PROXY_BIND_ADDRESS=192\.168\.1\.50'
+        $script:capturedEnvContent | Should -Match 'ALLOWED_HOSTS=localhost,127\.0\.0\.1,192\.168\.1\.50'
     }
 
     It 'writes /etc/wsl.conf and terminates the distro only when systemd is not yet enabled' {
@@ -350,9 +388,32 @@ Describe 'Uninstall-IntraCloudDistro.ps1' {
             New-WslResult
         }
         Mock Invoke-IntraCloudDistroCommand { New-WslResult }
+        Mock Get-NetFirewallRule { $null }
         Uninstall-IntraCloudDistro -DeleteData | Should -Be $true
         Should -Invoke Invoke-IntraCloudDistroCommand -Times 0
         Should -Invoke Invoke-Wsl -ParameterFilter { $Arguments -contains '--unregister' } -Times 1
+    }
+
+    It 'removes the IntraForge LAN-access firewall rule after a successful unregister, if one exists' {
+        Mock Invoke-Wsl {
+            if ($Arguments -contains '--list') { return New-WslResult -StdOut "IntraCloud`tRunning`t2" }
+            New-WslResult
+        }
+        Mock Invoke-IntraCloudDistroCommand { New-WslResult }
+        Mock Get-NetFirewallRule { [PSCustomObject]@{ DisplayName = 'IntraForge LAN Access' } }
+        Mock Remove-NetFirewallRule {}
+        Uninstall-IntraCloudDistro -DeleteData | Should -Be $true
+        Should -Invoke Remove-NetFirewallRule -Times 1
+    }
+
+    It 'still reports success if firewall-rule cleanup fails -- the distribution is already gone by then' {
+        Mock Invoke-Wsl {
+            if ($Arguments -contains '--list') { return New-WslResult -StdOut "IntraCloud`tRunning`t2" }
+            New-WslResult
+        }
+        Mock Invoke-IntraCloudDistroCommand { New-WslResult }
+        Mock Get-NetFirewallRule { throw 'firewall service unavailable' }
+        Uninstall-IntraCloudDistro -DeleteData | Should -Be $true
     }
 
     It 'aborts without unregistering when a pre-removal backup fails' {
@@ -362,6 +423,50 @@ Describe 'Uninstall-IntraCloudDistro.ps1' {
         }
         Mock Invoke-IntraCloudDistroCommand { New-WslResult -ExitCode 1 -StdErr 'pg_dump failed' }
         { Uninstall-IntraCloudDistro -BackupDestination (Join-Path $TestDrive 'backup-out') } | Should -Throw '*backup*'
+        Should -Invoke Invoke-Wsl -ParameterFilter { $Arguments -contains '--unregister' } -Times 0
+    }
+
+    It 'resolves the pdc_backups named volume''s real mountpoint and copies from there, not a bare /backups path' {
+        # Regression test for a real bug: pdc_backups is a Docker named
+        # volume (docker-compose.yml), not a plain directory at the
+        # distribution's filesystem root -- a named volume's actual
+        # on-disk location is Docker-managed
+        # (/var/lib/docker/volumes/<project>_pdc_backups/_data,
+        # confirmed live via `docker volume inspect` against this
+        # repo's own compose file) and depends on the Compose project
+        # name, which this script must never hardcode or assume.
+        Mock Invoke-Wsl {
+            if ($Arguments -contains '--list') { return New-WslResult -StdOut "IntraCloud`tRunning`t2" }
+            New-WslResult
+        }
+        Mock Invoke-IntraCloudDistroCommand {
+            if ($Command -like 'docker volume ls*') { return New-WslResult -StdOut 'intracloud_pdc_backups' }
+            if ($Command -like 'docker volume inspect*') { return New-WslResult -StdOut '/var/lib/docker/volumes/intracloud_pdc_backups/_data' }
+            New-WslResult
+        }
+        Mock New-Item {}
+        Mock Copy-Item {}
+        Mock Get-NetFirewallRule { $null }
+        Uninstall-IntraCloudDistro -BackupDestination (Join-Path $TestDrive 'backup-out') | Should -Be $true
+        Should -Invoke Copy-Item -ParameterFilter {
+            $Path -eq '\\wsl.localhost\IntraCloud\var\lib\docker\volumes\intracloud_pdc_backups\_data\*'
+        } -Times 1
+        Should -Invoke Invoke-Wsl -ParameterFilter { $Arguments -contains '--unregister' } -Times 1
+    }
+
+    It 'aborts without unregistering when the pdc_backups volume cannot be resolved' {
+        Mock Invoke-Wsl {
+            if ($Arguments -contains '--list') { return New-WslResult -StdOut "IntraCloud`tRunning`t2" }
+            New-WslResult
+        }
+        Mock Invoke-IntraCloudDistroCommand {
+            if ($Command -like 'docker volume ls*') { return New-WslResult -StdOut '' }
+            New-WslResult
+        }
+        Mock New-Item {}
+        Mock Copy-Item {}
+        { Uninstall-IntraCloudDistro -BackupDestination (Join-Path $TestDrive 'backup-out') } | Should -Throw '*pdc_backups*'
+        Should -Invoke Copy-Item -Times 0
         Should -Invoke Invoke-Wsl -ParameterFilter { $Arguments -contains '--unregister' } -Times 0
     }
 }

@@ -1,11 +1,11 @@
-# Architecture Overview — Private Data Cloud
+# Architecture Overview — IntraForge
 
 Status: DRAFT (Phase 0)
 Last updated: 2026-08-07
 
 ## 1. Purpose
 
-Private Data Cloud (PDC) is a self-hosted platform combining file storage
+IntraForge (PDC) is a self-hosted platform combining file storage
 (Drive/S3-like), a no-code relational database builder (Airtable/Supabase-like),
 and an application-integration layer, aimed at organizations that want to run
 their own infrastructure instead of depending on AWS/Azure/GCP.

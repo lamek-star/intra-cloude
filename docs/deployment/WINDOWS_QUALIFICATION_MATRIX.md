@@ -61,14 +61,14 @@ the new (Phase 19) 64-bit launch condition and directory-selection
 properties before failing at `InstallFinalize` with `Error 1925`
 (expected — that's the UAC wall this matrix exists to get past).
 
-- [ ] Elevated `msiexec /i IntraCloudControlCenter-Setup.msi` (interactive) completes successfully.
+- [ ] Elevated `msiexec /i IntraForgeControlCenter-Setup.msi` (interactive) completes successfully.
 - [ ] The `WixUI_InstallDir` directory-selection dialog appears, shows the correct default path, and a custom path can actually be chosen and is honored.
 - [ ] License dialog (`installer/assets/License.rtf`) renders correctly, not as garbled/mojibake'd text.
-- [ ] Post-install, `%ProgramFiles%\Intra-Cloud\Control Center\IntraCloudControlCenter.exe` and `...\scripts\*.ps1` (all 9 files) exist.
+- [ ] Post-install, `%ProgramFiles%\IntraForge\Control Center\IntraForgeControlCenter.exe` and `...\scripts\*.ps1` (all 9 files) exist.
 - [ ] `%ProgramData%\IntraCloud\ControlCenter\` exists, and a **non-administrator** standard user account can write a file into it (proves the Phase 18 `util:PermissionEx` ACL actually took effect on a real install — this is the one thing that specifically could NOT be verified without a real elevated install, since the ACL only applies once the directory is actually created by the installer).
 - [ ] `%ProgramData%\IntraCloud\wsl\` (or wherever `Import-IntraCloudDistro.ps1`'s default `-InstallPath` resolves) is **not** writable by a standard user (confirms the ACL scoping stayed narrow, per Phase 18's explicit design goal of not opening up the whole `IntraCloud` tree).
-- [ ] Start Menu shortcut ("Intra-Cloud Control Center") exists for all users, launches the app.
-- [ ] `HKLM\SOFTWARE\Intra-Cloud\ControlCenter` registry keys exist (`installed`, `DataFolderProvisioned`).
+- [ ] Start Menu shortcut ("IntraForge Control Center") exists for all users, launches the app.
+- [ ] `HKLM\SOFTWARE\IntraForge\ControlCenter` registry keys exist (`installed`, `DataFolderProvisioned`).
 - [ ] Reject-on-32-bit-OS: if a 32-bit test target is available, confirm the install is refused immediately with the `Package.wxs` `<Launch>` condition's message, not a confusing generic failure.
 - [ ] Insufficient-disk-space handling: constrain free space artificially (or use a small VM disk) and confirm the MSI's standard low-disk-space handling triggers, rather than a partial/corrupt install.
 
@@ -95,8 +95,8 @@ to the host's own Docker Desktop/WSL state, for proof value already
 covered by mocked/lightweight-distro testing). A dedicated VM has
 neither constraint.
 
-- [ ] Provision a real Intra-Cloud distro: `Import-IntraCloudDistro.ps1` with a real rootfs, then `Initialize-IntraCloudDistro.ps1` with a real `AppBundlePath` (docker-compose.yml, `infrastructure/`, `.env`, `images/*.tar`) — **note: a real release bundle populating `AppBundlePath` doesn't exist as a build artifact yet; producing one is Phase 21's job.** Until then, this step means assembling one by hand (e.g., `docker save` the images this repo's own `docker-compose.yml` already builds/pulls) — document however you actually did it here.
-- [ ] `Initialize-IntraCloudDistro.ps1` successfully installs Docker Engine via `get.docker.com` inside the distro (not Docker Desktop — confirm no Docker Desktop process/service gets touched).
+- [ ] Provision a real IntraForge distro: `Import-IntraCloudDistro.ps1` with a real rootfs built by `installer/release/Build-IntraCloudRootfs.ps1` (ADR-0013 — Docker Engine + Compose plugin + `systemd=true` already baked in; produced and live-verified outside WSL2 on 2026-09-02, see ROADMAP.md's Phase 21 entry, but not yet actually `wsl --import`-ed on a real host — that first real import is this checklist item), then `Initialize-IntraCloudDistro.ps1` with a real `AppBundlePath` (docker-compose.yml, `infrastructure/`, `.env`, `images/*.tar` from `Build-ReleaseBundle.ps1`).
+- [ ] `Initialize-IntraCloudDistro.ps1` finds Docker Engine already present in the imported rootfs and does **not** attempt any internet-dependent install (ADR-0013 removed the `get.docker.com` fallback outright — confirm no Docker Desktop process/service gets touched either, same as before).
 - [ ] Compose stack comes up: all 9 services (`postgres-control`, `postgres-tenant`, `valkey`, `object-storage`, `backend`, `worker`, `beat`, `frontend`, `proxy`) reach `running`, with `Health: healthy` wherever `docker-compose.yml` defines a healthcheck.
 - [ ] Control Center's Status tab shows a populated, accurate per-service table (this is the exact scenario Phase 18's live testing could not reach) and `Healthy: True`.
 - [ ] Stop → Compose stack stops, distro terminates (unless a Compose service somehow keeps it alive) → Control Center reflects `Stopped`.
@@ -108,6 +108,8 @@ neither constraint.
 
 - [ ] From the Control Center's Backup & Restore tab, trigger each of the four backup types against the real running stack; confirm each succeeds and appears in the history table with correct size/timestamps.
 - [ ] Confirm `verified_restorable` becomes `true` after the scheduled Celery-Beat restore-verification cycle runs (or trigger `verify_backup` manually) — the Control Center only *displays* this field, it doesn't compute it; confirm the underlying `system/backups.py` behavior (already unit-tested against live Postgres in Phases 11/15) holds through the WSL2-hosted path too.
+- [ ] **Real restore, not just verification** (`docs/operations/BACKUP_RESTORE.md` Section 7a): create a known test record through the app (e.g. an org/file), back up `control_db`, delete or change the known record through the app, then select that backup in the Control Center and click Restore Selected with "Stop the stack during restore" checked. Confirm the confirmation dialog names the exact backup and consequence, the stack stops and comes back up automatically, and the known record is back to its backed-up state afterward. Repeat for `tenant_db` (a known table's row) and `object_storage` (a known uploaded file, checksum-verified after restore). Confirm the Restore button is disabled for a `configuration` backup (deliberately unsupported — Section 7a).
+- [ ] Confirm `/readyz` reports healthy immediately after a real restore (the script does not invoke it automatically — Section 7a's own noted gap).
 - [ ] Logs & Diagnostics tab: fetch real logs for at least `backend` and `postgres-tenant`; confirm "Collect Diagnostics" produces a real, openable zip with no secrets inside (spot-check: no `.env` values, no database passwords, no Fernet/JWT keys anywhere in the collected text files).
 
 ## 6. Upgrade
@@ -128,9 +130,9 @@ Phase 19 ROADMAP entry establish that uninstall must never touch the
 WSL2 distribution or its data, in either direction. This section
 confirms that decision actually holds in practice, not just in intent.
 
-- [ ] Uninstall via Programs and Features (interactive) or `msiexec /x ... /quiet` (the enterprise/SCCM path this decision was specifically made for) while the Intra-Cloud distro is **running** with real data in it.
+- [ ] Uninstall via Programs and Features (interactive) or `msiexec /x ... /quiet` (the enterprise/SCCM path this decision was specifically made for) while the IntraForge distro is **running** with real data in it.
 - [ ] Confirm after uninstall: `wsl --list --verbose` still shows the `IntraCloud` distribution, still `Running` (or whatever state it was in), completely unaffected.
-- [ ] Confirm all Control Center application files (exe, scripts, Start Menu shortcut, `HKLM\SOFTWARE\Intra-Cloud\ControlCenter` keys) are gone.
+- [ ] Confirm all Control Center application files (exe, scripts, Start Menu shortcut, `HKLM\SOFTWARE\IntraForge\ControlCenter` keys) are gone.
 - [ ] Confirm `%ProgramData%\IntraCloud\ControlCenter\` (the settings folder) is removed by the uninstall's `RemoveFolder` (best-effort — will only succeed if nothing else has left extra files there); confirm `%ProgramData%\IntraCloud\wsl\` (the actual distro/VHDX storage) is **never even attempted**.
 - [ ] Re-run the Control Center's own installer afterward and confirm it can find and manage the still-running, never-touched distro correctly (proves the "uninstall the app, not the deployment" model actually round-trips).
 

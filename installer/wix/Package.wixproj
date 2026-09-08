@@ -19,7 +19,7 @@
     either way — see installer/README.md.
   -->
   <PropertyGroup>
-    <OutputName>IntraCloudControlCenter-Setup</OutputName>
+    <OutputName>IntraForgeControlCenter-Setup</OutputName>
     <OutputType>Package</OutputType>
     <!-- The Control Center is win-x64-only (RuntimeIdentifier in the
          main .csproj) — the MSI must declare itself 64-bit too, or WiX's
