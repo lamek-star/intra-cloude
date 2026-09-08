@@ -34,6 +34,7 @@ Last updated: 2026-08-07
 | `database.delete` | Drop a database/schema |
 | `dataset.import` | Run CSV import jobs |
 | `dataset.export` | Export data (CSV, API) |
+| `application.read` | View an organization's registered Applications and their metadata |
 | `application.create` | Register a new Application |
 | `application.credentials.manage` | Issue/rotate/revoke Application credentials |
 | `permissions.manage` | Create/edit Roles, assign Roles, create Resource Grants |
@@ -60,9 +61,9 @@ they are never invented inline in view code.
 | Organization Administrator | Org owner/IT admin | All permissions except `system.admin`, scoped to their own organization (see implementation note below) |
 | Storage Administrator | IT/ops for files | `workspace.manage`, `storage.read/write/delete/share/manage` |
 | Database Administrator | Data team lead | `workspace.manage`, `database.*`, `dataset.import/export/analyze`, `connection.manage` |
-| Developer | App/integration builder | `workspace.manage`, `application.create`, `application.credentials.manage`, `database.read`, `database.write`, `dataset.import/export/analyze`, `environment.read/manage/secrets.manage` (deliberately *not* `environment.production.manage` — a Developer can manage Development/Staging but any mutating operation on a production-tier Environment needs that permission too) |
+| Developer | App/integration builder | `workspace.manage`, `application.read`, `application.create`, `application.credentials.manage`, `database.read`, `database.write`, `dataset.import/export/analyze`, `environment.read/manage/secrets.manage` (deliberately *not* `environment.production.manage` — a Developer can manage Development/Staging but any mutating operation on a production-tier Environment needs that permission too) |
 | Editor | General contributor | `storage.read/write`, `database.read/write`, `dataset.import` |
-| Viewer | Read-only staff | `storage.read`, `database.read`, `environment.read` |
+| Viewer | Read-only staff | `storage.read`, `database.read`, `environment.read`, `application.read` |
 | Auditor | Compliance/security | `audit.read` only |
 | Guest | Limited external-ish internal collaborator | Permissions granted only via explicit `ResourceGrant`, no role-wide grants |
 | Service Account | Application's runtime identity | No default permissions; entirely `ResourceGrant`/scope-driven |

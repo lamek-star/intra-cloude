@@ -1,4 +1,4 @@
-# CLAUDE.md — Engineering Guide for IntraForge
+# AGENTS.md — Engineering Guide for IntraForge
 
 This file is the standing engineering brief for this repository. It
 condenses the governing master prompt into working rules. If anything here

@@ -191,6 +191,158 @@ as part of every upgrade in `LOCAL_DEPLOYMENT.md` Section 4, not a new
 requirement, but easy to forget and worth calling out in the upgrade
 guide explicitly.
 
+**A second live QA pass (2026-09-07, under the Internal Pilot v0.9
+mandate's "security/reliability" priority — see
+`docs/implementation/RELEASE_READINESS.md`) repeated the same
+methodology — a second real, unprivileged member attempting to reach
+another member's resources through the running app, then a systematic
+re-audit of every remaining `get_member_*`-style view across
+`applications`, `imports`, `storage`, and `databases` for the same
+fetch-by-membership-only anti-pattern — and found four more, all now
+designed, implemented, tested, and live-verified:**
+
+| Endpoint(s) | Exposed | Capability now enforced |
+|---|---|---|
+| `ApplicationListCreateView.get`/`ApplicationDetailView.get` (`applications`) | Every registered Application's name/description/owner — no permission gated this at all, since `application.read` didn't exist before this fix | New `application.read` |
+| `ImportJobListCreateView.get`/`ImportJobDetailView.get`/`ImportJobErrorListView.get` (`imports`) | Import job status, and — via `ImportJobErrorSerializer.raw_row` — the literal content of rejected CSV rows (real tenant data, not just metadata) | `database.read` |
+| `BucketListCreateView.get` (`storage`) | Every bucket in a project (name, `versioning_enabled`, `created_by`) | `storage.read`, filtered per-bucket (see below) |
+| `TenantDatabaseListCreateView.get` (`databases`) | Every TenantDatabase in a project (name, `created_by`) | `database.read`, filtered per-bucket/-database (see below) |
+
+The bucket and tenant-database list endpoints are fixed differently from
+the rest of this table's entries: `storage.read`/`database.read` are
+resource-scoped (a `ResourceGrant` on one specific bucket/database, not
+just a role-wide grant — see Section 4's `RESOURCE_TYPE_BUCKET`/
+`RESOURCE_TYPE_TENANT_DATABASE`), and these two endpoints list *across*
+many such resources at once. A single all-or-nothing permission check
+(the pattern used everywhere else in this table) would have been a
+*stricter*, inconsistent gate than the detail endpoints for the same
+resource already enforce — hiding a bucket/database a caller can reach
+directly via a per-resource grant. Fixed by filtering the queryset
+per-item instead (role-wide OR a matching `ResourceGrant`), confirmed by
+a dedicated test proving a member with only a single-bucket/-database
+grant sees exactly that one item, not zero and not all of them.
+
+The `imports` finding is the most severe of the four: `raw_row` is
+literal rejected data from the uploaded file, not metadata about it —
+closer in kind to Section 4's row-data IDOR concern than to the
+schema/definition-only exposures the rest of this section covers.
+
+**A fifth, distinct finding in the same pass — not a missing capability
+check, but a missing invariant entirely**: the Phase 22 Environment-
+isolation guarantee ("an ApplicationCredential scoped to one Environment
+can never reach a resource bound to a different one") was enforced in
+`databases`'/`storage`'s row/file views (`check_environment_scope`,
+`environments/services.py`) but was never wired into `imports` at all —
+none of `ImportPreviewView`, `ImportJobListCreateView.get/post`,
+`ImportJobDetailView.get`, or `ImportJobErrorListView.get` called it.
+Concretely: a Development-scoped credential holding a real
+`database.write`/`storage.read` `ResourceGrant` on a *Production*-bound
+TenantDatabase/Bucket (a real, if unusual, misconfiguration — not a
+hypothetical) could import a CSV from a Production bucket into a
+Production table through `POST /tables/<id>/import/` even though the
+identical operation through `databases`'/`storage`'s own endpoints would
+correctly be denied. Live-verified end to end (real Environment-scoped
+credentials, real bound TenantDatabase/Bucket, real ResourceGrants on
+both sides of the isolation boundary — mirroring
+`environments/tests/test_environments.py`'s own
+`EnvironmentCredentialAndIsolationTests` setup) in
+`imports/tests/test_imports.py`'s `ImportEnvironmentScopeTests`: preview,
+list, and — the write path specifically — import-creation are all now
+denied across the boundary, confirmed with `ImportJob.objects.count()`
+proving no job was created, not just that the HTTP response was a 403.
+
+## 4b. Shared-Infrastructure Enforcement Under a Multi-Process Deployment
+
+A distinct class from 4a/4: mechanisms that were correctly *designed* and
+*configured* (a throttle rate, a checkpoint-and-resume import pipeline)
+but never actually worked as intended once run against this project's
+real multi-process deployment shape (`gunicorn --workers 3`, a separate
+Celery `worker` process/container) rather than a single Python process —
+found live, not by re-reading the configuration that looked correct on
+paper. Both closed 2026-09-07 in the same pass as 4a's four new findings
+above.
+
+**Rate limiting was configured but not actually enforced consistently.**
+`DEFAULT_THROTTLE_RATES`'s `"auth"` scope (10/minute, specifically to
+resist credential-stuffing/brute-force against login/register/MFA-verify
+— see the comment already in `config/settings/base.py`) and
+`system.throttling.OrganizationRateThrottle`'s `"import"` scope both rely
+on DRF's throttle classes, which key their request counters through
+Django's cache framework. No `CACHES` setting existed anywhere in this
+codebase, so Django silently defaulted to `LocMemCache` — **per-process**
+memory. With gunicorn's 3 worker processes each holding an independent,
+unshared counter, the throttle's real, live-verified behavior was **not**
+"blocked after 10 requests" but an inconsistent, load-dependent pattern
+close to 3× looser than configured — confirmed directly: 20 rapid login
+attempts against the real running proxy produced a pattern of
+`401 401 401 401 429 429 429 401 401 401 429 429 429 401 429 429 429 401 429 429`
+(each gunicorn worker independently allowing ~3-4 before its own
+in-memory count caught up), not a clean cutoff at request 11. Fixed by
+adding a real `CACHES` setting (`config/settings/base.py`) — Django 5's
+native `django.core.cache.backends.redis.RedisCache` against the same
+Valkey instance already running for Celery, on a separate DB index (`/1`,
+not Celery's `/0`) so the two don't share a key namespace. No new
+datastore, per CLAUDE.md rule 6. Re-verified live after the fix: the
+identical 20-request test now produces a clean
+`401×10, 429×10` — enforced consistently regardless of which of the 3
+workers handles any given request.
+
+**A worker process crashing mid-task silently lost the task, with no
+error, no recovery, and no way for an operator to know it would never
+complete.** `imports/tasks.py::run_import_task` already has a
+checkpoint-and-resume design (`ImportJob.last_processed_row`, proven safe
+across an in-process retry by
+`test_connection_failure_is_reraised_and_progress_checkpointed_for_retry`)
+and a `self.retry()`/`MaxRetriesExceededError` handler — but both only
+ever fire for an exception raised *within* the running Python process.
+Celery's default (`acks_late=False`) acknowledges a task to the broker
+the moment a worker picks it up, before it runs, so a worker that dies
+mid-task (OOM-kill, a container restart, a deploy) never raises anything
+for that handler to catch — the message is already gone from the
+broker's perspective, and the job is left at `status=running` forever.
+**Live-verified the actual failure, not assumed**: started a real
+60,000-row import against the real `worker` container (not eager/test
+mode), let it reach `imported_rows=4000`, `docker compose kill -s
+SIGKILL worker`, restarted the container, and confirmed the job sat at
+`running`/unchanged with no `dataset.import.finish` audit event and no
+error for as long as observed. Fixed with `acks_late=True` +
+`reject_on_worker_lost=True` on `run_import_task` specifically (not a
+Celery-wide default — `exports/tasks.py::run_restore_task` has its own,
+narrower, already-documented one-retry-only safety margin that a blanket
+change would have silently overridden). That alone was insufficient,
+also live-verified: the Redis/Valkey broker transport's default
+`visibility_timeout` (how long an unacknowledged message is held before
+being considered abandoned and redelivered) is 3600 seconds — with
+`acks_late` alone, a killed job's task wasn't redelivered within a
+realistic observation window either. Added an explicit
+`CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": 2400}` (40
+minutes — comfortably above `CELERY_TASK_TIME_LIMIT`'s 30-minute hard cap
+per task, so a task still legitimately within its own allowed runtime is
+never prematurely redelivered to a second worker while the first is
+still genuinely working on it, which would risk concurrent duplicate
+execution). Live-verified the complete, corrected mechanism at a
+temporarily shortened timeout (20s, via a `CELERY_VISIBILITY_TIMEOUT_SECONDS`
+env override, reverted afterward): a killed job's task was redelivered
+to the restarted worker and resumed from its checkpoint, observed
+advancing from `imported_rows=6000` (at the kill) to `47000` before the
+test's own cleanup script raced it — real further progress past the
+crash point, not merely "no longer stuck," and consistent with a clean
+resume rather than a restart-from-zero (which `run_import`'s existing
+checkpoint logic already guarantees doesn't duplicate rows, per the
+retry test cited above).
+
+**Not extended to `exports`/`system` Celery tasks in this pass,
+deliberately.** `run_export_task` and `system.tasks`'s backup/
+restore-test tasks weren't audited for the same acks_late gap — the
+throttle-cache fix (`CACHES`) benefits every throttled endpoint
+uniformly, but the acks_late fix was scoped narrowly to the one task
+proven broken and already designed for safe resumption.
+`run_restore_task` in particular has its own, different, already-
+documented retry-safety reasoning (see the comment in
+`exports/tasks.py`) that a mechanical copy of this fix should not
+override without the same live-verification discipline applied here —
+tracked as an open item, not silently assumed safe.
+
 ## 5. Non-Goals / Explicitly Out of Scope (for now)
 
 - Protecting against a fully compromised host OS (out of scope — assume

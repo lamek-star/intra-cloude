@@ -52,22 +52,25 @@ framing in this file where the two conflict.
   that session (blocker 3 below) — still no merge, no force-push; the
   merge decision remains the owner's own review, not something this
   authorization extended to.
-- **Backend:** 320 tests pass against real PostgreSQL/MinIO/Celery
-  (`docker exec ... pytest -q`, re-run 2026-09-06 against a freshly
+- **Backend:** 335 tests pass against real PostgreSQL/MinIO/Celery
+  (`docker exec ... manage.py test`, re-run 2026-09-07 against a freshly
   rebuilt image — see `TEST_STATUS.md`'s "local Docker gotcha" section).
-  `ruff check .` and `mypy .` both genuinely clean as of 2026-09-06 (a
-  real `mypy` gap was found and fixed this session — see "Completed
-  2026-09-06" below). `pip-audit`: no known vulnerabilities.
+  `ruff check .` and `mypy .` both genuinely clean as of 2026-09-07.
+  `pip-audit`: no known vulnerabilities.
 - **Frontend:** 10 Vitest tests pass, lint/typecheck clean, re-run
-  2026-09-06. 5 Playwright E2E specs pass live against the real Docker
-  Compose stack (not re-run 2026-09-06; last actually re-run 2026-08-30,
-  see `TEST_STATUS.md`).
+  2026-09-06 (not touched 2026-09-07 — this session's findings were all
+  backend). 5 Playwright E2E specs pass live against the real Docker
+  Compose stack (not re-run 2026-09-06/07; last actually re-run
+  2026-08-30, see `TEST_STATUS.md`).
 - **Windows installer / Control Center:** 33 xUnit tests, 94/94 Pester
-  tests pass (89 + 5 new this session), re-run 2026-09-06 — see
+  tests pass (89 + 5 new 2026-09-06), unchanged 2026-09-07 — see
   `TEST_STATUS.md`.
 - **Docker stack:** live and healthy this session (`docker compose ps`
   — proxy, backend, worker, beat, frontend, both Postgres instances,
-  MinIO, Valkey all healthy).
+  MinIO, Valkey all healthy). `CACHES` now points at a real Redis-backed
+  cache (Valkey `/1`) rather than Django's per-process default — see
+  "Completed 2026-09-07" below; `.env`/`.env.example` both updated with
+  the new `CACHE_URL` variable.
 
 ## Completed this session (commits, in order, all on `rebrand/intraforge`)
 
@@ -666,6 +669,151 @@ failure-injection testing was performed). Both remain the mandate's
 next-highest-priority open items, per the "Exact next action" section
 below.
 
+## Completed 2026-09-07: live security/reliability audit
+
+Continuing the mandate's stated priority order — "security"/"reliability"
+was the top open item per 2026-09-06's own "exact next action" note.
+Brought the Docker stack up fresh (Docker Desktop wasn't running at
+session start), rebuilt `pdc-backend:latest` before trusting anything
+(per `TEST_STATUS.md`'s documented local-Docker gotcha), and exercised
+the running app live as a real second user/credential looking for gaps —
+not just re-reading code or re-running existing tooling, matching the
+same methodology the 2026-08-30 and 2026-09-02 sessions used to find the
+original within-org authorization gaps.
+
+**Nine real findings, all live-verified, all fixed in this pass — no
+push/merge, per the standing authorization boundary.** Full technical
+detail and evidence for every one of these lives in
+`docs/security/THREAT_MODEL.md` Sections 4a (four new capability-
+enforcement gaps plus one Environment-isolation gap) and 4b (two
+shared-infrastructure enforcement gaps); this section stays a pointer
+plus the parts THREAT_MODEL.md doesn't cover (test/lint/audit evidence,
+commit list, what's still open):
+
+1. **`application.read` didn't exist** — `ApplicationListCreateView.get`/
+   `ApplicationDetailView.get` had no capability gate at all (not even a
+   permission that existed and was just unwired — the permission itself
+   was missing from the catalog). New permission, granted to
+   `organization-administrator` (automatic), `developer`, and `viewer`.
+2. **`imports` job read endpoints had no capability gate** —
+   `ImportJobListCreateView.get`/`ImportJobDetailView.get`/
+   `ImportJobErrorListView.get` exposed job status and, via
+   `ImportJobErrorSerializer.raw_row`, the literal content of rejected
+   CSV rows (real tenant data) to any active org member. Gated on
+   `database.read`, matching the row-data endpoints' own standard.
+3. **`imports` never enforced Phase 22's Environment-credential isolation
+   invariant at all** — the most significant finding of this pass.
+   `databases`/`storage` already call `check_environment_scope` on every
+   row/file view; nothing in `imports/views.py` ever did, so a
+   Development-scoped `ApplicationCredential` holding a real
+   `database.write`/`storage.read` `ResourceGrant` on a Production-bound
+   TenantDatabase/Bucket could import data across that boundary — the
+   exact scenario Phase 22 was built to prevent, just through a different
+   endpoint. Fixed with the same `check_environment_scope` call
+   `databases`/`storage` already use, on both the source Bucket and
+   destination TenantDatabase.
+4. **`storage`'s `BucketListCreateView.get` had no capability gate** —
+   every bucket in a project (name, `versioning_enabled`, `created_by`)
+   was listed via org membership alone.
+5. **`databases`' `TenantDatabaseListCreateView.get` had no capability
+   gate** — the identical gap as #4, one layer up.
+   Findings #4 and #5 are fixed differently from #1-#3: `storage.read`/
+   `database.read` are resource-scoped (a `ResourceGrant` on one specific
+   bucket/database), and these two endpoints list *across* many resources
+   at once, so a single all-or-nothing check would have been a *stricter*
+   gate than these same resources' own detail endpoints already enforce.
+   Fixed by filtering the queryset per-item (role-wide OR a matching
+   `ResourceGrant`) instead — confirmed by a test proving a member with
+   only a single-item grant sees exactly that one item.
+6. **Rate limiting was configured but not consistently enforced** — no
+   `CACHES` setting existed anywhere in the codebase, so DRF's throttle
+   counters (`"auth"` scope, `OrganizationRateThrottle`'s `"import"`
+   scope) lived in gunicorn's default per-process `LocMemCache`, one
+   independent counter per one of the 3 gunicorn workers. Live-verified
+   against the real proxy: 20 rapid login attempts produced
+   `401×4, 429×3, 401×3, 429×3, 401, 429×3, 401, 429×2` — an inconsistent,
+   ~3× looser effective budget, not a clean cutoff at request 11. Fixed
+   with a real `CACHES` setting (Django 5's native Redis backend, reusing
+   the already-running Valkey instance on a separate DB index from
+   Celery's). Re-verified live: the identical test now produces a clean
+   `401×10, 429×10` regardless of which worker handles a given request.
+7. **A worker process crash mid-import silently lost the task
+   forever** — Celery's default `acks_late=False` acknowledges a task the
+   moment a worker picks it up, before it runs, so a `run_import_task`
+   whose worker died mid-run (OOM-kill, restart, deploy) never raised
+   anything for the existing `self.retry()` handler to catch; the
+   `ImportJob` was left at `status=running` forever, no error, no
+   `dataset.import.finish` audit event. **Live-verified the actual
+   failure against the real `worker` container** (not eager/test mode):
+   started a real 60,000-row import, `docker compose kill -s SIGKILL
+   worker` at `imported_rows=4000`, restarted the container, confirmed
+   the job never moved again.
+8. **`acks_late` alone was insufficient** — the Redis/Valkey broker
+   transport's default `visibility_timeout` (3600s) meant a killed task
+   still wasn't redelivered within a realistic window even with
+   `acks_late=True`. Added `CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": 2400}`
+   (40 minutes, comfortably above `CELERY_TASK_TIME_LIMIT`'s 30-minute cap
+   so a task genuinely still within its own runtime is never prematurely
+   redelivered to a second worker). **Live-verified the complete,
+   corrected mechanism** at a temporarily shortened timeout (20s, env
+   override, reverted after): a killed job's task was redelivered to the
+   restarted worker and resumed from its checkpoint, observed advancing
+   from `imported_rows=6000` to `47000` — real further progress past the
+   crash point, not just "no longer stuck."
+9. (Not a new finding, carried forward for completeness) — items 7-8
+   were deliberately scoped to `run_import_task` only, not made a
+   Celery-wide default: `exports/tasks.py::run_restore_task` has its own,
+   narrower, already-documented one-retry-only safety margin (see that
+   file's own comment) that a blanket `acks_late` change would have
+   silently overridden without the same live-verification this pass gave
+   `run_import_task`. Tracked as an open item below, not assumed safe.
+
+**Also probed live, no gap found:** `sharing`/`exports`/`environments`
+app view modules were re-audited for the same fetch-by-membership-only
+anti-pattern and found already correctly gated (their own service-layer
+`_require`/`can_manage_environment` helpers enforce the right capability
+before returning data — confirmed by reading every view, not assumed).
+`organizations`/`workspaces` list/detail read endpoints (org name,
+workspace/project names, team names, membership roster) remain
+deliberately membership-only by design, not a gap — there is no
+`organization.read`/`workspace.read`/`team.read` permission in the
+catalog at all, consistent with the original Section 4a fix explicitly
+leaving `WorkspaceListCreateView.get`/`ProjectListCreateView.get` alone
+while only gating their `.post` (creation) siblings with the new
+`workspace.manage` permission.
+
+**Regression, re-run after every change, not trusted stale**: 335
+backend tests pass (330 pre-existing + 3 applications + 3 imports-read-
+visibility + 3 imports-environment-scope + 2 storage-bucket-list + 2
+tenant-database-list, net of a few overlapping counts — see the actual
+test files for the exact list), `ruff check .` and `mypy .` both clean,
+`pip-audit -r requirements/prod.txt` clean. The `acks_late`/
+`visibility_timeout` fix has no unit-test coverage of its own (Celery
+runs eager/synchronous in the test suite — `CELERY_TASK_ALWAYS_EAGER`,
+`config/settings/test.py` — so broker-redelivery timing is untestable
+that way by construction); its verification is the live experiment
+described in finding #7/#8 above, the same "live-verified, not just
+designed" standard this file has applied to install/uninstall/LAN/
+restore mechanics in every prior session.
+
+**Not done in this pass, honestly**: `exports`/`system` Celery tasks'
+own crash-recovery behavior wasn't audited to the same depth as
+`imports` (see finding #9) — `run_restore_task` specifically needs its
+own live-verification pass before any `acks_late` change, given its
+already-documented narrower retry-safety margin. No broader
+"reliability" work beyond the two Celery/throttle findings above (e.g.
+no chaos/failure-injection testing of Postgres/MinIO/Valkey connection
+loss specifically, as opposed to a Celery worker crash) — the mandate's
+"reliability" priority item is not fully closed by this pass, just
+advanced. Left several disposable test organizations (`ReliabilityTest`/
+`ReliabilityTest2`/`ReliabilityTest3`, clearly named, harmless) in this
+session's local dev Docker stack from the live worker-crash experiments
+— `Workspace`/`Project` are `PROTECT`-on-delete against any
+`ImportJob` they've ever had, by design (no blanket cascading delete
+path exists in this codebase, deliberately), so cleaning them up would
+need the same explicit, reviewed deletion path a real operator would use
+rather than a raw ORM cascade; left in place rather than forced.
+
 ## What "fixed" means here, precisely
 
 Every fix above: (a) reproduced live against the running app first
@@ -790,15 +938,33 @@ requiring the operator to check by hand. Open remainder: an actual
 end-to-end drill against a real provisioned WSL2 appliance (needs
 blocker 1 below).
 
-**Next highest-value item, per the mandate's priority order: "security"
-and "reliability."** Still the top open item after 2026-09-06's pass —
-that session did `pip-audit` + a manual license-compliance review (see
-above) and a disciplined lint/type/test re-verification (which itself
-found and fixed a real `mypy` gap), but neither is the "live review
-against the running stack" style security/reliability audit the
-mandate's priority order calls for next. Worth starting the same way
-the authorization-gap audits did: exercise the app live as a real user
-looking for gaps, not just reading code or running existing tooling.
+**Security and reliability: substantially advanced 2026-09-07** (see
+"Completed 2026-09-07: live security/reliability audit" above) — the
+first actual "live review against the running stack" pass the mandate's
+priority order called for, in the same style as the original
+authorization-gap audits. Found and fixed nine real issues: four more
+within-org capability-enforcement gaps (`application.read` didn't exist;
+`imports` job reads had no gate at all, including literal rejected-row
+content; `storage`'s and `databases`' project-level list endpoints had no
+gate), one genuinely severe gap (Phase 22's Environment-credential
+isolation invariant was never wired into `imports` at all), and two
+shared-infrastructure enforcement gaps that only manifest under this
+project's real multi-process deployment shape (rate limiting silently
+~3× looser than configured across gunicorn's 3 workers; a Celery worker
+crash mid-import silently and permanently losing the task). Full detail,
+evidence, and live-verification method for all nine:
+`docs/security/THREAT_MODEL.md` Sections 4a/4b.
+
+**Open remainder of "reliability" specifically**: `exports`/`system`
+Celery tasks weren't audited to the same depth as `imports` for the
+acks_late/worker-crash gap — `run_restore_task` has its own, different,
+already-documented narrower retry-safety reasoning that needs its own
+live-verification pass, not a mechanical copy of the `imports` fix (see
+THREAT_MODEL.md 4b's last paragraph). No broader chaos/failure-injection
+testing (Postgres/MinIO/Valkey connection loss, as opposed to a Celery
+worker crash specifically) has been done. Worth continuing the same
+way: exercise the app/infrastructure live, looking for gaps, not just
+reading code.
 
 The original mandate's remaining CI/CD hardening (Playwright E2E, SBOM
 generation, `npm audit`, container image scanning) is also still done

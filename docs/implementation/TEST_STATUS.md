@@ -24,6 +24,26 @@ backend pip install --no-cache-dir -r requirements/dev.txt`.
 
 ## Backend
 
+**335 tests pass**, re-run 2026-09-07 against a freshly rebuilt image
+(`docker compose exec -e DJANGO_SETTINGS_MODULE=config.settings.test
+backend python manage.py test --noinput`). 15 new this session, for the
+live security/reliability audit's four capability-enforcement findings
+(`RELEASE_READINESS.md`'s "Completed 2026-09-07" entry,
+`THREAT_MODEL.md` Section 4a/4b): `applications/tests/
+test_applications.py::ApplicationReadVisibilityTests` (3),
+`imports/tests/test_imports.py::ImportReadVisibilityTests` (4) and
+`::ImportEnvironmentScopeTests` (3), `storage/tests/
+test_storage.py::BucketListVisibilityTests` (3),
+`databases/tests/test_databases.py::TenantDatabaseListVisibilityTests`
+(2). The session's other two findings (rate limiting not consistently
+enforced across gunicorn's 3 workers; a Celery worker crash silently
+losing an in-flight import) have no unit-test coverage of their own —
+both are infrastructure-configuration fixes (`CACHES`, `acks_late`/
+`CELERY_BROKER_TRANSPORT_OPTIONS`) verified by a live experiment against
+the real running proxy/worker container instead, documented in
+`THREAT_MODEL.md` Section 4b. `ruff check .` and `mypy .` both clean;
+`pip-audit -r requirements/prod.txt` clean.
+
 **320 tests pass**, re-run 2026-09-06 against a freshly rebuilt image
 (not a stale one — see the gotcha above) on the live Docker stack
 (`docker compose exec -e DJANGO_SETTINGS_MODULE=config.settings.test
