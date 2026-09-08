@@ -65,7 +65,19 @@ class BucketListCreateView(APIView):
 
     def get(self, request, project_id):
         project = get_member_project(request.user, project_id)
-        buckets = Bucket.objects.filter(project=project)
+        # Filtered per-bucket, not gated by a single role-wide check --
+        # storage.read is resource-scoped at the bucket level (see
+        # RESOURCE_TYPE_BUCKET above), so a member holding only a
+        # per-bucket ResourceGrant (no role-wide storage.read) can still
+        # see that one bucket, matching what FolderListCreateView/
+        # FileListCreateView already let them reach once they know its
+        # id -- a blanket 403 here would be a stricter, inconsistent gate
+        # for the exact same access this list is meant to summarize.
+        buckets = [
+            bucket
+            for bucket in Bucket.objects.filter(project=project)
+            if _require(request, "storage.read", project.organization_id, bucket_id=bucket.id)
+        ]
         return Response(BucketSerializer(buckets, many=True).data)
 
     def post(self, request, project_id):

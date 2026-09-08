@@ -275,3 +275,66 @@ class StoragePermissionTests(StorageTestBase):
     def test_member_without_storage_read_cannot_list_folders(self):
         resp = self.client.get(reverse("folder-list-create", args=[self.bucket_id]))
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class BucketListVisibilityTests(StorageTestBase):
+    """BucketListCreateView.get previously listed every bucket in a
+    project (name, versioning_enabled, created_by) via get_member_project
+    only -- no storage.read check of any kind, role-wide or resource-
+    scoped -- the same class of gap already closed for
+    FolderListCreateView.get above. Fixed by filtering per-bucket (role-
+    wide OR a per-bucket ResourceGrant), not a single all-or-nothing
+    check, since storage.read is resource-scoped at the bucket level
+    (RESOURCE_TYPE_BUCKET) and a blanket check would incorrectly hide a
+    bucket the caller can already reach directly via a ResourceGrant."""
+
+    def setUp(self):
+        super().setUp()
+        self.other_bucket = self.client.post(
+            reverse("bucket-list-create", args=[self.project_id]), {"name": "other-bucket"}
+        )
+        self.other_bucket_id = self.other_bucket.data["id"]
+
+        self.outsider = User.objects.create_user(email="bucket-outsider@example.com", password="x")
+        Membership.objects.create(
+            user=self.outsider, organization_id=self.org_id, status=Membership.Status.ACTIVE
+        )
+        self.client.force_login(self.outsider)
+
+    def test_member_with_no_grants_sees_no_buckets(self):
+        resp = self.client.get(reverse("bucket-list-create", args=[self.project_id]))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data, [])
+
+    def test_member_with_a_resource_grant_on_one_bucket_sees_only_that_bucket(self):
+        from permissions.services import grant_resource_permission
+
+        grant_resource_permission(
+            user=self.outsider,
+            permission_code="storage.read",
+            organization_id=self.org_id,
+            resource_type="storage.bucket",
+            resource_id=self.bucket_id,
+            granted_by=self.admin,
+        )
+
+        resp = self.client.get(reverse("bucket-list-create", args=[self.project_id]))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual([b["id"] for b in resp.data], [self.bucket_id])
+        self.assertNotIn(self.other_bucket_id, [b["id"] for b in resp.data])
+
+    def test_role_wide_storage_read_sees_every_bucket(self):
+        from organizations.models import Organization
+        from permissions.services import assign_role
+
+        assign_role(
+            user=self.outsider,
+            role_slug="viewer",
+            organization=Organization.objects.get(id=self.org_id),
+        )
+
+        resp = self.client.get(reverse("bucket-list-create", args=[self.project_id]))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            {b["id"] for b in resp.data}, {self.bucket_id, self.other_bucket_id}
+        )

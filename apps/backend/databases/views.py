@@ -71,7 +71,20 @@ class TenantDatabaseListCreateView(APIView):
 
     def get(self, request, project_id):
         project = get_member_project(request.user, project_id)
-        databases = project.tenant_databases.all()
+        # Filtered per-database, not a single role-wide check --
+        # database.read is resource-scoped at the TenantDatabase level
+        # (RESOURCE_TYPE_TENANT_DATABASE), so a member holding only a
+        # per-database ResourceGrant (no role-wide database.read) can
+        # still see that one database, matching what
+        # TenantDatabaseDetailView/TableListCreateView already let them
+        # reach once they know its id -- a blanket 403 here would be a
+        # stricter, inconsistent gate for the exact same access this
+        # list is meant to summarize. Previously had no check at all.
+        databases = [
+            db
+            for db in project.tenant_databases.all()
+            if _can_read_database(request, project.organization_id, db.id)
+        ]
         return Response(TenantDatabaseSerializer(databases, many=True).data)
 
     def post(self, request, project_id):

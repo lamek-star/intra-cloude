@@ -316,3 +316,54 @@ class SchemaReadVisibilityTests(DatabaseBuilderTestBase):
         resp = self.client.get(reverse("table-list-create", args=[self.db_id]))
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(len(resp.data), 1)
+
+
+class TenantDatabaseListVisibilityTests(DatabaseBuilderTestBase):
+    """TenantDatabaseListCreateView.get previously listed every
+    TenantDatabase in a project (name, created_by) via get_member_project
+    only -- no database.read check at all, role-wide or resource-scoped
+    -- the same class of gap as SchemaReadVisibilityTests above, on the
+    list-at-the-project-level sibling endpoint. Fixed by filtering per-
+    database (role-wide OR a per-database ResourceGrant), matching
+    storage's identical BucketListCreateView.get fix, since database.read
+    is resource-scoped at the TenantDatabase level and a single
+    all-or-nothing check would incorrectly hide a database the caller can
+    already reach directly via a ResourceGrant."""
+
+    def setUp(self):
+        super().setUp()
+        visible = self.client.post(
+            reverse("tenant-database-list-create", args=[self.project_id]), {"name": "Visible"}
+        )
+        self.visible_db_id = visible.data["id"]
+        hidden = self.client.post(
+            reverse("tenant-database-list-create", args=[self.project_id]), {"name": "Hidden"}
+        )
+        self.hidden_db_id = hidden.data["id"]
+
+        self.outsider = User.objects.create_user(email="dblist-outsider@example.com", password="x")
+        Membership.objects.create(
+            user=self.outsider, organization_id=self.org_id, status=Membership.Status.ACTIVE
+        )
+        self.client.force_login(self.outsider)
+
+    def test_member_with_no_grants_sees_no_databases(self):
+        resp = self.client.get(reverse("tenant-database-list-create", args=[self.project_id]))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data, [])
+
+    def test_member_with_a_resource_grant_on_one_database_sees_only_that_one(self):
+        from permissions.services import grant_resource_permission
+
+        grant_resource_permission(
+            user=self.outsider,
+            permission_code="database.read",
+            organization_id=self.org_id,
+            resource_type="databases.tenant_database",
+            resource_id=self.visible_db_id,
+            granted_by=self.admin,
+        )
+
+        resp = self.client.get(reverse("tenant-database-list-create", args=[self.project_id]))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual([d["id"] for d in resp.data], [self.visible_db_id])
