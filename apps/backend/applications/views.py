@@ -35,6 +35,8 @@ class ApplicationListCreateView(APIView):
 
     def get(self, request, organization_id):
         org = get_member_organization(request.user, organization_id)
+        if not has_permission(request.user, "application.read", organization_id=org.id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         apps = Application.objects.filter(organization=org)
         return Response(ApplicationSerializer(apps, many=True).data)
 
@@ -59,6 +61,10 @@ class ApplicationDetailView(APIView):
 
     def get(self, request, application_id):
         application = get_member_application(request.user, application_id)
+        if not has_permission(
+            request.user, "application.read", organization_id=application.organization_id
+        ):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         return Response(ApplicationSerializer(application).data)
 
 

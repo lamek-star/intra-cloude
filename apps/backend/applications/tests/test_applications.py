@@ -69,6 +69,54 @@ class RegistrationTests(ApplicationTestBase):
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
 
 
+class ApplicationReadVisibilityTests(ApplicationTestBase):
+    """An active organization member with no role or grant covering
+    `application.read` must not be able to list or view an org's
+    registered Applications (name/description/owner) — matching the same
+    class of gap already closed for databases/analytics/storage/
+    environments/exports (THREAT_MODEL.md Section 4a): both
+    ApplicationListCreateView.get and ApplicationDetailView.get
+    previously checked only organization membership, no capability at
+    all — not even a permission that already existed and simply wasn't
+    wired in, since `application.read` didn't exist prior to this fix."""
+
+    def setUp(self):
+        super().setUp()
+        app = self.client.post(reverse("application-list-create", args=[self.org_id]), {"name": "Bot"})
+        self.application_id = app.data["id"]
+
+        self.outsider = User.objects.create_user(email="apps-outsider@example.com", password="x")
+        Membership.objects.create(
+            user=self.outsider, organization_id=self.org_id, status=Membership.Status.ACTIVE
+        )
+        self.client.force_login(self.outsider)
+
+    def test_member_without_application_read_cannot_list_applications(self):
+        resp = self.client.get(reverse("application-list-create", args=[self.org_id]))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_member_without_application_read_cannot_view_application_detail(self):
+        resp = self.client.get(reverse("application-detail", args=[self.application_id]))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_application_read_permission_restores_access(self):
+        from organizations.models import Organization
+        from permissions.services import assign_role
+
+        assign_role(
+            user=self.outsider,
+            role_slug="viewer",
+            organization=Organization.objects.get(id=self.org_id),
+        )
+
+        listed = self.client.get(reverse("application-list-create", args=[self.org_id]))
+        self.assertEqual(listed.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(listed.data), 1)
+
+        detail = self.client.get(reverse("application-detail", args=[self.application_id]))
+        self.assertEqual(detail.status_code, status.HTTP_200_OK)
+
+
 class CredentialLifecycleTests(ApplicationTestBase):
     def setUp(self):
         super().setUp()

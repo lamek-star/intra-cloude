@@ -21,6 +21,7 @@ PERMISSIONS = {
     "dataset.import": "Run CSV import jobs",
     "dataset.export": "Export data (CSV, API)",
     "dataset.analyze": "Create/edit saved analytics dashboards (ad-hoc analysis only needs database.read)",
+    "application.read": "View an organization's registered Applications and their metadata",
     "application.create": "Register a new Application",
     "application.credentials.manage": "Issue/rotate/revoke Application credentials",
     "permissions.manage": "Create/edit Roles, assign Roles, create Resource Grants",
@@ -89,6 +90,7 @@ SYSTEM_ROLES: dict[str, tuple[str, list[str]]] = {
         "Developer",
         [
             "workspace.manage",
+            "application.read",
             "application.create",
             "application.credentials.manage",
             "database.read",
@@ -107,7 +109,7 @@ SYSTEM_ROLES: dict[str, tuple[str, list[str]]] = {
         ],
     ),
     "editor": ("Editor", [*_STORAGE_RW, *_DATABASE_RW, "dataset.import"]),
-    "viewer": ("Viewer", ["storage.read", "database.read", "environment.read"]),
+    "viewer": ("Viewer", ["storage.read", "database.read", "environment.read", "application.read"]),
     "auditor": ("Auditor", ["audit.read"]),
     # Guest and Service Account hold no role-wide permissions by design —
     # access is entirely via ResourceGrant (docs/security/PERMISSIONS.md
