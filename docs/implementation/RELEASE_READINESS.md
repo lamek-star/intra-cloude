@@ -1,5 +1,24 @@
 # Release-Readiness Report (living document)
 
+## Current checkpoint: pre-App-Platform health check, 2026-09-08
+
+**B — READY WITH NON-BLOCKING OPEN ITEMS** for scoped App Platform development;
+release qualification remains **BLOCKED ON EXTERNAL EVIDENCE**, with internal
+release work also open. Fresh gate: 404 backend/root-security tests pass,
+0 failed/skipped, both real restore worker probes; Ruff/Mypy/migrations pass;
+frontend lint/TypeScript/build pass, Vitest 10/10 and isolated Playwright 5/5.
+Exact baseline: local, unpushed `56c34a821b2deae4b0cac3276e4a8145931e62db`.
+The existing green CI is for `da9f5b5`, not this restore commit.
+
+[Full health check](PRE_APP_PLATFORM_HEALTH_CHECK.md) records the architecture,
+failure-injection matrix, P2/P3 backlog, live deployment lag, Windows/LAN/
+certificate limitations, open WSL2 choice, and recommended uncreated tag.
+This checkpoint supersedes stale current-status claims in historical entries.
+SBOM retrieval instructions are now complete in [the operator procedure](../operations/SBOM.md);
+automatic release attachment/full-appliance inventory remain open. License
+status remains MANUAL ONLY: recorded application-runtime review complete,
+CI enforcement and full bundled-artifact review open. No Phase 1 work started.
+
 Started 2026-08-30 under an explicit mandate to bring IntraForge to
 commercial-release quality autonomously. This file is both the running
 progress checkpoint (so work resumes cleanly across sessions, per the
@@ -1012,11 +1031,10 @@ where the finding was about cross-user access.
   UPGRADE_GUIDE.md`, `docs/legal/THIRD_PARTY_NOTICES.md`). **Migration
   guide** deliberately not authored — v0.9 is this project's first
   internal release, so there is nothing to migrate from yet; revisit
-  once a second version exists to migrate between. **SBOM
-  instructions** (as in: a written how-to for a human running the SBOM
-  process by hand) still not authored — the SBOM generation itself
-  already runs in CI (`ci: add SBOM generation and container image
-  scanning`, above), which is a different thing.
+  once a second version exists to migrate between. **SBOM operator
+  instructions** are now authored in `docs/operations/SBOM.md`, with a
+  verified retrieval procedure, generation scope, retention, and release
+  handling. Full-appliance inventory and automatic release attachment remain open.
 - **A real GitHub Actions run of the new `e2e` and `security-scan` CI
   jobs** — happened (PR #3, run 34029975571, 2026-09-06) and surfaced a
   real bug this doc hadn't caught: `security-scan` failed outright,

@@ -4,6 +4,9 @@ Scope: `exports.tasks.run_restore_task`, the `.icp` import that creates a
 new organization. This is **not** `system.backups.restore_backup`, which
 replaces a live backup target, and is not Windows UI qualification.
 
+Fresh baseline verification and development/release decisions are recorded in
+[the pre-App-Platform health check](../implementation/PRE_APP_PLATFORM_HEALTH_CHECK.md).
+
 ## Previous failure and inspected lifecycle
 
 `POST /api/v1/import/` -> `stage_restore_upload` -> RestoreJob + MinIO

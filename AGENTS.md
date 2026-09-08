@@ -131,7 +131,7 @@ is deliberately left manual, not automated). See
 account of all of this — it is the authoritative, continuously-updated
 checkpoint for the v0.9 mandate, not this paragraph. 320 backend tests
 pass as of the last full run against the live Docker stack. The frontend has a real but partial Vitest suite
-(`npm test`) plus Playwright specs; neither runs in CI yet — see
+(`npm test`) plus Playwright specs; both run in CI — see
 `docs/implementation/TEST_STATUS.md` for exactly what is and isn't
 covered.
 
@@ -263,11 +263,7 @@ all emitted and were confirmed in a live audit log, so the note has
 been removed rather than carried forward.
 
 See `apps/frontend/README.md` for how it's built and
-`docs/guide/USER_GUIDE.md` for how to use it. Sharing, connected
-databases, teams, and dashboards (the persistent declarative-JSON
-widget layer analytics also supports, not to be confused with the
-`/dashboard` landing page above) remain reachable only through the
-browsable API (`/api/v1/`) — real and tested, just no page yet.
+`docs/guide/USER_GUIDE.md` for how to use it. Sharing, connected databases, teams, and persistent dashboards now have frontend pages; see apps/frontend/src/app and docs/implementation/TEST_STATUS.md for the limits of automated workflow coverage.
 
 **Phase 22 added a new `environments` app**, completing the
 Organization -> Application -> Environment hierarchy the Developer

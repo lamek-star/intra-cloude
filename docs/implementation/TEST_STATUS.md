@@ -1,5 +1,21 @@
 # Test Status
 
+## Pre-App-Platform health check (2026-09-08)
+
+Fresh verification of `56c34a8`: **404 passed, 0 failed, 0 skipped**, 167.52s;
+both real Celery SIGKILL probes enabled, two expected AlwaysEagerIgnored
+warnings. Ruff and Mypy pass (199 files, two existing informational notes).
+Fresh isolated production-stack migrations and schema checks pass.
+Frontend lint/TypeScript/build pass, Vitest 10/10, Playwright 5/5 against a
+separate current-code Compose stack. An earlier incomplete backend run is
+not counted as passing. Exact commands, limitations, and evidence:
+[health check](PRE_APP_PLATFORM_HEALTH_CHECK.md).
+
+Current CI clarification supersedes older session notes below: backend,
+frontend, E2E, and security-scan succeeded in real run `34205104070` at
+`da9f5b5`. Restore commit `56c34a8` is local and has **no CI evidence**.
+CI currently omits the opt-in flag for the two real restore worker probes.
+
 ## Restore recovery follow-up (2026-09-08)
 
 **404 backend/root-security tests passed, 0 failed, 0 skipped** in 255.91s,
@@ -210,7 +226,7 @@ from below, still 10/10 Vitest passing and lint/typecheck clean.
   Administrator — was genuinely unaffected.
 - `npx tsc --noEmit`, `npm run lint`, `npm run build`: all clean.
 
-**CI status, stated precisely (do not round this up):**
+**Historical CI status at that session (superseded by the checkpoint above):**
 - `npm run lint` / `npm test` / `npm run build` / `npx tsc --noEmit` —
   actually run in `.github/workflows/ci.yml`'s `frontend` job on every
   push/PR, and have been since before this session.
@@ -262,13 +278,8 @@ the suites don't yet cover.
   TOTP-enrolled account through it yet).
 - `@axe-core/playwright` is installed but not yet wired into any spec —
   no automated accessibility scan runs today.
-- The new `e2e` and `security-scan` CI jobs (above) have not yet had a
-  real GitHub Actions run. Treat both as unverified-by-CI until one
-  happens — every locally-verifiable piece of each was checked directly
-  (the `e2e` job's bring-up sequence and health-check logic; both
-  Dockerfiles building cleanly under `security-scan`'s exact tags and
-  commands), but the third-party actions themselves
-  (`anchore/sbom-action`, `aquasecurity/trivy-action`) were not.
+- The `e2e` and `security-scan` jobs now have successful real GitHub Actions
+  evidence at `da9f5b5`; the newer local restore commit has not run in CI.
 - `npm audit --omit=dev --audit-level=high` now runs in the `frontend`
   job (0 vulnerabilities as of 2026-08-30) and a `security-scan` job
   generates a CycloneDX SBOM for both container images and the

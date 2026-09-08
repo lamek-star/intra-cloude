@@ -387,15 +387,27 @@ operator semantics, and remaining limits:
 [Portable restore recovery](../operations/RESTORE_IDEMPOTENCY.md).
 See RELEASE_READINESS.md for exact verification commands/results.
 
-**`system/tasks.py`** — both scheduled tasks are simple and idempotent;
-reading them found no equivalent in-flight-mutation risk, so no fix was
-needed there.
+**`system/tasks.py`** — no equivalent portable-restore publication defect
+was identified. This does not prove task-delivery reliability: both scheduled
+tasks still use default early acknowledgement, so a worker crash can lose
+that scheduled attempt. The next schedule can try again; schedule monitoring
+and failure-injection coverage remain P2 work in the health check.
 
 Full session narrative, test/lint re-verification, and the disposable
 test organizations left behind: `docs/implementation/RELEASE_READINESS.md`'s
 "Completed 2026-09-08" entry.
 
 ## 5. Non-Goals / Explicitly Out of Scope (for now)
+
+Current review qualification (2026-09-08): the connected-PostgreSQL guard
+resolves and checks a hostname but `_connect` still passes the hostname to
+libpq without a validated `hostaddr`; a second DNS lookup is not bound to
+the checked result. Address pinning while retaining TLS hostname validation
+remains P2 for the trusted private pilot, and must be resolved before treating
+the strict private-network setting as a hostile-tenant egress boundary.
+No end-to-end rebinding exploit was exercised. Memory-based archive expansion
+also remains a resource-budget limitation. See the evidence and scope in
+[the health check](../implementation/PRE_APP_PLATFORM_HEALTH_CHECK.md).
 
 - Protecting against a fully compromised host OS (out of scope — assume
   host hardening is an operational responsibility documented separately).

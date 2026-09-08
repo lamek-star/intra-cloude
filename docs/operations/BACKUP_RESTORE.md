@@ -1,5 +1,11 @@
 # Backup & Restore Strategy — IntraForge
 
+Current assurance checkpoint: [pre-App-Platform health check](../implementation/PRE_APP_PLATFORM_HEALTH_CHECK.md).
+Fresh automated/local integration checks do not qualify Windows UI lifecycle
+or whole-infrastructure outage recovery. Configuration restore remains manual;
+object restore preserves keys created after the backup. No live user target
+was restored during the health check.
+
 Status: IMPLEMENTED (Phase 11 — `pg_dump`/`pg_restore` automation and the
 automated restoration test job described in Sections 6/7 are real,
 scheduled via Celery Beat, and verified against the live Docker stack;

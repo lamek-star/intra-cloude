@@ -49,7 +49,8 @@ Matrix](docs/deployment/WINDOWS_QUALIFICATION_MATRIX.md) is written but
 not yet executed on real/virtual Windows hosts, and code signing is
 implemented but unverified pending a real commercial certificate. Full
 offline installation is partial — container images are bundled, but
-Docker Engine itself still installs via `get.docker.com`. A Phase 22
+Docker Engine and Compose are now baked into the release rootfs (ADR-0013);
+the real offline WSL2 installation remains unqualified. A Phase 22
 pass added a new `environments` app (per-application Development/
 Staging/Production isolation, enforced down to the row/file-data
 layer) and a substantial frontend expansion — applications, sharing,
@@ -57,11 +58,13 @@ connected databases, teams, the audit log, dashboards, a developer
 portal, and CSV import/analytics all have real pages now, plus a full
 accessibility/responsiveness pass (see `DESIGN.md` for the frontend's
 design system). The frontend has a real but partial automated suite
-(Vitest component tests and Playwright specs); neither is wired into
-CI yet, and the workflow coverage is incomplete — a tracked gap, see
+(Vitest component tests and Playwright specs); both run in CI, while
+workflow coverage remains incomplete — see
 [docs/implementation/TEST_STATUS.md](docs/implementation/TEST_STATUS.md).
-300 backend tests pass against real PostgreSQL, MinIO, and Celery —
-not mocks — including cross-organization
+The restore checkpoint reports 404 tests against PostgreSQL, MinIO, and Celery;
+the fresh baseline and exact verification limits are recorded in
+[the pre-App-Platform health check](docs/implementation/PRE_APP_PLATFORM_HEALTH_CHECK.md).
+Coverage includes cross-organization
 IDOR/BOLA regression tests for every tenant-owned resource type in the
 platform. Every phase's exit criteria has been confirmed against the
 actual running Docker stack, not only the automated suite — including
