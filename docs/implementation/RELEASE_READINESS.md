@@ -49,9 +49,12 @@ framing in this file where the two conflict.
 
 - **Branch:** `rebrand/intraforge`. Pushed to `origin` and a PR opened
   into `master` 2026-09-06, under the owner's explicit authorization
-  that session (blocker 3 below) — still no merge, no force-push; the
-  merge decision remains the owner's own review, not something this
-  authorization extended to.
+  that session (blocker 3 below); pushed again 2026-09-08 (six commits:
+  the four pending security fixes, the exports crash-recovery fix, and
+  the CI trivy-action fix), again with explicit authorization for that
+  push specifically — still no merge, no force-push; the merge decision
+  remains the owner's own review, not something either authorization
+  extended to.
 - **Backend:** 335 tests pass against real PostgreSQL/MinIO/Celery
   (`docker exec ... manage.py test`, re-run 2026-09-08 against a freshly
   rebuilt image — see `TEST_STATUS.md`'s "local Docker gotcha" section).
@@ -987,11 +990,12 @@ where the finding was about cross-user access.
   (confirmed against the GitHub API as a real, non-prerelease tag
   published 2026-04-22 — the currently-supported release at the time of
   this fix, per this file's own version-selection rule, not just the
-  next tag after the broken one). **Still needs a fresh push to actually
-  confirm the fixed job runs green** — not done in this pass; the
-  correction is code-reviewed and the tag verified to exist, but "the
-  YAML is now plausible" and "a real Actions run passed" are different
-  claims, and only the first one is true as of this entry.
+  next tag after the broken one). **Confirmed by a real run, not just a
+  plausible-looking pin**: pushed to PR #3 and watched run 34204675521
+  (2026-09-08) go green end to end — `End-to-end (Playwright, live
+  stack)` 3m10s, `SBOM and container image scan` 3m13s (the job that had
+  been failing outright), `Backend (lint, typecheck, test)` 3m42s,
+  `Frontend (lint, typecheck, build)` 39s, all passed.
 
 ## Exact next action (for whoever/whatever resumes this)
 
