@@ -9,7 +9,7 @@ unimplemented phase complete.
 | Phase | Deliverable | Status | Exit evidence required |
 |---|---|---|---|
 | 1 | Application definitions, templates, immutable versions, installed instances | Complete | [436-test checkpoint](APP_PLATFORM_PHASE1.md) |
-| 2 | Generic application runtime | In progress: preflight, resumable provisioning, record/query CRUD, attachments and generic frontend screens/history implemented; qualification (step 6) remaining | Real typed records; CRUD, validation, search, filters, sort, pagination, relationships, attachments, authorization and audit history; browser workflow and failure/isolation tests |
+| 2 | Generic application runtime | Complete | [Phase 2 qualification checkpoint](APP_PLATFORM_PHASE2.md) |
 | 3 | App Builder v1 | Pending Phase 2 | No-code model/field/form/list editing; labels, defaults, required flags, ordering, relationships and basic permissions; safe populated-schema changes |
 | 4 | Inventory and Sales reference application | Pending Phase 3 | Spare-parts template covering inventory, purchasing and sales; real business scenario; no industry-specific core models |
 | 5 | Workflow engine | Pending Phase 4 | Declarative states, transitions, conditions, approvals, actions, notifications and audit; concurrent/replayed transitions cannot duplicate effects |

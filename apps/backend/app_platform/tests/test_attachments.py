@@ -15,6 +15,8 @@ from organizations.models import Membership
 from organizations.services import create_organization
 from permissions.services import grant_resource_permission
 from storage.models import FileObject
+from system import backups
+from system.models import BackupRecord
 
 
 class AttachmentsTests(TransactionTestCase):
@@ -164,3 +166,30 @@ class AttachmentsTests(TransactionTestCase):
 
         response = client.post(self.attachments_url, {"file_id": self.file_id}, format="json")
         self.assertEqual(response.status_code, 403)
+
+    def test_full_backup_restores_the_attachment_row(self):
+        attach = self.client.post(self.attachments_url, {"file_id": self.file_id}, format="json")
+        self.assertEqual(attach.status_code, 201, attach.data)
+        attachment_id = attach.data["id"]
+
+        records = [
+            backups.run_backup(kind)
+            for kind in (BackupRecord.BackupType.CONTROL_DB, BackupRecord.BackupType.TENANT_DB)
+        ]
+        for record in records:
+            self.assertEqual(record.status, BackupRecord.Status.SUCCESS, record.error_message)
+
+        RecordAttachment.objects.get(pk=attachment_id).delete()
+        self.assertFalse(RecordAttachment.objects.filter(pk=attachment_id).exists())
+
+        # Restore tenant first, then the matching control snapshot -- same
+        # order provisioning's own populated-backup test uses, and for the
+        # same reason: the control row's FK to the tenant database must
+        # land on a tenant schema that already exists again.
+        for record in reversed(records):
+            result = backups.restore_backup(record)
+            self.assertEqual(result.restore_error, "")
+
+        restored = RecordAttachment.objects.get(pk=attachment_id)
+        self.assertEqual(str(restored.record_id), str(self.record_id))
+        self.assertEqual(str(restored.file_id), str(self.file_id))

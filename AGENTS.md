@@ -22,31 +22,38 @@ identity (logo, color tokens, typography, component patterns) lives in
 
 ## Current Status
 
-**App Platform Phase 2 is in progress**: a permission-checked relational
-planner and resumable asynchronous provisioning now create actual managed
-tenant tables, scalar columns and foreign keys. Durable receipts/mappings,
-schema guards, replay and matched control/tenant backup restoration are tested.
-Typed record CRUD (`app_platform/records.py`) now runs over that provisioned
-runtime — create/read/update/delete, search/filter/sort/pagination, and a
-real enforced foreign key per relationship, addressed by definition UUID
-rather than the runtime's generated physical column names, reusing the
-existing `database.read`/`write` permission rather than a new app-specific
-grant. Records can now also carry attachments (`app_platform/
-attachments.py`): linking an already-uploaded `storage.FileObject` to a
-record requires both that same record-write authority and `storage.read`
-on the file's bucket, with an explicit organization match closing a
-cross-org gap membership checks alone would miss, and downloads recheck
-`storage.read` plus quarantine/deletion status every time rather than
-trusting attach-time state. `apps/frontend` now has generic screens
-generated directly from an app's metadata (`/app-instances/[instanceId]`,
+**App Platform Phase 2 (generic application runtime) is complete.** A
+permission-checked relational planner and resumable asynchronous
+provisioning create actual managed tenant tables, scalar columns and
+foreign keys, with durable receipts/mappings, schema guards, and matched
+control/tenant backup restoration. Typed record CRUD
+(`app_platform/records.py`) runs over that provisioned runtime — create/
+read/update/delete, search/filter/sort/pagination, and a real enforced
+foreign key per relationship, addressed by definition UUID rather than the
+runtime's generated physical column names, reusing the existing
+`database.read`/`write` permission rather than a new app-specific grant.
+Records carry attachments (`app_platform/attachments.py`): linking an
+already-uploaded `storage.FileObject` requires both that same
+record-write authority and `storage.read` on the file's bucket, with an
+explicit organization match closing a cross-org gap membership checks
+alone would miss, and downloads recheck `storage.read` plus quarantine/
+deletion status every time. `apps/frontend` has generic screens generated
+directly from an app's metadata (`/app-instances/[instanceId]`,
 `/app-models/[modelId]`, `/app-models/[modelId]/records/[recordId]`) —
 list/search/create/edit/delete, a relationship reference picker, attach/
-download/detach, and rendered (not just recorded) audit history — live-
-verified in a real browser against a rebuilt dev stack, not just compiled.
-Phase 2's remaining step is qualification (browser-level cross-org/
-permission tests, concurrency, full backup/restore, final docs). See
-ADR-0015 and `docs/operations/RUNTIME_PROVISIONING.md`. This work is not
-deployed to the user's production appliance.
+download/detach, and rendered audit history. A qualification pass proved,
+beyond the per-step tests: cross-model record-id substitution within the
+same organization is rejected, a revoked `ResourceGrant` denies the very
+next request, concurrent updates to the same record never corrupt it, a
+populated attachment survives a real backup/restore cycle, and a
+zero-relationship user gets a real "Not found." page in the live browser
+at both the instance and model URLs — plus everything live-verified in a
+real browser against a rebuilt dev stack, not just compiled. Record
+creation is confirmed *not* idempotent under retry, an accepted, named
+limitation shared with the generic data explorer, not a new gap. See
+ADR-0015, `docs/operations/RUNTIME_PROVISIONING.md`, and
+`docs/implementation/APP_PLATFORM_PHASE2.md`. This work is not deployed
+to the user's production appliance. Phase 3 (App Builder v1) is next.
 The master brief's ten development phases
 are tracked in `docs/implementation/APP_PLATFORM_ROADMAP.md`; current work and
 remaining runtime requirements are in `docs/implementation/APP_PLATFORM_PHASE2.md`.

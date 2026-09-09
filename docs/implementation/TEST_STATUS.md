@@ -1,5 +1,29 @@
 # Test Status
 
+## App Platform Phase 2 qualification checkpoint — Phase 2 complete (2026-09-09)
+
+4 new tests added this step (cross-model attachment id-substitution IDOR,
+`ResourceGrant` revocation taking effect on the very next request,
+concurrent same-record updates not corrupting data, and a populated
+`RecordAttachment` surviving a real control+tenant backup/restore round
+trip): **83 passed** in `app_platform` (up from 79). Fresh full backend
+gate: **485 passed, 2 skipped, 0 failed**, 383.71s (the 2 skips are the
+real-worker-SIGKILL restore probes, `RUN_RESTORE_WORKER_TESTS=0` for this
+run; one expected `AlwaysEagerIgnored` warning remains). Ruff and Mypy
+both clean. Also live-verified in a real browser (separate from the
+generic-screens checkpoint below): a second, unrelated organization's
+member hitting the first org's `/app-instances/{id}` and `/app-models/{id}`
+URLs directly gets the app's real "Not found." page, not a blank page or
+a leak. Portable `.icp` export exclusion of `RecordAttachment` confirmed
+by code inspection (`exports/builder.py` never references the model).
+**This closes all 6 steps of Phase 2** — see
+[APP_PLATFORM_PHASE2.md](APP_PLATFORM_PHASE2.md)'s qualification step for
+the full account and the honest remaining-debt list (record creation is
+not idempotent under retry, the reference picker has no search/pagination
+past 100 target records, no bulk/batch record API, no client-side decimal
+precision validation, no drag-and-drop attachment upload — none
+security-sensitive). Phase 3 (App Builder v1) is next.
+
 ## App Platform Phase 2 generic screens checkpoint (2026-09-09)
 
 New frontend: `/app-instances/[instanceId]` (model/relationship overview),

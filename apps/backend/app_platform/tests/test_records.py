@@ -1,8 +1,9 @@
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 
 from django.core.management import call_command
-from django.db import connections
+from django.db import close_old_connections, connections
 from django.test import TransactionTestCase
 from psycopg import sql
 from rest_framework.test import APIClient
@@ -242,3 +243,76 @@ class RecordsTests(TransactionTestCase):
             serialized = str(event.context)
             self.assertNotIn("Secret name", serialized)
             self.assertNotIn("Renamed", serialized)
+
+    def test_revoking_the_resource_grant_immediately_denies_access(self):
+        member = User.objects.create_user(email="records-revoke@example.com")
+        Membership.objects.create(user=member, organization=self.org, status=Membership.Status.ACTIVE)
+        client = APIClient()
+        client.force_authenticate(member)
+
+        grant = grant_resource_permission(
+            user=member,
+            permission_code="database.read",
+            organization_id=self.org.id,
+            resource_type="databases.tenant_database",
+            resource_id=self.receipt.database_id,
+        )
+        self.assertEqual(client.get(self.items_url).status_code, 200)
+
+        grant.delete()
+        self.assertEqual(client.get(self.items_url).status_code, 403)
+
+    def test_concurrent_updates_to_the_same_record_do_not_corrupt_it(self):
+        create = self.client.post(self.items_url, {str(self.name_field.id): "Start"}, format="json")
+        record_id = create.data["id"]
+
+        def update(name):
+            close_old_connections()
+            client = APIClient()
+            client.force_authenticate(User.objects.get(pk=self.actor.pk))
+            try:
+                payload = {str(self.name_field.id): name}
+                return client.patch(self.detail_url(record_id), payload, format="json")
+            finally:
+                close_old_connections()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(pool.map(update, ["Alpha", "Beta"]))
+        for response in responses:
+            self.assertEqual(response.status_code, 200, response.data)
+
+        final = self.client.get(self.detail_url(record_id))
+        self.assertIn(final.data[str(self.name_field.id)], ["Alpha", "Beta"])
+
+    def test_attachment_from_a_foreign_model_cannot_be_reached_by_id_substitution(self):
+        # A second, unrelated app instance/model in the SAME organization --
+        # proves the attachment lookup is scoped by (model, record_id), not
+        # just organization membership, closing the same class of gap the
+        # cross-organization attachment test covers from a different angle.
+        template = templates.create_template(self.actor, self.org, {"label": "Other App", "draft": sample()})
+        version = templates.publish_template(self.actor, template)
+        other_instance = instances.install(
+            self.actor, self.project, {"label": "Other Runtime", "template_version": str(version.id)}
+        )
+        other_plan = plan_runtime(self.actor, other_instance)
+        provisioning.reserve(self.actor, other_instance, other_plan["fingerprint"])
+        provisioning.execute(other_instance.id, self.actor)
+        try:
+            other_item = other_instance.models.get(key="item")
+            create = self.client.post(self.items_url, {str(self.name_field.id): "Mine"}, format="json")
+            record_id = create.data["id"]
+
+            # record_id is real, but belongs to self.item's table, not
+            # other_item's -- the lookup must be scoped by (model, record),
+            # not accept any record id that merely exists somewhere.
+            response = self.client.get(
+                f"/api/v1/app-models/{other_item.id}/records/{record_id}/attachments/"
+            )
+            self.assertEqual(response.status_code, 404)
+        finally:
+            with connections["tenant"].cursor() as cursor:
+                cursor.execute(
+                    sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(
+                        sql.Identifier(other_plan["schema_name"])
+                    )
+                )

@@ -5,7 +5,91 @@ Status: **IN PROGRESS**, started 2026-09-09 from
 The [ten-phase roadmap](APP_PLATFORM_ROADMAP.md) preserves the master brief's
 full scope and order. A runtime plan is not a running application.
 
-## Current step: generic screens and history
+## Current step: qualification (Phase 2 complete)
+
+Continued from `58a0f4e` on 2026-09-09. This step is verification and
+honest debt reporting, not new features — per the delivery rules, "the
+request to continue does not make any unimplemented phase complete," so
+each qualification item below names its actual evidence rather than
+asserting completion.
+
+- **Fresh full backend/security suite**: see numbers below.
+- **Browser workflows**: covered live in the previous step (create/edit/
+  delete, reference picker, attach/download/detach, search, history) plus
+  a dedicated cross-organization check this step — logged in as a user
+  with zero relationship to the first org (a member of a wholly separate
+  "Outsider Org") and confirmed both `/app-instances/{id}` and
+  `/app-models/{id}` render the app's real "Not found." error page, not a
+  blank page, a crash, or a leaked redirect.
+- **Lint/types/builds**: Ruff and Mypy clean (backend); `next build`,
+  ESLint and Vitest clean (frontend) — re-confirmed this step, not assumed
+  stale-clean from the prior two steps.
+- **Migrations**: `makemigrations --check --dry-run` detects no drift;
+  this step added no new models.
+- **Concurrent/replayed operations**: `test_concurrent_updates_to_the_same_record_do_not_corrupt_it`
+  drives two real threads patching the *same* record simultaneously and
+  confirms both requests succeed with the record left in one of the two
+  submitted states, never a mix — Postgres's own per-row locking on
+  `UPDATE ... WHERE id = %s` does this for free, no application-level lock
+  was added or needed. Record creation is **not** idempotent — retrying a
+  timed-out `POST .../records/` creates a second record, the same
+  behavior the generic data explorer's own row-insert endpoint already
+  has. Documented here as an accepted, pre-existing limitation this step
+  chose not to silently carry forward without naming, not a regression
+  introduced by it.
+- **Cross-org ID substitution**: extends beyond the model-id-level
+  coverage the previous two steps already had
+  (`test_foreign_organization_model_id_is_not_found`,
+  `test_file_from_a_foreign_organization_cannot_be_attached`) with
+  `test_attachment_from_a_foreign_model_cannot_be_reached_by_id_substitution`
+  — a *real* record id, valid in one model's table, substituted into a
+  second, unrelated model's attachment-listing URL in the *same*
+  organization, proving the lookup is scoped by `(model, record_id)`
+  together, not "any record id that exists somewhere plus org
+  membership."
+- **Grant revocation**: `test_revoking_the_resource_grant_immediately_denies_access`
+  grants `database.read` to a plain member, confirms access, deletes the
+  `ResourceGrant`, and confirms the very next request is denied — no
+  caching or stale-authorization window.
+- **Full backup restore**: `test_full_backup_restores_the_attachment_row`
+  extends the provisioning step's existing populated-backup test pattern
+  to the new `RecordAttachment` control-plane model — backs up both
+  control and tenant databases, deletes the attachment row, restores both
+  snapshots, and confirms the row (and its `record_id`/`file_id`) comes
+  back exactly. `RuntimeProvision`/tenant-row restoration was already
+  covered by the provisioning step's own test.
+- **Portable-export exclusion**: confirmed by inspection, not just
+  assumption — `exports/builder.py` never imports or references
+  `RecordAttachment` at all (only checks `AppTemplate`/`AppInstance`
+  *existence* to emit its "no templates or app instances" warning), so a
+  portable `.icp` package structurally cannot include attachment rows,
+  the same exclusion Phase 1 established for the rest of `app_platform`.
+
+Fresh full backend gate: **485 passed, 2 skipped, 0 failed** (the 2 skips
+are the real-worker-SIGKILL restore probes, `RUN_RESTORE_WORKER_TESTS=0`
+for this run) — see [TEST_STATUS.md](TEST_STATUS.md) for the exact run.
+4 new qualification tests (83 total in `app_platform`). Full backend Ruff
+and Mypy pass clean.
+
+**Honest remaining debt, not blocking Phase 2 but real:** record mutations
+have no idempotency-key protection against client retries (noted above);
+the reference picker fetches at most 100 target records with no search or
+pagination of its own, so a very large target model makes it unwieldy; no
+bulk/batch record API exists (each create/update/delete is one row); there
+is no client-side decimal precision/scale validation matching the
+backend's `NUMERIC(18,4)`, so an out-of-range value surfaces only as the
+generic 400 error banner, not an inline hint; attachments are one file per
+action, picked from an existing bucket, never a direct drag-and-drop
+upload. None of these are security- or isolation-sensitive; all are
+scoped, deliberate cuts, not gaps discovered late.
+
+**Phase 2 is complete as of this step** — all 6 steps (schema planning,
+provisioning/recovery, record/query services, relationships/attachments,
+generic screens/history, qualification) are implemented and verified.
+Phase 3 (App Builder v1) is next per
+[the roadmap](APP_PLATFORM_ROADMAP.md).
+
+## Implemented earlier step: generic screens and history
 
 Continued from `1e4a2f8` on 2026-09-09. Three new frontend pages generate a
 real, working UI directly from an app's installed metadata, following this

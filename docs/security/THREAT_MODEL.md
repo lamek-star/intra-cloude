@@ -1,5 +1,27 @@
 # Threat Model — IntraForge
 
+## App Platform Phase 2 qualification pass
+
+Closes Phase 2 with tests spanning the previous three steps' boundaries
+rather than just re-asserting them: a real record id from one model's
+tenant table substituted into a second, unrelated model's attachment URL
+in the *same* organization confirms the `(model, record_id)` scoping (not
+org membership alone) actually rejects it; revoking a `ResourceGrant`
+mid-session denies the very next request, no stale-authorization window;
+two real threads concurrently updating the *same* record leave it in one
+of the two submitted states, never a corrupted mix (Postgres's per-row
+`UPDATE` locking, no application lock needed); and the new
+`RecordAttachment` control-plane row survives a real control+tenant backup/
+restore cycle. Also live-verified in a browser: a user with zero
+relationship to an app's organization gets the app's real "Not found."
+page at both the instance and model URLs, not a blank page or a leak.
+Record creation is confirmed *not* idempotent (a retried POST duplicates
+the record) — an accepted, named limitation shared with the generic data
+explorer's own row-insert endpoint, not a new gap. Full evidence:
+[APP_PLATFORM_PHASE2.md](../implementation/APP_PLATFORM_PHASE2.md)'s
+qualification step and `app_platform/tests/test_records.py`/
+`test_attachments.py`.
+
 ## App Platform Phase 2 attachments boundary
 
 Attaching never accepts file bytes -- only a reference (`file_id`) to a
