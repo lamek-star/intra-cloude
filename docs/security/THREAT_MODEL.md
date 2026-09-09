@@ -1,5 +1,30 @@
 # Threat Model — IntraForge
 
+## App Platform Phase 2 record CRUD boundary
+
+Record values are always addressed by definition UUID in the API; the
+runtime's generated physical table/column names are never accepted from or
+returned to a client. `databases.rows`/`databases.values` perform the actual
+type/required/decimal validation already relied on by the generic data
+explorer; this step only translates ids and adds a real PostgreSQL exception
+mapping (`django.db.IntegrityError`/`Error`, since Django's cursor wrapper
+re-raises driver errors under its own hierarchy, not the raw psycopg
+classes) so a foreign-key violation, decimal overflow, or a non-finite
+number is a clean 400, not a leaked 500. A relationship value is a real
+enforced foreign key with the deletion policy chosen at definition time, not
+an application-level check. Every create/update/delete is audited with the
+record id and (update only) which field/relationship ids changed, never the
+values themselves, matching the "never storing secret or full record
+payloads" constraint the docstring of this whole subsystem already commits
+to. Cross-organization model-id substitution is a 404 (via the same
+`get_owned` membership scoping used everywhere else in `app_platform`); a
+member with no `database.read`/`write` grant is a 403. See
+`app_platform/tests/test_records.py` for the live-verified cases: CRUD round
+trip, filter/search/order/pagination, relationship round trip and FK-
+violation rejection, required-field/decimal-overflow/unknown-field
+rejection, cross-org 404, permission-grant-gated 403, unprovisioned-instance
+404, and audited-without-payload-leak mutations.
+
 ## App Platform Phase 2 provisioning boundary
 
 Runtime reservation is human-only and requires actual app schema and database

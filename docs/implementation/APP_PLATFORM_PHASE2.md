@@ -5,7 +5,41 @@ Status: **IN PROGRESS**, started 2026-09-09 from
 The [ten-phase roadmap](APP_PLATFORM_ROADMAP.md) preserves the master brief's
 full scope and order. A runtime plan is not a running application.
 
-## Current step: resumable provisioning
+## Current step: record/query services
+
+Continued from `42d9720` on 2026-09-09. `app_platform/records.py` and
+`record_views.py` add typed record CRUD over a provisioned runtime:
+`GET/POST /api/v1/app-models/{model_id}/records/` and
+`GET/PATCH/DELETE .../records/{record_id}/`. Field/relationship values are
+always keyed by definition UUID and translated to/from the runtime's
+generated physical column names server-side; actual storage, type/required
+validation, search/filter/sort/pagination and foreign-key/deletion-policy
+enforcement are delegated to the existing `databases.rows`/`databases.values`
+layer the data explorer already uses — not a second implementation of any
+of that. Authorization reuses `database.read`/`database.write` on the
+runtime's `TenantDatabase` resource, per the provisioning step's own
+documented decision not to introduce app-specific record grants yet.
+Unknown field/relationship ids, missing required fields, decimal overflow/
+nonfinite values, and a relationship value with no matching target row are
+all a clean 400 (mapping Django's wrapped `IntegrityError`/`Error`, not the
+raw psycopg exception classes a first attempt at this reached for and which
+never actually match). Create/update/delete are audited with the record id
+and (update) which fields changed, never field values. Targeted verification:
+10 new tests (73 total in `app_platform`) covering CRUD round trip, filter/
+search/order/pagination, a real enforced foreign key plus its violation,
+required/decimal-overflow/unknown-field rejection, cross-organization 404,
+permission-grant-gated 403, an unprovisioned instance's 404, and audited-
+without-payload-leak mutations. Fresh full backend gate: **475 passed, 2
+skipped, 0 failed**, 260.25 seconds (the 2 skips are the real-worker-SIGKILL
+restore probes, `RUN_RESTORE_WORKER_TESTS=0` for this run). Full backend
+Ruff and Mypy passed clean (Mypy: 24 `app_platform` source files, plus the
+two pre-existing unrelated informational notes elsewhere). `makemigrations
+--check --dry-run` detected no changes — this step added no models/migrations.
+
+Attachments, generated list/form/detail/reference-picker screens, and
+rendered (not just recorded) audit history remain the next two steps.
+
+## Implemented earlier step: resumable provisioning
 
 Continued from `33d4f8d` on 2026-09-09. Implemented a durable RuntimeProvision
 receipt, asynchronous POST/status GET, pinned plan and optimistic concurrency,
@@ -78,14 +112,22 @@ is an optimistic-concurrency input, not authorization or a signed token.
    migration-aware operations. No policy may be bypassed through row, import,
    analytics, export, or integration endpoints. Keep service-account access
    denied until an explicit Environment binding contract exists.
-3. **Record/query services.** Reuse existing validated row operations for
-   create/read/update/delete, search, filters, sort and bounded pagination.
-   Resolve field/relationship IDs server-side. Reject invalid types, nulls,
-   decimal overflow/nonfinite values, unknown IDs and cross-instance references.
-   Define atomicity and recovery of record changes and audit history across
-   the two databases; do not claim distributed atomicity from nested blocks.
-4. **Relationships and attachments.** Enforce actual PostgreSQL foreign keys
-   and deletion policies. Attach existing stored files only after checking
+3. **Record/query services — implemented in the current step.** Reuse
+   existing validated row operations for create/read/update/delete, search,
+   filters, sort and bounded pagination. Resolve field/relationship IDs
+   server-side. Reject invalid types, nulls, decimal overflow/nonfinite
+   values, unknown IDs and cross-instance references. Record mutations are
+   each a single statement against the real table (no multi-row batch API
+   exists yet), so there is no distributed-atomicity claim to make; audit
+   events are written immediately after each successful mutation, not
+   two-phase-committed with it — a crash between the two is a gap the next
+   step's "rendered history" work should account for, not a solved problem.
+4. **Relationships and attachments — FK/deletion-policy half already covered
+   by the schema itself; attachments remain.** Enforce actual PostgreSQL
+   foreign keys and deletion policies (the tables the provisioning step
+   built already carry real FK constraints per relationship, exercised by
+   `test_records.py`'s foreign-key-violation case). Attach existing stored
+   files only after checking
    organization, app/record and storage authority. Downloads must recheck
    access and quarantine/deletion state, and never expose object-store keys.
 5. **Generic screens and history.** Generate lists, forms, record detail,
@@ -98,10 +140,11 @@ is an optimistic-concurrency input, not authorization or a signed token.
    exclusion behavior. Update API/security/operator documentation and report
    exact remaining debt before moving to Phase 3.
 
-The record/attachment policy and atomic record-audit questions in steps 2–4
-remain requirements for the next implementation step. Current records inherit
-the existing database authority; no separate app record policy is claimed.
-No new runtime code or migrations have been deployed to the user's app.
+The attachment policy question in step 4 remains a requirement for the next
+implementation step. Records inherit the existing database authority by
+deliberate decision (see PERMISSIONS.md), not as an open question; no
+separate app record policy is claimed. No new runtime code or migrations
+have been deployed to the user's app.
 
 ## Earlier preflight verification (commit 33d4f8d)
 

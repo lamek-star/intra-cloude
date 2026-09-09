@@ -1,6 +1,19 @@
 # Permissions & Authorization Model — IntraForge
 
-## App Platform Phase 2 provisioning
+## App Platform Phase 2 record CRUD
+
+Record list/read requires `database.read`, and create/update/delete require
+`database.write`, on the runtime's `TenantDatabase` resource (`databases.
+tenant_database`) — the exact same resource-scoped capability the generic
+data explorer's row endpoints already enforce, not a new app-specific or
+record-level grant, per the provisioning step's own decision below. A caller
+still needs active organization membership (via the model's `get_owned`
+lookup) but no separate `app_instance.*` capability gates record access —
+`app_instance.read`/`manage` govern the app's own metadata (labels, model/
+field/relationship definitions), a different resource. Since `app_platform`
+views only ever accept a human session, the Environment-scoped-credential
+check the row endpoints also carry is structurally unreachable here and is
+not duplicated.
 
 Runtime reservation/execution requires an active human member with
 `app_instance.schema.manage` on the instance and organization-wide
