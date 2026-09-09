@@ -518,6 +518,60 @@ export type DashboardRenderResult = {
 
 // --- App Platform (docs/implementation/APP_PLATFORM_PHASE2.md) ---
 
+// The draft/version definition format `app_platform/definitions.py`
+// validates -- id is omitted by the builder for a brand-new element (the
+// server assigns one) and echoed back for an existing one, to preserve
+// definition lineage across edits (see APP_PLATFORM_PHASE3.md).
+export type DraftField = {
+  id?: string;
+  key: string;
+  label: string;
+  data_type: AppFieldDataType;
+  required?: boolean;
+};
+
+export type DraftModel = {
+  id?: string;
+  key: string;
+  label: string;
+  fields: DraftField[];
+};
+
+export type DraftRelationship = {
+  id?: string;
+  key: string;
+  label: string;
+  source_model: string;
+  target_model: string;
+  kind?: string;
+  deletion_policy?: "restrict" | "set_null";
+};
+
+export type AppDefinition = {
+  schema_version: 1;
+  models: DraftModel[];
+  relationships: DraftRelationship[];
+};
+
+export type AppTemplate = {
+  id: string;
+  organization: string;
+  label: string;
+  description: string;
+  draft: AppDefinition;
+  archived: boolean;
+  created_at: string;
+};
+
+export type AppTemplateVersion = {
+  id: string;
+  template: string;
+  number: number;
+  definition: AppDefinition;
+  checksum_sha256: string;
+  created_at: string;
+};
+
 export type AppInstance = {
   id: string;
   organization: string;
@@ -526,6 +580,26 @@ export type AppInstance = {
   label: string;
   archived: boolean;
   created_at: string;
+};
+
+export type RuntimePlan = {
+  format_version: number;
+  instance_id: string;
+  database_id: string;
+  schema_name: string;
+  models: unknown[];
+  relationships: unknown[];
+  fingerprint: string;
+};
+
+export type RuntimeStatus = {
+  instance_id: string;
+  status: "ready" | "failed" | "pending";
+  fingerprint: string;
+  database_id: string | null;
+  bindings: Record<string, unknown>;
+  error: string;
+  completed_at: string | null;
 };
 
 export type AppModelDefinition = {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { Boxes } from "lucide-react";
 import {
@@ -11,16 +11,51 @@ import {
   type AppRelationshipDefinition,
   type Paginated,
   type Project,
+  type RuntimePlan,
+  type RuntimeStatus,
 } from "@/lib/api";
-import { Badge, Card, EmptyState, ErrorBanner, PageHeader, PageLoading } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  Checkbox,
+  EmptyState,
+  ErrorBanner,
+  Input,
+  Label,
+  Modal,
+  PageHeader,
+  PageLoading,
+  Spinner,
+} from "@/components/ui";
 
 export default function AppInstanceClient({ instanceId }: { instanceId: string }) {
   const [instance, setInstance] = useState<AppInstance | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [models, setModels] = useState<AppModelDefinition[] | null>(null);
   const [relationships, setRelationships] = useState<AppRelationshipDefinition[] | null>(null);
+  const [runtime, setRuntime] = useState<RuntimeStatus | null>(null);
+  const [runtimeVisible, setRuntimeVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<unknown>(null);
+  const [provisionError, setProvisionError] = useState<string | null>(null);
+  const [provisioning, setProvisioning] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  async function loadRuntime() {
+    try {
+      setRuntime(await api.get<RuntimeStatus>(`/app-instances/${instanceId}/runtime/`));
+      setRuntimeVisible(true);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        setRuntime(null);
+        setRuntimeVisible(true);
+      }
+      // A 403 (no app_instance.schema.manage) leaves runtimeVisible false --
+      // this actor can browse installed models but not manage provisioning.
+    }
+  }
 
   async function load() {
     try {
@@ -35,6 +70,7 @@ export default function AppInstanceClient({ instanceId }: { instanceId: string }
       setModels(m.results);
       setRelationships(r.results);
       api.get<Project>(`/projects/${inst.project}/`).then(setProject).catch(() => {});
+      loadRuntime();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load this app.");
       setErrorDetail(err);
@@ -45,8 +81,41 @@ export default function AppInstanceClient({ instanceId }: { instanceId: string }
     // One-shot fetch-on-mount/param-change, not a state-sync loop.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
+    return () => {
+      if (pollRef.current) clearTimeout(pollRef.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instanceId]);
+
+  function pollRuntime() {
+    pollRef.current = setTimeout(async () => {
+      try {
+        const status = await api.get<RuntimeStatus>(`/app-instances/${instanceId}/runtime/`);
+        setRuntime(status);
+        if (status.status === "pending") pollRuntime();
+        else setProvisioning(false);
+      } catch {
+        setProvisioning(false);
+      }
+    }, 2000);
+  }
+
+  async function handleProvision() {
+    setProvisionError(null);
+    setProvisioning(true);
+    try {
+      const plan = await api.get<RuntimePlan>(`/app-instances/${instanceId}/runtime-plan/`);
+      const status = await api.post<RuntimeStatus>(`/app-instances/${instanceId}/runtime/`, {
+        fingerprint: plan.fingerprint,
+      });
+      setRuntime(status);
+      if (status.status === "pending") pollRuntime();
+      else setProvisioning(false);
+    } catch (err) {
+      setProvisionError(err instanceof ApiError ? err.message : "Failed to start provisioning.");
+      setProvisioning(false);
+    }
+  }
 
   if (!instance && !error) return <PageLoading />;
   if (error && !instance) return <ErrorBanner message={error} error={errorDetail} />;
@@ -64,6 +133,11 @@ export default function AppInstanceClient({ instanceId }: { instanceId: string }
           { label: instance.label },
         ]}
         description="A generic app instance — each model below has its own data explorer once its runtime is provisioned."
+        actions={
+          <Button variant="secondary" onClick={() => setEditModalOpen(true)}>
+            Edit
+          </Button>
+        }
       />
 
       {error && (
@@ -76,6 +150,48 @@ export default function AppInstanceClient({ instanceId }: { instanceId: string }
         <div className="mb-4">
           <Badge tone="warning">Archived</Badge>
         </div>
+      )}
+
+      {runtimeVisible && (
+        <Card className="mb-6">
+          {provisionError && (
+            <div className="mb-3">
+              <ErrorBanner message={provisionError} />
+            </div>
+          )}
+          {!runtime ? (
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-900">Runtime not provisioned</p>
+                <p className="text-xs text-slate-500">
+                  Provisioning creates a real database table for each model above.
+                </p>
+              </div>
+              <Button onClick={handleProvision} disabled={provisioning || models?.length === 0}>
+                {provisioning ? "Starting…" : "Provision runtime"}
+              </Button>
+            </div>
+          ) : runtime.status === "ready" ? (
+            <div className="flex items-center gap-2 text-sm text-green-700">
+              <Badge tone="success">Ready</Badge>
+              Runtime is provisioned — models above link to their real record screens.
+            </div>
+          ) : runtime.status === "failed" ? (
+            <div>
+              <div className="flex items-center justify-between">
+                <Badge tone="danger">Failed</Badge>
+                <Button size="sm" onClick={handleProvision} disabled={provisioning}>
+                  {provisioning ? "Retrying…" : "Retry"}
+                </Button>
+              </div>
+              {runtime.error && <p className="mt-2 text-xs text-red-600">{runtime.error}</p>}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-sm text-slate-600">
+              <Spinner className="h-4 w-4" /> Provisioning…
+            </div>
+          )}
+        </Card>
       )}
 
       <h2 className="mb-3 text-sm font-semibold text-slate-600">Models</h2>
@@ -112,6 +228,79 @@ export default function AppInstanceClient({ instanceId }: { instanceId: string }
           </div>
         </div>
       )}
+
+      <EditInstanceModal
+        open={editModalOpen}
+        instance={instance}
+        onClose={() => setEditModalOpen(false)}
+        onSaved={(inst) => {
+          setInstance(inst);
+          setEditModalOpen(false);
+        }}
+      />
     </div>
+  );
+}
+
+function EditInstanceModal({
+  open,
+  instance,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  instance: AppInstance;
+  onClose: () => void;
+  onSaved: (inst: AppInstance) => void;
+}) {
+  const [label, setLabel] = useState(instance.label);
+  const [archived, setArchived] = useState(instance.archived);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLabel(instance.label);
+    setArchived(instance.archived);
+    setError(null);
+  }, [open, instance]);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const inst = await api.patch<AppInstance>(`/app-instances/${instance.id}/`, { label, archived });
+      onSaved(inst);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to save.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Edit app">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {error && <ErrorBanner message={error} />}
+        <div>
+          <Label htmlFor="edit-instance-label">Name</Label>
+          <Input id="edit-instance-label" required value={label} onChange={(e) => setLabel(e.target.value)} />
+        </div>
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          <Checkbox checked={archived} onChange={(e) => setArchived(e.target.checked)} />
+          Archived
+        </label>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={submitting}>
+            {submitting ? "..." : "Save"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }

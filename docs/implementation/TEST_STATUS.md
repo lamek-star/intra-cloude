@@ -1,5 +1,24 @@
 # Test Status
 
+## App Platform Phase 3 step 1 checkpoint — App Builder UI (2026-09-09)
+
+No backend changes this step (see APP_PLATFORM_PHASE3.md); frontend only.
+`next build`, ESLint, and the existing Vitest suite (10 tests, 2 files,
+unchanged) all pass clean. Live-verified end-to-end in a real browser
+against a rebuilt dev stack (frontend container rebuilt/restarted; backend
+untouched): built a template from scratch through
+`/orgs/[orgId]/app-templates` and `/app-templates/[templateId]`'s
+draft builder (two models, a required field, a relationship), published a
+version, installed it into a project via the new "Install app" modal,
+provisioned its runtime through the instance page's new "Provision
+runtime" action (watched the real async status go pending → ready via
+live polling against the actual Celery worker), and confirmed the
+generated record screen for the newly-provisioned model loads correctly —
+the first time template → publish → install → provision → records has
+been driven end-to-end through the UI rather than the API directly. See
+[APP_PLATFORM_PHASE3.md](APP_PLATFORM_PHASE3.md) for the full step
+account and what's deliberately deferred to later steps.
+
 ## App Platform Phase 2 qualification checkpoint — Phase 2 complete (2026-09-09)
 
 4 new tests added this step (cross-model attachment id-substitution IDOR,

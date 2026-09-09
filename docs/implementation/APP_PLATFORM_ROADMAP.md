@@ -10,7 +10,7 @@ unimplemented phase complete.
 |---|---|---|---|
 | 1 | Application definitions, templates, immutable versions, installed instances | Complete | [436-test checkpoint](APP_PLATFORM_PHASE1.md) |
 | 2 | Generic application runtime | Complete | [Phase 2 qualification checkpoint](APP_PLATFORM_PHASE2.md) |
-| 3 | App Builder v1 | Pending Phase 2 | No-code model/field/form/list editing; labels, defaults, required flags, ordering, relationships and basic permissions; safe populated-schema changes |
+| 3 | App Builder v1 | In progress: step 1 (App Builder UI for existing capability) | No-code model/field/form/list editing; labels, defaults, required flags, ordering, relationships and basic permissions; safe populated-schema changes |
 | 4 | Inventory and Sales reference application | Pending Phase 3 | Spare-parts template covering inventory, purchasing and sales; real business scenario; no industry-specific core models |
 | 5 | Workflow engine | Pending Phase 4 | Declarative states, transitions, conditions, approvals, actions, notifications and audit; concurrent/replayed transitions cannot duplicate effects |
 | 6 | Organizational hierarchy | Pending Phase 5 | Generic units supporting branches, campuses, departments, warehouses and teams; cycle prevention and organization isolation |
@@ -33,6 +33,11 @@ Phase 2 is split into reviewable steps: runtime schema planning; provisioning
 and recovery; record/query services; relationships and attachments; generic
 screens and history; full verification. These are steps within Phase 2, not
 replacement phases or permission to omit its requirements.
+
+Phase 3 is split into reviewable steps the same way: App Builder UI for
+already-existing backend capability; defaults and ordering; safe
+populated-schema changes; basic permissions; full verification. See
+[APP_PLATFORM_PHASE3.md](APP_PLATFORM_PHASE3.md).
 
 ## Release qualification is a separate gate
 

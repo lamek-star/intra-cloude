@@ -53,7 +53,26 @@ creation is confirmed *not* idempotent under retry, an accepted, named
 limitation shared with the generic data explorer, not a new gap. See
 ADR-0015, `docs/operations/RUNTIME_PROVISIONING.md`, and
 `docs/implementation/APP_PLATFORM_PHASE2.md`. This work is not deployed
-to the user's production appliance. Phase 3 (App Builder v1) is next.
+to the user's production appliance.
+
+**App Platform Phase 3 (App Builder v1) is in progress**, split into steps
+per `docs/implementation/APP_PLATFORM_PHASE3.md`. Step 1 (App Builder UI
+for capability the backend already had) is done: `/orgs/[orgId]/
+app-templates`, a draft model/field/relationship builder at
+`/app-templates/[templateId]` that PATCHes the whole draft and always
+re-derives state from the server's response (preserving already-assigned
+ids across edits, since relationship pickers only ever offer already-saved
+models), a read-only version viewer, an "Install app" flow on the project
+page, and a "Provision runtime" action with live status polling on the
+instance page. No backend changes. Live-verified end-to-end in a real
+browser: template created from scratch, published, installed, provisioned
+(watched go pending → ready against the real Celery worker), and its
+generated record screen confirmed working — the first time the whole
+template → publish → install → provision → records journey has been
+driven through the UI. Remaining steps: defaults/ordering, safe
+populated-schema changes against an already-provisioned runtime, basic
+permissions (needs its own design decision first, not yet made), and
+qualification.
 The master brief's ten development phases
 are tracked in `docs/implementation/APP_PLATFORM_ROADMAP.md`; current work and
 remaining runtime requirements are in `docs/implementation/APP_PLATFORM_PHASE2.md`.
