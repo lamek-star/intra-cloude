@@ -1,5 +1,27 @@
 # Threat Model — IntraForge
 
+## App Platform Phase 2 provisioning boundary
+
+Runtime reservation is human-only and requires actual app schema and database
+capabilities; the worker rechecks authority. Strict request validation accepts
+only the plan fingerprint. Installed UUIDs produce validated physical names,
+and existing quoting/DDL services construct the schema. Durable reservation,
+instance/advisory locks, operation-marked tenant schemas and atomic control
+publication prevent a retry from rebuilding published data. An unmarked
+schema or any catalog owner blocks reconciliation. Published bindings and
+structural definitions/catalog rows have PostgreSQL guards; normal database
+services reject destructive schema operations before executing DDL.
+
+Generated records currently inherit existing database/Environment access;
+there is no parallel app record policy or field/record-level isolation claim.
+Broker enqueue and control/tenant commits are not distributed transactions.
+Pending receipts can require explicit re-enqueue or operator review. Matching
+quiesced control+tenant backups are required for complete runtime restoration.
+Real process/worker SIGKILL, concurrency, foreign organization, catalog guard
+and populated restore tests cover this step. See
+[ADR-0015](../architecture/adr/0015-runtime-provisioning.md) and
+[operating limits](../operations/RUNTIME_PROVISIONING.md).
+
 ## App Platform Phase 1 boundary
 
 New metadata uses active membership plus `app_template.*`/`app_instance.*`

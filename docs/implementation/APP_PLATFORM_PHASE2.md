@@ -5,6 +5,33 @@ Status: **IN PROGRESS**, started 2026-09-09 from
 The [ten-phase roadmap](APP_PLATFORM_ROADMAP.md) preserves the master brief's
 full scope and order. A runtime plan is not a running application.
 
+## Current step: resumable provisioning
+
+Continued from `33d4f8d` on 2026-09-09. Implemented a durable RuntimeProvision
+receipt, asynchronous POST/status GET, pinned plan and optimistic concurrency,
+validated tenant table/column/FK creation, catalog UUID mappings, and protected
+schema ownership. The ready runtime uses existing tenant database data access;
+generic app CRUD/screens/attachments/history remain pending. The receipt is
+reserved before any DDL, and structural definition changes are frozen while
+labels remain editable. No production migration or deployment occurred.
+
+[ADR-0015](../architecture/adr/0015-runtime-provisioning.md) records the storage,
+authorization and two-database commit decision. The
+[operator/API procedure](../operations/RUNTIME_PROVISIONING.md) documents
+retries, failure states, schema-conflict handling, backup consistency and
+remaining limits. New migrations: `0003_runtime_provision`, `0004_runtime_guards`.
+
+Targeted verification: 19 tests passed, including actual tenant DDL/FKs,
+permission and ownership checks, a broker enqueue outage, concurrent execution,
+exceptions before/after tenant commit, real process SIGKILL on both commit
+boundaries, real Celery worker loss/redelivery, populated full backup restore,
+portable data round trip without claiming app metadata, and raw catalog guards.
+An independent HTTPS session/CSRF smoke used production settings and a separate
+worker/private queue: publish/install, preview, async provision, poll, real
+record insert/read, retry preserving data, foreign-user denial, schema freeze
+and display rename all passed. Full backend Ruff and Mypy passed (220 files).
+Full-suite/build results are recorded after completion.
+
 ## Implemented first step: relational preflight
 
 `GET /api/v1/app-instances/{id}/runtime-plan/` returns a deterministic,
@@ -35,9 +62,9 @@ stable IDs give a deterministic fingerprint. Presentation labels and list
 iteration order do not affect it; storage-affecting changes do. A fingerprint
 is an optimistic-concurrency input, not authorization or a signed token.
 
-## Remaining implementation sequence
+## Implementation sequence and remaining work
 
-1. **Provisioning and recovery.** Persist the instance-to-database and
+1. **Provisioning and recovery — implemented in the current step.** Persist the instance-to-database and
    definition-to-catalog bindings. Use validated `databases.services`
    operations, with explicit capabilities, not fabricated users or bypasses.
    Serialize provisioning and schema edits. Commit/replay behavior must cover
@@ -45,7 +72,7 @@ is an optimistic-concurrency input, not authorization or a signed token.
    commits. Never drop a schema that already belongs to a published catalog.
    A completed provision retry must return the same runtime without touching
    its records. Test populated backups and restore before deployment.
-2. **Runtime policy and schema ownership.** Document the relationship between
+2. **Runtime policy and schema ownership — initial schema protection implemented.** Document the relationship between
    existing `database.*` access and app access. Protect managed schema from
    ordinary builder deletion/alteration; defaults/required/type changes need
    migration-aware operations. No policy may be bypassed through row, import,
@@ -71,11 +98,12 @@ is an optimistic-concurrency input, not authorization or a signed token.
    exclusion behavior. Update API/security/operator documentation and report
    exact remaining debt before moving to Phase 3.
 
-The architectural questions in steps 1–3 are requirements for the next
-implementation step, not claims that the corresponding services exist.
-No runtime tables or irreversible storage mapping have been deployed.
+The record/attachment policy and atomic record-audit questions in steps 2–4
+remain requirements for the next implementation step. Current records inherit
+the existing database authority; no separate app record policy is claimed.
+No new runtime code or migrations have been deployed to the user's app.
 
-## Verification log
+## Earlier preflight verification (commit 33d4f8d)
 
 Initial targeted run: **12 passed** against isolated real control PostgreSQL.
 Tests cover rename/order stability, namespace collisions, schema fingerprint
@@ -105,5 +133,5 @@ both databases and Valkey ready. This is a health check of deployed Phase 1,
 not a claim that the new preflight endpoint is deployed or browser-verified.
 
 No frontend, database migration, live deployment or backup format changed in
-this step. Existing Phase 1 full-backup/portable-exclusion behavior remains
+that preflight step. Existing Phase 1 full-backup/portable-exclusion behavior remains
 the contract; the compiler's prospective layout does not implement restore.

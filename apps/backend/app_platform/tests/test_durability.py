@@ -101,7 +101,7 @@ class FoundationMigrationTests(TransactionTestCase):
     def test_fresh_additive_migration_preserves_existing_organization(self):
         actor = User.objects.create_user(email="fresh-migration@example.com")
         org = Organization.objects.create(name="Existing", slug="existing", created_by=actor)
-        current = [("app_platform", "0002_definition_guards")]
+        current = MigrationExecutor(connection).loader.graph.leaf_nodes("app_platform")
         try:
             MigrationExecutor(connection).migrate([("app_platform", None)])
             self.assertNotIn("app_platform_apptemplate", connection.introspection.table_names())
@@ -115,7 +115,7 @@ class FoundationMigrationTests(TransactionTestCase):
     def test_guard_upgrade_preserves_published_snapshot_and_enforces_immutability(self):
         actor = User.objects.create_user(email="guard-migration@example.com")
         org = Organization.objects.create(name="Existing", slug="existing", created_by=actor)
-        current = [("app_platform", "0002_definition_guards")]
+        current = MigrationExecutor(connection).loader.graph.leaf_nodes("app_platform")
         try:
             executor = MigrationExecutor(connection)
             executor.migrate([("app_platform", "0001_initial")])

@@ -7,7 +7,14 @@ from audit import services as audit
 
 from .access import check, get_owned
 from .definitions import FieldInput, ModelInput, RelationshipInput, StrictSerializer, validate_definition
-from .models import AppInstance, AppTemplateVersion, FieldDefinition, ModelDefinition, RelationshipDefinition
+from .models import (
+    AppInstance,
+    AppTemplateVersion,
+    FieldDefinition,
+    ModelDefinition,
+    RelationshipDefinition,
+    RuntimeProvision,
+)
 
 
 class InstallInput(StrictSerializer):
@@ -95,10 +102,12 @@ def require_manage(actor, instance, schema=True):
     )
 
 
-def lock_active(instance):
+def lock_active(instance, *, structural=True):
     instance = AppInstance.objects.select_for_update().get(pk=instance.pk)
     if instance.archived:
         raise serializers.ValidationError("Archived instance definitions cannot be changed.")
+    if structural and RuntimeProvision.objects.filter(instance=instance).exists():
+        raise serializers.ValidationError("Runtime schema is reserved; structural edits require a migration.")
     return instance
 
 
@@ -173,7 +182,7 @@ def update_definition(actor, obj, data):
     )
     values = validated(serializer_type, data)
     with transaction.atomic():
-        lock_active(instance)
+        lock_active(instance, structural=bool(set(values) - {"label"}))
         obj = type(obj).objects.select_for_update().get(pk=obj.pk)
         for key, value in values.items():
             setattr(obj, key, value)

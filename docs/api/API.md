@@ -1,5 +1,19 @@
 # API Documentation — IntraForge
 
+## App Platform asynchronous provisioning
+
+`POST /api/v1/app-instances/{id}/runtime/` accepts only a preflight
+`fingerprint`, durably reserves the plan, then queues provisioning. Requires
+active human membership, exact instance `app_instance.schema.manage`, plus
+organization-wide `database.create` and `database.schema.manage`. Returns
+202 for pending/retried work, 200 for ready replay, 409 for a stale plan.
+GET on the same route requires instance schema-management authority and
+returns status, database UUID, immutable catalog mappings and sanitized error.
+Unknown instance/foreign organization/unreserved GET is 404. Queue failure
+retains the receipt; repeat POST to retry. No editable SQL, database UUID,
+bindings, or status input is accepted.
+See [full contract](../operations/RUNTIME_PROVISIONING.md).
+
 ## App Platform Phase 2 preflight
 
 `GET /api/v1/app-instances/{id}/runtime-plan/` previews a validated relational

@@ -62,6 +62,15 @@ def _execute_tenant_ddl(ddl: sql.Composable) -> None:
         cursor.execute(ddl)
 
 
+def _require_unmanaged_schema(database):
+    # App runtime provisioning uses these same services before publication.
+    # After publication, structural changes require a coordinated app migration.
+    from app_platform.models import RuntimeProvision
+
+    if RuntimeProvision.objects.filter(database_id=database.id).exists():
+        raise SchemaValidationError("Managed application schema requires an application migration")
+
+
 def _write_catalog(fn, *, compensating_ddl: sql.Composable | None = None):
     try:
         with transaction.atomic(using="default"):
@@ -166,6 +175,7 @@ def create_table(*, actor, tenant_database: TenantDatabase, name: str, request_i
         resource_id=tenant_database.id,
         request_id=request_id,
     )
+    _require_unmanaged_schema(tenant_database)
 
     try:
         validate_identifier(name, kind="table name")
@@ -241,6 +251,7 @@ def add_column(
         resource_id=table.id,
         request_id=request_id,
     )
+    _require_unmanaged_schema(table.tenant_database)
 
     try:
         validate_column_name(name)
@@ -333,6 +344,7 @@ def add_foreign_key(
         resource_id=column.id,
         request_id=request_id,
     )
+    _require_unmanaged_schema(column.table.tenant_database)
 
     if references_table.tenant_database_id != column.table.tenant_database_id:
         raise SchemaValidationError("Foreign keys must reference a table in the same database")
@@ -401,6 +413,7 @@ def delete_table(*, actor, table: DBTable, request_id: str = "") -> None:
         resource_id=table.id,
         request_id=request_id,
     )
+    _require_unmanaged_schema(table.tenant_database)
 
     ddl = sql.SQL("DROP TABLE {schema}.{table}").format(
         schema=sql.Identifier(table.tenant_database.schema_name), table=sql.Identifier(table.name)
@@ -437,6 +450,7 @@ def delete_tenant_database(*, actor, tenant_database: TenantDatabase, request_id
         resource_id=tenant_database.id,
         request_id=request_id,
     )
+    _require_unmanaged_schema(tenant_database)
 
     ddl = sql.SQL("DROP SCHEMA {schema} CASCADE").format(schema=sql.Identifier(tenant_database.schema_name))
     _execute_tenant_ddl(ddl)

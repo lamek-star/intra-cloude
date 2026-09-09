@@ -136,3 +136,35 @@ class RelationshipDefinition(Definition):
 
     def __str__(self):
         return self.label
+
+
+class RuntimeProvision(models.Model):
+    """Durable reservation and immutable publication of one runtime per instance."""
+
+    instance = models.OneToOneField(
+        AppInstance, primary_key=True, on_delete=models.PROTECT, related_name="runtime_provision"
+    )
+    plan = models.JSONField()
+    fingerprint = models.CharField(max_length=64)
+    database = models.OneToOneField(
+        "databases.TenantDatabase", null=True, on_delete=models.PROTECT, related_name="app_runtime"
+    )
+    bindings = models.JSONField(default=dict)
+    last_error = models.CharField(max_length=200, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(database__isnull=True, completed_at__isnull=True)
+                    | models.Q(database__isnull=False, completed_at__isnull=False)
+                ),
+                name="app_runtime_completion_consistent",
+            )
+        ]
+
+    def __str__(self):
+        return str(self.instance_id)

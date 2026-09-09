@@ -1,5 +1,15 @@
 # Permissions & Authorization Model — IntraForge
 
+## App Platform Phase 2 provisioning
+
+Runtime reservation/execution requires an active human member with
+`app_instance.schema.manage` on the instance and organization-wide
+`database.create` plus `database.schema.manage`. A schema-only app grant does
+not confer database creation privileges. Workers recheck current authority;
+GET runtime status requires instance schema-management authority. Generated
+records remain under the existing database permissions and Environment checks;
+this step does not introduce app-specific or record-level data grants.
+
 ## App Platform Phase 2 preflight
 
 The runtime-plan GET endpoint uses `app_instance.schema.manage` against the

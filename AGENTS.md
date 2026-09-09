@@ -22,9 +22,14 @@ identity (logo, color tokens, typography, component patterns) lives in
 
 ## Current Status
 
-**App Platform Phase 2 is in progress**, starting with a read-only,
-permission-checked relational runtime planner. It does not provision physical
-tables or provide record CRUD yet. The master brief's ten development phases
+**App Platform Phase 2 is in progress**: a permission-checked relational
+planner and resumable asynchronous provisioning now create actual managed
+tenant tables, scalar columns and foreign keys. Durable receipts/mappings,
+schema guards, replay and matched control/tenant backup restoration are tested.
+Generated data uses existing database permissions/endpoints; generic app
+record APIs/screens, attachments and history remain pending. See ADR-0015 and
+`docs/operations/RUNTIME_PROVISIONING.md`. This work is not deployed yet.
+The master brief's ten development phases
 are tracked in `docs/implementation/APP_PLATFORM_ROADMAP.md`; current work and
 remaining runtime requirements are in `docs/implementation/APP_PLATFORM_PHASE2.md`.
 
