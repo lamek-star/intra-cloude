@@ -1,5 +1,15 @@
 # Release-Readiness Report (living document)
 
+## App Platform continuation checkpoint (2026-09-09)
+
+The [ten-phase roadmap](APP_PLATFORM_ROADMAP.md) now tracks the master brief.
+Phase 1 is complete; Phase 2 has a read-only runtime planner, with provisioning,
+records, attachments and screens still pending. Fresh full gate: 448 tests
+passed, zero failures/skips; lint/types/migration checks and backend image
+build pass. [Exact scope and evidence](APP_PLATFORM_PHASE2.md). This step is
+not deployed, does not complete the runtime, and changes no release-qualification
+decision or external evidence requirement.
+
 ## App Platform Phase 1 checkpoint (2026-09-08)
 
 The definition/template foundation is implemented on isolated branch

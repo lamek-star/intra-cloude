@@ -1,5 +1,16 @@
 # API Documentation — IntraForge
 
+## App Platform Phase 2 preflight
+
+`GET /api/v1/app-instances/{id}/runtime-plan/` previews a validated relational
+layout without executing DDL. Active human membership plus
+`app_instance.schema.manage` is required; exact instance ResourceGrants apply.
+Returns the instance/database identities, generated schema/table/column names,
+typed columns, references and a deterministic fingerprint. Archived/empty
+instances return 400; missing capability 403; foreign organization 404;
+mutation methods are not supported. This does not provide record CRUD or
+provision a runtime. See [contract and progress](../implementation/APP_PLATFORM_PHASE2.md).
+
 ## App Platform Phase 1 foundation
 
 The human-session metadata API adds organization `app-templates`, template

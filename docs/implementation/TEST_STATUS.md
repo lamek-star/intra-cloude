@@ -1,5 +1,14 @@
 # Test Status
 
+## App Platform Phase 2 preflight checkpoint (2026-09-09)
+
+**448 passed, 0 failed, 0 skipped**, 230.65s; 12 new runtime-planning tests
+and the existing real restore worker-crash probes. Two expected
+AlwaysEagerIgnored warnings remain. Full Ruff/Mypy pass (215 source files);
+migration/system checks and production backend Docker build pass. No frontend
+changes or new browser verification. This verifies the read-only preflight
+step, **not completion of Phase 2**. See [evidence and remaining scope](APP_PLATFORM_PHASE2.md).
+
 ## App Platform Phase 1 (2026-09-08)
 
 Fresh full gate: **436 passed, 0 failed, 0 skipped** in 242.06s, including

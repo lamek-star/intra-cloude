@@ -22,6 +22,12 @@ identity (logo, color tokens, typography, component patterns) lives in
 
 ## Current Status
 
+**App Platform Phase 2 is in progress**, starting with a read-only,
+permission-checked relational runtime planner. It does not provision physical
+tables or provide record CRUD yet. The master brief's ten development phases
+are tracked in `docs/implementation/APP_PLATFORM_ROADMAP.md`; current work and
+remaining runtime requirements are in `docs/implementation/APP_PLATFORM_PHASE2.md`.
+
 **App Platform Phase 1** is a separate metadata foundation in `app_platform`:
 organization templates, immutable versions, project-owned instances, and
 generic model/field/relationship definitions. Existing `applications.Application`

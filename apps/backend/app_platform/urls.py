@@ -1,8 +1,9 @@
 from django.urls import path
 
-from . import views
+from . import runtime_views, views
 
 urlpatterns = [
+    path("app-instances/<uuid:object_id>/runtime-plan/", runtime_views.RuntimePlan.as_view()),
     path("organizations/<uuid:organization_id>/app-templates/", views.TemplateList.as_view()),
     path("app-templates/<uuid:object_id>/", views.TemplateDetail.as_view()),
     path("app-templates/<uuid:object_id>/versions/", views.VersionList.as_view()),

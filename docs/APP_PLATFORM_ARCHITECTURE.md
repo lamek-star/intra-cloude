@@ -1,5 +1,11 @@
 # App Platform — Phase 1 architecture
 
+Continuation: the [ten-phase delivery roadmap](implementation/APP_PLATFORM_ROADMAP.md)
+tracks the master brief. [Phase 2](implementation/APP_PLATFORM_PHASE2.md) has
+started with a read-only runtime schema planner; provisioning and business
+records are not implemented yet. The Phase 1 contract below remains the
+baseline until a later verified checkpoint explicitly supersedes it.
+
 ## Baseline and scope
 
 Code baseline: `56c34a821b2deae4b0cac3276e4a8145931e62db` on

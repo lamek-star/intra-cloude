@@ -1,5 +1,13 @@
 # Permissions & Authorization Model — IntraForge
 
+## App Platform Phase 2 preflight
+
+The runtime-plan GET endpoint uses `app_instance.schema.manage` against the
+specific instance, not `app_instance.read`. It returns administrative schema
+planning information only and performs no DDL. Active human membership and
+exact grant revocation are enforced through the same shared checks as
+definition editing. No new capability or service-account access is introduced.
+
 ## App Platform Phase 1
 
 Per [ADR-0014](../architecture/adr/0014-app-platform-foundation.md),
