@@ -1,5 +1,20 @@
 # Permissions & Authorization Model — IntraForge
 
+## App Platform Phase 2 attachments
+
+Attaching a file requires `database.write` on the record's runtime
+`TenantDatabase` resource (the same authority as editing the record) *and*
+`storage.read` on the file's bucket resource (`storage.bucket`) — two
+independent, already-existing capabilities, not a new grant type. The
+file's organization must equal the app instance's organization; an actor
+who is a member of both organizations does not get to cross that boundary
+just because both checks would otherwise pass (`get_member_file` alone
+only proves *a* shared organization, not the *right* one). Listing requires
+`database.read` and detaching requires `database.write`, the same way
+records do; downloading rechecks `storage.read` again independently, since
+a Sharing grant or the file's quarantine/deletion status can change after
+it was attached.
+
 ## App Platform Phase 2 record CRUD
 
 Record list/read requires `database.read`, and create/update/delete require

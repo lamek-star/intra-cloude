@@ -168,3 +168,28 @@ class RuntimeProvision(models.Model):
 
     def __str__(self):
         return str(self.instance_id)
+
+
+class RecordAttachment(models.Model):
+    """Links an existing `storage.FileObject` to one record. The record
+    itself lives in a raw tenant table this app never models in Django, so
+    `record_id` is a plain UUID, not a foreign key -- its only integrity
+    guarantee is `records.delete_record` also removing rows here, not a
+    database constraint (see that function's own docstring for why this
+    can't be a single atomic operation across the control/tenant databases)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    model = models.ForeignKey(ModelDefinition, on_delete=models.CASCADE, related_name="attachments")
+    record_id = models.UUIDField()
+    file = models.ForeignKey(
+        "storage.FileObject", on_delete=models.PROTECT, related_name="app_attachments"
+    )
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        indexes = [models.Index(fields=["model", "record_id"])]
+
+    def __str__(self):
+        return f"{self.record_id} -> {self.file_id}"

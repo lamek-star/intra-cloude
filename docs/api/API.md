@@ -21,9 +21,27 @@ which fields changed, never the field values themselves. Real PostgreSQL
 foreign keys and each relationship's deletion policy are enforced by the
 schema the provisioning step already built — see
 [operating limits](../operations/RUNTIME_PROVISIONING.md) and
-[Phase 2 progress](../implementation/APP_PLATFORM_PHASE2.md). Attachments,
-generated list/form/detail screens, and rendered audit history remain
-future steps.
+[Phase 2 progress](../implementation/APP_PLATFORM_PHASE2.md).
+
+## App Platform record attachments
+
+`GET/POST /api/v1/app-models/{model_id}/records/{record_id}/attachments/`,
+`DELETE .../attachments/{attachment_id}/`, and
+`GET .../attachments/{attachment_id}/download/` link an already-uploaded
+`storage.FileObject` to a record; this never accepts a file upload itself —
+`file_id` must name a file that already went through the real storage
+pipeline. Attaching requires `database.write` on the record and
+`storage.read` on the file's bucket, plus the file's organization must
+match the app's — membership in both organizations is not enough on its
+own. A quarantined or deleted file cannot be attached, and every download
+rechecks `storage.read` and the file's current status again (not just at
+attach time), so a file quarantined after being attached is denied at
+download. Listing returns id/record id/file id/filename/mime type/size/
+status/created-at — never the object-store key. Deleting a record cascades
+its attachment rows, as a second, non-atomic step after the tenant-table
+delete (attachments live in the control-plane database, the record in the
+tenant one). Generated list/form/detail screens and rendered audit history
+remain future steps.
 
 ## App Platform asynchronous provisioning
 

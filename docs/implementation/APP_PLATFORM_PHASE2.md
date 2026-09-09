@@ -5,7 +5,52 @@ Status: **IN PROGRESS**, started 2026-09-09 from
 The [ten-phase roadmap](APP_PLATFORM_ROADMAP.md) preserves the master brief's
 full scope and order. A runtime plan is not a running application.
 
-## Current step: record/query services
+## Current step: relationships and attachments
+
+Continued from `ad48573` on 2026-09-09. Relationships were already real
+enforced PostgreSQL foreign keys as of the provisioning step — this step's
+own foreign-key-violation test (`test_records.py`) already exercised that;
+nothing new was needed there. What was actually missing was attachments:
+`app_platform/attachments.py` and `attachment_views.py` add
+`GET/POST /api/v1/app-models/{model_id}/records/{record_id}/attachments/`,
+`DELETE .../attachments/{attachment_id}/`, and
+`GET .../attachments/{attachment_id}/download/`, linking an
+already-uploaded `storage.FileObject` to a record via a new
+`RecordAttachment` control-plane model (`0005_recordattachment` migration) —
+this never uploads bytes itself, only records an association to a file that
+already went through the real storage pipeline (malware scanning, checksum).
+
+Attaching requires `database.write` on the record (same authority as
+editing it) *and* `storage.read` on the file's bucket, plus an explicit
+organization match between the file and the app instance — membership alone
+isn't enough, since an actor who happens to belong to both organizations
+could otherwise smuggle a foreign organization's file into a record
+(`test_file_from_a_foreign_organization_cannot_be_attached` proves this: the
+attaching actor is deliberately a member of both organizations, and the
+file is still a 404). A quarantined or deleted file cannot be attached in
+the first place, and downloading re-checks both `storage.read` and the
+file's current status every time — not just at attach time — so a file
+quarantined *after* being attached is denied at download
+(`test_download_denies_a_file_quarantined_after_attaching`). The listing
+endpoint returns filename/mime type/size/status but never the object-store
+key, matching storage's own download endpoint's discipline. Deleting a
+record cascades its attachment rows (`records.delete_record`); this is a
+second, non-atomic step after the tenant-table delete, not a database
+constraint, since attachments live in the control-plane database and the
+record in the tenant one — documented as the same kind of gap as record
+audit events, not silently assumed away.
+
+Targeted verification: 6 new tests (79 total in `app_platform`) covering
+the attach/list/download/detach round trip, cascade-delete of attachments,
+quarantined-at-attach and quarantined-after-attach rejection, cross-org
+file rejection, and permission-gated (storage.read) denial. Fresh full
+backend gate: **481 passed, 2 skipped, 0 failed**, 278.04 seconds (the 2
+skips are the real-worker-SIGKILL restore probes,
+`RUN_RESTORE_WORKER_TESTS=0` for this run). Full backend Ruff and Mypy
+passed clean. `makemigrations --check --dry-run` detected no drift after
+generating and hand-formatting `0005_recordattachment`.
+
+## Implemented earlier step: record/query services
 
 Continued from `42d9720` on 2026-09-09. `app_platform/records.py` and
 `record_views.py` add typed record CRUD over a provisioned runtime:
@@ -35,9 +80,6 @@ restore probes, `RUN_RESTORE_WORKER_TESTS=0` for this run). Full backend
 Ruff and Mypy passed clean (Mypy: 24 `app_platform` source files, plus the
 two pre-existing unrelated informational notes elsewhere). `makemigrations
 --check --dry-run` detected no changes — this step added no models/migrations.
-
-Attachments, generated list/form/detail/reference-picker screens, and
-rendered (not just recorded) audit history remain the next two steps.
 
 ## Implemented earlier step: resumable provisioning
 
@@ -122,12 +164,11 @@ is an optimistic-concurrency input, not authorization or a signed token.
    events are written immediately after each successful mutation, not
    two-phase-committed with it — a crash between the two is a gap the next
    step's "rendered history" work should account for, not a solved problem.
-4. **Relationships and attachments — FK/deletion-policy half already covered
-   by the schema itself; attachments remain.** Enforce actual PostgreSQL
-   foreign keys and deletion policies (the tables the provisioning step
-   built already carry real FK constraints per relationship, exercised by
-   `test_records.py`'s foreign-key-violation case). Attach existing stored
-   files only after checking
+4. **Relationships and attachments — implemented in the current step.**
+   Enforce actual PostgreSQL foreign keys and deletion policies (the tables
+   the provisioning step built already carry real FK constraints per
+   relationship, exercised by `test_records.py`'s foreign-key-violation
+   case). Attach existing stored files only after checking
    organization, app/record and storage authority. Downloads must recheck
    access and quarantine/deletion state, and never expose object-store keys.
 5. **Generic screens and history.** Generate lists, forms, record detail,

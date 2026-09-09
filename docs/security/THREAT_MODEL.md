@@ -1,5 +1,34 @@
 # Threat Model — IntraForge
 
+## App Platform Phase 2 attachments boundary
+
+Attaching never accepts file bytes -- only a reference (`file_id`) to a
+`FileObject` that already passed the real upload pipeline (malware scan,
+checksum, MIME sniff), so this step inherits that pipeline's guarantees
+rather than needing its own. The cross-organization case is the one this
+step specifically had to guard against and test for: `get_member_file`
+only proves the actor belongs to *some* organization that owns the file,
+which is true whenever the actor happens to be a member of both the
+attaching app's organization and the file's — an explicit
+`file.organization_id == instance.organization_id` check closes that gap,
+verified by `test_file_from_a_foreign_organization_cannot_be_attached`,
+where the attaching actor is deliberately a member of both organizations.
+A quarantined or already-deleted file is rejected at attach time, and
+`storage.read` plus the file's live status are rechecked again at every
+download (not cached from attach time), so revoking Sharing or a later
+malware-scan quarantine takes effect immediately, matching storage's own
+`FileDownloadView` discipline exactly, not a separate, weaker copy of it.
+Listing attachments returns filename/mime type/size/status only -- never
+`object_key`, the same non-negotiable the storage app's own docstrings
+already state for that field. Deleting a record removes its attachment
+rows as a second, un-transacted step after the tenant-table row delete
+already committed (attachments are a control-plane model; the record is a
+raw tenant-table row) -- a crash between the two leaves an attachment row
+pointing at a now-nonexistent record, not a leaked file or a dangling
+storage object, and is cheap to reconcile later precisely because the
+record it points to is already gone. See `app_platform/tests/
+test_attachments.py` for the live-verified cases.
+
 ## App Platform Phase 2 record CRUD boundary
 
 Record values are always addressed by definition UUID in the API; the

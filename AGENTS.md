@@ -31,9 +31,15 @@ runtime — create/read/update/delete, search/filter/sort/pagination, and a
 real enforced foreign key per relationship, addressed by definition UUID
 rather than the runtime's generated physical column names, reusing the
 existing `database.read`/`write` permission rather than a new app-specific
-grant. Generic app screens and rendered audit history remain pending. See
-ADR-0015 and `docs/operations/RUNTIME_PROVISIONING.md`. This work is not
-deployed yet.
+grant. Records can now also carry attachments (`app_platform/
+attachments.py`): linking an already-uploaded `storage.FileObject` to a
+record requires both that same record-write authority and `storage.read`
+on the file's bucket, with an explicit organization match closing a
+cross-org gap membership checks alone would miss, and downloads recheck
+`storage.read` plus quarantine/deletion status every time rather than
+trusting attach-time state. Generic app screens and rendered audit history
+remain pending. See ADR-0015 and `docs/operations/RUNTIME_PROVISIONING.md`.
+This work is not deployed yet.
 The master brief's ten development phases
 are tracked in `docs/implementation/APP_PLATFORM_ROADMAP.md`; current work and
 remaining runtime requirements are in `docs/implementation/APP_PLATFORM_PHASE2.md`.

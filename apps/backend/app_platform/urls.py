@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import record_views, runtime_views, views
+from . import attachment_views, record_views, runtime_views, views
 
 urlpatterns = [
     path("app-instances/<uuid:object_id>/runtime/", runtime_views.Runtime.as_view()),
@@ -16,6 +16,18 @@ urlpatterns = [
     path("app-models/<uuid:object_id>/fields/", views.FieldList.as_view()),
     path("app-models/<uuid:object_id>/records/", record_views.RecordListCreateView.as_view()),
     path("app-models/<uuid:object_id>/records/<uuid:record_id>/", record_views.RecordDetailView.as_view()),
+    path(
+        "app-models/<uuid:object_id>/records/<uuid:record_id>/attachments/",
+        attachment_views.AttachmentListCreateView.as_view(),
+    ),
+    path(
+        "app-models/<uuid:object_id>/records/<uuid:record_id>/attachments/<uuid:attachment_id>/",
+        attachment_views.AttachmentDetailView.as_view(),
+    ),
+    path(
+        "app-models/<uuid:object_id>/records/<uuid:record_id>/attachments/<uuid:attachment_id>/download/",
+        attachment_views.AttachmentDownloadView.as_view(),
+    ),
     path("app-fields/<uuid:object_id>/", views.FieldDetail.as_view()),
     path("app-instances/<uuid:object_id>/relationships/", views.RelationshipList.as_view()),
     path("app-relationships/<uuid:object_id>/", views.RelationshipDetail.as_view()),

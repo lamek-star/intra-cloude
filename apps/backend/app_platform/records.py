@@ -24,7 +24,7 @@ from databases.models import DBTable
 from databases.values import RowValueError
 from permissions.services import has_permission
 
-from .models import ModelDefinition, RuntimeProvision
+from .models import ModelDefinition, RecordAttachment, RuntimeProvision
 from .runtime_plan import physical_name
 
 RESOURCE_TYPE_TENANT_DATABASE = "databases.tenant_database"
@@ -78,6 +78,24 @@ def _table(receipt: RuntimeProvision, model: ModelDefinition) -> DBTable:
     return DBTable.objects.select_related("tenant_database").get(pk=table_id)
 
 
+def resolve(
+    actor, model: ModelDefinition, capability: str, *, action: str
+) -> tuple[RuntimeProvision, DBTable]:
+    """Authorization + runtime-table resolution shared with attachments.py,
+    which needs the exact same "is this actor allowed at this record" check
+    without duplicating it."""
+    receipt = _require(actor, model, capability, action=action)
+    return receipt, _table(receipt, model)
+
+
+def record_exists(table: DBTable, record_id) -> bool:
+    try:
+        row_ops.get_row(table, record_id)
+    except row_ops.RowNotFound:
+        return False
+    return True
+
+
 def _field_map(model: ModelDefinition) -> dict[str, str]:
     """definition id (str) -> physical column name, covering this model's
     own fields plus its outgoing relationships (both are real columns on
@@ -125,8 +143,7 @@ def _run(fn):
 
 
 def list_records(actor, model: ModelDefinition, *, limit, offset, ordering, filters, search) -> dict:
-    receipt = _require(actor, model, "database.read", action="app_instance.record.list")
-    table = _table(receipt, model)
+    _receipt, table = resolve(actor, model, "database.read", action="app_instance.record.list")
     field_map = _field_map(model)
 
     physical_filters = {_translate_key(field_map, key): value for key, value in (filters or {}).items()}
@@ -148,15 +165,13 @@ def list_records(actor, model: ModelDefinition, *, limit, offset, ordering, filt
 
 
 def get_record(actor, model: ModelDefinition, record_id) -> dict:
-    receipt = _require(actor, model, "database.read", action="app_instance.record.read")
-    table = _table(receipt, model)
+    _receipt, table = resolve(actor, model, "database.read", action="app_instance.record.read")
     row = _run(lambda: row_ops.get_row(table, record_id))
     return _translate_out(_field_map(model), row)
 
 
 def create_record(actor, model: ModelDefinition, data: dict) -> dict:
-    receipt = _require(actor, model, "database.write", action="app_instance.record.create")
-    table = _table(receipt, model)
+    _receipt, table = resolve(actor, model, "database.write", action="app_instance.record.create")
     field_map = _field_map(model)
     physical_data = _translate_in(field_map, data)
     row = _run(lambda: row_ops.insert_row(table, physical_data))
@@ -165,8 +180,7 @@ def create_record(actor, model: ModelDefinition, data: dict) -> dict:
 
 
 def update_record(actor, model: ModelDefinition, record_id, data: dict) -> dict:
-    receipt = _require(actor, model, "database.write", action="app_instance.record.update")
-    table = _table(receipt, model)
+    _receipt, table = resolve(actor, model, "database.write", action="app_instance.record.update")
     field_map = _field_map(model)
     physical_data = _translate_in(field_map, data)
     row = _run(lambda: row_ops.update_row(table, record_id, physical_data))
@@ -175,9 +189,17 @@ def update_record(actor, model: ModelDefinition, record_id, data: dict) -> dict:
 
 
 def delete_record(actor, model: ModelDefinition, record_id) -> None:
-    receipt = _require(actor, model, "database.write", action="app_instance.record.delete")
-    table = _table(receipt, model)
+    _receipt, table = resolve(actor, model, "database.write", action="app_instance.record.delete")
     _run(lambda: row_ops.delete_row(table, record_id))
+    # Attachments live in the control-plane database; this is a second,
+    # non-atomic step after the tenant-table delete already committed (same
+    # documented limit as the rest of this module -- no distributed
+    # atomicity claim). A crash between the two leaves orphaned attachment
+    # rows pointing at a now-nonexistent record, not a dangling file byte:
+    # the FileObject itself is untouched, only the association is meant to
+    # go. Cheap to reconcile later (the record no longer exists to list them
+    # against); not silently ignored, see THREAT_MODEL.md.
+    RecordAttachment.objects.filter(model=model, record_id=record_id).delete()
     event(actor, model, "record.delete", record_id)
 
 
