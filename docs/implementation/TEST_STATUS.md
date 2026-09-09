@@ -1,5 +1,35 @@
 # Test Status
 
+## App Platform Phase 2 generic screens checkpoint (2026-09-09)
+
+New frontend: `/app-instances/[instanceId]` (model/relationship overview),
+`/app-models/[modelId]` (generated record list, search, add/edit/delete),
+`/app-models/[modelId]/records/[recordId]` (record detail: editable field
+form, attachments, rendered audit history), plus a read-only "Apps" section
+on the project page. `next build` (type-checks against the real API
+response types), ESLint, and the existing Vitest suite (10 tests, 2 files,
+unchanged) all pass clean.
+
+Live-verified in a real Chrome browser, not just compiled: rebuilt and
+restarted the dev stack's `backend`/`worker`/`beat`/`frontend` containers
+with this branch's code, ran the three pending app_platform migrations
+against the real control-plane Postgres, seeded a real organization/
+project/template/instance/provisioned runtime/bucket/file through the
+actual service layer, then logged in as that user and drove the browser
+through: creating a Group record, creating an Item record with the
+reference picker resolving to a friendly "Hardware" label (not a raw UUID),
+editing a record's fields, attaching an already-uploaded file through the
+bucket → file cascading picker, a real streamed download (confirmed by the
+browser's own download notification), detaching it through the shared
+confirm-dialog component, search filtering to an empty result and back,
+and deleting a record back to the empty state. The record detail page's
+history section showed `record.create`, `attachment.attach`,
+`record.update` in correct reverse-chronological order after each action,
+persisting correctly across a full page reload. This is Phase 2 step 5
+(generic screens and history); step 6 (qualification: cross-org isolation
+in the browser, concurrent/replayed operations, full backup/restore, final
+docs) remains. See [Phase 2 progress](APP_PLATFORM_PHASE2.md).
+
 ## App Platform Phase 2 preflight checkpoint (2026-09-09)
 
 **448 passed, 0 failed, 0 skipped**, 230.65s; 12 new runtime-planning tests

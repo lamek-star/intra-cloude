@@ -5,7 +5,54 @@ Status: **IN PROGRESS**, started 2026-09-09 from
 The [ten-phase roadmap](APP_PLATFORM_ROADMAP.md) preserves the master brief's
 full scope and order. A runtime plan is not a running application.
 
-## Current step: relationships and attachments
+## Current step: generic screens and history
+
+Continued from `1e4a2f8` on 2026-09-09. Three new frontend pages generate a
+real, working UI directly from an app's installed metadata, following this
+frontend's existing conventions (`api.ts` types, the shared `ui.tsx`
+component set, `useConfirm`) rather than inventing new ones:
+`/app-instances/[instanceId]` (models + relationships overview),
+`/app-models/[modelId]` (a generated list/search/add/edit/delete screen —
+the record-CRUD counterpart to the data explorer's `/tables/[tableId]`),
+and `/app-models/[modelId]/records/[recordId]` (record detail: an editable
+field form, attachments, and rendered audit history). A relationship field
+renders as a reference picker — a `<select>` populated from the target
+model's own records, labeled with the first scalar field value found on
+each one rather than a raw UUID, since records have no single designated
+display field of their own. History reuses the existing organization-wide
+audit endpoint (`GET /organizations/{id}/audit/?resource_type=app_model&
+resource_id=...`, already gated on `audit.read`) filtered client-side to
+one record's `context.record_id`, since that field lives inside the
+audit event's JSON `context` and isn't a server-side-filterable column —
+a known, documented limit, not an oversight. The project detail page
+gained a read-only "Apps" section linking into installed instances; there
+is still no template/instance-authoring UI (that's Phase 1/3 scope, not
+this step's), so it lists what already exists rather than offering to
+create anything.
+
+`next build` (type-checks all three new routes against the real API
+response shapes), ESLint, and the existing 10-test Vitest suite all pass
+clean. **Live-verified in a real browser, not just compiled**: rebuilt and
+restarted the dev stack's backend/worker/beat/frontend containers on this
+branch, ran the pending migrations against the real control-plane
+database, seeded a real organization/project/template/instance/provisioned
+runtime/bucket/file through the actual service layer (not fixtures), and
+drove the browser through the full loop — create a Group record, create an
+Item referencing it through the picker (resolving to "Hardware", not a
+UUID), edit it, attach an uploaded file through a cascading bucket→file
+picker, a real streamed download, detach through the shared confirm
+dialog, search to an empty result and back, and delete back to the empty
+state — with the history section showing all three audit events in the
+correct order, persisting across a reload. Exact steps and evidence:
+[TEST_STATUS.md](TEST_STATUS.md)'s "generic screens checkpoint" entry.
+
+Remaining: step 6, qualification — cross-org isolation and
+permission-denial paths exercised in the browser (not just backend tests),
+concurrent/replayed record operations, a full backup/restore including the
+new `RecordAttachment` control-plane rows, and a final documentation pass
+before Phase 2 is declared complete.
+
+## Implemented earlier step: relationships and attachments
 
 Continued from `ad48573` on 2026-09-09. Relationships were already real
 enforced PostgreSQL foreign keys as of the provisioning step — this step's
@@ -171,10 +218,11 @@ is an optimistic-concurrency input, not authorization or a signed token.
    case). Attach existing stored files only after checking
    organization, app/record and storage authority. Downloads must recheck
    access and quarantine/deletion state, and never expose object-store keys.
-5. **Generic screens and history.** Generate lists, forms, record detail,
-   reference pickers and attachments from the same metadata, with useful
-   validation/errors/loading and access-denied states. Render bounded audit
-   history without storing secret or full record payloads in audit events.
+5. **Generic screens and history — implemented in the current step.**
+   Generate lists, forms, record detail, reference pickers and attachments
+   from the same metadata, with useful validation/errors/loading and
+   access-denied states. Render bounded audit history without storing
+   secret or full record payloads in audit events.
 6. **Qualification.** Fresh full backend/security suite, browser workflows,
    lint/types/builds, migrations, concurrent/replayed operations, cross-org
    ID substitution, grant revocation, full backup restore and portable-export

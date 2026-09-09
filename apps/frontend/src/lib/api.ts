@@ -515,3 +515,67 @@ export type DashboardRenderResult = {
   name: string;
   widgets: DashboardWidgetResult[];
 };
+
+// --- App Platform (docs/implementation/APP_PLATFORM_PHASE2.md) ---
+
+export type AppInstance = {
+  id: string;
+  organization: string;
+  project: string;
+  source_version: string;
+  label: string;
+  archived: boolean;
+  created_at: string;
+};
+
+export type AppModelDefinition = {
+  id: string;
+  instance: string;
+  key: string;
+  label: string;
+  source_definition_id: string | null;
+};
+
+export type AppFieldDataType = "text" | "integer" | "decimal" | "boolean" | "date" | "datetime";
+
+export type AppFieldDefinition = {
+  id: string;
+  model: string;
+  key: string;
+  label: string;
+  data_type: AppFieldDataType;
+  required: boolean;
+  source_definition_id: string | null;
+};
+
+export type AppRelationshipDefinition = {
+  id: string;
+  instance: string;
+  key: string;
+  label: string;
+  source_definition_id: string | null;
+  source_model: string;
+  target_model: string;
+  kind: string;
+  deletion_policy: "restrict" | "set_null";
+};
+
+// Same shape as RowsPage — record values are just keyed by field/relationship
+// definition UUID instead of a physical column name (see records.py).
+export type AppRecordsPage = {
+  count: number;
+  limit: number;
+  offset: number;
+  results: Record<string, unknown>[];
+};
+
+export type AppRecordAttachment = {
+  id: string;
+  record_id: string;
+  file_id: string;
+  filename: string;
+  mime_type: string;
+  size: number;
+  status: string;
+  created_at: string;
+};

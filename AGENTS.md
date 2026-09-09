@@ -37,9 +37,16 @@ record requires both that same record-write authority and `storage.read`
 on the file's bucket, with an explicit organization match closing a
 cross-org gap membership checks alone would miss, and downloads recheck
 `storage.read` plus quarantine/deletion status every time rather than
-trusting attach-time state. Generic app screens and rendered audit history
-remain pending. See ADR-0015 and `docs/operations/RUNTIME_PROVISIONING.md`.
-This work is not deployed yet.
+trusting attach-time state. `apps/frontend` now has generic screens
+generated directly from an app's metadata (`/app-instances/[instanceId]`,
+`/app-models/[modelId]`, `/app-models/[modelId]/records/[recordId]`) —
+list/search/create/edit/delete, a relationship reference picker, attach/
+download/detach, and rendered (not just recorded) audit history — live-
+verified in a real browser against a rebuilt dev stack, not just compiled.
+Phase 2's remaining step is qualification (browser-level cross-org/
+permission tests, concurrency, full backup/restore, final docs). See
+ADR-0015 and `docs/operations/RUNTIME_PROVISIONING.md`. This work is not
+deployed to the user's production appliance.
 The master brief's ten development phases
 are tracked in `docs/implementation/APP_PLATFORM_ROADMAP.md`; current work and
 remaining runtime requirements are in `docs/implementation/APP_PLATFORM_PHASE2.md`.

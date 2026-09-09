@@ -2,13 +2,15 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { Database, Folder, Plug } from "lucide-react";
+import { Database, Folder, Layers, Plug } from "lucide-react";
 import {
   api,
   ApiError,
+  type AppInstance,
   type Bucket,
   type ConnectedDatabase,
   type Organization,
+  type Paginated,
   type Project,
   type TenantDatabase,
   type Workspace,
@@ -40,6 +42,7 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
   const [buckets, setBuckets] = useState<Bucket[] | null>(null);
   const [databases, setDatabases] = useState<TenantDatabase[] | null>(null);
   const [connectedDatabases, setConnectedDatabases] = useState<ConnectedDatabase[] | null>(null);
+  const [appInstances, setAppInstances] = useState<AppInstance[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [bucketModalOpen, setBucketModalOpen] = useState(false);
@@ -61,6 +64,14 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
       setDatabases(db);
       setConnectedDatabases(cdb);
       api.get<Organization>(`/organizations/${ws.organization}/`).then(setOrg).catch(() => {});
+      // Best-effort -- apps are installed through the API for now (no
+      // template/instance-authoring UI exists yet), so a member without
+      // app_instance.read simply sees an empty section rather than a
+      // page-level error.
+      api
+        .get<Paginated<AppInstance>>(`/projects/${projectId}/app-instances/?limit=100`)
+        .then((page) => setAppInstances(page.results))
+        .catch(() => setAppInstances([]));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load project.");
       setErrorDetail(err);
@@ -210,6 +221,29 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
           </div>
         )}
       </div>
+
+      {appInstances && appInstances.length > 0 && (
+        <div className="mt-8">
+          <h2 className="mb-3 text-sm font-semibold text-slate-600">Apps</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {appInstances.map((inst) => (
+              <Link key={inst.id} href={`/app-instances/${inst.id}`} className="block text-left">
+                <Card className="transition-colors hover:border-brand-400/40 hover:bg-slate-50">
+                  <div className="flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-brand-600" />
+                    <p className="font-medium text-slate-900">{inst.label}</p>
+                  </div>
+                  {inst.archived && (
+                    <div className="mt-1.5">
+                      <Badge tone="warning">Archived</Badge>
+                    </div>
+                  )}
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       <CreateBucketModal
         open={bucketModalOpen}
