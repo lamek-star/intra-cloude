@@ -26,7 +26,7 @@ from psycopg import sql
 from rest_framework.exceptions import ValidationError
 
 from databases import services
-from databases.models import DBColumn, DBTable
+from databases.models import DBColumn, DBForeignKey, DBTable
 from databases.services import SchemaValidationError
 
 from .access import check, require_manage
@@ -180,6 +180,12 @@ def set_field_indexed(receipt: RuntimeProvision, field: FieldDefinition, actor) 
 def add_relationship_to_runtime(receipt: RuntimeProvision, relation: RelationshipDefinition, actor) -> None:
     source_table = _table_for(receipt, relation.source_model)
     target_table = _table_for(receipt, relation.target_model)
+    if relation.kind == "many_to_many":
+        receipt.bindings.setdefault("relationships", {})[str(relation.id)] = _add_join_table_to_runtime(
+            receipt, relation, actor, source_table, target_table
+        )
+        receipt.save(update_fields=["bindings"])
+        return
     column = services.add_column(
         actor=actor,
         table=source_table,
@@ -197,7 +203,73 @@ def add_relationship_to_runtime(receipt: RuntimeProvision, relation: Relationshi
         allow_managed_schema=True,
     )
     receipt.bindings.setdefault("relationships", {})[str(relation.id)] = {
+        "kind": "many_to_one",
         "column": str(column.id),
         "foreign_key": str(foreign_key.id),
     }
     receipt.save(update_fields=["bindings"])
+
+
+def _add_join_table_to_runtime(receipt, relation, actor, source_table, target_table) -> dict:
+    """Live-addition counterpart to runtime_build._build_join_table --
+    deliberately duplicated rather than shared, matching the many_to_one
+    path's own existing precedent above (also duplicated between this
+    module and runtime_build.py): this module recomputes physical names
+    locally instead of reading a stored plan, since a live addition was
+    never part of the original plan/fingerprint in the first place."""
+    join_table = services.create_table(
+        actor=actor,
+        tenant_database=receipt.database,
+        name=physical_name("j", str(relation.id)),
+        allow_managed_schema=True,
+    )
+    source_column = services.add_column(
+        actor=actor,
+        table=join_table,
+        name="source_id",
+        data_type="uuid",
+        is_nullable=False,
+        allow_managed_schema=True,
+    )
+    target_column = services.add_column(
+        actor=actor,
+        table=join_table,
+        name="target_id",
+        data_type="uuid",
+        is_nullable=False,
+        allow_managed_schema=True,
+    )
+    source_fk = services.add_foreign_key(
+        actor=actor,
+        column=source_column,
+        references_table=source_table,
+        references_column=source_table.columns.get(is_primary_key=True),
+        on_delete=DBForeignKey.OnDelete.CASCADE,
+        allow_managed_schema=True,
+    )
+    target_fk = services.add_foreign_key(
+        actor=actor,
+        column=target_column,
+        references_table=target_table,
+        references_column=target_table.columns.get(is_primary_key=True),
+        on_delete=DBForeignKey.OnDelete.CASCADE,
+        allow_managed_schema=True,
+    )
+    unique_index = services.add_composite_unique_constraint(
+        actor=actor,
+        table=join_table,
+        column_a=source_column,
+        column_b=target_column,
+        allow_managed_schema=True,
+    )
+    target_index = services.add_index(actor=actor, column=target_column, allow_managed_schema=True)
+    return {
+        "kind": "many_to_many",
+        "join_table": str(join_table.id),
+        "source_column": str(source_column.id),
+        "target_column": str(target_column.id),
+        "source_foreign_key": str(source_fk.id),
+        "target_foreign_key": str(target_fk.id),
+        "unique_index": str(unique_index.id),
+        "target_index": str(target_index.id),
+    }

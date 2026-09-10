@@ -56,17 +56,31 @@ def compile_plan(instance_id, definition):
         )
     relationships = []
     for relation in sorted(definition["relationships"], key=lambda item: item["id"]):
-        relationships.append(
-            {
-                "definition_id": relation["id"],
-                "source_model": relation["source_model"],
-                "target_model": relation["target_model"],
-                "column": physical_name("r", relation["id"]),
-                "data_type": "uuid",
-                "is_nullable": True,
-                "on_delete": relation["deletion_policy"],
-            }
-        )
+        if relation.get("kind") == "many_to_many":
+            relationships.append(
+                {
+                    "definition_id": relation["id"],
+                    "kind": "many_to_many",
+                    "source_model": relation["source_model"],
+                    "target_model": relation["target_model"],
+                    "join_table": physical_name("j", relation["id"]),
+                    "source_column": "source_id",
+                    "target_column": "target_id",
+                }
+            )
+        else:
+            relationships.append(
+                {
+                    "definition_id": relation["id"],
+                    "kind": "many_to_one",
+                    "source_model": relation["source_model"],
+                    "target_model": relation["target_model"],
+                    "column": physical_name("r", relation["id"]),
+                    "data_type": "uuid",
+                    "is_nullable": True,
+                    "on_delete": relation["deletion_policy"],
+                }
+            )
     plan = {
         "format_version": 1,
         "instance_id": str(instance_id),

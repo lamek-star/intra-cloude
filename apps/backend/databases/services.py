@@ -542,9 +542,16 @@ def add_index(
 ) -> DBIndex:
     """Retrofits a plain (non-unique) B-tree index onto an EXISTING
     column. Idempotent for the same reason as add_unique_constraint above
-    -- a column that's already unique (which already carries a real
-    index) or already separately indexed returns its existing DBIndex
-    rather than issuing a duplicate CREATE INDEX."""
+    -- a column that's already unique (which already carries a real,
+    single-column index) or already separately indexed on its own
+    returns its existing DBIndex rather than issuing a duplicate CREATE
+    INDEX. Deliberately narrowed to single-column indexes only: a column
+    that's merely a *member* of some other multi-column index (e.g. the
+    non-leading column of add_composite_unique_constraint's join-table
+    constraint) does NOT get the same lookup benefit a Postgres composite
+    index only accelerates prefix (leading-column) searches -- so that
+    case must still get its own real index, not a false "already
+    indexed" short-circuit."""
     table = column.table
     org_id = table.organization_id
     _require(
@@ -558,9 +565,13 @@ def add_index(
     )
     _require_unmanaged_schema(table.tenant_database, allow_managed_schema=allow_managed_schema)
 
-    existing = DBIndex.objects.filter(table=table, columns=column).first()
-    if existing is not None:
-        return existing
+    # Checked one candidate at a time (never Count("columns") combined with
+    # the same filter in one queryset -- Django reuses the join, so the
+    # count would only ever reflect the single already-filtered row, not
+    # the index's true total column count).
+    for candidate in DBIndex.objects.filter(table=table, columns=column):
+        if candidate.columns.count() == 1:
+            return candidate
 
     index_name = f"idx_{column.id.hex}"
     ddl = sql.SQL("CREATE INDEX {index} ON {schema}.{table} ({col})").format(
