@@ -1,5 +1,74 @@
 # Test Status
 
+## Post-Phase-3 Integration Enablement — external access + field indexing/uniqueness (2026-09-10)
+
+Closes the two blocking gaps identified in
+`docs/SPARE_PARTS_INTEGRATION_READINESS.md`'s readiness review, as
+generic platform capabilities (no spare-parts-specific code).
+
+**Part 1, external bearer-token access**: `FoundationView.
+service_account_methods` (new, empty by default) opts specific HTTP
+methods on specific views into bearer-token reachability;
+`access.py`'s `check()`/`get_owned()` no longer veto a service-account
+actor, relying entirely on the same deny-by-default `has_permission()`/
+`ResourceGrant` check a human session already uses. 13 new tests in
+`app_platform/tests/test_external_access.py` (valid access, cross-org/
+cross-project/cross-instance denial, revocation, invalid/missing token,
+missing-capability denial, human-session parity, audit attribution to
+the service account's own identity, and confirmation that full record
+access never escalates to template/instance/provisioning
+administration); `test_foundation.py`'s prior blanket-deny test replaced
+with tests matching the new, deliberate behavior.
+
+**Part 2/3, field indexing and single-field uniqueness**:
+`FieldDefinition.unique`/`.indexed` (migration `0008`), wired through
+`databases.services.add_column`'s new `is_indexed` parameter (and
+existing `is_unique`) for field-creation time, plus two new retrofit
+functions (`add_unique_constraint`, `add_index`) for an already-
+materialized, possibly populated column — real Postgres `UNIQUE`
+constraints/B-tree indexes, idempotent, never a destructive
+reconciliation on failure. Two more control-plane trigger guards patched
+(migration `0009`) for the same class of gap `0007` found and fixed once
+already: an UPDATE to an existing field's `unique`/`indexed` (not an
+INSERT) needed its own exemption, narrowly gated on the same session
+flag. A real, pre-existing bug found and fixed in the same pass:
+`records.py`'s error handler treated every `IntegrityError` as "referenced
+record does not exist," which would have misreported a duplicate-value-
+on-unique-field rejection — now distinguished via the real Postgres
+exception class, not a string match. 9 new unit tests directly against
+`databases.services` in `databases/tests/test_indexing.py`; 16 new
+end-to-end tests in `app_platform/tests/test_field_indexing.py`
+(template/live-add-time unique+indexed fields, all 10 of the review's
+own required uniqueness scenarios including idempotent retrofit and
+safe-failure-preserves-data, a real concurrent-duplicate-create race
+proving the database constraint — not an application pre-check — is the
+actual gate, a real `EXPLAIN`-verified index-backed exact-match lookup,
+and a security-review test confirming an unsanctioned direct ORM write
+to `unique`/`is_unique` — bypassing `instances.py`/`schema_evolution.py`
+entirely — is still rejected by the migration-`0009` trigger guards once
+provisioned, not just by the Python-level checks).
+
+**Performance evidence** (disposable, not part of the permanent suite):
+200,000 rows loaded via `COPY` into a real provisioned instance,
+`EXPLAIN ANALYZE` on the same table/row-count for an indexed vs.
+unindexed exact-match lookup — Index Scan, 0.027ms vs. Seq Scan (199,999
+rows filtered), 24.593ms. Synthetic data and its tenant schema dropped
+immediately after; a small control-plane metadata remnant (one org, one
+instance) was left in the dev stack, matching this session's own
+established practice for other disposable live-verification orgs, since
+`RuntimeProvision`/`AppInstance` deletion is deliberately blocked by
+design (immutable-once-provisioned) rather than a gap worth a destructive
+workaround to tidy up.
+
+Ruff/Mypy clean. `makemigrations --check --dry-run` confirms nothing
+missed. Fresh full backend gate: **550 passed, 2 skipped, 0 failed** (up
+from 508; the 2 skips are the real-worker-SIGKILL restore probes,
+`RUN_RESTORE_WORKER_TESTS=0` for this run). Frontend untouched by this
+work (no changes under `apps/frontend`) — not re-run. Both
+`docs/EXTERNAL_APP_API_CONTRACT.md` and
+`docs/SPARE_PARTS_INTEGRATION_READINESS.md` updated; readiness decision
+reclassified from B (blocking gaps) to A (ready for adapter prototype).
+
 ## App Platform Phase 3 qualification checkpoint — Phase 3 complete (2026-09-10)
 
 A targeted research pass checked each qualification item (cross-org

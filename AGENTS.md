@@ -128,6 +128,27 @@ correct. Fresh full backend gate: 508 passed, 2 skipped, 0 failed. See
 `docs/implementation/APP_PLATFORM_PHASE3.md` and `TEST_STATUS.md` for
 the full account, including the honest remaining-debt list (all
 pre-existing, none new to this phase, none blocking).
+
+**Post-Phase-3 Integration Enablement** closed the two blocking gaps a
+follow-up external-integration readiness review found
+(`docs/SPARE_PARTS_INTEGRATION_READINESS.md`,
+`docs/EXTERNAL_APP_API_CONTRACT.md`), as generic platform capabilities,
+not spare-parts-specific code: (1) bearer-token `Application` clients
+(Phase 7) can now reach a scoped subset of `app_platform` — schema/
+instance discovery, record CRUD, attachments, read-only runtime status —
+via `FoundationView.service_account_methods`, gated by the exact same
+deny-by-default capability checks a human session uses; template/
+instance/schema administration stay human-session-only by design. (2)
+`FieldDefinition` gained `unique`/`indexed` (migration `0008`), backed by
+real Postgres `UNIQUE` constraints/B-tree indexes at field-creation time
+and via two new retrofit functions for an already-provisioned, possibly
+populated field (`databases.services.add_unique_constraint`/
+`add_index`) — idempotent, DB-constraint-enforced (not an application
+pre-check, verified with a real concurrent-create race), with a
+200,000-row disposable benchmark showing a real Postgres planner
+choosing an Index Scan (0.03ms) over a Seq Scan (24.6ms) on the same
+exact-match lookup. See `docs/implementation/TEST_STATUS.md` for the
+full test account.
 The master brief's ten development phases
 are tracked in `docs/implementation/APP_PLATFORM_ROADMAP.md`; current work and
 remaining runtime requirements are in `docs/implementation/APP_PLATFORM_PHASE2.md`.

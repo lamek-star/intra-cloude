@@ -1,12 +1,14 @@
 # External App API Contract — App Platform
 
-Baseline: commit `886e75f` (App Platform Phase 3, complete). This document
-describes exactly what an externally developed frontend/reference
-application could call against IntraForge's App Platform today, and marks
-plainly what does not exist yet. Every capability listed is backed by
-reading the actual implementation at the stated commit — nothing here is
-inferred from another document, and nothing here is a proposed/future
-endpoint unless explicitly marked **NOT YET IMPLEMENTED**.
+Baseline: commit `886e75f` (App Platform Phase 3, complete) plus
+Post-Phase-3 Integration Enablement (external bearer-token access, field
+indexing/uniqueness). This document describes exactly what an externally
+developed frontend/reference application can call against IntraForge's
+App Platform today, and marks plainly what does not exist yet. Every
+capability listed is backed by reading the actual implementation and
+tests — nothing here is inferred from another document, and nothing here
+is a proposed/future endpoint unless explicitly marked **NOT YET
+IMPLEMENTED**.
 
 Companion document: `docs/SPARE_PARTS_INTEGRATION_READINESS.md` (the
 broader capability review this contract was extracted from).
@@ -17,74 +19,75 @@ All paths are relative to `/api/v1/` unless stated otherwise.
 
 ## Authentication
 
-### What exists and works today
+### Browser session authentication
 
-**Browser session authentication** (`accounts` app): `POST auth/login/`
-sets a Django session cookie; `GET auth/me/` returns the current user;
-`POST auth/logout/`. CSRF is enforced on unsafe methods for session-
-authenticated requests (`GET auth/csrf/` issues the token). This is what
-IntraForge's own Next.js frontend uses. It is same-origin-oriented
-(cookie + CSRF token) and is **not** the recommended mechanism for a
-separately hosted frontend.
+`POST auth/login/` sets a Django session cookie; `GET auth/me/` returns
+the current user; `POST auth/logout/`. CSRF is enforced on unsafe methods
+for session-authenticated requests (`GET auth/csrf/` issues the token).
+This is what IntraForge's own Next.js frontend uses. It is same-origin-
+oriented (cookie + CSRF token) and is **not** the recommended mechanism
+for a separately hosted frontend.
 
-**Bearer-token application credentials** (`applications` app, Phase 7):
-a real, working, tested mechanism designed for exactly this situation.
+### Bearer-token application credentials — the recommended mechanism
+
+`applications` app (Phase 7), now reachable from App Platform (Post-
+Phase-3 Integration Enablement, Part 1):
 
 - `POST organizations/{org_id}/applications/` creates an `Application`
   (backed by a real `User` row via `ServiceAccount.identity_user`).
 - `POST applications/{application_id}/credentials/` issues a credential;
-  the plaintext secret is shown exactly once.
+  the plaintext secret (`Authorization: Bearer pdc_sk_<credential-id-hex>.<secret>`)
+  is shown exactly once, never stored or retrievable again.
 - `POST applications/{application_id}/resource-grants/` scopes the
-  application to specific resources via `ApplicationResourceGrant` (the
-  same underlying `ResourceGrant`/capability mechanism used everywhere
-  else in this codebase).
-- Requests authenticate with `Authorization: Bearer <token>`
-  (`ServiceAccountAuthentication`, registered globally in
-  `DEFAULT_AUTHENTICATION_CLASSES`).
-- **Proven working today for `storage` and `databases`** — see
-  `applications/tests/test_applications.py::
-  test_resource_grant_restricts_access_to_exactly_that_bucket` for a
-  concrete example of a scoped bearer-token client.
+  application's identity to specific resources via a `ResourceGrant` —
+  `{"permission_code": "...", "resource_type": "...", "resource_id": "..."}`.
+  No new endpoint was needed for this: it already accepts any permission
+  code in the catalog and any `resource_type` string, so it already
+  worked for `app_instance`/`databases.tenant_database` grants before
+  this integration work — the gap was purely that App Platform's own
+  views rejected the resulting authenticated request regardless.
+- Requests authenticate with `Authorization: Bearer <token>`.
 
-### What does NOT work today — blocking gap
+**What a bearer token can reach today** — `FoundationView.
+service_account_methods` opts specific HTTP methods on specific views in;
+everything else stays exactly as human-session-only as before this work:
 
-**No `app_platform` endpoint accepts a bearer-token/`Application`
-client.** Every app_platform view (`FoundationView` and everything that
-subclasses it: templates, versions, instances, models, fields,
-relationships, records, attachments, runtime provisioning — no
-exceptions) rejects a service-account-backed request outright:
+| Endpoint | Bearer-reachable methods |
+|---|---|
+| `app-instances/{id}/` | `GET` only (not `PATCH` — rename/archive stays administrative) |
+| `app-instances/{id}/models/`, `.../relationships/` | `GET` only (not `POST` — adding a model/relationship is schema mutation) |
+| `app-models/{id}/`, `app-fields/{id}/`, `app-relationships/{id}/` | `GET` only (not `PATCH`) |
+| `app-models/{id}/fields/` | `GET` only (not `POST`) |
+| `app-models/{model_id}/records/` | `GET`, `POST` |
+| `app-models/{model_id}/records/{record_id}/` | `GET`, `PATCH`, `DELETE` |
+| `.../records/{record_id}/attachments/` | `GET`, `POST` |
+| `.../attachments/{attachment_id}/` | `DELETE` |
+| `.../attachments/{attachment_id}/download/` | `GET` |
+| `app-instances/{id}/runtime/` | `GET` only (not `POST` — provisioning is a one-time human action) |
 
-```python
-# app_platform/views.py — FoundationView.initial()
-if not request.user.is_active or hasattr(request.user, "service_account"):
-    raise PermissionDenied("Foundation administration requires a human session.")
-```
+**Not bearer-reachable at all, regardless of any grant** (still fully
+human-session-only): template administration (`app-templates/*`,
+`app-template-versions/*`), installing a new instance
+(`POST projects/{id}/app-instances/`), every schema-*mutation* endpoint
+(adding a model/field/relationship, editing a definition), runtime
+provisioning, `app-fields/{id}/unique/` and `.../indexed/` (see Field
+indexing/uniqueness below). This is a deliberate first-slice boundary,
+not a technical limitation — see the readiness review's Decision section.
 
-This means **every capability documented below currently requires a real
-human browser session** — an external frontend cannot call any of it
-using its own service identity yet, even with a correctly scoped
-`ApplicationResourceGrant`. Closing this (relaxing or replacing the
-`FoundationView` gate for a bearer-token actor holding a valid grant) is
-prerequisite platform work, not something an external app can work around
-on its own side.
-
-### Recommendation
-
-Once the gap above is closed: bearer-token `ApplicationCredential`,
-scoped via `ApplicationResourceGrant` to the specific `AppInstance` (and,
-if record-level access is also needed, to the instance's tenant
-database — see Permissions below), is the right and safe mechanism —
-no cookie/CSRF/session coupling, works cross-origin by design. Until
-then, no supported mechanism exists for a non-human client.
+Reachability alone grants nothing: every action, once reachable, still
+goes through the identical deny-by-default `has_permission()`/
+`ResourceGrant` check a human session uses. A bearer token with no grant
+at all gets a `403` on every reachable endpoint too, exactly like a human
+member with no role.
 
 ### CORS
 
 `CORS_ALLOWED_ORIGINS` is an explicit allowlist (deny-by-default),
 `CORS_ALLOW_CREDENTIALS=True`. A separately hosted frontend on a
-different origin is supported today *if* its origin is added to the
-allowlist — this is generic, not app_platform-specific, and already
-works for any API in this codebase once bearer-token access to
-app_platform itself is fixed.
+different origin is supported today if its origin is added to the
+allowlist. Bearer-token requests are not cookie-carried, so they never
+depend on or interact with CSRF protection at all — CSRF only applies to
+the session-cookie path above.
 
 ---
 
@@ -107,7 +110,7 @@ derived from or reveal physical PostgreSQL table/column names.
 
 | Capability | Endpoint | Response shape |
 |---|---|---|
-| List a model's fields | `GET app-models/{model_id}/fields/` | Each: `{id, model, key, label, data_type, required, default_value, position, source_definition_id}` |
+| List a model's fields | `GET app-models/{model_id}/fields/` | Each: `{id, model, key, label, data_type, required, default_value, unique, indexed, position, source_definition_id}` |
 | List an instance's models | `GET app-instances/{instance_id}/models/` | Each: `{id, instance, key, label, position, source_definition_id}` |
 | List an instance's relationships | `GET app-instances/{instance_id}/relationships/` | Each: `{id, instance, key, label, position, source_definition_id, source_model, target_model, kind, deletion_policy}` |
 | Inspect one model/field/relationship | `GET app-models/{id}/`, `GET app-fields/{id}/`, `GET app-relationships/{id}/` | Same shapes as above |
@@ -115,7 +118,22 @@ derived from or reveal physical PostgreSQL table/column names.
 `data_type` is one of exactly `text`, `integer`, `decimal`, `boolean`,
 `date`, `datetime`. `kind` is always `many_to_one` (see the readiness
 review §1 for why, and how to emulate many-to-many). `deletion_policy` is
-`restrict` or `set_null` (no `cascade`).
+`restrict` or `set_null` (no `cascade`). `unique`/`indexed` (added Post-
+Phase-3 Integration Enablement) are independent booleans: `unique` means
+a real Postgres `UNIQUE` constraint backs this field's column (which is
+also a real B-tree index); `indexed` means a plain, non-unique B-tree
+index backs it. A `unique` field is always effectively indexed too;
+`indexed` is only meaningful — and only ever actually applied — when
+`unique` is `False`. Setting either at field-creation time
+(`POST app-models/{id}/fields/`, human-session-only) works whether or not
+the instance is provisioned yet. Retrofitting either onto an *existing*
+field is two dedicated, human-session-only actions:
+`POST app-fields/{field_id}/unique/` and
+`POST app-fields/{field_id}/indexed/` — safe against an already-
+provisioned, populated instance (rejects cleanly with `400` if existing
+values would violate the new constraint; leaves all data untouched
+either way), and idempotent (calling either twice is a no-op the second
+time).
 
 List endpoints use standard DRF `LimitOffsetPagination`:
 `{count, next, previous, results}`.
@@ -146,6 +164,20 @@ envelope as the schema-discovery endpoints above):
 - **Filtering**: any query param whose key matches a field or
   relationship definition UUID is applied as an **exact-match equality**
   filter; multiple filters are AND-combined. No other operator exists.
+  This is the same code path regardless of whether the field is
+  `unique`/`indexed` — no separate "search API" exists for indexed
+  fields (Post-Phase-3 Integration Enablement deliberately added no new
+  query-layer code for this). The difference is invisible at the API
+  level and entirely a matter of what Postgres does underneath: an
+  exact-match filter on a `unique`/`indexed` field is answered by a real
+  index scan instead of a sequential scan, confirmed with a real
+  `EXPLAIN`/`EXPLAIN ANALYZE` (see
+  `app_platform/tests/test_field_indexing.py`'s
+  `IndexBackedSearchEvidenceTests`, and the readiness review for a
+  200,000-row disposable benchmark: ~0.03ms indexed vs. ~25ms
+  sequential-scanned on the same table/row count). A field that is
+  neither `unique` nor `indexed` still works as a filter — it's just an
+  unindexed sequential scan, exactly as before this work.
 - **Sorting**: `?ordering=<definition_id>` or `?ordering=-<definition_id>`
   — one column only. Unspecified defaults to `id` order, not the
   definition's display `position`.
@@ -157,15 +189,34 @@ envelope as the schema-discovery endpoints above):
 
 ### Errors
 
-- `403` (empty body) — the authenticated actor lacks the required
-  capability for this instance or its tenant database.
-- `400 {"detail": "..."}` — a value-level problem (e.g. an invalid
-  reference, a constraint violation surfaced from Postgres).
+- `401`/`403` — no credential at all, an invalid/expired/revoked bearer
+  token, or a valid identity lacking the required capability for this
+  instance or its tenant database (empty body for the capability-denied
+  case). A revoked or garbage token is indistinguishable from any other
+  authentication failure in the response — no information about why a
+  specific token doesn't work is exposed.
+- `400 {"detail": "..."}` — a value-level problem: an invalid reference,
+  or **a uniqueness conflict** — creating or updating a record with a
+  value that collides with an existing one on a `unique` field returns
+  `{"detail": "a record with this value already exists"}`, distinguished
+  server-side from a foreign-key violation (`"referenced record does not
+  exist"`) by inspecting the real Postgres exception class, not a string
+  match. The message never names the conflicting value or the other
+  record — enough for the caller to know their own request was rejected,
+  nothing about anyone else's data. Retrofitting uniqueness
+  (`POST app-fields/{id}/unique/`) onto a field with existing duplicate
+  values returns the analogous `400` without touching any existing row.
 - `404` — the id doesn't exist, or exists in a different organization
   (identical response either way — the API never reveals whether a
   foreign-org resource exists).
 - Definition-mutation endpoints (creating a model/field/relationship)
   follow standard DRF serializer validation-error conventions.
+- Uniqueness is enforced by the real Postgres `UNIQUE` constraint, not an
+  application-level pre-check — two concurrent requests creating the same
+  value on a `unique` field always resolve to exactly one `201` and one
+  `400`, never two successes (proven with real concurrent threads, not
+  just reasoned about — see `test_field_indexing.py`'s
+  `test_concurrent_duplicate_record_creates_the_database_constraint_is_the_real_gate`).
 
 ## Attachments (files/images/documents)
 
@@ -199,8 +250,13 @@ for the full explanation:
 
 Both are capability-based, deny-by-default, and can be granted either
 org-wide (a role) or scoped to the specific resource (a `ResourceGrant`
-— for a human user via `sharing`, or for a machine client via
-`ApplicationResourceGrant` once the authentication gap above is closed).
+— for a human user via `sharing`, or for a machine client via the
+`applications/{id}/resource-grants/` endpoint). For a bearer-token client
+that only needs record CRUD (the common case), grant `app_instance.read`
+scoped to the `app_instance` resource plus `database.read`/
+`database.write` scoped to the instance's `databases.tenant_database`
+resource (its id comes back as `database_id` from
+`GET app-instances/{id}/runtime/`).
 
 ## Versioning
 
@@ -214,17 +270,22 @@ the API contract itself.
 Everything below is **NOT YET IMPLEMENTED** — do not build an adapter
 that assumes any of it:
 
-- Bearer-token/service-account access to any app_platform endpoint (see
-  Authentication above — this is the actual blocker, not a missing
-  endpoint per se).
+- Bearer-token/service-account access to schema *mutation*, template
+  administration, instance install/archive, or runtime provisioning (see
+  Authentication above — a deliberate first-slice scope boundary, not a
+  technical blocker; these still require a human session).
 - Any filter operator beyond exact-match equality (no `gt`/`lt`/`in`/
-  `contains`).
-- Multi-field or per-field-targeted search; identifier normalization.
+  `contains`), even on a `unique`/`indexed` field — indexing changed the
+  *performance* of exact-match lookups, not the operator set.
+- Multi-field or per-field-targeted search; identifier normalization
+  (e.g. dash/space-stripping for a part-number-style lookup) — an app
+  that needs this defines its own separate `normalized_...` field and
+  populates it itself (see the readiness review §6 for the pattern).
 - Multi-column sort.
+- Composite (multi-column) uniqueness — only single-field `unique` exists.
 - A generic bulk/staged record-import endpoint targeting an App Platform
   model (the existing `imports` app targets `databases.DBTable` only).
 - Any declarative, multi-record, atomic "action" or workflow concept.
 - Field-level (as opposed to instance/database-level) permissions.
-- Unique constraints or indexes on App Platform field values.
 - Webhooks or any push/event-notification mechanism out of App Platform
   toward an external application.

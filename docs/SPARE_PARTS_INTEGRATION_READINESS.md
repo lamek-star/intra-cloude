@@ -1,18 +1,21 @@
 # Spare Parts Integration Readiness Review
 
-Baseline: commit `886e75f` (App Platform Phase 3, complete — 508 passed, 2
-skipped, 0 failed). This document evaluates whether the **generic** App
-Platform (`app_platform`, `databases`, `storage`, `imports`, `permissions`,
-`sharing`, `applications`, `accounts`) currently provides the capabilities a
-separately developed Spare Parts Management frontend/reference application
-would need to integrate against it.
+Original baseline: commit `886e75f` (App Platform Phase 3, complete — 508
+passed, 2 skipped, 0 failed). **Updated** after Post-Phase-3 Integration
+Enablement closed both blocking gaps this review originally identified
+(§3 external bearer access, §6 field indexing/uniqueness) — see §11/§12
+for the current decision. This document evaluates whether the
+**generic** App Platform (`app_platform`, `databases`, `storage`,
+`imports`, `permissions`, `sharing`, `applications`, `accounts`) provides
+the capabilities a separately developed Spare Parts Management frontend/
+reference application would need to integrate against it.
 
 **This is a capability review, not a spare-parts implementation.** No
 spare-parts-specific model, endpoint, or migration exists or is proposed as
 "core" platform code here. Every finding below is backed by reading the
-actual implementation and tests at the stated commit, not inferred from
-documentation — see `docs/EXTERNAL_APP_API_CONTRACT.md` for the API-shape
-companion to this document.
+actual implementation and tests, not inferred from documentation — see
+`docs/EXTERNAL_APP_API_CONTRACT.md` for the API-shape companion to this
+document.
 
 ## How to read the tables
 
@@ -34,8 +37,8 @@ companion to this document.
 | Nullable fields | SUPPORTED | `FieldDefinition.required` maps directly to `is_nullable` on the physical column. |
 | Defaults | SUPPORTED | `default_value`, validated per data type through `databases.ddl.default_clause_sql`, produces a real Postgres `DEFAULT` — confirmed live in Phase 3 step 2/3 (default-backfill on a populated table). |
 | Deterministic ordering | SUPPORTED | `Definition.position` + `Meta.ordering`, reorderable at any time, exempt from the post-provision structural freeze. |
-| Unique constraints (on record data) | NOT SUPPORTED | `databases.DBColumn.is_unique` exists as a low-level primitive, but `app_platform` never passes it through `add_column` anywhere — zero references in `app_platform/*.py`. `FieldInput` exposes no `unique` option. (Definition **key** uniqueness — `unique_key()` — is schema-level, not a data constraint, and is a different concept entirely.) |
-| Indexes | NOT SUPPORTED | `databases.DBIndex` exists but, per its own docstring, is "created automatically alongside unique columns and primary keys — not (yet) a user-facing 'create an arbitrary index' feature." Since App Platform never wires `is_unique` through either, this escape hatch is unreachable from the App Builder today. Every field-based filter or search is a full sequential scan. |
+| Unique constraints (on record data) | **SUPPORTED** (single-field) | Closed by Post-Phase-3 Integration Enablement. `FieldDefinition.unique` (migration `0008`), wired through `add_column(is_unique=...)` at field-creation time (template install or live add, provisioned or not) and through a new `databases.services.add_unique_constraint` for retrofitting onto an already-materialized, possibly populated column — both backed by a real Postgres `UNIQUE` constraint, never an application-level pre-check (`app_platform/records.py`'s `create_record`/`update_record` rely entirely on the DB constraint + a clean error translation). Composite (multi-field) uniqueness remains NOT SUPPORTED — only single-column. |
+| Indexes | **SUPPORTED** (single-field B-tree) | Closed alongside uniqueness. `FieldDefinition.indexed`, wired through `add_column(is_indexed=...)` and a new `databases.services.add_index` retrofit function — a real `CREATE INDEX`, catalogued as a `DBIndex` row exactly like the pre-existing unique-column case. No arbitrary/composite/expression index support — one column, B-tree only, matching Postgres's own default index type. |
 | Enumerated/status fields | NOT SUPPORTED | `FieldDefinition.data_type` is exactly `text/integer/decimal/boolean/date/datetime` (DB-enforced). A "status" field today is unconstrained free text. |
 | Calculated/derived fields | NOT SUPPORTED | No formula/computed-column concept anywhere in the definition or build pipeline. |
 | References between models | SUPPORTED | A relationship value in the record API is keyed by the relationship's definition UUID and translated to/from the real physical FK column server-side (`records.py`'s `_field_map`/`_translate_in`/`_translate_out`) — the client never sees a physical column name. One caveat: relationship FK columns are always nullable; a relationship cannot be marked required, unlike a field. |
@@ -59,7 +62,10 @@ PARTIAL:
 - **Filtering** — exact-match equality only, AND-combined across
   simultaneous filters (`databases/rows.py`'s `_build_where`). No `gt`,
   `lt`, `in`, `contains`, or any other operator exists anywhere in the
-  stack.
+  stack. Since Post-Phase-3 Integration Enablement, this exact code path
+  is index-backed for free when the field is `unique`/`indexed` — no new
+  query code, purely a real Postgres index now existing underneath the
+  same filter (confirmed via a real `EXPLAIN`/`EXPLAIN ANALYZE`, see §6).
 - **Sorting** — a single column only, ascending or descending; the
   default when unspecified is `ORDER BY id` (insertion-adjacent order),
   not the definition's own `position`.
@@ -71,42 +77,46 @@ PARTIAL:
 
 See `docs/EXTERNAL_APP_API_CONTRACT.md` for exact request/response shapes.
 
-## 3. Authentication — the first blocking gap
+## 3. Authentication — CLOSED (was the first blocking gap)
 
 Full detail in `docs/EXTERNAL_APP_API_CONTRACT.md`'s Authentication
-section. Summary: this codebase already has a real, tested,
-production-shaped mechanism for exactly this use case —
-`applications.ApplicationCredential` bearer tokens, resolved by
-`ServiceAccountAuthentication` to a real backing `User`, scoped via
-`ApplicationResourceGrant` — and it demonstrably works today for `storage`
-and `databases` (`applications/tests/test_applications.py`).
+section. Original finding: `applications.ApplicationCredential` bearer
+tokens (Phase 7, resolved by `ServiceAccountAuthentication` to a real
+backing `User`, scoped via a `ResourceGrant`) already worked for
+`storage`/`databases`, but every `app_platform` view rejected a
+service-account-backed request outright
+(`hasattr(request.user, "service_account")` in `FoundationView.
+initial()`), regardless of any grant.
 
-**It does not work for `app_platform` today.** Every app_platform view
-(`FoundationView` and everything that subclasses it — templates,
-instances, models, fields, relationships, records, attachments, runtime
-provisioning, with no exception) contains:
+**Closed by Post-Phase-3 Integration Enablement, Part 1.**
+`FoundationView` gained `service_account_methods` — empty by default (no
+change to any endpoint unless explicitly opted in), set to specific HTTP
+methods on: instance/model/field/relationship read (`GET`), record CRUD
+(`GET`/`POST`/`PATCH`/`DELETE`), attachment CRUD, and read-only runtime
+status. `access.py`'s `check()`/`get_owned()` no longer veto a
+service-account actor — every action, once reachable, goes through the
+identical deny-by-default `has_permission()`/`ResourceGrant` check a
+human session uses. No new capability codes or grant-management endpoint
+were needed: `applications/{id}/resource-grants/` already accepted any
+permission code/resource type.
 
-```python
-if not request.user.is_active or hasattr(request.user, "service_account"):
-    raise PermissionDenied("Foundation administration requires a human session.")
-```
+**Deliberately still out of bearer-token reach** (a first-slice scope
+boundary, not a remaining technical gap): template administration,
+instance install/archive, all schema-*mutation* endpoints (including the
+new `app-fields/{id}/unique/`/`.../indexed/` retrofit actions), and
+runtime provisioning — all still human-session-only, regardless of grant.
 
-`hasattr(request.user, "service_account")` is true for exactly a
-bearer-token-authenticated request. This means **no externally developed
-frontend can call any App Platform endpoint using its own service
-identity today** — only a real human browser session can. This is a
-deliberate app_platform-specific gate, not a platform-wide limitation:
-the exact `ResourceGrant`/`ApplicationResourceGrant` machinery that would
-make this work is already proven elsewhere in the same codebase (the
-new `RESOURCE_TYPE_APP_INSTANCE` sharing added in Phase 3 step 4 uses the
-identical mechanism, just for human users).
+Verified: `app_platform/tests/test_external_access.py` (13 tests — valid
+access, cross-org denial, cross-project denial, revocation, invalid/
+missing token, missing-capability denial, human-session unaffected,
+audit attribution to the service account's own identity, cross-instance
+ID-substitution denial, and confirmation that full record access never
+escalates to template/instance/provisioning administration) plus
+`test_foundation.py`'s updated principal tests.
 
-**Classification: NOT SUPPORTED for machine/external clients; SUPPORTED
-for the built-in human frontend only.** Closing this is small, additive,
-non-spare-parts-specific platform work (relax or replace the
-`FoundationView` gate for a bearer-token actor with a valid
-`ApplicationResourceGrant`, reusing the pattern `applications`/`storage`
-already prove) — not a redesign.
+**Classification: SUPPORTED** for the endpoints listed above, scoped
+exactly as a human session would be; template/instance/schema
+administration remain human-session-only by design.
 
 ## 4. Permissions
 
@@ -159,27 +169,55 @@ is always a separate attachment, never a value returned directly in a
 record payload; no bulk-attach endpoint (one file per request); no
 attachment-count-per-record limit in code.
 
-## 6. Search — the second blocking gap
+## 6. Search — CLOSED for exact-match lookup (was the second blocking gap)
 
 See section 2 above and `docs/EXTERNAL_APP_API_CONTRACT.md` for the exact
-mechanics. For the review's own stated target — "very strong part-number
-searching," "100k+ records, potentially millions" — the honest answer is:
+mechanics. Original finding, for the review's own stated target —
+"very strong part-number searching," "100k+ records, potentially
+millions": every filter/search was an unindexed sequential scan — no
+`DBIndex` was ever created for an app_platform field, `is_unique` was
+never wired through, and no full-text/trigram infrastructure existed.
 
-**NOT SUPPORTED at that scale.** Every filter or search against an
-App-Platform-defined field is an unindexed sequential scan (confirmed:
-`DBIndex` is never created for an app_platform field, `is_unique` is
-never wired through, and no full-text/trigram index infrastructure
-(`tsvector`, GIN, pg_trgm) exists anywhere in `databases/ddl.py` or
-`databases/services.py`). A million-row `PartNumber` table would make
-every search request scan the entire table.
+**Closed for exact-match lookup by Post-Phase-3 Integration Enablement,
+Parts 2-4** — deliberately not a general full-text/fuzzy search engine,
+matching the review's own "do not block this phase on advanced fuzzy/
+full-text search" instruction:
 
-This is real, material, and directly in the critical path of the
-review's own recommended first slice (Part → PartNumber → **search**).
-It is also a much smaller fix than it sounds: `DBIndex` already exists,
-`add_column(..., is_unique=True)` already creates a real index as a side
-effect — the gap is that `FieldDefinition` never exposes a "unique" or
-"indexed" option to definition authors, not that indexing infrastructure
-needs to be built from nothing.
+- `FieldDefinition.unique`/`.indexed` (§1) make the *existing* exact-
+  match filter (`?<field_id>=value`) index-backed with **zero new
+  query-layer code** — Postgres's own planner picks up the real index
+  automatically once it exists.
+- Proven correct at unit-test scale
+  (`app_platform/tests/test_field_indexing.py::IndexBackedSearchEvidenceTests`,
+  a real `EXPLAIN` confirming an Index Scan) **and** at a genuinely
+  material scale: a disposable, non-permanent benchmark loaded 200,000
+  rows into a real provisioned instance (via `COPY`, not the record API,
+  to isolate query performance from insert overhead) and ran a real
+  `EXPLAIN ANALYZE` on the same table for both an indexed and an
+  unindexed exact-match lookup:
+
+  | Field | Plan | Execution time |
+  |---|---|---|
+  | `unique`+indexed | `Index Scan` | **0.027 ms** |
+  | plain (no index) | `Seq Scan`, 199,999 rows filtered | **24.593 ms** |
+
+  A ~900x difference on the same 200k-row table, planner-chosen with no
+  forcing — not extrapolated from a tiny unit test. The synthetic data
+  and its tenant schema were dropped immediately after (see this
+  document's own git history / session record for the exact commands);
+  nothing was left in any demo/production environment.
+
+Still genuinely absent, unchanged from the original finding: multi-field
+or per-field-targeted search, identifier normalization (§6's own
+original recommendation stands — a template defines its own separate
+`normalized_number` field and populates it itself, rather than the
+platform guessing at automotive-style dash/space normalization), and any
+full-text/fuzzy search engine. Composite indexes also remain out of
+scope (single-column only).
+
+**Classification: SUPPORTED for exact-match lookup at real scale; NOT
+SUPPORTED for full-text, fuzzy, or multi-field search** (unchanged, and
+correctly out of this phase's scope per the review's own instruction).
 
 ## 7. Bulk / staged imports
 
@@ -252,7 +290,7 @@ NOT SUPPORTED as a generic, declarative, app-definable capability:
 | Requirement | Current IntraForge Capability | Status | Evidence | Gap | Recommended Phase |
 |---|---|---|---|---|---|
 | `Part` model | Generic `ModelDefinition`/`FieldDefinition` | SUPPORTED | App Builder UI + API, live-verified throughout Phase 3 | — | First slice |
-| `PartNumber` model, many-to-one to `Part` | Relationship (many-to-one from the "many" side) | SUPPORTED (shape) | §1 | No unique constraint on the number value itself | First slice, after unique-constraint gap closed |
+| `PartNumber` model, many-to-one to `Part` | Relationship (many-to-one) + `unique`/`indexed` field | **SUPPORTED** | §1, §6 | None | First slice |
 | Multiple numbers per part | One `Part`, many `PartNumber` rows via the relationship above | SUPPORTED | §1 (one-to-many) | — | First slice |
 | Cross references between part numbers | Self-referencing relationship on `PartNumber` | SUPPORTED (untested) | §1 | No automated test proves this case; add one before relying on it | First slice |
 | Supersession (this number replaces that one) | Self-referencing relationship, or a join model | SUPPORTED (shape, untested) | §1 | Same as above | First slice |
@@ -260,13 +298,13 @@ NOT SUPPORTED as a generic, declarative, app-definable capability:
 | Vehicle compatibility (many-to-many) | Explicit join model with two many-to-one relationships | PARTIAL | §1 | No native M:M kind or UI convenience; workable, not ergonomic | Later slice |
 | `CataloguePart` vs. `CompanyProduct` separation | Two models + relationship | PARTIAL | §8 | No field-level "don't overwrite" protection; application-level discipline required | First slice for the shape; ongoing discipline, not a platform fix |
 | `Warehouse` model | Generic model | SUPPORTED | §1 | — | Later slice |
-| `Inventory` (Part × Warehouse quantity) | Join-style model, two many-to-one relationships | PARTIAL | §1 | No *composite* unique constraint even after the single-column unique-constraint gap is closed (only single-column `is_unique` exists at the `databases` layer) — duplicate `(Part, Warehouse)` rows aren't prevented by the schema | Later slice |
+| `Inventory` (Part × Warehouse quantity) | Join-style model, two many-to-one relationships | PARTIAL | §1 | No *composite* unique constraint (only single-column `unique` exists) — duplicate `(Part, Warehouse)` rows aren't prevented by the schema | Later slice |
 | `StockMovement` | Plain record creation | SUPPORTED (as a single insert) | §2 | Not atomic with an Inventory update in the same request — see §9 | Later slice |
 | `Supplier`, `PurchaseOrder`, `PurchaseOrderLine` | Generic models + relationships | SUPPORTED (CRUD shape) | §1, §2 | No computed totals (no calculated fields), no atomic multi-step workflow (§9) | Later slice |
 | `Customer`, `SalesOrder`, `SalesOrderLine`, `Invoice` | Generic models + relationships | SUPPORTED (CRUD shape) | §1, §2 | Same as above | Later slice |
 | Images | `RecordAttachment` | SUPPORTED | §5 | Not an inline field value; separate attachment only | First slice (product images) |
 | Documents (invoices, supplier docs) | `RecordAttachment` | SUPPORTED | §5 | Same mechanism as images, no bulk-attach | Later slice |
-| Search (target: 100k+, potentially millions of rows) | `ILIKE` scan, offset pagination | NOT SUPPORTED at scale | §6 | No indexing, no normalization, no full-text search | **Blocking — platform work before any part-number-search-heavy slice** |
+| Search (target: 100k+, potentially millions of rows) | Index-backed exact-match filter (`unique`/`indexed` fields) | **SUPPORTED** for exact match (200k-row benchmark: 0.03ms indexed vs. 25ms unindexed) | §6 | No normalization (app defines its own `normalized_...` field), no full-text/fuzzy search — both correctly out of this phase's scope | First slice |
 | Bulk imports into an App Platform model | `imports` app, targets `databases.DBTable` only | PARTIAL | §7 | No App Platform target, no staging/review step | Needed before a catalogue-scale first slice |
 | Permissions | Instance-wide + database-wide capability checks | SUPPORTED (coarse) | §4 | No per-model/per-field permission | First slice acceptable; revisit for commercial-data sensitivity later |
 | Audit | `audit.record(...)` on every record create/update/delete (`records.py::event`), and on instance/definition changes | SUPPORTED | `app_platform/records.py` lines calling `event()`/`audit.record` on create/update (with changed-field names)/delete | Reads are not audited (only mutations) — normal, not a gap | — |
@@ -275,64 +313,68 @@ NOT SUPPORTED as a generic, declarative, app-definable capability:
 
 ## 11. Blocking vs. non-blocking gaps, summarized
 
-**Blocking** (must close before *any* external-frontend integration slice
-is viable, not spare-parts-specific):
+**Formerly blocking, now closed by Post-Phase-3 Integration Enablement:**
 
-1. **No external/bearer-token access to `app_platform`.** An adapter
-   cannot authenticate as itself against any App Platform endpoint today
-   — only a human browser session works. See §3.
-2. **No indexing/unique-constraint path for App Platform fields.** Search
-   and lookups at any real scale are full sequential scans, and nothing
-   prevents duplicate "unique" values (like a part number) at the schema
-   level. See §1, §6.
+1. ~~No external/bearer-token access to `app_platform`~~ — **closed**,
+   see §3. Scoped narrowly (read + record/attachment CRUD; template/
+   instance/schema administration deliberately stay human-only).
+2. ~~No indexing/unique-constraint path for App Platform fields~~ —
+   **closed** for single-field uniqueness and exact-match lookup, see
+   §1, §6. Composite constraints/indexes and non-exact search remain
+   out of scope, by design.
 
-**Non-blocking** (real gaps, but each can be designed around or deferred
-without blocking a first, deliberately small integration slice):
+**Remaining, non-blocking** (real gaps, but each can be designed around
+or deferred without blocking the first, deliberately small integration
+slice):
 
 - No many-to-many relationship kind (join-model workaround exists).
 - No cascade delete (restrict/set_null only).
 - No enum/status field type, no calculated fields.
-- Filtering/sorting/search are primitive (exact-only, single-column,
-  all-text-columns `ILIKE`).
+- Sorting is single-column only; search beyond exact-match (multi-field,
+  fuzzy, full-text) doesn't exist.
 - Imports don't target App Platform models and have no staging step.
 - No field-level "protect from external overwrite" concept.
 - No declarative multi-record transactional actions.
 - No field-level permissions.
+- No composite (multi-field) uniqueness or indexing.
 
 ## 12. Integration decision
 
-**B — READY WITH BLOCKING PLATFORM GAPS.**
+**A — READY FOR SPARE PARTS ADAPTER PROTOTYPE.**
 
-The platform's core shape — generic models, fields, relationships,
-UUID-stable record API, real permission enforcement, real file
-attachments, real audit — is solid and already proven end-to-end through
-three full development phases. But two of the gaps above are directly in
-the critical path of *any* external integration, not just a spare-parts
-one: an external frontend cannot authenticate against App Platform at
-all today, and a search-heavy catalogue cannot perform at the stated
-target scale without indexing. Both are small, additive, generic platform
-changes — reusing patterns already proven elsewhere in this exact
-codebase — not new subsystems or a redesign.
+Both gaps that previously blocked this decision are closed, tested, and
+live-verified: an external application can now authenticate with its own
+bearer-token identity and reach exactly the surface a first integration
+slice needs (schema/instance discovery, record CRUD, attachments), scoped
+by the same deny-by-default `ResourceGrant` mechanism a human session
+uses; and a field the app marks `unique`/`indexed` gets a real Postgres
+constraint/index, with exact-match lookups proven index-backed at a
+genuinely material scale (200,000 rows, ~900x faster than an unindexed
+scan on the same table), not just asserted. Nothing in this closure was
+spare-parts-specific — both changes are generic platform capabilities
+that benefit any future external integration.
 
-### Recommended path
+### Recommended first integration slice
 
-1. **Close the two blocking gaps as generic platform work** (not
-   spare-parts-specific, would benefit every future external
-   integration): extend `app_platform`'s bearer-token access to reuse
-   the `ApplicationResourceGrant` pattern already proven for `storage`;
-   expose a `unique`/`indexed` option on `FieldDefinition` that wires
-   through to the `is_unique`/`DBIndex` primitives that already exist at
-   the `databases` layer.
-2. **Then** the smallest first integration slice, exactly as the review
-   specifies: `Part` → `PartNumber` (with the new unique constraint) →
-   search (now index-backed) → a basic `CompanyProduct` reference to
-   `Part`, with product images via `RecordAttachment`.
-3. Explicitly deferred to later slices: vehicle compatibility, inventory/
-   warehouses, purchase/sales workflows, invoices — all of which also
-   depend on the not-yet-built declarative-transaction capability (§9)
-   for anything beyond simple CRUD.
+Exactly as originally scoped, now fully provable end-to-end:
+
+`Part` → `PartNumber` (with `unique`+`indexed` on the normalized number,
+a real constraint preventing duplicates and a real index backing
+lookups) → exact-match search via the existing record-filter API → a
+basic `CompanyProduct` reference to `Part` → product images via
+`RecordAttachment` — all reachable by an external application's own
+bearer-token credential, scoped to exactly this instance and its tenant
+database, with template/schema authoring done once by a human through
+the App Builder.
+
+Explicitly deferred to later slices, unchanged from the original review:
+vehicle compatibility (many-to-many via join model), inventory/
+warehouses (needs composite uniqueness, still absent), purchase/sales
+workflows and invoices (need the not-yet-built declarative-transaction
+capability, §9, for anything beyond simple CRUD).
 
 Do not attempt the full Spare Parts system in one integration, and do not
-build spare-parts-specific code into the platform — every gap identified
-above is a generic capability gap, and closing it benefits any future
-external application, not just this one.
+build spare-parts-specific code into the platform — every capability this
+review and its follow-up closed is generic, and every remaining gap is
+either a deliberate first-slice scope boundary or genuinely deferred,
+non-blocking platform work for a later phase.
