@@ -6,10 +6,13 @@ later commits as the corresponding code ships (see
 C:\\Users\\Hp\\.claude\\plans\\precious-inventing-seal.md for the full
 sequencing)."""
 
+from concurrent.futures import ThreadPoolExecutor
+
 from django.core.management import call_command
-from django.db import connections, transaction
+from django.db import IntegrityError, close_old_connections, connections, transaction
 from django.test import TestCase, TransactionTestCase
 from psycopg import sql
+from rest_framework.test import APIClient
 
 from accounts.models import User
 from app_platform import instances, provisioning, templates
@@ -246,3 +249,183 @@ class ProvisioningTests(TransactionTestCase):
                 )
             )
             self.assertEqual(cursor.fetchone()[0], 1)
+
+
+class RecordAPITests(TransactionTestCase):
+    """Step 4: records.py's read/write handling for many_to_many, driven
+    through the real record API exactly like every other App Platform
+    record test -- covering plan section 7's scenarios 3-6, 8-9 (1-2 are
+    covered by ProvisioningTests above; 7, cross-org isolation, is a
+    generic model-resolution behavior unchanged by this feature, not
+    re-tested here)."""
+
+    databases = {"default", "tenant"}
+
+    def setUp(self):
+        call_command("seed_permissions", verbosity=0)
+        self.actor = User.objects.create_user(email="m2m-records@example.com")
+        self.org = create_organization(name="M2M Records Org", created_by=self.actor)
+        self.project = project_for(self.actor, self.org)
+        template = templates.create_template(self.actor, self.org, {"label": "App", "draft": sample()})
+        version = templates.publish_template(self.actor, template)
+        self.instance = instances.install(
+            self.actor, self.project, {"label": "Runtime", "template_version": str(version.id)}
+        )
+        self.item = self.instance.models.get(key="item")
+        self.group = self.instance.models.get(key="group")
+        self.relation = instances.add_relationship(
+            self.actor,
+            self.instance,
+            {
+                "key": "compatible_groups",
+                "label": "Compatible Groups",
+                "source_model": str(self.item.id),
+                "target_model": str(self.group.id),
+                "kind": "many_to_many",
+            },
+        )
+        plan = plan_runtime(self.actor, self.instance)
+        self.schema_name = plan["schema_name"]
+        provisioning.reserve(self.actor, self.instance, plan["fingerprint"])
+        self.receipt = provisioning.execute(self.instance.id, self.actor)
+
+        self.client = APIClient()
+        self.client.force_authenticate(self.actor)
+        self.items_url = f"/api/v1/app-models/{self.item.id}/records/"
+        self.groups_url = f"/api/v1/app-models/{self.group.id}/records/"
+        self.relation_id = str(self.relation.id)
+
+        self.group_a = self._create_group()
+        self.group_b = self._create_group()
+
+    def tearDown(self):
+        with connections["tenant"].cursor() as cursor:
+            cursor.execute(
+                sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(self.schema_name))
+            )
+        super().tearDown()
+
+    def _create_group(self):
+        response = self.client.post(self.groups_url, {}, format="json")
+        assert response.status_code == 201, response.data
+        return response.data["id"]
+
+    def _create_item(self, group_ids):
+        response = self.client.post(self.items_url, {self.relation_id: group_ids}, format="json")
+        assert response.status_code == 201, response.data
+        return response.data
+
+    def _join_table(self):
+        binding = self.receipt.bindings["relationships"][self.relation_id]
+        return DBTable.objects.select_related("tenant_database").get(pk=binding["join_table"])
+
+    def test_create_and_read_from_both_directions(self):
+        item = self._create_item([self.group_a, self.group_b])
+        self.assertEqual(sorted(item[self.relation_id]), sorted([self.group_a, self.group_b]))
+
+        detail = self.client.get(f"{self.items_url}{item['id']}/")
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(sorted(detail.data[self.relation_id]), sorted([self.group_a, self.group_b]))
+
+        listing = self.client.get(self.items_url)
+        self.assertEqual(listing.status_code, 200)
+        [listed] = listing.data["results"]
+        self.assertEqual(sorted(listed[self.relation_id]), sorted([self.group_a, self.group_b]))
+
+        # Read from the target side too -- read-only, but must reflect the
+        # same association written from the source.
+        group_detail = self.client.get(f"{self.groups_url}{self.group_a}/")
+        self.assertEqual(group_detail.status_code, 200)
+        self.assertEqual(group_detail.data[self.relation_id], [item["id"]])
+
+    def test_write_is_blocked_from_the_target_side(self):
+        item = self._create_item([])
+        response = self.client.patch(
+            f"{self.groups_url}{self.group_a}/", {self.relation_id: [item["id"]]}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_update_diffs_associations_rather_than_replacing_blindly(self):
+        item = self._create_item([self.group_a])
+        response = self.client.patch(
+            f"{self.items_url}{item['id']}/", {self.relation_id: [self.group_b]}, format="json"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data[self.relation_id], [self.group_b])
+
+        response = self.client.patch(f"{self.items_url}{item['id']}/", {self.relation_id: []}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data[self.relation_id], [])
+
+    def test_update_with_the_relationship_key_omitted_leaves_associations_unchanged(self):
+        item = self._create_item([self.group_a])
+        response = self.client.patch(f"{self.items_url}{item['id']}/", {}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data[self.relation_id], [self.group_a])
+
+    def test_deleting_a_record_cascades_the_association_away(self):
+        item = self._create_item([self.group_a])
+        delete = self.client.delete(f"{self.items_url}{item['id']}/")
+        self.assertEqual(delete.status_code, 204)
+
+        group_detail = self.client.get(f"{self.groups_url}{self.group_a}/")
+        self.assertEqual(group_detail.data[self.relation_id], [])
+        with connections["tenant"].cursor() as cursor:
+            join_table = self._join_table()
+            cursor.execute(
+                sql.SQL("SELECT COUNT(*) FROM {}.{}").format(
+                    sql.Identifier(self.receipt.database.schema_name), sql.Identifier(join_table.name)
+                )
+            )
+            self.assertEqual(cursor.fetchone()[0], 0)
+
+    def test_a_duplicate_pair_raw_insert_bypassing_records_py_is_still_rejected(self):
+        item = self._create_item([self.group_a])
+        join_table = self._join_table()
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic(using="tenant"):
+                with connections["tenant"].cursor() as cursor:
+                    cursor.execute(
+                        sql.SQL("INSERT INTO {}.{} (source_id, target_id) VALUES (%s, %s)").format(
+                            sql.Identifier(self.receipt.database.schema_name), sql.Identifier(join_table.name)
+                        ),
+                        [item["id"], self.group_a],
+                    )
+
+    def test_unsanctioned_direct_write_to_the_join_tables_catalog_row_is_rejected(self):
+        """Parity with the existing trigger-guard security tests
+        (test_field_indexing.py) -- a join table's own catalog row is
+        just another row on databases_dbtable, governed by the same
+        app_runtime_catalog_guard trigger, with no special-case carve-out
+        for M:M."""
+        join_table = self._join_table()
+        with self.assertRaises(Exception) as ctx:
+            DBTable.objects.filter(pk=join_table.id).update(name="hacked")
+        self.assertIn("Managed runtime catalog requires a schema migration", str(ctx.exception))
+
+    def test_concurrent_addition_of_the_same_new_pair_the_database_constraint_is_the_real_gate(self):
+        """Mirrors test_field_indexing.py's own concurrency proof: the
+        diff in update_record is deliberately racy (see its docstring) --
+        the real UNIQUE(source_id, target_id) constraint on the join
+        table is what actually prevents a duplicate pair from landing
+        when two requests race to add the exact same new association."""
+        item = self._create_item([])
+
+        def add_group(_):
+            close_old_connections()
+            client = APIClient()
+            client.force_authenticate(self.actor)
+            try:
+                return client.patch(
+                    f"{self.items_url}{item['id']}/", {self.relation_id: [self.group_a]}, format="json"
+                )
+            finally:
+                close_old_connections()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(pool.map(add_group, [None, None]))
+
+        statuses = sorted(r.status_code for r in responses)
+        self.assertEqual(statuses, [200, 400])
+        detail = self.client.get(f"{self.items_url}{item['id']}/")
+        self.assertEqual(detail.data[self.relation_id], [self.group_a])
