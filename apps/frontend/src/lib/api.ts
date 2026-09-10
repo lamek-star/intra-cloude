@@ -522,12 +522,19 @@ export type DashboardRenderResult = {
 // validates -- id is omitted by the builder for a brand-new element (the
 // server assigns one) and echoed back for an existing one, to preserve
 // definition lineage across edits (see APP_PLATFORM_PHASE3.md).
+// The one safe default per type app_platform/definitions.py's
+// validate_field_default accepts (reusing databases/ddl.py's own DDL
+// safe-set): text/decimal/date are validated strings, integer a number,
+// boolean a bool, datetime only ever the literal "now()".
+export type FieldDefaultValue = string | number | boolean | null;
+
 export type DraftField = {
   id?: string;
   key: string;
   label: string;
   data_type: AppFieldDataType;
   required?: boolean;
+  default_value?: FieldDefaultValue;
 };
 
 export type DraftModel = {
@@ -607,6 +614,7 @@ export type AppModelDefinition = {
   instance: string;
   key: string;
   label: string;
+  position: number;
   source_definition_id: string | null;
 };
 
@@ -619,6 +627,8 @@ export type AppFieldDefinition = {
   label: string;
   data_type: AppFieldDataType;
   required: boolean;
+  default_value: FieldDefaultValue;
+  position: number;
   source_definition_id: string | null;
 };
 
@@ -627,6 +637,7 @@ export type AppRelationshipDefinition = {
   instance: string;
   key: string;
   label: string;
+  position: number;
   source_definition_id: string | null;
   source_model: string;
   target_model: string;

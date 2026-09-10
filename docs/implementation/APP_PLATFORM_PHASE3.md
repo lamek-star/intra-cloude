@@ -40,17 +40,17 @@ Genuinely new backend work, not yet designed or built:
 
 ## Steps
 
-1. **App Builder UI for existing capability — current step.** Template
+1. **App Builder UI for existing capability.** Template
    list/create/edit, a draft model/field/relationship builder (label, key,
    data type, required — the fields `DefinitionInput` already validates),
    publish, version history, install into a project, and wiring the
    installed instance through to Phase 2's already-built provisioning and
    record screens. No backend changes; this step is exclusively making
    already-tested backend capability reachable without the API directly.
-2. **Defaults and ordering.** Extend `FieldDefinition`/the definition
-   format with a validated default value per data type and an explicit
-   display-order field for models/fields/relationships; extend the builder
-   UI and the generated record screens (Phase 2) to use them.
+2. **Defaults and ordering — current step.** Extend `FieldDefinition`/the
+   definition format with a validated default value per data type and an
+   explicit display-order field for models/fields/relationships; extend the
+   builder UI and the generated record screens (Phase 2) to use them.
 3. **Safe populated-schema changes.** Allow additive structural edits
    (new field/model/relationship, and only those — no destructive/
    type-changing edits in v1) against an already-provisioned runtime,
@@ -70,7 +70,94 @@ Genuinely new backend work, not yet designed or built:
 
 ## Current step evidence
 
-Step 1 landed 2026-09-09, no backend changes. New frontend:
+### Step 2: defaults and ordering (2026-09-10)
+
+**Defaults.** `FieldDefinition` gains a validated `default_value`
+(`JSONField`, `null=True`); the same field is added to the definition
+format (`FieldInput`/`SnapshotField` in `definitions.py`) so a template
+draft can declare one. Validation reuses `databases.ddl.default_clause_sql`
+directly — called purely for its validation side effect, not duplicated —
+so a default is rejected at definition time with the exact same rule that
+would otherwise reject it as DDL at provisioning time; the two can never
+drift apart. That reuse surfaced a real, narrow gap in
+`databases/ddl.py` itself: **date columns had no default support at
+all** (`"Date column defaults are not supported yet"`, one of only 6
+app_platform field types) — fixed there directly, validated against
+`DATE_FORMAT`, `test_ddl.py` updated to assert the new accepted behavior
+instead of the old rejection. `runtime_plan.py` carries `default_value`
+into the compiled plan and fingerprint (it affects real DDL, so it must);
+`runtime_build.py` passes it straight into `services.add_column`'s
+existing `default_value` parameter — no changes needed to
+`app_platform/records.py` at all, since a value genuinely absent from a
+create payload already makes `insert_row` omit that column from the
+`INSERT`, letting Postgres's own `DEFAULT` apply. Defaults are editable
+pre-provision via the existing `FieldPatch`/`update_definition` path
+(cross-checked against the field's actual `data_type`, since a partial
+patch doesn't resend it); once provisioned, changing one is still
+"structural" and blocked by `lock_active`, same as before — that's
+step 3's job, not this one's.
+
+**Ordering.** `Definition` (the abstract base under `ModelDefinition`/
+`FieldDefinition`/`RelationshipDefinition`) gains a `position`
+(`PositiveIntegerField`) and its `Meta.ordering` changes from
+`["created_at", "id"]` to `["position", "created_at", "id"]` — replacing
+an implicit, tie-break-by-random-UUID ordering with an explicit, always-
+reorderable one. `instances.install()` sets `position` from the
+definition's array index (so template draft order becomes installed
+order, deterministically); `add_model`/`add_field`/`add_relationship` set
+it to the current sibling count (append-to-end). Reordering is
+deliberately **exempt** from `lock_active`'s structural freeze — swapping
+two `position` values touches no DDL, ever, so it's allowed on an
+already-provisioned instance too, unlike every other definition edit.
+`LabelInput` (shared by `FieldPatch`/`RelationshipPatch`) gains
+`position`, reachable through the same PATCH endpoints as label edits.
+The template draft format itself carries no separate position field —
+array order already is the order, so the builder's move-up/move-down
+buttons are pure client-side array swaps, PATCHing the whole draft back
+same as every other builder edit.
+
+Backend: `0006_ordering_and_defaults` migration. 5 new tests in a new
+`test_defaults_ordering.py` (default-value type validation over the API,
+append-position on create, PATCH-driven reordering, draft-array-order
+becoming installed position, and a `TransactionTestCase` proving a real
+omitted-field record pick up its column `DEFAULT` — text/boolean/date all
+checked, read back both through the translated API response and the raw
+physical row) plus the updated `test_ddl.py` case. Fresh full backend
+gate: **490 passed, 2 skipped, 0 failed** (up from 485); Ruff and Mypy
+clean.
+
+Frontend: the template builder gets ▲/▼ move buttons on every model,
+field, and relationship row; the "Add field" form gains a type-appropriate
+default-value input (text/decimal/date as typed input, boolean as a
+tri-state select, datetime restricted to a "default to current time"
+checkbox — matching exactly what the backend will actually accept, not a
+free-text field that fails server-side); a field's "Rename" action became
+"Edit" (a modal with label *and* default value together, since both are
+now editable the same way). Generic record forms (Phase 2) show a field's
+default as input placeholder text (`Default: P3`) — a hint only; the
+input stays genuinely empty until the user types, so leaving it blank
+still omits the key from the payload and lets the database apply the
+default, rather than the client silently re-submitting a stale copy of it.
+
+`next build`, ESLint, and the Vitest suite all pass clean.
+**Live-verified end-to-end in a real browser** against a rebuilt dev
+stack (both containers rebuilt/restarted, migration applied): added a
+field with default `P2` to the already-published "Bug Tracker" template,
+confirmed the default badge rendered, moved it above the required
+"Title" field with the new ▲ button, edited its default to `P3` through
+the new "Edit field" modal, published a second version, installed a
+fresh instance of it, provisioned the runtime, and created a record
+through the generated form leaving "Priority" blank — the row came back
+showing **Priority: P3**, the real Postgres column default applied by
+the database itself, with the field-order badges on the model page
+confirming Priority now renders before Title everywhere, exactly as
+reordered in the builder.
+
+See [TEST_STATUS.md](TEST_STATUS.md) for the exact verification run.
+
+### Step 1: App Builder UI for existing capability (2026-09-09)
+
+No backend changes. New frontend:
 `/orgs/[orgId]/app-templates` (list/create), `/app-templates/[templateId]`
 (a draft builder: add/rename/delete model, add/rename/delete field with a
 data-type picker and a `Required` toggle that saves immediately, add/rename/
@@ -106,10 +193,11 @@ journey has been driven through the UI rather than the API directly.
 See [TEST_STATUS.md](TEST_STATUS.md) for the exact verification run.
 
 **Remaining in step 1's spirit, deferred to later steps by design, not
-forgotten:** no drag-to-reorder (step 2's "ordering"); no default values
-(step 2); no editing of an *installed* instance's models/fields once
+forgotten:** no editing of an *installed* instance's models/fields once
 provisioned (step 3's "safe populated-schema changes" — today the only
 way to change a provisioned app's shape is a new template version and a
 fresh install, which is the existing, correct behavior, not a gap this
 step was scoped to close); no per-app permission assignment UI (step 4,
-which needs its own design decision first).
+which needs its own design decision first). Reordering/defaults, listed
+here originally as step 2 scope, are done — see step 2's own account
+above.

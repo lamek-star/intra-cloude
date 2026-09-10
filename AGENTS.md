@@ -64,12 +64,18 @@ re-derives state from the server's response (preserving already-assigned
 ids across edits, since relationship pickers only ever offer already-saved
 models), a read-only version viewer, an "Install app" flow on the project
 page, and a "Provision runtime" action with live status polling on the
-instance page. No backend changes. Live-verified end-to-end in a real
-browser: template created from scratch, published, installed, provisioned
-(watched go pending → ready against the real Celery worker), and its
-generated record screen confirmed working — the first time the whole
-template → publish → install → provision → records journey has been
-driven through the UI. Remaining steps: defaults/ordering, safe
+instance page. Step 2 (defaults and ordering) is also done: `FieldDefinition`
+gained a validated `default_value` (reusing `databases.ddl`'s own DDL
+safe-set for validation, which surfaced and fixed a real gap there — date
+columns had no default support at all) that flows through provisioning into
+a real Postgres column `DEFAULT`, and `ModelDefinition`/`FieldDefinition`/
+`RelationshipDefinition` gained an explicit, always-reorderable `position`
+(replacing an implicit, tie-break-by-random-UUID order) that's deliberately
+exempt from the post-provision structural freeze, since reordering touches
+no DDL. Both live-verified end-to-end in a real browser: a field's default
+rendered, was edited, reordered above another field, republished, installed
+fresh, provisioned, and a record created leaving that field blank came back
+with the real database default applied. Remaining steps: safe
 populated-schema changes against an already-provisioned runtime, basic
 permissions (needs its own design decision first, not yet made), and
 qualification.

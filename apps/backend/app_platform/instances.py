@@ -6,7 +6,14 @@ from rest_framework import serializers
 from audit import services as audit
 
 from .access import check, get_owned
-from .definitions import FieldInput, ModelInput, RelationshipInput, StrictSerializer, validate_definition
+from .definitions import (
+    FieldInput,
+    ModelInput,
+    RelationshipInput,
+    StrictSerializer,
+    validate_definition,
+    validate_field_default,
+)
 from .models import (
     AppInstance,
     AppTemplateVersion,
@@ -29,10 +36,14 @@ class InstanceInput(StrictSerializer):
 
 class LabelInput(StrictSerializer):
     label = serializers.CharField(max_length=200, required=False)  # type: ignore[assignment]  # DRF declarative field, removed by its metaclass
+    # Reordering is never structural (see Definition.position's docstring
+    # in models.py) -- allowed on every definition kind, any time.
+    position = serializers.IntegerField(min_value=0, required=False)
 
 
 class FieldPatch(LabelInput):
     required = serializers.BooleanField(required=False)  # type: ignore[assignment]  # DRF declarative field, removed by its metaclass
+    default_value = serializers.JSONField(required=False, allow_null=True)
 
 
 class RelationshipPatch(LabelInput):
@@ -61,18 +72,21 @@ def install(actor, project, data):
             created_by=actor,
         )
         models = {}
-        for item in definition["models"]:
+        for model_position, item in enumerate(definition["models"]):
             model = ModelDefinition.objects.create(
                 instance=instance,
                 key=item["key"],
                 label=item["label"],
                 source_definition_id=item["id"],
+                position=model_position,
             )
             models[item["id"]] = model
-            for field in item["fields"]:
+            for field_position, field in enumerate(item["fields"]):
                 values = {key: value for key, value in field.items() if key != "id"}
-                FieldDefinition.objects.create(model=model, source_definition_id=field["id"], **values)
-        for item in definition["relationships"]:
+                FieldDefinition.objects.create(
+                    model=model, source_definition_id=field["id"], position=field_position, **values
+                )
+        for relation_position, item in enumerate(definition["relationships"]):
             RelationshipDefinition.objects.create(
                 instance=instance,
                 source_definition_id=item["id"],
@@ -82,6 +96,7 @@ def install(actor, project, data):
                 target_model=models[item["target_model"]],
                 kind=item["kind"],
                 deletion_policy=item["deletion_policy"],
+                position=relation_position,
             )
         event(actor, instance, "install", instance.id)
     return instance
@@ -119,7 +134,9 @@ def add_model(actor, instance, data):
         if instance.models.count() >= 100:
             raise serializers.ValidationError("Model limit reached.")
         unique_key(instance.models, values["key"])
-        model = ModelDefinition.objects.create(instance=instance, **values)
+        model = ModelDefinition.objects.create(
+            instance=instance, position=instance.models.count(), **values
+        )
         event(actor, instance, "model.create", model.id)
     return model
 
@@ -133,7 +150,7 @@ def add_field(actor, model, data):
         if model.fields.count() >= 100:
             raise serializers.ValidationError("Field limit reached.")
         unique_key(model.fields, values["key"])
-        field = FieldDefinition.objects.create(model=model, **values)
+        field = FieldDefinition.objects.create(model=model, position=model.fields.count(), **values)
         event(actor, instance, "field.create", field.id)
     return field
 
@@ -153,7 +170,9 @@ def add_relationship(actor, instance, data):
                 raise serializers.ValidationError(
                     "Relationship models must belong to this instance."
                 ) from exc
-        relation = RelationshipDefinition.objects.create(instance=instance, **values)
+        relation = RelationshipDefinition.objects.create(
+            instance=instance, position=instance.relationships.count(), **values
+        )
         event(actor, instance, "relationship.create", relation.id)
     return relation
 
@@ -181,8 +200,10 @@ def update_definition(actor, obj, data):
         else LabelInput
     )
     values = validated(serializer_type, data)
+    if isinstance(obj, FieldDefinition) and "default_value" in values:
+        values["default_value"] = validate_field_default(obj.data_type, values["default_value"])
     with transaction.atomic():
-        lock_active(instance, structural=bool(set(values) - {"label"}))
+        lock_active(instance, structural=bool(set(values) - {"label", "position"}))
         obj = type(obj).objects.select_for_update().get(pk=obj.pk)
         for key, value in values.items():
             setattr(obj, key, value)

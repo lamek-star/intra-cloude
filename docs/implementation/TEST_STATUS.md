@@ -1,5 +1,25 @@
 # Test Status
 
+## App Platform Phase 3 step 2 checkpoint — defaults and ordering (2026-09-10)
+
+Backend: 5 new tests (`test_defaults_ordering.py`) plus an updated
+`test_ddl.py` case for the new DATE-default support in `databases/ddl.py`.
+Fresh full backend gate: **490 passed, 2 skipped, 0 failed** (up from 485;
+the 2 skips are the real-worker-SIGKILL restore probes,
+`RUN_RESTORE_WORKER_TESTS=0` for this run). Ruff and Mypy clean. Frontend:
+`next build`, ESLint, and the existing 10-test Vitest suite all pass
+clean. Live-verified end-to-end in a real browser against a rebuilt dev
+stack (both `backend` and `frontend` containers rebuilt/restarted, the
+`0006_ordering_and_defaults` migration applied): added a field with a
+default value to an already-published template, watched the "default:"
+badge render, reordered it above a required field with the new move
+buttons, edited its default through the new field-edit modal, published
+a second version, installed and provisioned a fresh instance, then
+created a record through the generated form leaving the defaulted field
+blank — it came back populated with the field's real database default,
+and the field order shown everywhere matched the reorder. See
+[APP_PLATFORM_PHASE3.md](APP_PLATFORM_PHASE3.md) for the full account.
+
 ## App Platform Phase 3 step 1 checkpoint — App Builder UI (2026-09-09)
 
 No backend changes this step (see APP_PLATFORM_PHASE3.md); frontend only.

@@ -61,6 +61,7 @@ def build(receipt, actor):
                 is_nullable=field["is_nullable"],
                 precision=field["precision"],
                 scale=field["scale"],
+                default_value=field["default"],
             )
             bindings["fields"][field["definition_id"]] = str(column.id)
     for relation in plan["relationships"]:

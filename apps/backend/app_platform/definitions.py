@@ -5,6 +5,7 @@ import uuid
 
 from rest_framework import serializers
 
+from databases.ddl import DDLValidationError, default_clause_sql
 from databases.identifiers import IdentifierError, validate_column_name
 
 from .models import FieldDefinition
@@ -32,11 +33,31 @@ class KeyField(serializers.CharField):
             raise serializers.ValidationError(str(exc)) from exc
 
 
+def validate_field_default(data_type, value):
+    """A field default must be one of Section 9's approved, type-matched
+    defaults -- the same "safe set" `databases.services.add_column` enforces
+    before generating real DDL, reused here (not reimplemented) so a
+    default that will be rejected at provisioning time is caught at
+    definition time instead."""
+    if value is None:
+        return None
+    try:
+        default_clause_sql(data_type, value)
+    except DDLValidationError as exc:
+        raise serializers.ValidationError({"default_value": str(exc)}) from exc
+    return value
+
+
 class FieldInput(StrictSerializer):
     key = KeyField()
     label = serializers.CharField(max_length=200)  # type: ignore[assignment]  # DRF declarative field, removed by its metaclass
     data_type = serializers.ChoiceField(choices=FieldDefinition.DataType.values)
     required = serializers.BooleanField(default=False)  # type: ignore[assignment]  # DRF declarative field, removed by its metaclass
+    default_value = serializers.JSONField(required=False, allow_null=True, default=None)
+
+    def validate(self, data):
+        data["default_value"] = validate_field_default(data["data_type"], data.get("default_value"))
+        return data
 
 
 class SnapshotField(FieldInput):

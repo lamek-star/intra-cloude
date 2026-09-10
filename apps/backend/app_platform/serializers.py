@@ -34,14 +34,24 @@ class InstanceSerializer(serializers.ModelSerializer):
 class FieldSerializer(serializers.ModelSerializer):
     class Meta:
         model = FieldDefinition
-        fields = ["id", "model", "key", "label", "data_type", "required", "source_definition_id"]
+        fields = [
+            "id",
+            "model",
+            "key",
+            "label",
+            "data_type",
+            "required",
+            "default_value",
+            "position",
+            "source_definition_id",
+        ]
         read_only_fields = fields
 
 
 class ModelSerializer(serializers.ModelSerializer):
     class Meta:
         model = ModelDefinition
-        fields = ["id", "instance", "key", "label", "source_definition_id"]
+        fields = ["id", "instance", "key", "label", "position", "source_definition_id"]
         read_only_fields = fields
 
 
@@ -53,6 +63,7 @@ class RelationshipSerializer(serializers.ModelSerializer):
             "instance",
             "key",
             "label",
+            "position",
             "source_definition_id",
             "source_model",
             "target_model",

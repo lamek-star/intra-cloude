@@ -12,6 +12,7 @@ import {
   type DraftField,
   type DraftModel,
   type DraftRelationship,
+  type FieldDefaultValue,
   type Organization,
   type Paginated,
 } from "@/lib/api";
@@ -45,8 +46,11 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
   const [publishing, setPublishing] = useState(false);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<
-    { kind: "model" | "field" | "relationship"; id: string; label: string; modelId?: string } | null
+    { kind: "model" | "relationship"; id: string; label: string } | null
   >(null);
+  const [editFieldTarget, setEditFieldTarget] = useState<{ modelId: string; field: DraftField } | null>(
+    null,
+  );
   const confirm = useConfirm();
 
   async function load() {
@@ -126,6 +130,15 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
     });
   }
 
+  function moveModel(modelId: string, direction: -1 | 1) {
+    const index = draft.models.findIndex((m) => m.id === modelId);
+    const swapWith = index + direction;
+    if (index < 0 || swapWith < 0 || swapWith >= draft.models.length) return;
+    const models = [...draft.models];
+    [models[index], models[swapWith]] = [models[swapWith], models[index]];
+    saveDraft({ ...draft, models });
+  }
+
   function addField(modelId: string, field: DraftField) {
     saveDraft({
       ...draft,
@@ -144,26 +157,26 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
     });
   }
 
-  function renameField(modelId: string, fieldId: string, label: string) {
+  function updateField(modelId: string, fieldId: string, patch: Partial<DraftField>) {
     saveDraft({
       ...draft,
       models: draft.models.map((m) =>
         m.id === modelId
-          ? { ...m, fields: m.fields.map((f) => (f.id === fieldId ? { ...f, label } : f)) }
+          ? { ...m, fields: m.fields.map((f) => (f.id === fieldId ? { ...f, ...patch } : f)) }
           : m,
       ),
     });
   }
 
-  function toggleFieldRequired(modelId: string, fieldId: string, required: boolean) {
-    saveDraft({
-      ...draft,
-      models: draft.models.map((m) =>
-        m.id === modelId
-          ? { ...m, fields: m.fields.map((f) => (f.id === fieldId ? { ...f, required } : f)) }
-          : m,
-      ),
-    });
+  function moveField(modelId: string, fieldId: string, direction: -1 | 1) {
+    const model = draft.models.find((m) => m.id === modelId);
+    if (!model) return;
+    const index = model.fields.findIndex((f) => f.id === fieldId);
+    const swapWith = index + direction;
+    if (index < 0 || swapWith < 0 || swapWith >= model.fields.length) return;
+    const fields = [...model.fields];
+    [fields[index], fields[swapWith]] = [fields[swapWith], fields[index]];
+    saveDraft({ ...draft, models: draft.models.map((m) => (m.id === modelId ? { ...m, fields } : m)) });
   }
 
   function addRelationship(rel: DraftRelationship) {
@@ -181,6 +194,15 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
       ...draft,
       relationships: draft.relationships.map((r) => (r.id === relId ? { ...r, label } : r)),
     });
+  }
+
+  function moveRelationship(relId: string, direction: -1 | 1) {
+    const index = draft.relationships.findIndex((r) => r.id === relId);
+    const swapWith = index + direction;
+    if (index < 0 || swapWith < 0 || swapWith >= draft.relationships.length) return;
+    const relationships = [...draft.relationships];
+    [relationships[index], relationships[swapWith]] = [relationships[swapWith], relationships[index]];
+    saveDraft({ ...draft, relationships });
   }
 
   function setRelationshipDeletionPolicy(relId: string, deletion_policy: "restrict" | "set_null") {
@@ -235,7 +257,7 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
           <h2 className="text-sm font-semibold text-slate-600">Models</h2>
         </div>
         <div className="space-y-4">
-          {draft.models.map((model) => (
+          {draft.models.map((model, modelIndex) => (
             <Card key={model.id ?? model.key}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -243,7 +265,14 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
                   <Badge>{model.key}</Badge>
                 </div>
                 {model.id && (
-                  <div className="flex gap-3 text-xs">
+                  <div className="flex items-center gap-3 text-xs">
+                    <MoveButtons
+                      disabled={saving}
+                      canMoveUp={modelIndex > 0}
+                      canMoveDown={modelIndex < draft.models.length - 1}
+                      onMoveUp={() => moveModel(model.id!, -1)}
+                      onMoveDown={() => moveModel(model.id!, 1)}
+                    />
                     <button
                       onClick={() => setRenameTarget({ kind: "model", id: model.id!, label: model.label })}
                       className="text-brand-600 hover:text-brand-500"
@@ -263,7 +292,7 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
               </div>
 
               <div className="mt-3 space-y-1.5">
-                {model.fields.map((field) => (
+                {model.fields.map((field, fieldIndex) => (
                   <div
                     key={field.id ?? field.key}
                     className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-1.5 text-sm"
@@ -272,32 +301,35 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
                       <span className="font-medium text-slate-800">{field.label}</span>
                       <Badge>{field.key}</Badge>
                       <Badge tone="info">{field.data_type}</Badge>
+                      {field.default_value !== null && field.default_value !== undefined && (
+                        <Badge>default: {String(field.default_value)}</Badge>
+                      )}
                     </div>
                     {field.id && model.id && (
                       <div className="flex items-center gap-3 text-xs">
+                        <MoveButtons
+                          disabled={saving}
+                          canMoveUp={fieldIndex > 0}
+                          canMoveDown={fieldIndex < model.fields.length - 1}
+                          onMoveUp={() => moveField(model.id!, field.id!, -1)}
+                          onMoveDown={() => moveField(model.id!, field.id!, 1)}
+                        />
                         <label className="flex items-center gap-1.5 text-slate-600">
                           <Checkbox
                             checked={!!field.required}
                             disabled={saving}
                             onChange={(e) =>
-                              toggleFieldRequired(model.id!, field.id!, e.target.checked)
+                              updateField(model.id!, field.id!, { required: e.target.checked })
                             }
                           />
                           Required
                         </label>
                         <button
-                          onClick={() =>
-                            setRenameTarget({
-                              kind: "field",
-                              id: field.id!,
-                              label: field.label,
-                              modelId: model.id,
-                            })
-                          }
+                          onClick={() => setEditFieldTarget({ modelId: model.id!, field })}
                           className="text-brand-600 hover:text-brand-500"
                           disabled={saving}
                         >
-                          Rename
+                          Edit
                         </button>
                         <button
                           onClick={() => deleteField(model, field)}
@@ -328,7 +360,7 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
           <p className="text-sm text-slate-500">No relationships yet.</p>
         ) : (
           <div className="space-y-1.5">
-            {draft.relationships.map((rel) => (
+            {draft.relationships.map((rel, relIndex) => (
               <div
                 key={rel.id ?? rel.key}
                 className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-1.5 text-sm"
@@ -341,6 +373,13 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
                 </div>
                 {rel.id && (
                   <div className="flex items-center gap-3 text-xs">
+                    <MoveButtons
+                      disabled={saving}
+                      canMoveUp={relIndex > 0}
+                      canMoveDown={relIndex < draft.relationships.length - 1}
+                      onMoveUp={() => moveRelationship(rel.id!, -1)}
+                      onMoveDown={() => moveRelationship(rel.id!, 1)}
+                    />
                     <Select
                       value={rel.deletion_policy ?? "restrict"}
                       disabled={saving}
@@ -422,9 +461,18 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
         onSave={(label) => {
           if (!renameTarget) return;
           if (renameTarget.kind === "model") renameModel(renameTarget.id, label);
-          else if (renameTarget.kind === "field") renameField(renameTarget.modelId!, renameTarget.id, label);
           else renameRelationship(renameTarget.id, label);
           setRenameTarget(null);
+        }}
+      />
+      <EditFieldModal
+        target={editFieldTarget}
+        saving={saving}
+        onClose={() => setEditFieldTarget(null)}
+        onSave={(patch) => {
+          if (!editFieldTarget) return;
+          updateField(editFieldTarget.modelId, editFieldTarget.field.id!, patch);
+          setEditFieldTarget(null);
         }}
       />
     </div>
@@ -497,15 +545,17 @@ function AddFieldForm({
   const [label, setLabel] = useState("");
   const [dataType, setDataType] = useState<AppFieldDataType>("text");
   const [required, setRequired] = useState(false);
+  const [defaultValue, setDefaultValue] = useState<FieldDefaultValue>(null);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!key || !label) return;
-    onAdd(modelId, { key, label, data_type: dataType, required });
+    onAdd(modelId, { key, label, data_type: dataType, required, default_value: defaultValue });
     setKey("");
     setLabel("");
     setDataType("text");
     setRequired(false);
+    setDefaultValue(null);
   }
 
   return (
@@ -537,7 +587,10 @@ function AddFieldForm({
         <Select
           id={`new-field-type-${modelId}`}
           value={dataType}
-          onChange={(e) => setDataType(e.target.value as AppFieldDataType)}
+          onChange={(e) => {
+            setDataType(e.target.value as AppFieldDataType);
+            setDefaultValue(null);
+          }}
         >
           {DATA_TYPES.map((t) => (
             <option key={t} value={t}>
@@ -545,6 +598,10 @@ function AddFieldForm({
             </option>
           ))}
         </Select>
+      </div>
+      <div>
+        <Label htmlFor={`new-field-default-${modelId}`}>Default</Label>
+        <DefaultValueInput dataType={dataType} value={defaultValue} onChange={setDefaultValue} />
       </div>
       <label className="flex items-center gap-1.5 pb-2 text-sm text-slate-600">
         <Checkbox checked={required} onChange={(e) => setRequired(e.target.checked)} />
@@ -649,13 +706,119 @@ function AddRelationshipForm({
   );
 }
 
+function MoveButtons({
+  disabled,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
+}: {
+  disabled: boolean;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+}) {
+  return (
+    <span className="flex items-center gap-1 text-slate-400">
+      <button
+        type="button"
+        aria-label="Move up"
+        onClick={onMoveUp}
+        disabled={disabled || !canMoveUp}
+        className="disabled:opacity-30"
+      >
+        ▲
+      </button>
+      <button
+        type="button"
+        aria-label="Move down"
+        onClick={onMoveDown}
+        disabled={disabled || !canMoveDown}
+        className="disabled:opacity-30"
+      >
+        ▼
+      </button>
+    </span>
+  );
+}
+
+function DefaultValueInput({
+  dataType,
+  value,
+  onChange,
+}: {
+  dataType: AppFieldDataType;
+  value: FieldDefaultValue | undefined;
+  onChange: (v: FieldDefaultValue) => void;
+}) {
+  if (dataType === "boolean") {
+    return (
+      <Select
+        value={value === true ? "true" : value === false ? "false" : ""}
+        onChange={(e) => onChange(e.target.value === "" ? null : e.target.value === "true")}
+      >
+        <option value="">No default</option>
+        <option value="true">true</option>
+        <option value="false">false</option>
+      </Select>
+    );
+  }
+  if (dataType === "datetime") {
+    return (
+      <label className="flex items-center gap-1.5 text-sm text-slate-600">
+        <Checkbox
+          checked={value === "now()"}
+          onChange={(e) => onChange(e.target.checked ? "now()" : null)}
+        />
+        Default to current time
+      </label>
+    );
+  }
+  if (dataType === "date") {
+    return (
+      <Input
+        type="date"
+        value={typeof value === "string" ? value : ""}
+        onChange={(e) => onChange(e.target.value || null)}
+      />
+    );
+  }
+  if (dataType === "integer") {
+    return (
+      <Input
+        type="number"
+        step={1}
+        value={typeof value === "number" ? String(value) : ""}
+        onChange={(e) => onChange(e.target.value === "" ? null : parseInt(e.target.value, 10))}
+      />
+    );
+  }
+  if (dataType === "decimal") {
+    return (
+      <Input
+        type="number"
+        step="any"
+        value={value === null || value === undefined ? "" : String(value)}
+        onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
+      />
+    );
+  }
+  return (
+    <Input
+      value={typeof value === "string" ? value : ""}
+      onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
+    />
+  );
+}
+
 function RenameModal({
   target,
   saving,
   onClose,
   onSave,
 }: {
-  target: { kind: "model" | "field" | "relationship"; id: string; label: string; modelId?: string } | null;
+  target: { kind: "model" | "relationship"; id: string; label: string } | null;
   saving: boolean;
   onClose: () => void;
   onSave: (label: string) => void;
@@ -680,6 +843,71 @@ function RenameModal({
           <Label htmlFor="rename-input">Label</Label>
           <Input id="rename-input" autoFocus value={label} onChange={(e) => setLabel(e.target.value)} />
         </div>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={saving || !label}>
+            Save
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function EditFieldModal({
+  target,
+  saving,
+  onClose,
+  onSave,
+}: {
+  target: { modelId: string; field: DraftField } | null;
+  saving: boolean;
+  onClose: () => void;
+  onSave: (patch: Partial<DraftField>) => void;
+}) {
+  const [label, setLabel] = useState("");
+  const [defaultValue, setDefaultValue] = useState<FieldDefaultValue>(null);
+
+  useEffect(() => {
+    if (!target) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLabel(target.field.label);
+    setDefaultValue(target.field.default_value ?? null);
+  }, [target]);
+
+  return (
+    <Modal open={!!target} onClose={onClose} title="Edit field">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (label) onSave({ label, default_value: defaultValue });
+        }}
+        className="space-y-4"
+      >
+        <div>
+          <Label htmlFor="edit-field-label">Label</Label>
+          <Input
+            id="edit-field-label"
+            autoFocus
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+          />
+        </div>
+        {target && (
+          <div>
+            <Label htmlFor="edit-field-default">Default value</Label>
+            <DefaultValueInput
+              dataType={target.field.data_type}
+              value={defaultValue}
+              onChange={setDefaultValue}
+            />
+            <p className="mt-1.5 text-xs text-slate-500">
+              Used when a new record leaves this field blank.
+            </p>
+          </div>
+        )}
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel

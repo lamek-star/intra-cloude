@@ -65,9 +65,17 @@ class AppInstance(Identity):
 class Definition(Identity):
     key = models.CharField(max_length=63)
     source_definition_id = models.UUIDField(null=True, editable=False)
+    # Explicit display order among siblings (within a model for fields,
+    # within an instance for models/relationships) -- deliberately not part
+    # of the runtime plan/fingerprint (runtime_plan.py), since it affects
+    # nothing physical. Set from definition-array order at install time and
+    # append-position for anything added afterward; reorderable any time,
+    # including after provisioning, since it never touches DDL.
+    position = models.PositiveIntegerField(default=0)
 
     class Meta(Identity.Meta):
         abstract = True
+        ordering = ["position", "created_at", "id"]
 
 
 class ModelDefinition(Definition):
@@ -97,6 +105,9 @@ class FieldDefinition(Definition):
     model = models.ForeignKey(ModelDefinition, on_delete=models.CASCADE, related_name="fields")
     data_type = models.CharField(max_length=20, choices=DataType.choices)
     required = models.BooleanField(default=False)
+    # Validated against data_type by definitions.validate_field_default
+    # before this is ever set -- never an arbitrary/unvalidated expression.
+    default_value = models.JSONField(null=True, blank=True)
 
     class Meta(Definition.Meta):
         constraints = [

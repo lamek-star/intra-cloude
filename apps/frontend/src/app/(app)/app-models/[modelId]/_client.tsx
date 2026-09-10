@@ -450,6 +450,10 @@ export function FieldValueInput({
   onChange: (v: string) => void;
 }) {
   const required = field.required;
+  const placeholder =
+    field.default_value !== null && field.default_value !== undefined
+      ? `Default: ${field.default_value}`
+      : undefined;
   if (field.data_type === "boolean") {
     return (
       <Select id={id} value={value || "false"} onChange={(e) => onChange(e.target.value)}>
@@ -488,6 +492,7 @@ export function FieldValueInput({
         step={1}
         required={required}
         value={value}
+        placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
       />
     );
@@ -500,17 +505,27 @@ export function FieldValueInput({
         step="any"
         required={required}
         value={value}
+        placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
       />
     );
   }
-  return <Input id={id} required={required} value={value} onChange={(e) => onChange(e.target.value)} />;
+  return (
+    <Input
+      id={id}
+      required={required}
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
 }
 
 // A reference field's value is another record's id — this picker fetches a
 // bounded page of the target model's records and labels each option with
-// the first scalar field value found on it (fields are returned in
-// creation order, so this is usually the record's "name"-ish field), since
+// the first scalar field value found on it (fields are returned in their
+// author-chosen display order, so this is usually the record's "name"-ish
+// field), since
 // records have no single designated display field of their own.
 export function ReferenceSelect({
   relationship,

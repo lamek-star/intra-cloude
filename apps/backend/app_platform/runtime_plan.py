@@ -41,6 +41,7 @@ def compile_plan(instance_id, definition):
                     "is_nullable": not field["required"],
                     "precision": 18 if field["data_type"] == "decimal" else None,
                     "scale": 4 if field["data_type"] == "decimal" else None,
+                    "default": field.get("default_value"),
                 }
             )
         models.append(
@@ -98,6 +99,7 @@ def plan_runtime(actor, instance):
                             "label": field.label,
                             "data_type": field.data_type,
                             "required": field.required,
+                            "default_value": field.default_value,
                         }
                         for field in model.fields.all()
                     ],
