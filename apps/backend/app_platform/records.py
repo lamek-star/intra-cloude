@@ -16,6 +16,7 @@ not a second, parallel enforcement path).
 from django.db import Error as DjangoDatabaseError
 from django.db import IntegrityError as DjangoIntegrityError
 from django.http import Http404
+from psycopg import errors as psycopg_errors
 
 from audit import services as audit
 from audit.models import AuditEvent
@@ -137,6 +138,14 @@ def _run(fn):
     except RowValueError as exc:
         raise RecordValueError(str(exc)) from exc
     except DjangoIntegrityError as exc:
+        # Django's own IntegrityError is one flat class covering both a
+        # foreign-key violation (an existing message here, pre-dating
+        # unique fields) and a unique-constraint violation (Post-Phase-3
+        # Integration Enablement, Part 3) -- distinguished via the
+        # original psycopg exception Django's DB wrapper chains as
+        # __cause__, not by string-matching a message.
+        if isinstance(exc.__cause__, psycopg_errors.UniqueViolation):
+            raise RecordValueError("a record with this value already exists") from exc
         raise RecordValueError("referenced record does not exist") from exc
     except DjangoDatabaseError as exc:
         raise RecordValueError("invalid record data") from exc

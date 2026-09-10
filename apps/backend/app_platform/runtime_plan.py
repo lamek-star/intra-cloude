@@ -42,6 +42,8 @@ def compile_plan(instance_id, definition):
                     "precision": 18 if field["data_type"] == "decimal" else None,
                     "scale": 4 if field["data_type"] == "decimal" else None,
                     "default": field.get("default_value"),
+                    "unique": field.get("unique", False),
+                    "indexed": field.get("indexed", False),
                 }
             )
         models.append(
@@ -100,6 +102,8 @@ def plan_runtime(actor, instance):
                             "data_type": field.data_type,
                             "required": field.required,
                             "default_value": field.default_value,
+                            "unique": field.unique,
+                            "indexed": field.indexed,
                         }
                         for field in model.fields.all()
                     ],

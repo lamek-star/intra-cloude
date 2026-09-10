@@ -195,6 +195,57 @@ def add_relationship(actor, instance, data):
     return relation
 
 
+def mark_field_unique(actor, field):
+    """Retrofits uniqueness onto an EXISTING field -- Post-Phase-3
+    Integration Enablement, Part 3. Pre-provision this is a pure metadata
+    edit (nothing physical exists yet to constrain); once provisioned it
+    needs the exact same bar as any other live schema change
+    (schema_evolution.require_addition: org-wide database.schema.manage,
+    never just a resource-scoped app grant) and runs real DDL against the
+    field's already-materialized column. A dedicated action rather than a
+    new case in update_definition's generic PATCH -- entangling a
+    sometimes-safe-when-provisioned attribute with that endpoint's
+    existing "anything beyond label/position is structural, full stop"
+    rule would make BOTH harder to reason about."""
+    instance = field.model.instance
+    require_manage(actor, instance)
+    with transaction.atomic():
+        _lock_instance(instance)
+        receipt = schema_evolution.ready_receipt(instance)
+        field = FieldDefinition.objects.select_for_update().get(pk=field.pk)
+        if receipt is not None:
+            schema_evolution.require_addition(actor, instance)
+            schema_evolution.mark_addition_transaction()
+            with transaction.atomic(using="tenant"):
+                schema_evolution.set_field_unique(receipt, field, actor)
+        elif not field.unique:
+            field.unique = True
+            field.save(update_fields=["unique"])
+        event(actor, instance, "field.unique", field.id, live=receipt is not None)
+    return field
+
+
+def mark_field_indexed(actor, field):
+    """See mark_field_unique above -- identical reasoning, no uniqueness
+    constraint so nothing to reject once provisioned."""
+    instance = field.model.instance
+    require_manage(actor, instance)
+    with transaction.atomic():
+        _lock_instance(instance)
+        receipt = schema_evolution.ready_receipt(instance)
+        field = FieldDefinition.objects.select_for_update().get(pk=field.pk)
+        if receipt is not None:
+            schema_evolution.require_addition(actor, instance)
+            schema_evolution.mark_addition_transaction()
+            with transaction.atomic(using="tenant"):
+                schema_evolution.set_field_indexed(receipt, field, actor)
+        elif not field.indexed:
+            field.indexed = True
+            field.save(update_fields=["indexed"])
+        event(actor, instance, "field.indexed", field.id, live=receipt is not None)
+    return field
+
+
 def update_instance(actor, instance, data):
     require_manage(actor, instance, schema=False)
     values = validated(InstanceInput, data)

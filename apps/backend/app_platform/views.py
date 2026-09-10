@@ -254,3 +254,20 @@ class FieldDetail(DefinitionDetail):
 class RelationshipDetail(DefinitionDetail):
     model = RelationshipDefinition
     serializer = RelationshipSerializer
+
+
+class FieldUniqueView(FoundationView):
+    """Dedicated action, human-session-only (schema mutation stays out of
+    this first bearer-token slice -- see FoundationView's own docstring):
+    retrofits a UNIQUE constraint onto an existing field, safely against
+    an already-provisioned, possibly populated runtime."""
+
+    def post(self, request, object_id):
+        field = get_owned(FieldDefinition, object_id, request.user, "model__instance__organization")
+        return Response(FieldSerializer(instances.mark_field_unique(request.user, field)).data)
+
+
+class FieldIndexedView(FoundationView):
+    def post(self, request, object_id):
+        field = get_owned(FieldDefinition, object_id, request.user, "model__instance__organization")
+        return Response(FieldSerializer(instances.mark_field_indexed(request.user, field)).data)

@@ -29,6 +29,8 @@ urlpatterns = [
         attachment_views.AttachmentDownloadView.as_view(),
     ),
     path("app-fields/<uuid:object_id>/", views.FieldDetail.as_view()),
+    path("app-fields/<uuid:object_id>/unique/", views.FieldUniqueView.as_view()),
+    path("app-fields/<uuid:object_id>/indexed/", views.FieldIndexedView.as_view()),
     path("app-instances/<uuid:object_id>/relationships/", views.RelationshipList.as_view()),
     path("app-relationships/<uuid:object_id>/", views.RelationshipDetail.as_view()),
 ]

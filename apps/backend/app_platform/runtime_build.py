@@ -62,6 +62,8 @@ def build(receipt, actor):
                 precision=field["precision"],
                 scale=field["scale"],
                 default_value=field["default"],
+                is_unique=field.get("unique", False),
+                is_indexed=field.get("indexed", False),
             )
             bindings["fields"][field["definition_id"]] = str(column.id)
     for relation in plan["relationships"]:

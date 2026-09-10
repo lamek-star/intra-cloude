@@ -54,6 +54,8 @@ class FieldInput(StrictSerializer):
     data_type = serializers.ChoiceField(choices=FieldDefinition.DataType.values)
     required = serializers.BooleanField(default=False)  # type: ignore[assignment]  # DRF declarative field, removed by its metaclass
     default_value = serializers.JSONField(required=False, allow_null=True, default=None)
+    unique = serializers.BooleanField(default=False)  # type: ignore[assignment]  # DRF declarative field, removed by its metaclass
+    indexed = serializers.BooleanField(default=False)  # type: ignore[assignment]  # DRF declarative field, removed by its metaclass
 
     def validate(self, data):
         data["default_value"] = validate_field_default(data["data_type"], data.get("default_value"))

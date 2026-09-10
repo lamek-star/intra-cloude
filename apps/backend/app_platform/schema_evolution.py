@@ -26,7 +26,8 @@ from psycopg import sql
 from rest_framework.exceptions import ValidationError
 
 from databases import services
-from databases.models import DBTable
+from databases.models import DBColumn, DBTable
+from databases.services import SchemaValidationError
 
 from .access import check, require_manage
 from .models import FieldDefinition, ModelDefinition, RelationshipDefinition, RuntimeProvision
@@ -110,19 +111,70 @@ def add_field_to_runtime(receipt: RuntimeProvision, field: FieldDefinition, acto
             "This model already has records -- a new required field needs a default value "
             "to add safely (existing rows would otherwise be left with no value)."
         )
-    column = services.add_column(
-        actor=actor,
-        table=table,
-        name=physical_name("f", str(field.id)),
-        data_type=field.data_type,
-        is_nullable=not field.required,
-        precision=18 if field.data_type == "decimal" else None,
-        scale=4 if field.data_type == "decimal" else None,
-        default_value=field.default_value,
-        allow_managed_schema=True,
-    )
+    try:
+        column = services.add_column(
+            actor=actor,
+            table=table,
+            name=physical_name("f", str(field.id)),
+            data_type=field.data_type,
+            is_nullable=not field.required,
+            precision=18 if field.data_type == "decimal" else None,
+            scale=4 if field.data_type == "decimal" else None,
+            default_value=field.default_value,
+            is_unique=field.unique,
+            is_indexed=field.indexed,
+            allow_managed_schema=True,
+        )
+    except SchemaValidationError as exc:
+        # Most likely: a brand-new unique field with a default_value on a
+        # model that already has 2+ rows -- every existing row would get
+        # the same default, violating uniqueness. add_column's own DDL
+        # already rolled back in full (see its docstring); this is
+        # surfacing that clean rejection through the API, not catching a
+        # partial failure.
+        raise ValidationError(str(exc)) from exc
     receipt.bindings.setdefault("fields", {})[str(field.id)] = str(column.id)
     receipt.save(update_fields=["bindings"])
+
+
+def _column_for(receipt: RuntimeProvision, field: FieldDefinition) -> DBColumn:
+    column_id = receipt.bindings.get("fields", {}).get(str(field.id))
+    if column_id is None:
+        raise ValidationError("This field's runtime column could not be found.")
+    return DBColumn.objects.select_related("table__tenant_database").get(pk=column_id)
+
+
+def set_field_unique(receipt: RuntimeProvision, field: FieldDefinition, actor) -> None:
+    """Retrofits a UNIQUE constraint onto a field that was already
+    live-added without one -- the populated-runtime half of Post-Phase-3
+    Integration Enablement's uniqueness requirement (the not-yet-
+    provisioned case is just a metadata edit, handled by instances.py
+    without ever reaching here). Idempotent (services.add_unique_constraint
+    itself is); a genuine duplicate-value conflict surfaces as a clean
+    ValidationError, with the existing data completely untouched -- see
+    that function's own docstring for why."""
+    column = _column_for(receipt, field)
+    try:
+        services.add_unique_constraint(actor=actor, column=column, allow_managed_schema=True)
+    except SchemaValidationError as exc:
+        raise ValidationError(str(exc)) from exc
+    if not field.unique:
+        field.unique = True
+        field.save(update_fields=["unique"])
+
+
+def set_field_indexed(receipt: RuntimeProvision, field: FieldDefinition, actor) -> None:
+    """Retrofits a plain (non-unique) B-tree index onto a field that was
+    already live-added without one. See set_field_unique above -- same
+    reasoning, no uniqueness constraint so nothing to reject."""
+    column = _column_for(receipt, field)
+    try:
+        services.add_index(actor=actor, column=column, allow_managed_schema=True)
+    except SchemaValidationError as exc:
+        raise ValidationError(str(exc)) from exc
+    if not field.indexed:
+        field.indexed = True
+        field.save(update_fields=["indexed"])
 
 
 def add_relationship_to_runtime(receipt: RuntimeProvision, relation: RelationshipDefinition, actor) -> None:

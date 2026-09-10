@@ -42,6 +42,8 @@ class FieldSerializer(serializers.ModelSerializer):
             "data_type",
             "required",
             "default_value",
+            "unique",
+            "indexed",
             "position",
             "source_definition_id",
         ]

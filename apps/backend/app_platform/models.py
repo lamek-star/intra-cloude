@@ -108,6 +108,21 @@ class FieldDefinition(Definition):
     # Validated against data_type by definitions.validate_field_default
     # before this is ever set -- never an arbitrary/unvalidated expression.
     default_value = models.JSONField(null=True, blank=True)
+    # Post-Phase-3 Integration Enablement: a real Postgres UNIQUE
+    # constraint (which is also a real B-tree index) on this field's
+    # physical column. `unique` implies indexed lookup for free, so
+    # `indexed` below is only meaningful when `unique` is False --
+    # runtime_build.py/schema_evolution.py never issue a second, redundant
+    # index for a unique column. NULL values never conflict with each
+    # other under a Postgres UNIQUE constraint (multiple NULLs are always
+    # allowed) -- see schema_evolution.py's set_field_unique docstring for
+    # what that means for a `required=False, unique=True` field.
+    unique = models.BooleanField(default=False)
+    # A plain B-tree index with no uniqueness requirement -- for fields
+    # that need fast exact-match lookup (e.g. an external reference id)
+    # but can legitimately repeat. Meaningless (and never actually
+    # applied) when `unique` is already True.
+    indexed = models.BooleanField(default=False)
 
     class Meta(Definition.Meta):
         constraints = [
