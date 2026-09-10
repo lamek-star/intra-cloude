@@ -11,6 +11,7 @@ import {
   type AppModelDefinition,
   type AppRecordsPage,
   type AppRelationshipDefinition,
+  type AppRelationshipKind,
   type FieldDefaultValue,
   type Paginated,
 } from "@/lib/api";
@@ -51,6 +52,7 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
   const [instance, setInstance] = useState<AppInstance | null>(null);
   const [fields, setFields] = useState<AppFieldDefinition[] | null>(null);
   const [outgoing, setOutgoing] = useState<AppRelationshipDefinition[]>([]);
+  const [incoming, setIncoming] = useState<AppRelationshipDefinition[]>([]);
   const [page, setPage] = useState<AppRecordsPage | null>(null);
   const [offset, setOffset] = useState(0);
   const [search, setSearch] = useState("");
@@ -75,6 +77,7 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
     ]);
     setFields(f.results);
     setOutgoing(r.results.filter((rel) => rel.source_model === m.id));
+    setIncoming(r.results.filter((rel) => rel.target_model === m.id && rel.kind === "many_to_many"));
     setInstance(inst);
   }
 
@@ -179,7 +182,12 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
         ))}
         {outgoing.map((r) => (
           <Badge key={r.id} tone="info">
-            {r.label}: reference
+            {r.label}: {r.kind === "many_to_many" ? "many-to-many" : "reference"}
+          </Badge>
+        ))}
+        {incoming.map((r) => (
+          <Badge key={r.id} tone="default">
+            {r.label}: many-to-many (read-only)
           </Badge>
         ))}
       </div>
@@ -235,6 +243,9 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
               {outgoing.map((r) => (
                 <Th key={r.id}>{r.label}</Th>
               ))}
+              {incoming.map((r) => (
+                <Th key={r.id}>{r.label}</Th>
+              ))}
               <Th>
                 <span className="sr-only">Actions</span>
               </Th>
@@ -247,7 +258,12 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
                   ))}
                   {outgoing.map((r) => (
                     <Td key={r.id} className="font-mono text-xs text-slate-500">
-                      {record[r.id] ? String(record[r.id]).slice(0, 8) : "—"}
+                      {formatRelationshipValue(record[r.id], r.kind)}
+                    </Td>
+                  ))}
+                  {incoming.map((r) => (
+                    <Td key={r.id} className="font-mono text-xs text-slate-500">
+                      {formatRelationshipValue(record[r.id], r.kind)}
                     </Td>
                   ))}
                   <Td>
@@ -321,6 +337,7 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
         modelId={modelId}
         fields={fields}
         relationships={outgoing}
+        incomingRelationships={incoming}
         initialRecord={editingRecord}
         onClose={() => setModalOpen(false)}
         onSaved={() => {
@@ -338,11 +355,20 @@ export function formatValue(value: unknown, dataType: AppFieldDataType): string 
   return String(value);
 }
 
+export function formatRelationshipValue(value: unknown, kind: AppRelationshipKind): string {
+  if (kind === "many_to_many") {
+    const count = Array.isArray(value) ? value.length : 0;
+    return count === 0 ? "—" : `${count} linked`;
+  }
+  return value ? String(value).slice(0, 8) : "—";
+}
+
 function RecordFormModal({
   open,
   modelId,
   fields,
   relationships,
+  incomingRelationships,
   initialRecord,
   onClose,
   onSaved,
@@ -351,18 +377,19 @@ function RecordFormModal({
   modelId: string;
   fields: AppFieldDefinition[];
   relationships: AppRelationshipDefinition[];
+  incomingRelationships: AppRelationshipDefinition[];
   initialRecord: Record<string, unknown> | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, string | string[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    const initial: Record<string, string> = {};
+    const initial: Record<string, string | string[]> = {};
     for (const f of fields) {
       const raw = initialRecord?.[f.id];
       initial[f.id] =
@@ -374,7 +401,11 @@ function RecordFormModal({
     }
     for (const r of relationships) {
       const raw = initialRecord?.[r.id];
-      initial[r.id] = raw === null || raw === undefined ? "" : String(raw);
+      if (r.kind === "many_to_many") {
+        initial[r.id] = Array.isArray(raw) ? raw.map(String) : [];
+      } else {
+        initial[r.id] = raw === null || raw === undefined ? "" : String(raw);
+      }
     }
     // Resets the form's fields when the modal opens or switches which
     // record it's editing — a prop-change-driven reset, not a render loop.
@@ -394,19 +425,26 @@ function RecordFormModal({
       }
       switch (f.data_type) {
         case "integer":
-          payload[f.id] = parseInt(raw, 10);
+          payload[f.id] = parseInt(raw as string, 10);
           break;
         case "boolean":
           payload[f.id] = raw === "true";
           break;
         case "datetime":
-          payload[f.id] = raw.length === 16 ? `${raw}:00` : raw;
+          payload[f.id] = (raw as string).length === 16 ? `${raw}:00` : raw;
           break;
         default:
           payload[f.id] = raw;
       }
     }
     for (const r of relationships) {
+      if (r.kind === "many_to_many") {
+        // Always sent explicitly (never omitted) -- the form always
+        // reflects current associations, so "save" means "set to exactly
+        // what's shown", not "leave unchanged".
+        payload[r.id] = Array.isArray(values[r.id]) ? values[r.id] : [];
+        continue;
+      }
       const raw = values[r.id] ?? "";
       if (raw === "") {
         if (initialRecord) payload[r.id] = null;
@@ -450,7 +488,7 @@ function RecordFormModal({
             <FieldValueInput
               field={f}
               id={`field-${f.id}`}
-              value={values[f.id] ?? ""}
+              value={typeof values[f.id] === "string" ? (values[f.id] as string) : ""}
               onChange={(v) => setValues((prev) => ({ ...prev, [f.id]: v }))}
             />
           </div>
@@ -458,15 +496,38 @@ function RecordFormModal({
         {relationships.map((r) => (
           <div key={r.id}>
             <Label htmlFor={`rel-${r.id}`}>{r.label}</Label>
-            <ReferenceSelect
-              relationship={r}
-              id={`rel-${r.id}`}
-              value={values[r.id] ?? ""}
-              onChange={(v) => setValues((prev) => ({ ...prev, [r.id]: v }))}
-              open={open}
-            />
+            {r.kind === "many_to_many" ? (
+              <MultiReferenceSelect
+                relationship={r}
+                id={`rel-${r.id}`}
+                value={Array.isArray(values[r.id]) ? (values[r.id] as string[]) : []}
+                onChange={(v) => setValues((prev) => ({ ...prev, [r.id]: v }))}
+                open={open}
+              />
+            ) : (
+              <ReferenceSelect
+                relationship={r}
+                id={`rel-${r.id}`}
+                value={typeof values[r.id] === "string" ? (values[r.id] as string) : ""}
+                onChange={(v) => setValues((prev) => ({ ...prev, [r.id]: v }))}
+                open={open}
+              />
+            )}
           </div>
         ))}
+        {initialRecord &&
+          incomingRelationships.map((r) => (
+            <div key={r.id}>
+              <Label htmlFor={`incoming-${r.id}`}>
+                {r.label} <span className="text-xs text-slate-400">(read-only)</span>
+              </Label>
+              <IncomingAssociations
+                relationship={r}
+                ids={Array.isArray(initialRecord[r.id]) ? (initialRecord[r.id] as unknown[]).map(String) : []}
+                open={open}
+              />
+            </div>
+          ))}
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
@@ -623,6 +684,131 @@ export function ReferenceSelect({
         </option>
       ))}
     </Select>
+  );
+}
+
+// A many-to-many relationship's value is a list of related record ids,
+// writable only from this (the source) side -- a bordered, scrollable
+// checkbox list rather than a native <select multiple>, matching the
+// rest of this UI kit's form controls more closely.
+export function MultiReferenceSelect({
+  relationship,
+  id,
+  value,
+  onChange,
+  open,
+}: {
+  relationship: AppRelationshipDefinition;
+  id: string;
+  value: string[];
+  onChange: (v: string[]) => void;
+  open: boolean;
+}) {
+  const [options, setOptions] = useState<{ id: string; label: string }[] | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    api
+      .get<AppRecordsPage>(`/app-models/${relationship.target_model}/records/?limit=100`)
+      .then((page) => {
+        if (cancelled) return;
+        setOptions(
+          page.results.map((record) => ({
+            id: String(record.id),
+            label: labelFor(record),
+          })),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setOptions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, relationship.target_model]);
+
+  if (!options) {
+    return (
+      <div id={id} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-400">
+        Loading…
+      </div>
+    );
+  }
+
+  if (options.length === 0) {
+    return (
+      <div id={id} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-400">
+        No records to link yet.
+      </div>
+    );
+  }
+
+  return (
+    <div id={id} className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">
+      {options.map((o) => (
+        <label key={o.id} className="flex items-center gap-2 text-sm text-slate-700">
+          <Checkbox
+            checked={value.includes(o.id)}
+            onChange={(e) =>
+              onChange(e.target.checked ? [...value, o.id] : value.filter((v) => v !== o.id))
+            }
+          />
+          {o.label}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+// Read-only badge list for a many-to-many relationship's incoming
+// (target) side -- ids come from the record itself; labels are resolved
+// against the source model since a bare id is meaningless to a reader.
+// Exported so the record detail page can reuse it (`../../_client`).
+export function IncomingAssociations({
+  relationship,
+  ids,
+  open,
+}: {
+  relationship: AppRelationshipDefinition;
+  ids: string[];
+  open: boolean;
+}) {
+  const [labels, setLabels] = useState<Record<string, string> | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    if (ids.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLabels({});
+      return;
+    }
+    let cancelled = false;
+    api
+      .get<AppRecordsPage>(`/app-models/${relationship.source_model}/records/?limit=100`)
+      .then((page) => {
+        if (cancelled) return;
+        const map: Record<string, string> = {};
+        for (const record of page.results) map[String(record.id)] = labelFor(record);
+        setLabels(map);
+      })
+      .catch(() => {
+        if (!cancelled) setLabels({});
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, relationship.source_model, ids.join(",")]);
+
+  if (!labels) return <span className="text-xs text-slate-400">Loading…</span>;
+  if (ids.length === 0) return <span className="text-xs text-slate-400">None</span>;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {ids.map((recordId) => (
+        <Badge key={recordId}>{labels[recordId] ?? recordId.slice(0, 8)}</Badge>
+      ))}
+    </div>
   );
 }
 

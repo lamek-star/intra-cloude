@@ -9,6 +9,7 @@ import {
   type AppInstance,
   type AppModelDefinition,
   type AppRelationshipDefinition,
+  type AppRelationshipKind,
   type Paginated,
   type Project,
   type RuntimePlan,
@@ -154,6 +155,7 @@ export default function AppInstanceClient({ instanceId }: { instanceId: string }
     label: string;
     source_model: string;
     target_model: string;
+    kind: AppRelationshipKind;
     deletion_policy: "restrict" | "set_null";
   }) {
     setAddRelError(null);
@@ -287,8 +289,9 @@ export default function AppInstanceClient({ instanceId }: { instanceId: string }
           {relationships && relationships.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-2">
               {relationships.map((r) => (
-                <Badge key={r.id}>
+                <Badge key={r.id} tone={r.kind === "many_to_many" ? "info" : "default"}>
                   {modelLabel(r.source_model)} → {modelLabel(r.target_model)} ({r.label})
+                  {r.kind === "many_to_many" ? " · many-to-many" : ""}
                 </Badge>
               ))}
             </div>
@@ -448,6 +451,7 @@ function AddRelationshipForm({
     label: string;
     source_model: string;
     target_model: string;
+    kind: AppRelationshipKind;
     deletion_policy: "restrict" | "set_null";
   }) => void;
   disabled: boolean;
@@ -456,14 +460,26 @@ function AddRelationshipForm({
   const [label, setLabel] = useState("");
   const [sourceModel, setSourceModel] = useState(models[0]?.id ?? "");
   const [targetModel, setTargetModel] = useState(models[0]?.id ?? "");
+  const [kind, setKind] = useState<AppRelationshipKind>("many_to_one");
   const [deletionPolicy, setDeletionPolicy] = useState<"restrict" | "set_null">("restrict");
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!key || !label || !sourceModel || !targetModel) return;
-    onAdd({ key, label, source_model: sourceModel, target_model: targetModel, deletion_policy: deletionPolicy });
+    onAdd({
+      key,
+      label,
+      source_model: sourceModel,
+      target_model: targetModel,
+      kind,
+      // Meaningless for many_to_many (a join table's FKs are always
+      // ON DELETE CASCADE regardless) -- sent as the fixed default
+      // rather than whatever the (hidden) selector last held.
+      deletion_policy: kind === "many_to_many" ? "restrict" : deletionPolicy,
+    });
     setKey("");
     setLabel("");
+    setKind("many_to_one");
     setDeletionPolicy("restrict");
   }
 
@@ -512,16 +528,29 @@ function AddRelationshipForm({
         </Select>
       </div>
       <div>
-        <Label htmlFor="new-rel-policy">On delete</Label>
+        <Label htmlFor="new-rel-kind">Type</Label>
         <Select
-          id="new-rel-policy"
-          value={deletionPolicy}
-          onChange={(e) => setDeletionPolicy(e.target.value as "restrict" | "set_null")}
+          id="new-rel-kind"
+          value={kind}
+          onChange={(e) => setKind(e.target.value as AppRelationshipKind)}
         >
-          <option value="restrict">Restrict</option>
-          <option value="set_null">Set null</option>
+          <option value="many_to_one">Many-to-one (reference)</option>
+          <option value="many_to_many">Many-to-many</option>
         </Select>
       </div>
+      {kind !== "many_to_many" && (
+        <div>
+          <Label htmlFor="new-rel-policy">On delete</Label>
+          <Select
+            id="new-rel-policy"
+            value={deletionPolicy}
+            onChange={(e) => setDeletionPolicy(e.target.value as "restrict" | "set_null")}
+          >
+            <option value="restrict">Restrict</option>
+            <option value="set_null">Set null</option>
+          </Select>
+        </div>
+      )}
       <Button type="submit" size="sm" disabled={disabled || !key || !label}>
         {disabled ? "..." : "Add relationship"}
       </Button>

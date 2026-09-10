@@ -544,13 +544,15 @@ export type DraftModel = {
   fields: DraftField[];
 };
 
+export type AppRelationshipKind = "many_to_one" | "many_to_many";
+
 export type DraftRelationship = {
   id?: string;
   key: string;
   label: string;
   source_model: string;
   target_model: string;
-  kind?: string;
+  kind?: AppRelationshipKind;
   deletion_policy?: "restrict" | "set_null";
 };
 
@@ -641,7 +643,7 @@ export type AppRelationshipDefinition = {
   source_definition_id: string | null;
   source_model: string;
   target_model: string;
-  kind: string;
+  kind: AppRelationshipKind;
   deletion_policy: "restrict" | "set_null";
 };
 

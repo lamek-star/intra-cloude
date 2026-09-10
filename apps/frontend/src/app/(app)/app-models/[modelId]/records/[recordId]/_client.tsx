@@ -28,7 +28,7 @@ import {
   Spinner,
 } from "@/components/ui";
 import { useConfirm } from "@/components/ConfirmProvider";
-import { FieldValueInput, ReferenceSelect } from "../../_client";
+import { FieldValueInput, IncomingAssociations, MultiReferenceSelect, ReferenceSelect } from "../../_client";
 
 const HISTORY_PAGE_SIZE = 100;
 
@@ -37,8 +37,9 @@ export default function AppRecordClient({ modelId, recordId }: { modelId: string
   const [instance, setInstance] = useState<AppInstance | null>(null);
   const [fields, setFields] = useState<AppFieldDefinition[] | null>(null);
   const [outgoing, setOutgoing] = useState<AppRelationshipDefinition[]>([]);
+  const [incoming, setIncoming] = useState<AppRelationshipDefinition[]>([]);
   const [record, setRecord] = useState<Record<string, unknown> | null>(null);
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, string | string[]>>({});
   const [attachments, setAttachments] = useState<AppRecordAttachment[] | null>(null);
   const [history, setHistory] = useState<AuditEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,9 +49,13 @@ export default function AppRecordClient({ modelId, recordId }: { modelId: string
   const [attachModalOpen, setAttachModalOpen] = useState(false);
   const confirm = useConfirm();
 
-  function fieldValuesFrom(row: Record<string, unknown>) {
-    const initial: Record<string, string> = {};
-    for (const f of fields ?? []) {
+  function fieldValuesFrom(
+    row: Record<string, unknown>,
+    flds: AppFieldDefinition[] = fields ?? [],
+    rels: AppRelationshipDefinition[] = outgoing,
+  ) {
+    const initial: Record<string, string | string[]> = {};
+    for (const f of flds) {
       const raw = row[f.id];
       initial[f.id] =
         raw === null || raw === undefined
@@ -59,9 +64,13 @@ export default function AppRecordClient({ modelId, recordId }: { modelId: string
             ? raw.replace(" ", "T").slice(0, 16)
             : String(raw);
     }
-    for (const r of outgoing) {
+    for (const r of rels) {
       const raw = row[r.id];
-      initial[r.id] = raw === null || raw === undefined ? "" : String(raw);
+      if (r.kind === "many_to_many") {
+        initial[r.id] = Array.isArray(raw) ? raw.map(String) : [];
+      } else {
+        initial[r.id] = raw === null || raw === undefined ? "" : String(raw);
+      }
     }
     return initial;
   }
@@ -81,23 +90,10 @@ export default function AppRecordClient({ modelId, recordId }: { modelId: string
       const rels = r.results.filter((rel) => rel.source_model === m.id);
       setFields(f.results);
       setOutgoing(rels);
+      setIncoming(r.results.filter((rel) => rel.target_model === m.id && rel.kind === "many_to_many"));
       setInstance(inst);
       setRecord(rec);
-      const initial: Record<string, string> = {};
-      for (const field of f.results) {
-        const raw = rec[field.id];
-        initial[field.id] =
-          raw === null || raw === undefined
-            ? ""
-            : field.data_type === "datetime" && typeof raw === "string"
-              ? raw.replace(" ", "T").slice(0, 16)
-              : String(raw);
-      }
-      for (const rel of rels) {
-        const raw = rec[rel.id];
-        initial[rel.id] = raw === null || raw === undefined ? "" : String(raw);
-      }
-      setValues(initial);
+      setValues(fieldValuesFrom(rec, f.results, rels));
 
       api
         .get<AppRecordAttachment[]>(`/app-models/${modelId}/records/${recordId}/attachments/`)
@@ -138,12 +134,17 @@ export default function AppRecordClient({ modelId, recordId }: { modelId: string
           payload[f.id] = null;
           continue;
         }
-        if (f.data_type === "integer") payload[f.id] = parseInt(raw, 10);
+        if (f.data_type === "integer") payload[f.id] = parseInt(raw as string, 10);
         else if (f.data_type === "boolean") payload[f.id] = raw === "true";
-        else if (f.data_type === "datetime") payload[f.id] = raw.length === 16 ? `${raw}:00` : raw;
+        else if (f.data_type === "datetime")
+          payload[f.id] = (raw as string).length === 16 ? `${raw}:00` : raw;
         else payload[f.id] = raw;
       }
       for (const r of outgoing) {
+        if (r.kind === "many_to_many") {
+          payload[r.id] = Array.isArray(values[r.id]) ? values[r.id] : [];
+          continue;
+        }
         const raw = values[r.id] ?? "";
         payload[r.id] = raw === "" ? null : raw;
       }
@@ -204,7 +205,7 @@ export default function AppRecordClient({ modelId, recordId }: { modelId: string
               <FieldValueInput
                 field={f}
                 id={`field-${f.id}`}
-                value={values[f.id] ?? ""}
+                value={typeof values[f.id] === "string" ? (values[f.id] as string) : ""}
                 onChange={(v) => setValues((prev) => ({ ...prev, [f.id]: v }))}
               />
             </div>
@@ -212,11 +213,33 @@ export default function AppRecordClient({ modelId, recordId }: { modelId: string
           {outgoing.map((r) => (
             <div key={r.id}>
               <Label htmlFor={`rel-${r.id}`}>{r.label}</Label>
-              <ReferenceSelect
+              {r.kind === "many_to_many" ? (
+                <MultiReferenceSelect
+                  relationship={r}
+                  id={`rel-${r.id}`}
+                  value={Array.isArray(values[r.id]) ? (values[r.id] as string[]) : []}
+                  onChange={(v) => setValues((prev) => ({ ...prev, [r.id]: v }))}
+                  open
+                />
+              ) : (
+                <ReferenceSelect
+                  relationship={r}
+                  id={`rel-${r.id}`}
+                  value={typeof values[r.id] === "string" ? (values[r.id] as string) : ""}
+                  onChange={(v) => setValues((prev) => ({ ...prev, [r.id]: v }))}
+                  open
+                />
+              )}
+            </div>
+          ))}
+          {incoming.map((r) => (
+            <div key={r.id}>
+              <Label htmlFor={`incoming-${r.id}`}>
+                {r.label} <span className="text-xs text-slate-400">(read-only)</span>
+              </Label>
+              <IncomingAssociations
                 relationship={r}
-                id={`rel-${r.id}`}
-                value={values[r.id] ?? ""}
-                onChange={(v) => setValues((prev) => ({ ...prev, [r.id]: v }))}
+                ids={Array.isArray(record[r.id]) ? (record[r.id] as unknown[]).map(String) : []}
                 open
               />
             </div>

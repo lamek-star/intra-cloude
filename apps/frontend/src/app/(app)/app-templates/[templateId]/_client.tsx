@@ -7,6 +7,7 @@ import {
   ApiError,
   type AppDefinition,
   type AppFieldDataType,
+  type AppRelationshipKind,
   type AppTemplate,
   type AppTemplateVersion,
   type DraftField,
@@ -370,6 +371,7 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
                   <span className="text-xs text-slate-500">
                     {modelLabel(draft, rel.source_model)} → {modelLabel(draft, rel.target_model)}
                   </span>
+                  {rel.kind === "many_to_many" && <Badge tone="info">many-to-many</Badge>}
                 </div>
                 {rel.id && (
                   <div className="flex items-center gap-3 text-xs">
@@ -380,20 +382,22 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
                       onMoveUp={() => moveRelationship(rel.id!, -1)}
                       onMoveDown={() => moveRelationship(rel.id!, 1)}
                     />
-                    <Select
-                      value={rel.deletion_policy ?? "restrict"}
-                      disabled={saving}
-                      onChange={(e) =>
-                        setRelationshipDeletionPolicy(
-                          rel.id!,
-                          e.target.value as "restrict" | "set_null",
-                        )
-                      }
-                      className="!w-auto py-1 text-xs"
-                    >
-                      <option value="restrict">Restrict delete</option>
-                      <option value="set_null">Set null on delete</option>
-                    </Select>
+                    {rel.kind !== "many_to_many" && (
+                      <Select
+                        value={rel.deletion_policy ?? "restrict"}
+                        disabled={saving}
+                        onChange={(e) =>
+                          setRelationshipDeletionPolicy(
+                            rel.id!,
+                            e.target.value as "restrict" | "set_null",
+                          )
+                        }
+                        className="!w-auto py-1 text-xs"
+                      >
+                        <option value="restrict">Restrict delete</option>
+                        <option value="set_null">Set null on delete</option>
+                      </Select>
+                    )}
                     <button
                       onClick={() =>
                         setRenameTarget({ kind: "relationship", id: rel.id!, label: rel.label })
@@ -627,6 +631,7 @@ function AddRelationshipForm({
   const [label, setLabel] = useState("");
   const [sourceModel, setSourceModel] = useState(models[0]?.id ?? "");
   const [targetModel, setTargetModel] = useState(models[0]?.id ?? "");
+  const [kind, setKind] = useState<AppRelationshipKind>("many_to_one");
   const [deletionPolicy, setDeletionPolicy] = useState<"restrict" | "set_null">("restrict");
 
   function handleSubmit(e: FormEvent) {
@@ -637,10 +642,15 @@ function AddRelationshipForm({
       label,
       source_model: sourceModel,
       target_model: targetModel,
-      deletion_policy: deletionPolicy,
+      kind,
+      // Meaningless for many_to_many (a join table's FKs are always
+      // ON DELETE CASCADE regardless) -- sent as the fixed default
+      // rather than whatever the (hidden) selector last held.
+      deletion_policy: kind === "many_to_many" ? "restrict" : deletionPolicy,
     });
     setKey("");
     setLabel("");
+    setKind("many_to_one");
     setDeletionPolicy("restrict");
   }
 
@@ -689,16 +699,29 @@ function AddRelationshipForm({
         </Select>
       </div>
       <div>
-        <Label htmlFor="new-rel-policy">On delete</Label>
+        <Label htmlFor="new-rel-kind">Type</Label>
         <Select
-          id="new-rel-policy"
-          value={deletionPolicy}
-          onChange={(e) => setDeletionPolicy(e.target.value as "restrict" | "set_null")}
+          id="new-rel-kind"
+          value={kind}
+          onChange={(e) => setKind(e.target.value as AppRelationshipKind)}
         >
-          <option value="restrict">Restrict</option>
-          <option value="set_null">Set null</option>
+          <option value="many_to_one">Many-to-one (reference)</option>
+          <option value="many_to_many">Many-to-many</option>
         </Select>
       </div>
+      {kind !== "many_to_many" && (
+        <div>
+          <Label htmlFor="new-rel-policy">On delete</Label>
+          <Select
+            id="new-rel-policy"
+            value={deletionPolicy}
+            onChange={(e) => setDeletionPolicy(e.target.value as "restrict" | "set_null")}
+          >
+            <option value="restrict">Restrict</option>
+            <option value="set_null">Set null</option>
+          </Select>
+        </div>
+      )}
       <Button type="submit" size="sm" disabled={disabled || !key || !label}>
         Add relationship
       </Button>
