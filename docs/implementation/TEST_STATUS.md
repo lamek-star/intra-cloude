@@ -1,5 +1,96 @@
 # Test Status
 
+## Native many-to-many relationships (2026-09-11)
+
+Closes the one remaining non-blocking gap `docs/SPARE_PARTS_INTEGRATION_READINESS.md`'s
+readiness review identified (§1/§10, "Vehicle compatibility"), as a
+generic platform capability — no spare-parts-specific code.
+`RelationshipDefinition.kind`/`RelationshipInput.kind` now accept
+`"many_to_many"` alongside the existing `"many_to_one"` (migration
+`0010`); `deletion_policy` is normalized to `"restrict"` for M:M rather
+than rejected, since it's never actually read for that kind.
+
+**Provisioning**: a new narrow, join-table-specific
+`databases.services.add_composite_unique_constraint` primitive (exactly
+two named columns, never an arbitrary list — deliberately distinct from
+the still-out-of-scope general composite-uniqueness-for-arbitrary-fields
+capability) backs a real physical join table: fixed literal `source_id`/
+`target_id` FK columns (not the usual per-identity UUID-hex name — a
+deliberate, documented exception, since a join table is never user-
+editable), both `ON DELETE CASCADE`, a real `UNIQUE(source_id,
+target_id)` constraint, and a plain index on `target_id`. Built at both
+initial provisioning (`runtime_build.py`'s new `_build_join_table`) and
+as a live addition to an already-provisioned, possibly populated
+instance (`schema_evolution.py`'s new `_add_join_table_to_runtime`) — no
+new trigger-guard migration needed, since the existing INSERT-only
+exemptions from migrations `0004`/`0007` already cover any new row on a
+managed instance's catalog tables. A real bug found and fixed in the
+same pass: `databases.services.add_index`'s idempotency check matched
+any index containing the target column, including as the non-leading
+member of a multi-column index — which doesn't give that column the same
+lookup benefit a real single-column index does (Postgres composite
+indexes only accelerate leading-column lookups), so it silently skipped
+creating the join table's `target_id` index. Narrowed to single-column
+indexes only.
+
+**Records**: `records.py`'s field map now resolves a relationship to
+either a scalar column (`many_to_one`, unchanged) or a join-table
+mapping — readable from both the source (writable) and target
+(read-only) side, backed by new private join-row SQL helpers living in
+`records.py` itself (a deliberate carve-out; `databases/rows.py` stays
+untouched, since filtering/sorting by M:M membership is explicitly out
+of scope). `create_record`/`update_record` wrap the base-row write and
+join-row writes in one explicit tenant transaction; `update_record`'s
+write is a diff against current associations, deliberately racy against
+a concurrent update of the same record/relationship since the real
+composite `UNIQUE` constraint — not the diff — is the actual gate against
+a duplicate landing (proven with a real concurrency test, mirroring
+`test_field_indexing.py`'s own pattern). `delete_record` needed zero code
+changes: both join-table FK columns are `ON DELETE CASCADE`, so a
+base-row delete removes associations for free.
+
+**Frontend**: `AppRelationshipDefinition.kind` narrows to a real union
+type; a new `MultiReferenceSelect` (bordered, scrollable checkbox list)
+handles the writable source side everywhere `ReferenceSelect` handles a
+`many_to_one` value, and a new `IncomingAssociations` read-only badge
+list handles the target side, on both the record list/form page and the
+record detail page. The results table gets an M:M-aware cell renderer
+("N linked" instead of a scalar id prefix). Both `AddRelationshipForm`
+instances (template builder, live instance) gain a relationship-kind
+selector that hides the now-meaningless "On delete" control for
+`many_to_many`. Live-verified end to end against the running dev stack
+via Claude-in-Chrome: created a `many_to_many` relationship in the
+template builder, provisioned it, linked records from both models via
+the new multi-select, confirmed both directions render, confirmed the
+target side has no write control, confirmed deleting a linked record
+removes the association from the other side's view. That live pass
+caught a real regression in the record detail page's own refactor —
+`fieldValuesFrom()` read the `fields` component state directly instead
+of taking it as a parameter, so on initial load it ran against the stale
+pre-fetch value (`null`) and every scalar field value came back blank;
+fixed by parameterizing it the same way `rels` already was.
+
+28 new backend tests across four commits: 4 in
+`app_platform/tests/test_many_to_many.py`'s `RelationshipKindTests`
+(data-model layer), 9 in the new `databases/tests/test_join_tables.py`
+(the `add_composite_unique_constraint` primitive in isolation), 6 in
+`test_many_to_many.py`'s `ProvisioningTests` (both provisioning paths
+produce a correct physical join table), and 9 more in `test_many_to_many.py`'s
+`RecordAPITests` (read/write both directions, target-side write
+rejected, diff-based update, cascade-delete, a raw INSERT still rejected
+by the real constraint, an unsanctioned direct ORM write to the join
+table's own catalog row still rejected, and the concurrency race). Ruff/
+Mypy clean throughout. `makemigrations --check --dry-run` confirms
+nothing missed. Fresh full backend gate: **573 passed, 2 skipped, 0
+failed** (up from 550; the 2 skips are the real-worker-SIGKILL restore
+probes). Frontend: `tsc --noEmit`, `eslint`, `vitest run` (10 passed),
+and `next build` all clean. `docs/EXTERNAL_APP_API_CONTRACT.md` and
+`docs/SPARE_PARTS_INTEGRATION_READINESS.md` updated — the "Vehicle
+compatibility" row moves to SUPPORTED; "Inventory (Part × Warehouse)"
+deliberately stays PARTIAL, since the general composite-uniqueness gap
+it also depends on is not closed by this narrow, join-table-only
+primitive.
+
 ## Post-Phase-3 Integration Enablement — external access + field indexing/uniqueness (2026-09-10)
 
 Closes the two blocking gaps identified in

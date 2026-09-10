@@ -3,8 +3,10 @@
 Original baseline: commit `886e75f` (App Platform Phase 3, complete — 508
 passed, 2 skipped, 0 failed). **Updated** after Post-Phase-3 Integration
 Enablement closed both blocking gaps this review originally identified
-(§3 external bearer access, §6 field indexing/uniqueness) — see §11/§12
-for the current decision. This document evaluates whether the
+(§3 external bearer access, §6 field indexing/uniqueness), and **updated
+again** after a later pass added native many-to-many relationships (§1,
+§10) — see §11/§12 for the current decision. This document evaluates
+whether the
 **generic** App Platform (`app_platform`, `databases`, `storage`,
 `imports`, `permissions`, `sharing`, `applications`, `accounts`) provides
 the capabilities a separately developed Spare Parts Management frontend/
@@ -31,7 +33,7 @@ document.
 | Item | Status | Evidence |
 |---|---|---|
 | One-to-many relationships | SUPPORTED | `RelationshipDefinition.kind` is a real Postgres FK column from the "many" side (`app_platform/models.py`, `runtime_build.py`); a `PartNumber → Part` many-to-one relationship gives Part the one-to-many fan-out for free. |
-| Many-to-many relationships | NOT SUPPORTED as a relationship *kind* — but the shape is achievable | `RelationshipInput.kind` only accepts `"many_to_one"` (`app_platform/definitions.py`). There is no join-table/through-model primitive. The same data shape *is* achievable today by defining an explicit join model (e.g. `PartVehicleCompatibility`) with two ordinary many-to-one relationships — standard relational modeling, not a platform gap, but with no dedicated M:M UI/API convenience (no combined picker, no single "compatible vehicles" list on Part). |
+| Many-to-many relationships | **SUPPORTED** | Native `RelationshipInput.kind == "many_to_many"` (`app_platform/definitions.py`, `models.py`). Provisioning creates a real physical join table (fixed `source_id`/`target_id` FK columns, both `ON DELETE CASCADE`, a real composite `UNIQUE(source_id, target_id)` constraint via `databases.services.add_composite_unique_constraint`, a plain index on `target_id`) — both at initial provisioning (`runtime_build.py`) and as a live addition to an already-provisioned instance (`schema_evolution.py`). The record API's value shape is `list[str]`, readable from both the source (writable) and target (read-only) model, deleting a record cascades its associations away for free; see `docs/EXTERNAL_APP_API_CONTRACT.md`'s "Many-to-many associations" section. Filtering/sorting by M:M membership remains out of scope — a record's own M:M value is still fully readable/writable, just not queryable that way (`app_platform/tests/test_many_to_many.py`). |
 | Self-referencing relationships | SUPPORTED (untested) | Nothing in `instances.add_relationship` or `RelationshipInput` forbids `source_model == target_model`; `runtime_build.py`'s FK creation has no same-table guard. No existing automated test exercises this exact case — add one before relying on it for a "supersedes" chain. |
 | Parent/child records | PARTIAL | A relationship's `deletion_policy` is `restrict` or `set_null` only (DB-enforced `CheckConstraint`) — **no `cascade` option**. Deleting a parent either blocks or orphans children with a null reference; there is no automatic cascade delete. |
 | Nullable fields | SUPPORTED | `FieldDefinition.required` maps directly to `is_nullable` on the physical column. |
@@ -295,7 +297,7 @@ NOT SUPPORTED as a generic, declarative, app-definable capability:
 | Cross references between part numbers | Self-referencing relationship on `PartNumber` | SUPPORTED (untested) | §1 | No automated test proves this case; add one before relying on it | First slice |
 | Supersession (this number replaces that one) | Self-referencing relationship, or a join model | SUPPORTED (shape, untested) | §1 | Same as above | First slice |
 | `Vehicle` model | Generic model | SUPPORTED | §1 | — | Later slice |
-| Vehicle compatibility (many-to-many) | Explicit join model with two many-to-one relationships | PARTIAL | §1 | No native M:M kind or UI convenience; workable, not ergonomic | Later slice |
+| Vehicle compatibility (many-to-many) | Native `many_to_many` relationship kind, real join table + UI (multi-select picker, both-sides read) | **SUPPORTED** | §1 | None | Later slice |
 | `CataloguePart` vs. `CompanyProduct` separation | Two models + relationship | PARTIAL | §8 | No field-level "don't overwrite" protection; application-level discipline required | First slice for the shape; ongoing discipline, not a platform fix |
 | `Warehouse` model | Generic model | SUPPORTED | §1 | — | Later slice |
 | `Inventory` (Part × Warehouse quantity) | Join-style model, two many-to-one relationships | PARTIAL | §1 | No *composite* unique constraint (only single-column `unique` exists) — duplicate `(Part, Warehouse)` rows aren't prevented by the schema | Later slice |
@@ -323,12 +325,18 @@ NOT SUPPORTED as a generic, declarative, app-definable capability:
    §1, §6. Composite constraints/indexes and non-exact search remain
    out of scope, by design.
 
+**Formerly non-blocking, now also closed:**
+
+3. ~~No many-to-many relationship kind~~ — **closed**, see §1. Native
+   `many_to_many` relationships with a real join table and UI support;
+   filtering/sorting by M:M membership stays out of scope, by design.
+
 **Remaining, non-blocking** (real gaps, but each can be designed around
 or deferred without blocking the first, deliberately small integration
 slice):
 
-- No many-to-many relationship kind (join-model workaround exists).
-- No cascade delete (restrict/set_null only).
+- No cascade delete for many_to_one relationships (restrict/set_null
+  only — many_to_many's own join-table rows *do* cascade, see §1).
 - No enum/status field type, no calculated fields.
 - Sorting is single-column only; search beyond exact-match (multi-field,
   fuzzy, full-text) doesn't exist.
@@ -367,11 +375,14 @@ bearer-token credential, scoped to exactly this instance and its tenant
 database, with template/schema authoring done once by a human through
 the App Builder.
 
-Explicitly deferred to later slices, unchanged from the original review:
-vehicle compatibility (many-to-many via join model), inventory/
-warehouses (needs composite uniqueness, still absent), purchase/sales
+Explicitly deferred to later slices: inventory/warehouses (needs general
+composite uniqueness across arbitrary fields, still absent — the
+many-to-many join table's own composite constraint is a narrow,
+purpose-built primitive, not that general capability), purchase/sales
 workflows and invoices (need the not-yet-built declarative-transaction
-capability, §9, for anything beyond simple CRUD).
+capability, §9, for anything beyond simple CRUD). Vehicle compatibility
+(many-to-many) is no longer deferred — it's a supported capability as of
+§1, and can be included in an earlier slice if desired.
 
 Do not attempt the full Spare Parts system in one integration, and do not
 build spare-parts-specific code into the platform — every capability this
