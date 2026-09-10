@@ -116,9 +116,13 @@ derived from or reveal physical PostgreSQL table/column names.
 | Inspect one model/field/relationship | `GET app-models/{id}/`, `GET app-fields/{id}/`, `GET app-relationships/{id}/` | Same shapes as above |
 
 `data_type` is one of exactly `text`, `integer`, `decimal`, `boolean`,
-`date`, `datetime`. `kind` is always `many_to_one` (see the readiness
-review §1 for why, and how to emulate many-to-many). `deletion_policy` is
-`restrict` or `set_null` (no `cascade`). `unique`/`indexed` (added Post-
+`date`, `datetime`. `kind` is `many_to_one` or `many_to_many` (native
+many-to-many support — see the Records section below for the payload
+shape this changes). `deletion_policy` is `restrict` or `set_null` (no
+`cascade`) for a `many_to_one` relationship; for `many_to_many` it is
+always `restrict` and is not meaningful — a join table's own two foreign
+keys are always physically `ON DELETE CASCADE` regardless of what this
+field says (see Records below). `unique`/`indexed` (added Post-
 Phase-3 Integration Enablement) are independent booleans: `unique` means
 a real Postgres `UNIQUE` constraint backs this field's column (which is
 also a real B-tree index); `indexed` means a plain, non-unique B-tree
@@ -150,7 +154,11 @@ List endpoints use standard DRF `LimitOffsetPagination`:
 
 **Every record payload is keyed by field/relationship definition UUID,
 both when sending and receiving** — never a physical column name. A
-relationship's value is the related record's own UUID.
+`many_to_one` relationship's value is `str | null` (the related record's
+own UUID, or `null` for no association). A `many_to_many` relationship's
+value is always `list[str]` — the related records' UUIDs — **in both
+directions**, regardless of which model the request is for; the client
+tells the two shapes apart via the relationship's already-exposed `kind`.
 
 List response shape (`AppRecordsPage`, note: this is *not* the same
 envelope as the schema-discovery endpoints above):
@@ -159,11 +167,36 @@ envelope as the schema-discovery endpoints above):
 {"count": 0, "limit": 50, "offset": 0, "results": []}
 ```
 
+### Many-to-many associations
+
+A `many_to_many` relationship is **readable from both the source and
+target model** but **writable only from the source side** — the same
+relationship key on a target-side record is present in every response
+but rejected (`400`) if included in a `POST`/`PATCH` body there. On a
+write, `null` and `[]` both mean "no associations"; **omitting the key
+entirely from a `PATCH` body means "leave associations unchanged"** —
+the same partial-update semantics every other field already has, but
+easy to get backwards for a list-valued field, so called out explicitly
+here. Values are deduplicated server-side before being applied — sending
+the same id twice in one request is never itself an error. Referencing a
+record id that doesn't exist returns the same `400 {"detail":
+"referenced record does not exist"}` a bad `many_to_one` value already
+returns. A many-to-many relationship can never appear as a `?ordering=`
+or filter query param — see Errors below.
+
+Deleting a record removes its many-to-many associations on both sides
+automatically (the underlying join table's foreign keys are `ON DELETE
+CASCADE`) — no separate cleanup call is needed or possible.
+
 ### Filtering / sorting / search (all query params on the list endpoint)
 
 - **Filtering**: any query param whose key matches a field or
-  relationship definition UUID is applied as an **exact-match equality**
-  filter; multiple filters are AND-combined. No other operator exists.
+  many_to_one relationship definition UUID is applied as an
+  **exact-match equality** filter; multiple filters are AND-combined. No
+  other operator exists. A `many_to_many` relationship key is rejected
+  with `400` if used as a filter — filtering/sorting by many-to-many
+  membership is out of scope (a record's own many-to-many value is still
+  fully readable/writable, just not queryable this way).
   This is the same code path regardless of whether the field is
   `unique`/`indexed` — no separate "search API" exists for indexed
   fields (Post-Phase-3 Integration Enablement deliberately added no new
@@ -179,8 +212,9 @@ envelope as the schema-discovery endpoints above):
   neither `unique` nor `indexed` still works as a filter — it's just an
   unindexed sequential scan, exactly as before this work.
 - **Sorting**: `?ordering=<definition_id>` or `?ordering=-<definition_id>`
-  — one column only. Unspecified defaults to `id` order, not the
-  definition's display `position`.
+  — one column only, and never a `many_to_many` relationship (see above).
+  Unspecified defaults to `id` order, not the definition's display
+  `position`.
 - **Search**: `?search=<term>` performs a case-insensitive substring
   match (`ILIKE '%term%'`) **OR-ed across every text/varchar column on
   the model automatically** — it cannot be targeted to a single field,
@@ -206,6 +240,14 @@ envelope as the schema-discovery endpoints above):
   nothing about anyone else's data. Retrofitting uniqueness
   (`POST app-fields/{id}/unique/`) onto a field with existing duplicate
   values returns the analogous `400` without touching any existing row.
+  The same two messages cover many-to-many associations: a nonexistent
+  target id is `"referenced record does not exist"`; a same-pair
+  duplicate (including one created by two concurrent requests racing to
+  add the exact same new association — the real database constraint is
+  the actual gate, not an application-level check) is `"a record with
+  this value already exists"`. Writing to a many-to-many relationship's
+  read-only (target) side, or using one as a filter/sort key, returns a
+  `400` with a message naming which of those it was.
 - `404` — the id doesn't exist, or exists in a different organization
   (identical response either way — the API never reveals whether a
   foreign-org resource exists).
@@ -282,7 +324,10 @@ that assumes any of it:
   that needs this defines its own separate `normalized_...` field and
   populates it itself (see the readiness review §6 for the pattern).
 - Multi-column sort.
-- Composite (multi-column) uniqueness — only single-field `unique` exists.
+- Composite (multi-column) uniqueness on arbitrary fields — only
+  single-field `unique` exists. (A many-to-many relationship's own join
+  table does enforce a real composite-unique constraint internally, but
+  this is not a general capability exposed for arbitrary fields.)
 - A generic bulk/staged record-import endpoint targeting an App Platform
   model (the existing `imports` app targets `databases.DBTable` only).
 - Any declarative, multi-record, atomic "action" or workflow concept.
