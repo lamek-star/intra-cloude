@@ -14,8 +14,15 @@ RESOURCE_TYPE_APP_INSTANCE = "app_instance"
 
 
 def check(actor, organization_id, capability, resource=None):
-    if not actor or not actor.is_authenticated or not actor.is_active or hasattr(actor, "service_account"):
-        raise PermissionDenied("An active human administrator session is required.")
+    # A service-account actor (bearer-token `Application`) is deliberately
+    # NOT excluded here -- see FoundationView.service_account_methods
+    # (views.py) for which endpoints a bearer token can reach at all; once
+    # reachable, authorization is exactly this same deny-by-default
+    # has_permission() check every human session goes through, never a
+    # looser one. Nothing below grants anything a RoleAssignment/
+    # ResourceGrant didn't already explicitly name.
+    if not actor or not actor.is_authenticated or not actor.is_active:
+        raise PermissionDenied("An active session is required.")
     get_member_organization(actor, organization_id)
     if not has_permission(actor, capability, organization_id=organization_id, resource=resource):
         audit.record(
@@ -30,8 +37,10 @@ def check(actor, organization_id, capability, resource=None):
 
 
 def get_owned(model, object_id, actor, organization_path):
-    if not actor.is_authenticated or not actor.is_active or hasattr(actor, "service_account"):
-        raise PermissionDenied("An active human administrator session is required.")
+    # See check()'s comment above -- same reasoning, same deliberate
+    # non-exclusion of service accounts.
+    if not actor.is_authenticated or not actor.is_active:
+        raise PermissionDenied("An active session is required.")
     try:
         return model.objects.get(
             **{

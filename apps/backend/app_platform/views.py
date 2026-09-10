@@ -35,12 +35,33 @@ from .serializers import (
 
 
 class FoundationView(APIView):
+    """`service_account_methods` is the one, explicit place that decides
+    which HTTP methods a bearer-token `Application` (Phase 7) may reach on
+    a given view -- empty by default, so every template/instance-
+    administration endpoint (install, archive, publish, add/edit a
+    definition) stays exactly as human-session-only as it always was
+    unless a subclass opts a specific method in. Opting a method in only
+    widens *reachability*; it grants nothing by itself -- every action
+    still goes through the identical deny-by-default check()/
+    has_permission() a human session uses (access.py), so a bearer token
+    with no RoleAssignment/ResourceGrant gets exactly as far as a human
+    with none: nowhere. See docs/EXTERNAL_APP_API_CONTRACT.md's
+    Authentication section for the exact set of endpoints opted in and
+    why administration surfaces (templates, instance install/archive,
+    schema mutation) are deliberately left out of this first slice."""
+
     permission_classes = [IsAuthenticated]
+    service_account_methods: frozenset[str] = frozenset()
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
-        if not request.user.is_active or hasattr(request.user, "service_account"):
-            raise PermissionDenied("Foundation administration requires a human session.")
+        if not request.user.is_active:
+            raise PermissionDenied("An active session is required.")
+        if hasattr(request.user, "service_account") and request.method not in self.service_account_methods:
+            raise PermissionDenied(
+                "This endpoint requires a human session; a bearer-token client may only use "
+                f"{sorted(self.service_account_methods) or 'no'} method(s) here."
+            )
 
     def page(self, request, queryset, serializer):
         paginator = LimitOffsetPagination()
@@ -142,6 +163,10 @@ class InstanceList(FoundationView):
 
 
 class InstanceDetail(FoundationView):
+    # Read-only for a bearer token -- rename/archive (`patch`) stays
+    # instance *administration*, human-session-only, matching templates.
+    service_account_methods = frozenset({"GET"})
+
     def get(self, request, object_id):
         obj = get_owned(AppInstance, object_id, request.user, "organization")
         read_instance(request.user, obj)
@@ -153,6 +178,10 @@ class InstanceDetail(FoundationView):
 
 
 class ModelList(FoundationView):
+    # Read-only for a bearer token -- adding a model is schema mutation,
+    # left human-only in this first slice (see views.py module docstring).
+    service_account_methods = frozenset({"GET"})
+
     def get(self, request, object_id):
         obj = get_owned(AppInstance, object_id, request.user, "organization")
         read_instance(request.user, obj)
@@ -166,6 +195,8 @@ class ModelList(FoundationView):
 
 
 class FieldList(FoundationView):
+    service_account_methods = frozenset({"GET"})
+
     def get(self, request, object_id):
         obj = get_owned(ModelDefinition, object_id, request.user, "instance__organization")
         read_instance(request.user, obj.instance)
@@ -179,6 +210,8 @@ class FieldList(FoundationView):
 
 
 class RelationshipList(FoundationView):
+    service_account_methods = frozenset({"GET"})
+
     def get(self, request, object_id):
         obj = get_owned(AppInstance, object_id, request.user, "organization")
         read_instance(request.user, obj)
@@ -193,6 +226,10 @@ class RelationshipList(FoundationView):
 
 
 class DefinitionDetail(FoundationView):
+    # Read-only for a bearer token; PATCH (rename/reorder/edit a
+    # definition) stays human-only. Inherited by FieldDetail/
+    # RelationshipDetail below.
+    service_account_methods = frozenset({"GET"})
     model: type[Model] = ModelDefinition
     serializer: type[DRFModelSerializer] = ModelSerializer
     organization_path = "instance__organization"

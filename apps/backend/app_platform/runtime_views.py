@@ -25,6 +25,11 @@ class ProvisionInput(StrictSerializer):
 
 
 class Runtime(FoundationView):
+    # Status read only -- POST (reserve/provision) stays human-only;
+    # provisioning is a one-time administrative action a human performs
+    # once through the App Builder, not something an integration repeats.
+    service_account_methods = frozenset({"GET"})
+
     def get(self, request, object_id):
         instance = get_owned(AppInstance, object_id, request.user, "organization")
         require_manage(request.user, instance)

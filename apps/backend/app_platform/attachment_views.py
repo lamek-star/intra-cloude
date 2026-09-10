@@ -36,6 +36,8 @@ def _serialize(attachment) -> dict:
 
 
 class AttachmentListCreateView(FoundationView):
+    service_account_methods = frozenset({"GET", "POST"})
+
     def get(self, request, object_id, record_id):
         model = _get_model(request, object_id)
         try:
@@ -60,6 +62,8 @@ class AttachmentListCreateView(FoundationView):
 
 
 class AttachmentDetailView(FoundationView):
+    service_account_methods = frozenset({"DELETE"})
+
     def delete(self, request, object_id, record_id, attachment_id):
         model = _get_model(request, object_id)
         try:
@@ -70,6 +74,8 @@ class AttachmentDetailView(FoundationView):
 
 
 class AttachmentDownloadView(FoundationView):
+    service_account_methods = frozenset({"GET"})
+
     def get(self, request, object_id, record_id, attachment_id):
         model = _get_model(request, object_id)
         try:

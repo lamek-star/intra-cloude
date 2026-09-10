@@ -19,6 +19,12 @@ def _get_model(request, object_id):
 
 
 class RecordListCreateView(FoundationView):
+    # The core of the external bearer-token surface (Post-Phase-3
+    # Integration Enablement) -- gated below purely by the same
+    # database.read/database.write ResourceGrant a human session needs
+    # (records.py's resolve()), nothing looser.
+    service_account_methods = frozenset({"GET", "POST"})
+
     def get(self, request, object_id):
         model = _get_model(request, object_id)
         try:
@@ -55,6 +61,8 @@ class RecordListCreateView(FoundationView):
 
 
 class RecordDetailView(FoundationView):
+    service_account_methods = frozenset({"GET", "PATCH", "DELETE"})
+
     def get(self, request, object_id, record_id):
         model = _get_model(request, object_id)
         try:

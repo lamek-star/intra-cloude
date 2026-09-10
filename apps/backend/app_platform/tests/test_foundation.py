@@ -384,17 +384,67 @@ class FoundationTests(TestCase):
                 self.owner, self.other_project, {"template_version": str(self.version.id), "label": "Bad"}
             )
 
-    def test_unauthenticated_and_service_account_principals_denied(self):
+    def test_unauthenticated_principal_denied(self):
         self.client.force_authenticate(None)
         self.assertIn(self.client.get(f"/api/v1/app-instances/{self.instance.id}/").status_code, (401, 403))
+
+    def _service_account_user(self):
         from applications.models import Application, ServiceAccount
 
         service_user = self.member()
         application = Application.objects.create(organization=self.org, owner=self.owner, name="Integration")
         ServiceAccount.objects.create(application=application, identity_user=service_user)
-        self.grant(service_user, "app_instance.read", self.instance)
+        return service_user
+
+    def test_service_account_without_a_grant_is_denied_even_on_an_opted_in_endpoint(self):
+        """Post-Phase-3 Integration Enablement: InstanceDetail.get opts
+        into bearer-token reachability (FoundationView.
+        service_account_methods), but reachability grants nothing by
+        itself -- deny-by-default still applies identically to a human
+        session with no role/grant."""
+        service_user = self._service_account_user()
         self.client.force_authenticate(service_user)
         self.assertEqual(self.client.get(f"/api/v1/app-instances/{self.instance.id}/").status_code, 403)
+
+    def test_service_account_with_a_resource_grant_can_read_via_an_opted_in_endpoint(self):
+        service_user = self._service_account_user()
+        self.grant(service_user, "app_instance.read", self.instance)
+        self.client.force_authenticate(service_user)
+        response = self.client.get(f"/api/v1/app-instances/{self.instance.id}/")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["id"], str(self.instance.id))
+
+    def test_service_account_cannot_reach_a_method_not_opted_in_even_with_a_grant(self):
+        """Even org-wide app_instance.manage (which would let a human
+        PATCH this instance) doesn't help a bearer-token client here --
+        InstanceDetail.patch was deliberately never added to
+        service_account_methods (instance rename/archive stays
+        administration, human-session-only in this first slice)."""
+        service_user = self._service_account_user()
+        self.grant(service_user, "app_instance.manage", self.instance)
+        self.client.force_authenticate(service_user)
+        response = self.client.patch(
+            f"/api/v1/app-instances/{self.instance.id}/", {"label": "Hijacked"}, format="json"
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_service_account_cannot_install_a_new_instance_or_reach_template_administration(self):
+        """No no-service_account_methods override on InstanceList/
+        TemplateList/TemplateDetail/VersionList/VersionDetail -- template
+        and instance-creation administration stays fully human-only
+        regardless of any grant the service account holds."""
+        service_user = self._service_account_user()
+        self.grant(service_user, "app_template.manage", self.template, kind="app_template")
+        self.grant(service_user, "app_instance.manage", self.instance)
+        self.client.force_authenticate(service_user)
+        install = self.client.post(
+            f"/api/v1/projects/{self.project.id}/app-instances/",
+            {"template_version": str(self.version.id), "label": "Sneaky"},
+            format="json",
+        )
+        self.assertEqual(install.status_code, 403)
+        template_read = self.client.get(f"/api/v1/app-templates/{self.template.id}/")
+        self.assertEqual(template_read.status_code, 403)
 
     def test_audit_contains_identity_not_definition_payload_and_rolls_back(self):
         self.assertTrue(
