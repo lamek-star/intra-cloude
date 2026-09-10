@@ -145,6 +145,12 @@ class RelationshipDefinition(Definition):
     source_model = models.ForeignKey(ModelDefinition, on_delete=models.PROTECT, related_name="outgoing")
     target_model = models.ForeignKey(ModelDefinition, on_delete=models.PROTECT, related_name="incoming")
     kind = models.CharField(max_length=20, default="many_to_one")
+    # Meaningless for kind="many_to_many" -- definitions.RelationshipInput
+    # normalizes it to "restrict" on write rather than rejecting it, but it
+    # is never actually read for an M:M relationship. A join table's own
+    # two FK columns are always physically ON DELETE CASCADE regardless
+    # (runtime_build.py/schema_evolution.py) -- "restrict"/"set_null"
+    # don't map cleanly onto a pivot row either way.
     deletion_policy = models.CharField(max_length=20, default="restrict")
 
     class Meta(Definition.Meta):
@@ -153,7 +159,9 @@ class RelationshipDefinition(Definition):
             models.UniqueConstraint(
                 fields=["instance", "source_definition_id"], name="app_relation_source_unique"
             ),
-            models.CheckConstraint(condition=models.Q(kind="many_to_one"), name="app_relation_kind_valid"),
+            models.CheckConstraint(
+                condition=models.Q(kind__in=["many_to_one", "many_to_many"]), name="app_relation_kind_valid"
+            ),
             models.CheckConstraint(
                 condition=models.Q(deletion_policy__in=["restrict", "set_null"]),
                 name="app_relation_delete_valid",

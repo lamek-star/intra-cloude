@@ -79,8 +79,17 @@ class SnapshotModel(ModelInput):
 class RelationshipInput(ModelInput):
     source_model = serializers.UUIDField()
     target_model = serializers.UUIDField()
-    kind = serializers.ChoiceField(choices=["many_to_one"], default="many_to_one")
+    kind = serializers.ChoiceField(choices=["many_to_one", "many_to_many"], default="many_to_one")
     deletion_policy = serializers.ChoiceField(choices=["restrict", "set_null"], default="restrict")
+
+    def validate(self, data):
+        # deletion_policy is meaningless for a many_to_many relationship
+        # (see RelationshipDefinition.deletion_policy's own docstring) --
+        # normalized rather than rejected, so a client that doesn't
+        # know/care doesn't need to omit or guess a value.
+        if data["kind"] == "many_to_many":
+            data["deletion_policy"] = "restrict"
+        return data
 
 
 class SnapshotRelationship(RelationshipInput):
