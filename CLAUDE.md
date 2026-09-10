@@ -22,15 +22,25 @@ identity (logo, color tokens, typography, component patterns) lives in
 
 ## Current Status
 
-**App Platform Phase 1** is a separate metadata foundation in `app_platform`:
-organization templates, immutable versions, project-owned instances, and
-generic model/field/relationship definitions. Existing `applications.Application`
-remains an integration identity. See `docs/APP_PLATFORM_ARCHITECTURE.md`,
-ADR-0014, and `docs/implementation/APP_PLATFORM_PHASE1.md`. No business-record
-runtime or visual builder exists yet. Full control-plane backups cover the
-new metadata; portable `.icp` explicitly excludes it. New endpoints use shared
-capabilities/ResourceGrants and require human sessions; environment-bound
-integration access is deferred. Fresh full gate: 436 tests pass, zero skips.
+**App Platform** (`app_platform`) is feature-complete through Phase 3 (App
+Builder v1): Phase 1's metadata foundation (organization templates, immutable
+versions, project-owned instances, generic model/field/relationship
+definitions); Phase 2's real business-record runtime (a compiled, fingerprinted
+provisioning plan that creates real per-app Postgres tables, full record/
+relationship/attachment CRUD, and a generic frontend); and Phase 3's visual App
+Builder UI, plus safe live additive schema changes (new model/field/
+relationship, with required-field backfill) against an already-provisioned,
+possibly populated instance, and basic app-instance-scoped sharing reusing the
+existing `sharing`/`ResourceGrant` mechanism. Existing `applications.Application`
+remains a separate integration identity. See `docs/APP_PLATFORM_ARCHITECTURE.md`,
+ADR-0014, and `docs/implementation/APP_PLATFORM_PHASE1.md`/
+`APP_PLATFORM_PHASE2.md`/`APP_PLATFORM_PHASE3.md`. Full control-plane backups
+cover this metadata; portable `.icp` explicitly excludes it — verified
+end-to-end (manifest flag, restore warning, and zero rows crossing the round
+trip) in Phase 3's qualification step, not just asserted. New endpoints use
+shared capabilities/ResourceGrants and require human sessions; environment-bound
+integration access is deferred. Fresh full backend gate: 508 tests pass, 2
+skipped.
 
 **All 12 planned phases (0–11) are complete and verified end-to-end.**
 Full history, bugs found and fixed, and exact verification method for

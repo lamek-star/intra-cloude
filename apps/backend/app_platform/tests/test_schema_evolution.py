@@ -1,7 +1,8 @@
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 from django.core.management import call_command
-from django.db import connections
+from django.db import close_old_connections, connections
 from django.test import TransactionTestCase
 from psycopg import sql
 from rest_framework.test import APIClient
@@ -262,3 +263,53 @@ class SchemaEvolutionTests(TransactionTestCase):
                         sql.Identifier(sibling_plan["schema_name"])
                     )
                 )
+
+    def test_concurrent_field_additions_to_the_same_model_do_not_corrupt_bindings(self):
+        """schema_evolution.add_field_to_runtime does a bindings
+        read-modify-write (`receipt.bindings.setdefault(...)[...] = ...;
+        receipt.save(update_fields=["bindings"])`) with no lock of its
+        own -- real concurrent requests could lose an update if nothing
+        serialized them. `ready_receipt()`'s `select_for_update()` does,
+        inside the same `transaction.atomic()` `add_field` already wraps
+        end to end, so two concurrent additions to the same instance
+        should simply serialize rather than race. Proven with real
+        threads/connections, mirroring test_records.py's own
+        concurrent-update test rather than just reasoning about it."""
+
+        def add(key):
+            close_old_connections()
+            client = APIClient()
+            client.force_authenticate(User.objects.get(pk=self.actor.pk))
+            try:
+                return client.post(
+                    f"/api/v1/app-models/{self.item.id}/fields/",
+                    {"key": key, "label": key, "data_type": "text"},
+                    format="json",
+                )
+            finally:
+                close_old_connections()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(pool.map(add, ["alpha", "beta"]))
+        for response in responses:
+            self.assertEqual(response.status_code, 201, response.data)
+
+        alpha = FieldDefinition.objects.get(model=self.item, key="alpha")
+        beta = FieldDefinition.objects.get(model=self.item, key="beta")
+        self.receipt.refresh_from_db()
+        self.assertIn(str(alpha.id), self.receipt.bindings["fields"])
+        self.assertIn(str(beta.id), self.receipt.bindings["fields"])
+
+        # Both physical columns are real and independently usable, not
+        # just present in the JSON ledger -- a lost update to `bindings`
+        # would make one of these two record-creation payload keys
+        # silently unrecognized rather than raising, so check the
+        # roundtrip too.
+        create = self.client.post(
+            f"/api/v1/app-models/{self.item.id}/records/",
+            {str(alpha.id): "A", str(beta.id): "B"},
+            format="json",
+        )
+        self.assertEqual(create.status_code, 201, create.data)
+        self.assertEqual(create.data[str(alpha.id)], "A")
+        self.assertEqual(create.data[str(beta.id)], "B")

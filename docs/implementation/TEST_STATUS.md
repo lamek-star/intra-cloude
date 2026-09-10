@@ -1,5 +1,33 @@
 # Test Status
 
+## App Platform Phase 3 qualification checkpoint — Phase 3 complete (2026-09-10)
+
+A targeted research pass checked each qualification item (cross-org
+isolation, grant revocation, backup/restore, concurrency in the new
+step-3 code path) against the actual codebase before adding anything, to
+avoid re-testing what steps 1-4 already proved. Cross-org isolation and
+grant revocation were already comprehensive (re-confirmed live: an
+unrelated org's member gets a real 404 on both `/app-instances/{id}` and
+`/app-models/{id}` by direct URL). Two real, previously-unverified gaps
+were closed with 2 new tests: `exports/tests/test_portable_export.py`'s
+`test_app_platform_data_is_excluded_from_the_portable_package_with_a_warning`
+proves the portable `.icp` package's App-Platform exclusion (manifest
+flag + restore warning + zero rows restored) end-to-end for the first
+time since Phase 1; `test_schema_evolution.py`'s
+`test_concurrent_field_additions_to_the_same_model_do_not_corrupt_bindings`
+proves two real concurrent `add_field` requests against the same
+instance don't lose an update to `RuntimeProvision.bindings` (confirmed
+the existing `select_for_update()` lock in `ready_receipt()` actually
+serializes them — not just checked by reading the code). Fresh full
+backend gate: **508 passed, 2 skipped, 0 failed** (up from 506; the 2
+skips are the real-worker-SIGKILL restore probes,
+`RUN_RESTORE_WORKER_TESTS=0` for this run). Ruff and Mypy clean;
+`next build`/ESLint/Vitest (10 tests) all clean; `makemigrations --check
+--dry-run` confirms nothing missed. **This closes all 5 steps of Phase
+3** — see [APP_PLATFORM_PHASE3.md](APP_PLATFORM_PHASE3.md)'s
+qualification step for the full account and the honest remaining-debt
+list (all pre-existing, none new to this phase, none blocking).
+
 ## App Platform Phase 3 step 4 checkpoint — basic permissions (2026-09-10)
 
 Backend: `sharing/services.py` gains a new `RESOURCE_TYPE_APP_INSTANCE`

@@ -1,7 +1,8 @@
 # App Platform Phase 3 — App Builder v1
 
-Status: **IN PROGRESS**, started 2026-09-09 on `feature/app-platform`, right
-after Phase 2's completion (`b91d9e8`). Per
+Status: **COMPLETE**, started 2026-09-09 on `feature/app-platform`, right
+after Phase 2's completion (`b91d9e8`), finished 2026-09-10 with step 5's
+qualification pass. Per
 [the roadmap](APP_PLATFORM_ROADMAP.md): "No-code model/field/form/list
 editing; labels, defaults, required flags, ordering, relationships and basic
 permissions; safe populated-schema changes." That is several genuinely
@@ -64,12 +65,101 @@ Genuinely new backend work, not yet designed or built:
    app-instance-scoped sharing reusing the existing `sharing`/
    `ResourceGrant` mechanism (ADR-0008), not a new authorization system.
    Then the builder UI to assign it.
-5. **Qualification.** Fresh full backend/security suite, browser workflows,
-   lint/types/builds, migrations, cross-org isolation, grant revocation,
-   backup/restore, and a final documentation/remaining-debt pass before
-   Phase 3 is declared complete.
+5. **Qualification — done.** Fresh full backend/security suite, browser
+   workflows, lint/types/builds, migrations, cross-org isolation, grant
+   revocation, backup/restore, and a final documentation/remaining-debt
+   pass before Phase 3 is declared complete.
 
 ## Current step evidence
+
+### Step 5: qualification (2026-09-10)
+
+A dedicated research pass (not guessed) went through each of the
+roadmap's qualification items against the actual codebase, one at a
+time, before deciding what — if anything — still needed a new test:
+
+- **Cross-org isolation (IDOR/BOLA).** Already comprehensive across all
+  five steps: `test_foundation.py::
+  test_every_resource_endpoint_denies_foreign_organization` hits every
+  app_platform endpoint (templates, versions, instances, models, fields,
+  relationships) as a foreign-org actor and asserts 404;
+  `test_records.py`, `test_attachments.py`, `test_provisioning.py`, and
+  `test_schema_evolution.py` each carry the same proof for
+  records/attachments/`RuntimeProvision`/live schema changes; step 4's
+  own `test_sharing_an_app_instance_id_outside_the_organization_is_rejected`
+  closes the loop for the new sharing resource type. Re-confirmed live in
+  a real browser this step: a genuinely unrelated organization's member,
+  navigating directly to both `/app-instances/{id}` and
+  `/app-models/{id}` URLs for step 3's "Live Ops Runtime" instance, got
+  the app's real "Not found." page both times — not a blank page, not a
+  leak of the instance's existence.
+- **Grant revocation.** Already comprehensive:
+  `test_foundation.py::test_exact_resource_grant_revocation_and_pagination`
+  proves a deleted `ResourceGrant` for `app_instance.read` denies the
+  very next request; step 4's own
+  `test_revoking_an_app_instance_share_removes_access` proves the same
+  through the sharing integration, also live-verified in a real browser
+  in step 4's own checkpoint.
+- **Backup/restore — one real, previously-unverified gap closed.**
+  `exports/manifest.py`'s `EXCLUDED_SCOPE` has unconditionally listed
+  `"app_platform"` since Phase 1 (CLAUDE.md: "Full control-plane backups
+  cover the new metadata; portable `.icp` explicitly excludes it"), and
+  `exports/restorer.py` has carried a matching
+  `if "app_platform" in manifest.get("excluded", [])` warning since
+  then — but nothing ever actually exercised that interaction
+  end-to-end. New
+  `test_app_platform_data_is_excluded_from_the_portable_package_with_a_warning`
+  in `exports/tests/test_portable_export.py` creates a real template +
+  installed instance, exports the organization, and proves three things
+  together for the first time: the manifest really does declare
+  `app_platform` excluded, the restore report surfaces the human-facing
+  warning, and — the part that actually matters — the restored
+  organization has genuinely zero `AppTemplate`/`AppInstance` rows,
+  not just a missing warning. (Full control-plane `pg_dump` backups,
+  the documented alternative for this data, were already exercised for
+  App Platform in Phase 2's qualification step via `system.backups`, a
+  different mechanism from the portable `.icp` package this test
+  covers.)
+- **Concurrency in the new step-3 code path.** `schema_evolution.
+  add_field_to_runtime`/`add_model_to_runtime`/`add_relationship_to_runtime`
+  each do a `receipt.bindings.setdefault(...)[...] = ...;
+  receipt.save(update_fields=["bindings"])` read-modify-write with no
+  lock of its own visible at that call site — worth checking for a real
+  race, not just trusting it looks fine. It doesn't race: `ready_receipt()`
+  takes `select_for_update()` on the `RuntimeProvision` row, inside the
+  exact same `transaction.atomic()` `instances.add_field` (etc.) already
+  wraps end to end, so a second concurrent addition to the same instance
+  blocks at that lock until the first transaction commits, then reads
+  the now-current `bindings` rather than a stale copy — a real lock, not
+  an assumption. Proven with actual threads and separate DB connections,
+  not just reasoned about: new
+  `test_concurrent_field_additions_to_the_same_model_do_not_corrupt_bindings`
+  in `test_schema_evolution.py` fires two real concurrent `add_field`
+  requests at the same model, confirms both fields land in
+  `RuntimeProvision.bindings` with neither lost, and confirms both
+  physical columns are independently usable by creating a record that
+  sets both — run three times back to back with no flakiness.
+- **Lint/types/builds/migrations.** Ruff and Mypy clean across
+  `app_platform`, `exports`, `sharing`, and `databases`. `next build`,
+  ESLint, and the Vitest suite (10 tests) all pass clean.
+  `makemigrations --check --dry-run` confirms nothing missed (this step
+  added no model changes). Fresh full backend gate: **508 passed, 2
+  skipped, 0 failed** (up from 506; the 2 skips are the real-worker-
+  SIGKILL restore probes, `RUN_RESTORE_WORKER_TESTS=0` for this run).
+
+**Remaining, honest debt — none of it blocking, all pre-existing and
+already tracked elsewhere, not new to this phase:** no destructive/
+type-changing schema edits against a provisioned instance (deliberately
+out of scope for this phase's "safe" additive-only design, per the
+roadmap — a real migration strategy is future work); the reference
+picker on generated record screens has no search/pagination past 100
+target records and there's still no bulk/batch record API (both
+inherited, documented debt from Phase 2's own qualification step,
+unchanged by Phase 3); the frontend has no dedicated Playwright/Vitest
+coverage of the App Builder screens specifically, matching the
+project-wide, already-acknowledged partial-automation state described in
+`docs/implementation/TEST_STATUS.md`'s own framing, not a Phase-3-
+specific gap.
 
 ### Step 4: basic permissions (2026-09-10)
 

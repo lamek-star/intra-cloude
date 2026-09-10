@@ -55,7 +55,7 @@ ADR-0015, `docs/operations/RUNTIME_PROVISIONING.md`, and
 `docs/implementation/APP_PLATFORM_PHASE2.md`. This work is not deployed
 to the user's production appliance.
 
-**App Platform Phase 3 (App Builder v1) is in progress**, split into steps
+**App Platform Phase 3 (App Builder v1) is complete**, split into steps
 per `docs/implementation/APP_PLATFORM_PHASE3.md`. Step 1 (App Builder UI
 for capability the backend already had) is done: `/orgs/[orgId]/
 app-templates`, a draft model/field/relationship builder at
@@ -113,8 +113,21 @@ must stay organization-wide only) and the existing `ShareSection`
 frontend component dropped onto the instance page unmodified.
 Live-verified both directions in a real browser: read-level sharing let
 a second member view but not rename an instance; write-level let them
-rename it. See `docs/implementation/APP_PLATFORM_PHASE3.md` and
-`TEST_STATUS.md` for the full account. Remaining: step 5, qualification.
+rename it. Step 5 (qualification) closed the phase: cross-org isolation
+and grant revocation were already comprehensively covered by steps 1-4's
+own tests (re-confirmed live — an unrelated org's member gets a real 404
+on an app instance by direct URL); two real, previously-unverified gaps
+were closed with new tests — the portable `.icp` package's long-standing
+App Platform exclusion (`exports/manifest.py`'s `EXCLUDED_SCOPE`, dating
+to Phase 1) was proven end-to-end for the first time, and a real
+concurrent-write scenario against step 3's `schema_evolution.py` (two
+threads adding fields to the same instance) was proven not to lose an
+update, confirming the existing `select_for_update()` lock in
+`ready_receipt()` actually does its job rather than just looking
+correct. Fresh full backend gate: 508 passed, 2 skipped, 0 failed. See
+`docs/implementation/APP_PLATFORM_PHASE3.md` and `TEST_STATUS.md` for
+the full account, including the honest remaining-debt list (all
+pre-existing, none new to this phase, none blocking).
 The master brief's ten development phases
 are tracked in `docs/implementation/APP_PLATFORM_ROADMAP.md`; current work and
 remaining runtime requirements are in `docs/implementation/APP_PLATFORM_PHASE2.md`.
