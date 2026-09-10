@@ -196,15 +196,27 @@ when it's the latter. The model page (`/app-models/[modelId]`) gains an
 type-appropriate default-value input step 2 built for the template
 builder). `next build`, ESLint pass clean.
 
-**Not live-verified in a real browser this step** — the Claude-in-Chrome
-extension was disconnected for this session, unlike every prior step's
-checkpoint. The dev stack was rebuilt and the migration applied
-(`docker compose build backend frontend`, `manage.py migrate
-app_platform`), and the full backend gate plus the frontend
-build/lint/typecheck all pass against the real running stack's images,
-but the actual browser click-through this project's own standard calls
-for has not happened yet. Tracked as an explicit open item, not silently
-skipped — see [TEST_STATUS.md](TEST_STATUS.md).
+**Live-verified end-to-end in a real browser** in a follow-up session once
+the Claude-in-Chrome extension reconnected (closing the open item the
+first checkpoint above left explicit rather than skipping silently):
+built a fresh template ("Live Ops") with one model ("Ticket") and one
+field, published it, installed it into a project, and provisioned its
+runtime. Against that already-provisioned instance, used the new UI to:
+add a second model ("Vendor") live — confirmed a real record could be
+created in it immediately; add a text field to it and create a record
+("Acme Supplies") in the now-populated model; add a *required* boolean
+field without a default — confirmed the exact
+"a new required field needs a default value" rejection rendered inline
+and no field was created; retried the same field with default `true` —
+confirmed the pre-existing "Acme Supplies" row came back with `Active:
+true` after a fresh fetch (the real Postgres column `DEFAULT`
+backfilling it, not application code); and added a live
+Ticket → Vendor relationship, then created a Ticket record through the
+reference picker, which already offered the real "Acme Supplies" row and
+persisted a real foreign-key-backed reference. All against the actual
+rebuilt `backend`/`frontend` images with migration `0007` applied — the
+same dev stack the backend gate and frontend build ran against, not a
+separate environment. See [TEST_STATUS.md](TEST_STATUS.md).
 
 ### Step 2: defaults and ordering (2026-09-10)
 

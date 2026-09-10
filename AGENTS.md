@@ -92,13 +92,18 @@ instance the whole time) and a NULL-propagation bug in the fix's own first
 draft (an unset session flag made a negated condition evaluate to SQL
 `NULL`, which PL/pgSQL's `IF` treats as "don't raise" — caught by a
 pre-existing regression test). Frontend gained "Add model"/"Add
-relationship" on the instance page and "Add field" on the model page.
-**Not live-browser-verified this step** — the Claude-in-Chrome extension
-was disconnected for the session that built it; full backend gate (499
-passed) and frontend build/lint ran clean against the real rebuilt images
-instead. See `docs/implementation/APP_PLATFORM_PHASE3.md` and
-`TEST_STATUS.md` for the full account. Remaining steps: basic permissions
-(needs its own design decision first, not yet made) and qualification.
+relationship" on the instance page and "Add field" on the model page,
+live-verified end-to-end in a real browser in a follow-up session:
+against an already-provisioned, populated instance, added a model
+(record-creatable immediately), added a required field with a default to
+a populated model (the pre-existing row came back backfilled with the
+real Postgres column default), confirmed the same field without a
+default is rejected inline with no field created, and added a
+relationship whose reference picker offered and persisted a real
+foreign-key-backed row. See `docs/implementation/APP_PLATFORM_PHASE3.md`
+and `TEST_STATUS.md` for the full account. Remaining steps: basic
+permissions (needs its own design decision first, not yet made) and
+qualification.
 The master brief's ten development phases
 are tracked in `docs/implementation/APP_PLATFORM_ROADMAP.md`; current work and
 remaining runtime requirements are in `docs/implementation/APP_PLATFORM_PHASE2.md`.

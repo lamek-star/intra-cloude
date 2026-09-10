@@ -28,16 +28,19 @@ changes. Frontend: "Add model"/"Add relationship" on the instance page
 and "Add field" on the model page, reusing step 2's type-appropriate
 default-value input; `next build` and ESLint pass clean.
 
-**Not live-verified in a real browser this step**, unlike every prior
-Phase 3 checkpoint below — the Claude-in-Chrome extension was
-disconnected for this session. The dev stack was rebuilt and the
-`0007_schema_evolution_guards` migration applied against it, and both the
-backend gate and the frontend build ran against those real images, but
-the actual click-through (add a field/model/relationship to a live,
-populated app through the UI and confirm it works) has not been done.
-Open item until a follow-up session with a connected browser closes it.
-See [APP_PLATFORM_PHASE3.md](APP_PLATFORM_PHASE3.md) for the full
-account, including the four-trigger-guard saga.
+**Live-verified end-to-end in a real browser** in a follow-up session
+once the Claude-in-Chrome extension reconnected: installed and
+provisioned a fresh instance, then against that live, provisioned
+runtime used the new UI to add a second model (confirmed a real record
+could be created in it), add a field to a now-populated model (confirmed
+the required-without-default rejection renders inline and creates
+nothing, then confirmed a required field with a default backfills the
+pre-existing row's real Postgres column value), and add a relationship
+(confirmed the reference picker offers the real target row and persists
+a genuine foreign-key reference) — closing the open item the first
+checkpoint here left explicit. See
+[APP_PLATFORM_PHASE3.md](APP_PLATFORM_PHASE3.md) for the full account,
+including the four-trigger-guard saga.
 
 ## App Platform Phase 3 step 2 checkpoint — defaults and ordering (2026-09-10)
 
