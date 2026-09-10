@@ -100,10 +100,21 @@ a populated model (the pre-existing row came back backfilled with the
 real Postgres column default), confirmed the same field without a
 default is rejected inline with no field created, and added a
 relationship whose reference picker offered and persisted a real
-foreign-key-backed row. See `docs/implementation/APP_PLATFORM_PHASE3.md`
-and `TEST_STATUS.md` for the full account. Remaining steps: basic
-permissions (needs its own design decision first, not yet made) and
-qualification.
+foreign-key-backed row. Step 4 (basic permissions) is also done: an app
+instance's own metadata (not the records it stores once provisioned —
+those are already shareable today via the pre-existing
+`databases.tenant_database` sharing resource type, a separation this
+step reuses rather than duplicates) is now shareable through the exact
+same `sharing` app Phase 9 built, via one new
+`RESOURCE_TYPE_APP_INSTANCE` entry in its `LEVEL_PERMISSIONS` dispatch
+(read/write/admin → `app_instance.read`/`+.manage`/`+.schema.manage`,
+deliberately never `database.schema.manage`, which step 3 established
+must stay organization-wide only) and the existing `ShareSection`
+frontend component dropped onto the instance page unmodified.
+Live-verified both directions in a real browser: read-level sharing let
+a second member view but not rename an instance; write-level let them
+rename it. See `docs/implementation/APP_PLATFORM_PHASE3.md` and
+`TEST_STATUS.md` for the full account. Remaining: step 5, qualification.
 The master brief's ten development phases
 are tracked in `docs/implementation/APP_PLATFORM_ROADMAP.md`; current work and
 remaining runtime requirements are in `docs/implementation/APP_PLATFORM_PHASE2.md`.

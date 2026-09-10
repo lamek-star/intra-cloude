@@ -14,6 +14,7 @@ from app_platform.tests.test_foundation import project_for, sample
 from organizations.models import Membership
 from organizations.services import create_organization
 from permissions.services import assign_role, grant_resource_permission
+from sharing.services import create_share_grant
 
 
 class SchemaEvolutionTests(TransactionTestCase):
@@ -169,6 +170,36 @@ class SchemaEvolutionTests(TransactionTestCase):
             format="json",
         )
         self.assertEqual(allowed.status_code, 201, allowed.data)
+
+    def test_admin_level_app_instance_share_does_not_substitute_for_database_schema_manage(self):
+        """Phase 3 step 4 lets an app instance be shared at "admin" level
+        (sharing.services.LEVEL_PERMISSIONS), which grants
+        app_instance.schema.manage resource-scoped to that instance -- the
+        same permission a direct ResourceGrant already proved insufficient
+        above. Confirms the sharing integration doesn't accidentally widen
+        that boundary: database.schema.manage must still come from a real
+        organization-wide role."""
+        member = User.objects.create_user(email="evolve-shared@example.com")
+        Membership.objects.create(user=member, organization=self.org, status=Membership.Status.ACTIVE)
+        create_share_grant(
+            actor=self.actor,
+            organization=self.org,
+            resource_type="app_instance",
+            resource_id=self.instance.id,
+            principal_type="user",
+            user=member,
+            level="admin",
+        )
+        client = APIClient()
+        client.force_authenticate(member)
+
+        denied = client.post(
+            f"/api/v1/app-models/{self.item.id}/fields/",
+            {"key": "note", "label": "Note", "data_type": "text"},
+            format="json",
+        )
+        self.assertEqual(denied.status_code, 403)
+        self.assertFalse(self.item.fields.filter(key="note").exists())
 
     def test_unresolved_provisioning_blocks_additions(self):
         definition = sample()

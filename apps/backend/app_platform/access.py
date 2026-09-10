@@ -6,6 +6,12 @@ from audit.models import AuditEvent
 from organizations.services import get_member_organization
 from permissions.services import has_permission
 
+# The resource_type string ResourceGrant rows use for a per-instance
+# capability check (see require_manage below) -- named here, not just
+# inlined, so sharing/services.py can import it rather than hand-typing
+# the string across an app boundary.
+RESOURCE_TYPE_APP_INSTANCE = "app_instance"
+
 
 def check(actor, organization_id, capability, resource=None):
     if not actor or not actor.is_authenticated or not actor.is_active or hasattr(actor, "service_account"):

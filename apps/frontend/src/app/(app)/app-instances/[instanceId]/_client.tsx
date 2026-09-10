@@ -29,6 +29,7 @@ import {
   Select,
   Spinner,
 } from "@/components/ui";
+import { ShareSection } from "@/components/ShareSection";
 
 const KEY_PATTERN = "[a-z][a-z0-9_]*";
 
@@ -302,6 +303,14 @@ export default function AppInstanceClient({ instanceId }: { instanceId: string }
           )}
         </div>
       )}
+
+      <div className="mt-8">
+        <ShareSection
+          organizationId={instance.organization}
+          resourceType="app_instance"
+          resourceId={instance.id}
+        />
+      </div>
 
       <EditInstanceModal
         open={editModalOpen}

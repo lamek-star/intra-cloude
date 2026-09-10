@@ -12,10 +12,13 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from accounts.models import User
+from app_platform import instances, templates
+from app_platform.tests.test_foundation import sample
 from audit.models import AuditEvent
-from organizations.models import Membership
+from organizations.models import Membership, Organization
 from permissions.management.commands.seed_permissions import Command as SeedPermissionsCommand
 from permissions.models import ResourceGrant
+from workspaces.models import Project
 
 
 class SharingTestBase(APITestCase):
@@ -211,3 +214,85 @@ class ExternalSharingToggleTests(SharingTestBase):
             reverse("external-sharing-setting", args=[self.org_id]), {"enabled": False}, format="json"
         )
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class AppInstanceSharingTests(SharingTestBase):
+    """App Platform Phase 3 step 4 ("basic permissions"): an app instance's
+    metadata (definitions, not the records it stores once provisioned --
+    see RESOURCE_TYPE_TENANT_DATABASE above for that) reuses this same
+    sharing mechanism rather than a bespoke one."""
+
+    def _install_instance(self):
+        org = Organization.objects.get(pk=self.org_id)
+        project = Project.objects.get(pk=self.project_id)
+        template = templates.create_template(self.admin, org, {"label": "App", "draft": sample()})
+        version = templates.publish_template(self.admin, template)
+        return instances.install(
+            self.admin, project, {"label": "Runtime", "template_version": str(version.id)}
+        )
+
+    def test_before_any_share_the_member_has_no_access(self):
+        instance = self._install_instance()
+        self.client.force_login(self.member)
+        resp = self.client.get(f"/api/v1/app-instances/{instance.id}/")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_read_level_share_grants_read_but_not_manage(self):
+        instance = self._install_instance()
+        share = self._share(resource_type="app_instance", resource_id=str(instance.id), level="read")
+        self.assertEqual(share.status_code, status.HTTP_201_CREATED)
+
+        self.client.force_login(self.member)
+        read = self.client.get(f"/api/v1/app-instances/{instance.id}/")
+        self.assertEqual(read.status_code, status.HTTP_200_OK)
+        rename = self.client.patch(
+            f"/api/v1/app-instances/{instance.id}/", {"label": "Renamed"}, format="json"
+        )
+        self.assertEqual(rename.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_write_level_share_grants_read_and_manage(self):
+        instance = self._install_instance()
+        share = self._share(resource_type="app_instance", resource_id=str(instance.id), level="write")
+        self.assertEqual(share.status_code, status.HTTP_201_CREATED)
+
+        self.client.force_login(self.member)
+        rename = self.client.patch(
+            f"/api/v1/app-instances/{instance.id}/", {"label": "Renamed"}, format="json"
+        )
+        self.assertEqual(rename.status_code, status.HTTP_200_OK)
+
+    def test_admin_level_app_instance_share_grants_all_three_permissions(self):
+        instance = self._install_instance()
+        resp = self._share(resource_type="app_instance", resource_id=str(instance.id), level="admin")
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        grants = ResourceGrant.objects.filter(
+            user=self.member, resource_type="app_instance", resource_id=instance.id
+        )
+        self.assertEqual(
+            set(grants.values_list("permission_id", flat=True)),
+            {"app_instance.read", "app_instance.manage", "app_instance.schema.manage"},
+        )
+
+    def test_revoking_an_app_instance_share_removes_access(self):
+        instance = self._install_instance()
+        share = self._share(resource_type="app_instance", resource_id=str(instance.id), level="read")
+        share_id = share.data["id"]
+
+        self.client.force_login(self.member)
+        self.assertEqual(
+            self.client.get(f"/api/v1/app-instances/{instance.id}/").status_code, status.HTTP_200_OK
+        )
+
+        self.client.force_login(self.admin)
+        revoke = self.client.delete(reverse("share-grant-detail", args=[share_id]))
+        self.assertEqual(revoke.status_code, status.HTTP_204_NO_CONTENT)
+
+        self.client.force_login(self.member)
+        resp = self.client.get(f"/api/v1/app-instances/{instance.id}/")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_sharing_an_app_instance_id_outside_the_organization_is_rejected(self):
+        import uuid
+
+        resp = self._share(resource_type="app_instance", resource_id=str(uuid.uuid4()))
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)

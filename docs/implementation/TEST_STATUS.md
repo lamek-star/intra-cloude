@@ -1,5 +1,30 @@
 # Test Status
 
+## App Platform Phase 3 step 4 checkpoint — basic permissions (2026-09-10)
+
+Backend: `sharing/services.py` gains a new `RESOURCE_TYPE_APP_INSTANCE`
+entry in its existing `LEVEL_PERMISSIONS`/`_RESOURCE_ORG_FILTERS`
+dispatch (no new model, no migration) — read/write/admin map to
+`app_instance.read`/`+.manage`/`+.schema.manage`, deliberately excluding
+`database.schema.manage` (stays organization-wide only, per step 3). 10
+new tests: 6 in a new `AppInstanceSharingTests` class in
+`sharing/tests/test_sharing.py` (before-any-share denial, read vs. write
+vs. admin grant sets, revocation, cross-org rejection) plus 1 in
+`test_schema_evolution.py` proving an admin-level app-instance share
+still can't run live DDL against a provisioned instance without a real
+`database.schema.manage` role. Targeted gate (`sharing` + `app_platform`
++ `databases`): **196 passed, 0 failed**. Ruff and Mypy clean;
+`makemigrations --check --dry-run` confirms nothing missed. Frontend:
+the existing `ShareSection` component (Phase 9) dropped onto the
+instance page unmodified. **Live-verified end-to-end in a real browser**
+both directions — shared a provisioned instance with a second org member
+at read (member could view but not rename, and saw the correct
+"you don't have permission to manage sharing" message on the Sharing
+section itself), then re-shared at write (the same rename now
+succeeded and persisted) — see
+[APP_PLATFORM_PHASE3.md](APP_PLATFORM_PHASE3.md) for the exact steps and
+the underlying design decision.
+
 ## App Platform Phase 3 step 3 checkpoint — safe populated-schema changes (2026-09-10)
 
 Backend: new `schema_evolution.py` module; 9 new tests

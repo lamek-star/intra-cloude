@@ -47,7 +47,7 @@ Genuinely new backend work, not yet designed or built:
    installed instance through to Phase 2's already-built provisioning and
    record screens. No backend changes; this step is exclusively making
    already-tested backend capability reachable without the API directly.
-2. **Defaults and ordering — current step.** Extend `FieldDefinition`/the
+2. **Defaults and ordering — done.** Extend `FieldDefinition`/the
    definition format with a validated default value per data type and an
    explicit display-order field for models/fields/relationships; extend the
    builder UI and the generated record screens (Phase 2) to use them.
@@ -59,17 +59,94 @@ Genuinely new backend work, not yet designed or built:
    explicit backfill/default handling for a new required field on a
    populated table. Isolation and destructive-action tests required before
    this ships, per CLAUDE.md.
-4. **Basic permissions — not yet started.** A short design decision first
-   (documented, not guessed): what "basic" means here — likely
-   app-instance-scoped ResourceGrants reusing the existing capability
-   mechanism (ADR-0008), not a new authorization system. Then the builder
-   UI to assign it.
+4. **Basic permissions — done.** A short design decision first
+   (documented, not guessed): what "basic" means here — resolved as
+   app-instance-scoped sharing reusing the existing `sharing`/
+   `ResourceGrant` mechanism (ADR-0008), not a new authorization system.
+   Then the builder UI to assign it.
 5. **Qualification.** Fresh full backend/security suite, browser workflows,
    lint/types/builds, migrations, cross-org isolation, grant revocation,
    backup/restore, and a final documentation/remaining-debt pass before
    Phase 3 is declared complete.
 
 ## Current step evidence
+
+### Step 4: basic permissions (2026-09-10)
+
+**Design decision (per CLAUDE.md's "When Uncertain" rule — investigated
+the established pattern rather than guessing):** "basic permissions" for
+an app instance means only its own *metadata* — whether a user can read
+an instance's models/fields/relationships (`app_instance.read`), edit
+them (`app_instance.manage`), or run live schema changes against a
+provisioned one (`app_instance.schema.manage`, step 3). It deliberately
+does **not** mean record-level access to an already-provisioned
+instance's data — that already goes through a different, pre-existing
+surface: `records.py`'s `resolve()` checks `database.read`/
+`database.write` scoped to the instance's *physical tenant database*
+(`RESOURCE_TYPE_TENANT_DATABASE`), which is already shareable today via
+the exact same `sharing` app this step extends, just against the
+database resource directly rather than the app instance. Discovering
+that pre-existing separation while investigating is what turned "basic
+permissions" from an open question into a fully specified, minimal
+change: add one more `resource_type` to `sharing`'s already-generic,
+already-audited (Phase 9) `LEVEL_PERMISSIONS`/`_RESOURCE_ORG_FILTERS`
+dispatch — exactly what the roadmap's own guess named — rather than
+building anything new.
+
+`sharing/services.py` gains `RESOURCE_TYPE_APP_INSTANCE = "app_instance"`
+(defined in `app_platform/access.py`, imported here, mirroring how
+`RESOURCE_TYPE_BUCKET`/`RESOURCE_TYPE_TENANT_DATABASE` are each defined
+in their own app and imported into `sharing`) with three levels — read:
+`app_instance.read`; write: `+ app_instance.manage`; admin:
+`+ app_instance.schema.manage` — and an org filter matching
+`AppInstance.objects.filter(id=resource_id, organization_id=org_id)`.
+Deliberately excluded from every level: `database.schema.manage`, the
+capability step 3's `schema_evolution.require_addition` actually checks
+before allowing live DDL against a *provisioned* instance — established
+in step 3 as organization-wide only, never resource-scoped, matching
+`provisioning.require_provision`'s own rule. Sharing an instance at
+"admin" therefore grants the resource-scoped half of what step 3 checks
+(`app_instance.schema.manage`) but never the organization-wide half
+(`database.schema.manage`); a real role grant is still required for
+that. This boundary is asserted directly, not just implied: a new
+`test_admin_level_app_instance_share_does_not_substitute_for_database_schema_manage`
+in `test_schema_evolution.py` proves an admin-level app-instance share
+still gets a 403 on a live field addition against a provisioned
+instance.
+
+Frontend: the instance page gets the same `<ShareSection>` component
+already used on `/buckets/[bucketId]` and `/tenant-databases/[dbId]`
+(Phase 9's own reusable component) — a true drop-in requiring only the
+three prop values (`organizationId`, `resourceType="app_instance"`,
+`resourceId`) and no changes to `ShareSection.tsx` itself.
+
+Backend: 10 new tests — 6 in a new `AppInstanceSharingTests` class in
+`sharing/tests/test_sharing.py` (before-any-share denial, read grants
+read but not manage, write grants both, admin grants exactly the three
+expected permissions, revocation removes access, and sharing an
+out-of-organization instance id is rejected — mirroring the existing
+bucket/tenant-database coverage in the same file) plus the one
+org-wide-boundary test in `test_schema_evolution.py` above. Fresh
+targeted gate (`sharing` + `app_platform` + `databases`): **196 passed,
+0 failed**. Ruff and Mypy clean; `makemigrations --check --dry-run`
+confirms no missed model changes (this step adds no new fields).
+
+**Live-verified end-to-end in a real browser**, both directions: as the
+org owner, opened the "Live Ops Runtime" instance from step 3's own
+verification, shared it with a second org member at "read" — the new
+"Sharing" section rendered the grant immediately; logged in as that
+member and confirmed the instance page loaded (read-level access) but
+the Sharing section itself showed "You don't have permission to manage
+sharing for this resource" (they have `app_instance.read`, not
+`sharing.manage` — the section's existing 403 handling, unmodified);
+attempted to rename the instance through the "Edit" modal and got
+"Required capability is not granted." inline, with nothing saved.
+Revoked the share, re-shared at "write", and repeated as the member: the
+same rename now succeeded and persisted (confirmed by page title
+updating to the new name), while the sharing-management error still
+correctly appeared (write, unlike admin, grants no `sharing.manage`).
+Confirms the level boundaries this step's own backend tests assert are
+also true through the real UI a person actually uses, not just the API.
 
 ### Step 3: safe populated-schema changes (2026-09-10)
 
