@@ -11,11 +11,13 @@ import {
   type AppModelDefinition,
   type AppRecordsPage,
   type AppRelationshipDefinition,
+  type FieldDefaultValue,
   type Paginated,
 } from "@/lib/api";
 import {
   Badge,
   Button,
+  Checkbox,
   EmptyState,
   ErrorBanner,
   Input,
@@ -33,6 +35,16 @@ import {
 import { useConfirm } from "@/components/ConfirmProvider";
 
 const PAGE_SIZE = 25;
+const DATA_TYPES: AppFieldDataType[] = ["text", "integer", "decimal", "boolean", "date", "datetime"];
+const KEY_PATTERN = "[a-z][a-z0-9_]*";
+
+function slugify(value: string): string {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return /^[a-z]/.test(slug) ? slug : `f_${slug}`;
+}
 
 export default function AppModelClient({ modelId }: { modelId: string }) {
   const [model, setModel] = useState<AppModelDefinition | null>(null);
@@ -47,6 +59,8 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
   const [recordsError, setRecordsError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<Record<string, unknown> | null>(null);
+  const [addFieldError, setAddFieldError] = useState<string | null>(null);
+  const [addingField, setAddingField] = useState(false);
   const confirm = useConfirm();
 
   async function loadMeta() {
@@ -103,6 +117,25 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
     }
   }
 
+  async function handleAddField(field: {
+    key: string;
+    label: string;
+    data_type: AppFieldDataType;
+    required: boolean;
+    default_value: FieldDefaultValue;
+  }) {
+    setAddFieldError(null);
+    setAddingField(true);
+    try {
+      const created = await api.post<AppFieldDefinition>(`/app-models/${modelId}/fields/`, field);
+      setFields((prev) => [...(prev ?? []), created]);
+    } catch (err) {
+      setAddFieldError(err instanceof ApiError ? err.message : "Failed to add field.");
+    } finally {
+      setAddingField(false);
+    }
+  }
+
   if (!model && !error) return <PageLoading />;
   if (error && !model) return <ErrorBanner message={error} error={errorDetail} />;
   if (!model || !fields) return null;
@@ -149,6 +182,15 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
             {r.label}: reference
           </Badge>
         ))}
+      </div>
+
+      {addFieldError && (
+        <div className="mb-3">
+          <ErrorBanner message={addFieldError} />
+        </div>
+      )}
+      <div className="mb-4">
+        <AddFieldForm onAdd={handleAddField} disabled={addingField} />
       </div>
 
       <div className="mb-3">
@@ -591,4 +633,159 @@ function labelFor(record: Record<string, unknown>): string {
     if (typeof val === "number" || typeof val === "boolean") return String(val);
   }
   return String(record.id).slice(0, 8);
+}
+
+function AddFieldForm({
+  onAdd,
+  disabled,
+}: {
+  onAdd: (field: {
+    key: string;
+    label: string;
+    data_type: AppFieldDataType;
+    required: boolean;
+    default_value: FieldDefaultValue;
+  }) => void;
+  disabled: boolean;
+}) {
+  const [key, setKey] = useState("");
+  const [label, setLabel] = useState("");
+  const [dataType, setDataType] = useState<AppFieldDataType>("text");
+  const [required, setRequired] = useState(false);
+  const [defaultValue, setDefaultValue] = useState<FieldDefaultValue>(null);
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!key || !label) return;
+    onAdd({ key, label, data_type: dataType, required, default_value: defaultValue });
+    setKey("");
+    setLabel("");
+    setDataType("text");
+    setRequired(false);
+    setDefaultValue(null);
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
+      <div>
+        <Label htmlFor="new-field-label">New field name</Label>
+        <Input
+          id="new-field-label"
+          value={label}
+          onChange={(e) => {
+            setLabel(e.target.value);
+            if (!key) setKey(slugify(e.target.value));
+          }}
+          placeholder="Name"
+        />
+      </div>
+      <div>
+        <Label htmlFor="new-field-key">Key</Label>
+        <Input
+          id="new-field-key"
+          pattern={KEY_PATTERN}
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="name"
+        />
+      </div>
+      <div>
+        <Label htmlFor="new-field-type">Type</Label>
+        <Select
+          id="new-field-type"
+          value={dataType}
+          onChange={(e) => {
+            setDataType(e.target.value as AppFieldDataType);
+            setDefaultValue(null);
+          }}
+        >
+          {DATA_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <div>
+        <Label htmlFor="new-field-default">Default</Label>
+        <DefaultValueInput dataType={dataType} value={defaultValue} onChange={setDefaultValue} />
+      </div>
+      <label className="flex items-center gap-1.5 pb-2 text-sm text-slate-600">
+        <Checkbox checked={required} onChange={(e) => setRequired(e.target.checked)} />
+        Required
+      </label>
+      <Button type="submit" size="sm" variant="secondary" disabled={disabled || !key || !label}>
+        {disabled ? "..." : "Add field"}
+      </Button>
+    </form>
+  );
+}
+
+function DefaultValueInput({
+  dataType,
+  value,
+  onChange,
+}: {
+  dataType: AppFieldDataType;
+  value: FieldDefaultValue | undefined;
+  onChange: (v: FieldDefaultValue) => void;
+}) {
+  if (dataType === "boolean") {
+    return (
+      <Select
+        value={value === true ? "true" : value === false ? "false" : ""}
+        onChange={(e) => onChange(e.target.value === "" ? null : e.target.value === "true")}
+      >
+        <option value="">No default</option>
+        <option value="true">true</option>
+        <option value="false">false</option>
+      </Select>
+    );
+  }
+  if (dataType === "datetime") {
+    return (
+      <label className="flex items-center gap-1.5 text-sm text-slate-600">
+        <Checkbox
+          checked={value === "now()"}
+          onChange={(e) => onChange(e.target.checked ? "now()" : null)}
+        />
+        Default to current time
+      </label>
+    );
+  }
+  if (dataType === "date") {
+    return (
+      <Input
+        type="date"
+        value={typeof value === "string" ? value : ""}
+        onChange={(e) => onChange(e.target.value || null)}
+      />
+    );
+  }
+  if (dataType === "integer") {
+    return (
+      <Input
+        type="number"
+        step={1}
+        value={typeof value === "number" ? String(value) : ""}
+        onChange={(e) => onChange(e.target.value === "" ? null : parseInt(e.target.value, 10))}
+      />
+    );
+  }
+  if (dataType === "decimal") {
+    return (
+      <Input
+        type="number"
+        step="any"
+        value={value === null || value === undefined ? "" : String(value)}
+        onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
+      />
+    );
+  }
+  return (
+    <Input
+      value={typeof value === "string" ? value : ""}
+      onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
+    />
+  );
 }

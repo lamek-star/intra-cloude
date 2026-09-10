@@ -75,10 +75,30 @@ exempt from the post-provision structural freeze, since reordering touches
 no DDL. Both live-verified end-to-end in a real browser: a field's default
 rendered, was edited, reordered above another field, republished, installed
 fresh, provisioned, and a record created leaving that field blank came back
-with the real database default applied. Remaining steps: safe
-populated-schema changes against an already-provisioned runtime, basic
-permissions (needs its own design decision first, not yet made), and
-qualification.
+with the real database default applied. Step 3 (safe populated-schema
+changes) is also done: a new `schema_evolution.py` module lets
+`add_model`/`add_field`/`add_relationship` apply real DDL against an
+already-provisioned, possibly populated runtime (a new required field on a
+populated model needs a default, which then backfills existing rows via
+Postgres's own column `DEFAULT`), reusing `databases.services`'s validated
+DDL operations through a new `allow_managed_schema` escape hatch, gated by
+org-wide `database.schema.manage` — a schema-only app grant is never
+enough, matching provisioning's own rule. This required patching three of
+Phase 2's Postgres trigger guards (`0007_schema_evolution_guards.py`) that
+had no way to tell this new sanctioned path from an unsanctioned write;
+doing so surfaced a real pre-existing gap (step 2's reordering was
+silently rejected at the database layer on any already-provisioned
+instance the whole time) and a NULL-propagation bug in the fix's own first
+draft (an unset session flag made a negated condition evaluate to SQL
+`NULL`, which PL/pgSQL's `IF` treats as "don't raise" — caught by a
+pre-existing regression test). Frontend gained "Add model"/"Add
+relationship" on the instance page and "Add field" on the model page.
+**Not live-browser-verified this step** — the Claude-in-Chrome extension
+was disconnected for the session that built it; full backend gate (499
+passed) and frontend build/lint ran clean against the real rebuilt images
+instead. See `docs/implementation/APP_PLATFORM_PHASE3.md` and
+`TEST_STATUS.md` for the full account. Remaining steps: basic permissions
+(needs its own design decision first, not yet made) and qualification.
 The master brief's ten development phases
 are tracked in `docs/implementation/APP_PLATFORM_ROADMAP.md`; current work and
 remaining runtime requirements are in `docs/implementation/APP_PLATFORM_PHASE2.md`.

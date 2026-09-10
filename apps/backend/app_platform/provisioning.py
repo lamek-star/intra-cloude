@@ -8,8 +8,7 @@ from audit import services as audit
 from audit.models import AuditEvent
 
 from . import runtime_build
-from .access import check
-from .instances import require_manage
+from .access import check, require_manage
 from .models import AppInstance, RuntimeProvision
 from .runtime_plan import plan_runtime
 

@@ -13,8 +13,8 @@ from rest_framework.exceptions import ValidationError
 
 from databases.identifiers import validate_identifier
 
+from .access import require_manage
 from .definitions import validate_definition
-from .instances import require_manage
 from .models import AppInstance
 
 

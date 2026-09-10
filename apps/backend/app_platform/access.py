@@ -36,3 +36,14 @@ def get_owned(model, object_id, actor, organization_path):
         )
     except model.DoesNotExist as exc:
         raise Http404 from exc
+
+
+def require_manage(actor, instance, schema=True):
+    """Lives here (not instances.py) so schema_evolution.py can depend on
+    it without an instances.py <-> schema_evolution.py import cycle."""
+    check(
+        actor,
+        instance.organization_id,
+        "app_instance.schema.manage" if schema else "app_instance.manage",
+        ("app_instance", instance.id),
+    )

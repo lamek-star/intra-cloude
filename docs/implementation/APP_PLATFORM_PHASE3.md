@@ -51,24 +51,160 @@ Genuinely new backend work, not yet designed or built:
    definition format with a validated default value per data type and an
    explicit display-order field for models/fields/relationships; extend the
    builder UI and the generated record screens (Phase 2) to use them.
-3. **Safe populated-schema changes.** Allow additive structural edits
-   (new field/model/relationship, and only those — no destructive/
+3. **Safe populated-schema changes — done.** Allow additive structural
+   edits (new field/model/relationship, and only those — no destructive/
    type-changing edits in v1) against an already-provisioned runtime,
    applying real DDL immediately through the same validated
    `databases.services` operations Phase 2's provisioning uses, with
    explicit backfill/default handling for a new required field on a
    populated table. Isolation and destructive-action tests required before
    this ships, per CLAUDE.md.
-4. **Basic permissions.** A short design decision first (documented, not
-   guessed): what "basic" means here — likely app-instance-scoped
-   ResourceGrants reusing the existing capability mechanism (ADR-0008), not
-   a new authorization system. Then the builder UI to assign it.
+4. **Basic permissions — not yet started.** A short design decision first
+   (documented, not guessed): what "basic" means here — likely
+   app-instance-scoped ResourceGrants reusing the existing capability
+   mechanism (ADR-0008), not a new authorization system. Then the builder
+   UI to assign it.
 5. **Qualification.** Fresh full backend/security suite, browser workflows,
    lint/types/builds, migrations, cross-org isolation, grant revocation,
    backup/restore, and a final documentation/remaining-debt pass before
    Phase 3 is declared complete.
 
 ## Current step evidence
+
+### Step 3: safe populated-schema changes (2026-09-10)
+
+**Scope, deliberately narrow per the roadmap:** a brand-new model, field, or
+relationship added to an *already-provisioned* instance, applying real DDL
+immediately. Never a rename, type change, deletion, or edit to something
+that already exists physically — those stay exactly as blocked by
+`lock_active` as before this step, since none of them can be done safely
+without a real migration strategy this phase doesn't build.
+
+New module `app_platform/schema_evolution.py` reuses the exact validated
+`databases.services` DDL operations Phase 2's own provisioning already
+uses (`create_table`/`add_column`/`add_foreign_key`), each now accepting a
+new `allow_managed_schema` flag — the one sanctioned way past their normal
+"this schema belongs to an app" guard — inside the same
+`transaction.atomic(using="tenant")` discipline `provisioning.execute`
+established. A new required field being added to a model that already has
+rows is rejected unless it carries a default (checked with a real
+`SELECT EXISTS` against the tenant table before generating DDL, not a
+row-count heuristic); given a default, the column's own Postgres
+`DEFAULT` backfills every existing row for free, the same mechanism step
+2 relies on for record creation.
+
+`instances.py`'s `add_model`/`add_field`/`add_relationship` now each
+check whether the owning instance has a completed `RuntimeProvision`
+(`schema_evolution.ready_receipt`): if not, behavior is byte-for-byte
+unchanged (a pure metadata edit, pre-provision, exactly as before this
+step); if so, the write additionally requires org-wide
+`database.schema.manage` (`schema_evolution.require_addition`) — matching
+`provisioning.require_provision`'s own rule that a schema-only app grant
+must never be enough to trigger real tenant DDL — then runs the real DDL
+inside the same request transaction as the definition-row insert, and the
+resulting physical id is recorded into `RuntimeProvision.bindings` (never
+`.plan`, which stays the frozen record of what the *original* fingerprint
+produced — see the design note below). Reordering an existing definition
+stays exempt from the provisioned-runtime block exactly as step 2 left
+it, confirmed by a dedicated regression test
+(`test_existing_field_edits_stay_blocked_once_provisioned`) that a
+non-addition edit (e.g. flipping `required` on an existing field) is
+still rejected once provisioned.
+
+**A design decision worth recording explicitly:** `RuntimeProvision.plan`
+is the immutable snapshot of exactly what the original provisioning
+fingerprint produced (enforced unconditionally by the 0004 migration's
+`app_platform_identity_guard` trigger, by design). A live addition
+therefore extends only `.bindings` — the live, mutable ledger
+`records.resolve`/`_table` actually read to find a model's physical
+table — never `.plan`. This was discovered, not assumed: an earlier draft
+tried to also update `.plan` and was correctly rejected by that trigger,
+which is exactly the defense-in-depth doing its job.
+
+**Four layered Postgres trigger guards, found and fixed one at a time.**
+This step touches control-plane triggers written for Phase 2
+(`0004_runtime_guards.py`), all of which were written before any
+sanctioned "add to an already-published runtime" code path existed and
+therefore had no way to distinguish it from an unsanctioned write. Fixed
+in a new `0007_schema_evolution_guards.py`, each exemption gated on a
+`SET LOCAL app_platform.schema_evolution = 'on'` flag
+(`schema_evolution.mark_addition_transaction`) that only this module's
+own capability-checked code path ever sets, so every guard remains a real
+backstop against a bypass rather than opening unconditionally:
+1. `app_runtime_definition_guard` (the app_platform definition tables)
+   blocked all INSERTs once any `RuntimeProvision` existed for the owning
+   instance — exempted for a sanctioned-transaction INSERT. Investigating
+   this guard's UPDATE branch surfaced a real, pre-existing gap from step
+   2: its label-only exemption never actually included `position`, so
+   step 2's reordering feature was silently rejected at the database
+   layer for any already-provisioned instance the whole time step 2 was
+   "done" — never caught because step 2's own tests only reordered
+   pre-provision instances. Fixed in the same migration.
+2. `app_runtime_catalog_guard` (the `databases` catalog tables a new
+   column/table/foreign-key row actually is) — same INSERT exemption,
+   same reasoning.
+3. `app_runtime_receipt_guard` blocks *any* UPDATE to
+   `app_platform_runtimeprovision` once `completed_at IS NOT NULL`,
+   which is what a `bindings`-only save actually is. Exempted narrowly:
+   only when the sanctioned-transaction flag is set **and** no column
+   other than `bindings` changed, falling through to the guard's
+   existing plan/fingerprint/database-boundary checks rather than
+   returning early, so those invariants still apply in full.
+4. A genuine bug in the first attempt at (3): writing the exemption as
+   `... AND NOT (flag = 'on' AND bindings-only)` inside the original
+   `RAISE` condition. When the flag was never set in a session (the
+   normal case for every unsanctioned write), `current_setting(...,
+   true)` returns SQL `NULL`, and `NULL = 'on'` is `NULL`, not `false` —
+   so the outer `NOT(...)` was also `NULL`, and PL/pgSQL's `IF NULL`
+   silently skips the `THEN` branch instead of executing it. The
+   exception never fired for *any* unsanctioned UPDATE, not just
+   sanctioned ones — caught by the pre-existing
+   `test_published_schema_rejects_builder_and_direct_catalog_mutations`
+   regression test going from failing-as-expected to passing-when-it-
+   shouldn't. Fixed by restructuring as a positive nested `IF` (exempt
+   only inside a `THEN` whose condition, when `NULL`, correctly falls
+   through to the `ELSE` that raises) rather than negating a
+   flag-comparison — the same NULL-propagation trap the other two
+   guards' `AND current_setting(...) = 'on'` pattern never had, since
+   there it's used as a positive gate on a `RETURN NEW` early-exit, where
+   `NULL` already means "don't take this branch."
+
+Backend: `0007_schema_evolution_guards.py` migration; new
+`test_schema_evolution.py` (9 tests: live field addition creating a
+record with the new column; a required field without a default rejected
+against a populated model; a required field with a default backfilling
+existing rows; a live model addition producing a working table; a live
+relationship addition enforcing a real foreign key; `database.schema.manage`
+required org-wide — never resource-scoped — once provisioned, matching
+`provisioning.require_provision`'s own rule; additions blocked while
+provisioning is reserved-but-not-yet-completed; the pre-existing
+"non-addition edits stay blocked" regression; and a same-instance-only
+isolation test proving a live addition to one instance never touches a
+sibling instance's definitions). Fresh full backend gate: **499 passed, 2
+skipped, 0 failed** (up from 490; the 2 skips are the real-worker-SIGKILL
+restore probes, `RUN_RESTORE_WORKER_TESTS=0` for this run). Ruff and Mypy
+clean; `makemigrations --check --dry-run` confirms no missed model
+changes.
+
+Frontend: the instance page (`/app-instances/[instanceId]`) gains an
+"Add model" form and, once at least one model exists, an "Add
+relationship" form — both reachable whether or not the instance is
+provisioned yet, since the backend already treated pre-/post-provision
+identically at the metadata layer and now does real DDL transparently
+when it's the latter. The model page (`/app-models/[modelId]`) gains an
+"Add field" form (key/label/type/required/default, reusing the same
+type-appropriate default-value input step 2 built for the template
+builder). `next build`, ESLint pass clean.
+
+**Not live-verified in a real browser this step** — the Claude-in-Chrome
+extension was disconnected for this session, unlike every prior step's
+checkpoint. The dev stack was rebuilt and the migration applied
+(`docker compose build backend frontend`, `manage.py migrate
+app_platform`), and the full backend gate plus the frontend
+build/lint/typecheck all pass against the real running stack's images,
+but the actual browser click-through this project's own standard calls
+for has not happened yet. Tracked as an explicit open item, not silently
+skipped — see [TEST_STATUS.md](TEST_STATUS.md).
 
 ### Step 2: defaults and ordering (2026-09-10)
 

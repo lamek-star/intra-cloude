@@ -5,9 +5,9 @@ from rest_framework import serializers
 from rest_framework.response import Response
 
 from . import provisioning
-from .access import get_owned
+from .access import get_owned, require_manage
 from .definitions import StrictSerializer
-from .instances import require_manage, validated
+from .instances import validated
 from .models import AppInstance, RuntimeProvision
 from .runtime_plan import plan_runtime
 from .tasks import provision_runtime_task

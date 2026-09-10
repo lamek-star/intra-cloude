@@ -1,5 +1,44 @@
 # Test Status
 
+## App Platform Phase 3 step 3 checkpoint — safe populated-schema changes (2026-09-10)
+
+Backend: new `schema_evolution.py` module; 9 new tests
+(`test_schema_evolution.py`) covering live field/model/relationship
+addition, required-field-without-default rejection, required-field-with-
+default backfill, org-wide-only `database.schema.manage` enforcement,
+additions blocked on an unresolved (reserved-but-not-executed) receipt,
+non-addition edits still blocked post-provision, and same-instance-only
+isolation. New migration `0007_schema_evolution_guards.py` patches three
+separate Postgres trigger guards from Phase 2 (`0004_runtime_guards.py`)
+that had no way to distinguish this step's new sanctioned live-DDL path
+from an unsanctioned write; fixing them surfaced and closed a real
+pre-existing gap left over from step 2 (reordering an already-provisioned
+instance's definitions was silently rejected at the database layer this
+whole time, never caught because step 2's own tests never reordered a
+provisioned instance) and a genuine NULL-propagation bug in the first
+draft of the third guard's fix (an unset session flag made a `NOT(...)`
+condition evaluate to SQL `NULL` rather than `false`, which PL/pgSQL's
+`IF` silently treats as "don't raise" — caught by a pre-existing
+direct-catalog-mutation regression test flipping from failing-as-expected
+to incorrectly passing). Fresh full backend gate: **499 passed, 2
+skipped, 0 failed** (up from 490; the 2 skips are the real-worker-SIGKILL
+restore probes, `RUN_RESTORE_WORKER_TESTS=0` for this run). Ruff and Mypy
+clean; `makemigrations --check --dry-run` confirms no missed model
+changes. Frontend: "Add model"/"Add relationship" on the instance page
+and "Add field" on the model page, reusing step 2's type-appropriate
+default-value input; `next build` and ESLint pass clean.
+
+**Not live-verified in a real browser this step**, unlike every prior
+Phase 3 checkpoint below — the Claude-in-Chrome extension was
+disconnected for this session. The dev stack was rebuilt and the
+`0007_schema_evolution_guards` migration applied against it, and both the
+backend gate and the frontend build ran against those real images, but
+the actual click-through (add a field/model/relationship to a live,
+populated app through the UI and confirm it works) has not been done.
+Open item until a follow-up session with a connected browser closes it.
+See [APP_PLATFORM_PHASE3.md](APP_PLATFORM_PHASE3.md) for the full
+account, including the four-trigger-guard saga.
+
 ## App Platform Phase 3 step 2 checkpoint — defaults and ordering (2026-09-10)
 
 Backend: 5 new tests (`test_defaults_ordering.py`) plus an updated

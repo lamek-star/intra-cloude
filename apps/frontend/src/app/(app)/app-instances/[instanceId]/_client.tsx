@@ -26,8 +26,19 @@ import {
   Modal,
   PageHeader,
   PageLoading,
+  Select,
   Spinner,
 } from "@/components/ui";
+
+const KEY_PATTERN = "[a-z][a-z0-9_]*";
+
+function slugify(value: string): string {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return /^[a-z]/.test(slug) ? slug : `f_${slug}`;
+}
 
 export default function AppInstanceClient({ instanceId }: { instanceId: string }) {
   const [instance, setInstance] = useState<AppInstance | null>(null);
@@ -41,6 +52,10 @@ export default function AppInstanceClient({ instanceId }: { instanceId: string }
   const [provisionError, setProvisionError] = useState<string | null>(null);
   const [provisioning, setProvisioning] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [addModelError, setAddModelError] = useState<string | null>(null);
+  const [addingModel, setAddingModel] = useState(false);
+  const [addRelError, setAddRelError] = useState<string | null>(null);
+  const [addingRel, setAddingRel] = useState(false);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   async function loadRuntime() {
@@ -114,6 +129,44 @@ export default function AppInstanceClient({ instanceId }: { instanceId: string }
     } catch (err) {
       setProvisionError(err instanceof ApiError ? err.message : "Failed to start provisioning.");
       setProvisioning(false);
+    }
+  }
+
+  async function handleAddModel(key: string, label: string) {
+    setAddModelError(null);
+    setAddingModel(true);
+    try {
+      const model = await api.post<AppModelDefinition>(`/app-instances/${instanceId}/models/`, {
+        key,
+        label,
+      });
+      setModels((prev) => [...(prev ?? []), model]);
+    } catch (err) {
+      setAddModelError(err instanceof ApiError ? err.message : "Failed to add model.");
+    } finally {
+      setAddingModel(false);
+    }
+  }
+
+  async function handleAddRelationship(payload: {
+    key: string;
+    label: string;
+    source_model: string;
+    target_model: string;
+    deletion_policy: "restrict" | "set_null";
+  }) {
+    setAddRelError(null);
+    setAddingRel(true);
+    try {
+      const relation = await api.post<AppRelationshipDefinition>(
+        `/app-instances/${instanceId}/relationships/`,
+        payload,
+      );
+      setRelationships((prev) => [...(prev ?? []), relation]);
+    } catch (err) {
+      setAddRelError(err instanceof ApiError ? err.message : "Failed to add relationship.");
+    } finally {
+      setAddingRel(false);
     }
   }
 
@@ -216,16 +269,37 @@ export default function AppInstanceClient({ instanceId }: { instanceId: string }
         </div>
       )}
 
-      {relationships && relationships.length > 0 && (
+      {addModelError && (
+        <div className="mt-4">
+          <ErrorBanner message={addModelError} />
+        </div>
+      )}
+      {!instance.archived && (
+        <div className="mt-4">
+          <AddModelForm onAdd={handleAddModel} disabled={addingModel} />
+        </div>
+      )}
+
+      {models && models.length > 0 && (
         <div className="mt-8">
           <h2 className="mb-3 text-sm font-semibold text-slate-600">Relationships</h2>
-          <div className="flex flex-wrap gap-2">
-            {relationships.map((r) => (
-              <Badge key={r.id}>
-                {modelLabel(r.source_model)} → {modelLabel(r.target_model)} ({r.label})
-              </Badge>
-            ))}
-          </div>
+          {relationships && relationships.length > 0 && (
+            <div className="mb-3 flex flex-wrap gap-2">
+              {relationships.map((r) => (
+                <Badge key={r.id}>
+                  {modelLabel(r.source_model)} → {modelLabel(r.target_model)} ({r.label})
+                </Badge>
+              ))}
+            </div>
+          )}
+          {addRelError && (
+            <div className="mb-3">
+              <ErrorBanner message={addRelError} />
+            </div>
+          )}
+          {!instance.archived && (
+            <AddRelationshipForm models={models} onAdd={handleAddRelationship} disabled={addingRel} />
+          )}
         </div>
       )}
 
@@ -302,5 +376,146 @@ function EditInstanceModal({
         </div>
       </form>
     </Modal>
+  );
+}
+
+function AddModelForm({
+  onAdd,
+  disabled,
+}: {
+  onAdd: (key: string, label: string) => void;
+  disabled: boolean;
+}) {
+  const [key, setKey] = useState("");
+  const [label, setLabel] = useState("");
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!key || !label) return;
+    onAdd(key, label);
+    setKey("");
+    setLabel("");
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-2">
+      <div>
+        <Label htmlFor="new-model-label">New model name</Label>
+        <Input
+          id="new-model-label"
+          value={label}
+          onChange={(e) => {
+            setLabel(e.target.value);
+            if (!key) setKey(slugify(e.target.value));
+          }}
+          placeholder="Item"
+        />
+      </div>
+      <div>
+        <Label htmlFor="new-model-key">Key</Label>
+        <Input
+          id="new-model-key"
+          pattern={KEY_PATTERN}
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="item"
+        />
+      </div>
+      <Button type="submit" size="sm" disabled={disabled || !key || !label}>
+        {disabled ? "..." : "Add model"}
+      </Button>
+    </form>
+  );
+}
+
+function AddRelationshipForm({
+  models,
+  onAdd,
+  disabled,
+}: {
+  models: AppModelDefinition[];
+  onAdd: (payload: {
+    key: string;
+    label: string;
+    source_model: string;
+    target_model: string;
+    deletion_policy: "restrict" | "set_null";
+  }) => void;
+  disabled: boolean;
+}) {
+  const [key, setKey] = useState("");
+  const [label, setLabel] = useState("");
+  const [sourceModel, setSourceModel] = useState(models[0]?.id ?? "");
+  const [targetModel, setTargetModel] = useState(models[0]?.id ?? "");
+  const [deletionPolicy, setDeletionPolicy] = useState<"restrict" | "set_null">("restrict");
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!key || !label || !sourceModel || !targetModel) return;
+    onAdd({ key, label, source_model: sourceModel, target_model: targetModel, deletion_policy: deletionPolicy });
+    setKey("");
+    setLabel("");
+    setDeletionPolicy("restrict");
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-2">
+      <div>
+        <Label htmlFor="new-rel-label">New relationship name</Label>
+        <Input
+          id="new-rel-label"
+          value={label}
+          onChange={(e) => {
+            setLabel(e.target.value);
+            if (!key) setKey(slugify(e.target.value));
+          }}
+          placeholder="Group"
+        />
+      </div>
+      <div>
+        <Label htmlFor="new-rel-key">Key</Label>
+        <Input
+          id="new-rel-key"
+          pattern={KEY_PATTERN}
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="group"
+        />
+      </div>
+      <div>
+        <Label htmlFor="new-rel-source">From</Label>
+        <Select id="new-rel-source" value={sourceModel} onChange={(e) => setSourceModel(e.target.value)}>
+          {models.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <div>
+        <Label htmlFor="new-rel-target">References</Label>
+        <Select id="new-rel-target" value={targetModel} onChange={(e) => setTargetModel(e.target.value)}>
+          {models.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <div>
+        <Label htmlFor="new-rel-policy">On delete</Label>
+        <Select
+          id="new-rel-policy"
+          value={deletionPolicy}
+          onChange={(e) => setDeletionPolicy(e.target.value as "restrict" | "set_null")}
+        >
+          <option value="restrict">Restrict</option>
+          <option value="set_null">Set null</option>
+        </Select>
+      </div>
+      <Button type="submit" size="sm" disabled={disabled || !key || !label}>
+        {disabled ? "..." : "Add relationship"}
+      </Button>
+    </form>
   );
 }

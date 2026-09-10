@@ -62,9 +62,16 @@ def _execute_tenant_ddl(ddl: sql.Composable) -> None:
         cursor.execute(ddl)
 
 
-def _require_unmanaged_schema(database):
+def _require_unmanaged_schema(database, *, allow_managed_schema: bool = False):
     # App runtime provisioning uses these same services before publication.
-    # After publication, structural changes require a coordinated app migration.
+    # After publication, ordinary structural changes require a coordinated
+    # app migration -- `allow_managed_schema` is the one sanctioned
+    # exception: app_platform.schema_evolution's own additive-only,
+    # capability-checked path for extending an already-provisioned runtime
+    # (Phase 3 step 3), passed explicitly by that module alone. No other
+    # caller should ever pass it.
+    if allow_managed_schema:
+        return
     from app_platform.models import RuntimeProvision
 
     if RuntimeProvision.objects.filter(database_id=database.id).exists():
@@ -164,7 +171,14 @@ def create_tenant_database(
     return tenant_db
 
 
-def create_table(*, actor, tenant_database: TenantDatabase, name: str, request_id: str = "") -> DBTable:
+def create_table(
+    *,
+    actor,
+    tenant_database: TenantDatabase,
+    name: str,
+    request_id: str = "",
+    allow_managed_schema: bool = False,
+) -> DBTable:
     org_id = tenant_database.organization_id
     _require(
         actor,
@@ -175,7 +189,7 @@ def create_table(*, actor, tenant_database: TenantDatabase, name: str, request_i
         resource_id=tenant_database.id,
         request_id=request_id,
     )
-    _require_unmanaged_schema(tenant_database)
+    _require_unmanaged_schema(tenant_database, allow_managed_schema=allow_managed_schema)
 
     try:
         validate_identifier(name, kind="table name")
@@ -240,6 +254,7 @@ def add_column(
     is_unique: bool = False,
     default_value=None,
     request_id: str = "",
+    allow_managed_schema: bool = False,
 ) -> DBColumn:
     org_id = table.organization_id
     _require(
@@ -251,7 +266,7 @@ def add_column(
         resource_id=table.id,
         request_id=request_id,
     )
-    _require_unmanaged_schema(table.tenant_database)
+    _require_unmanaged_schema(table.tenant_database, allow_managed_schema=allow_managed_schema)
 
     try:
         validate_column_name(name)
@@ -333,6 +348,7 @@ def add_foreign_key(
     references_column: DBColumn,
     on_delete: str = DBForeignKey.OnDelete.RESTRICT,
     request_id: str = "",
+    allow_managed_schema: bool = False,
 ) -> DBForeignKey:
     org_id = column.organization_id
     _require(
@@ -344,7 +360,7 @@ def add_foreign_key(
         resource_id=column.id,
         request_id=request_id,
     )
-    _require_unmanaged_schema(column.table.tenant_database)
+    _require_unmanaged_schema(column.table.tenant_database, allow_managed_schema=allow_managed_schema)
 
     if references_table.tenant_database_id != column.table.tenant_database_id:
         raise SchemaValidationError("Foreign keys must reference a table in the same database")
