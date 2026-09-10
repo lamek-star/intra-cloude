@@ -456,6 +456,87 @@ def add_unique_constraint(
     return index
 
 
+def add_composite_unique_constraint(
+    *,
+    actor,
+    table: DBTable,
+    column_a: DBColumn,
+    column_b: DBColumn,
+    request_id: str = "",
+    allow_managed_schema: bool = False,
+) -> DBIndex:
+    """A narrow, join-table-specific primitive -- exactly two named
+    columns, never an arbitrary list. This is deliberately NOT the general
+    "composite uniqueness for arbitrary App Platform fields" capability
+    (out of scope, see docs/SPARE_PARTS_INTEGRATION_READINESS.md); it
+    exists solely so app_platform's many-to-many join tables can enforce
+    "no duplicate (source, target) pair" as a real database constraint.
+    Idempotent like add_unique_constraint/add_index: an existing
+    constraint already covering both columns is returned as-is. Neither
+    column's own `is_unique` is set -- that would mean "this column alone
+    is unique," which is false here; only the pair is."""
+    org_id = table.organization_id
+    _require(
+        actor,
+        "database.schema.manage",
+        org_id,
+        action="database.table.composite_unique.add",
+        resource_type="db_table",
+        resource_id=table.id,
+        request_id=request_id,
+    )
+    _require_unmanaged_schema(table.tenant_database, allow_managed_schema=allow_managed_schema)
+
+    if column_a.table_id != table.id or column_b.table_id != table.id:
+        raise SchemaValidationError("Both columns must belong to the given table")
+    if column_a.id == column_b.id:
+        raise SchemaValidationError("column_a and column_b must be different columns")
+
+    existing = (
+        DBIndex.objects.filter(table=table, is_unique=True, columns=column_a).filter(columns=column_b).first()
+    )
+    if existing is not None:
+        return existing
+
+    index_name = f"idx_{table.id.hex}"
+    ddl = sql.SQL("ALTER TABLE {schema}.{table} ADD CONSTRAINT {name} UNIQUE ({col_a}, {col_b})").format(
+        schema=sql.Identifier(table.tenant_database.schema_name),
+        table=sql.Identifier(table.name),
+        name=sql.Identifier(index_name),
+        col_a=sql.Identifier(column_a.name),
+        col_b=sql.Identifier(column_b.name),
+    )
+    drop_ddl = sql.SQL("ALTER TABLE {schema}.{table} DROP CONSTRAINT {name}").format(
+        schema=sql.Identifier(table.tenant_database.schema_name),
+        table=sql.Identifier(table.name),
+        name=sql.Identifier(index_name),
+    )
+    try:
+        _execute_tenant_ddl(ddl)
+    except DjangoIntegrityError as exc:
+        raise SchemaValidationError(
+            "Cannot add a unique constraint: existing rows already duplicate this pair of columns."
+        ) from exc
+
+    def _write():
+        index = DBIndex.objects.create(table=table, name=index_name, is_unique=True)
+        index.columns.add(column_a, column_b)
+        return index
+
+    index = _write_catalog(_write, compensating_ddl=drop_ddl)
+
+    audit.record(
+        actor=actor,
+        organization_id=org_id,
+        action="database.table.composite_unique.add",
+        resource_type="db_table",
+        resource_id=table.id,
+        request_id=request_id,
+        context={"columns": [column_a.name, column_b.name]},
+    )
+    return index
+
+
 def add_index(
     *, actor, column: DBColumn, request_id: str = "", allow_managed_schema: bool = False
 ) -> DBIndex:
