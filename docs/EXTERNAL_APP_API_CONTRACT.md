@@ -56,8 +56,8 @@ everything else stays exactly as human-session-only as before this work:
 |---|---|
 | `app-instances/{id}/` | `GET` only (not `PATCH` — rename/archive stays administrative) |
 | `app-instances/{id}/models/`, `.../relationships/` | `GET` only (not `POST` — adding a model/relationship is schema mutation) |
-| `app-models/{id}/`, `app-fields/{id}/`, `app-relationships/{id}/` | `GET` only (not `PATCH`) |
-| `app-models/{id}/fields/` | `GET` only (not `POST`) |
+| `app-models/{id}/`, `app-fields/{id}/`, `app-relationships/{id}/`, `app-constraints/{id}/` | `GET` only (not `PATCH`) |
+| `app-models/{id}/fields/`, `.../constraints/` | `GET` only (not `POST`) |
 | `app-models/{model_id}/records/` | `GET`, `POST` |
 | `app-models/{model_id}/records/{record_id}/` | `GET`, `PATCH`, `DELETE` |
 | `.../records/{record_id}/attachments/` | `GET`, `POST` |
@@ -69,9 +69,9 @@ everything else stays exactly as human-session-only as before this work:
 human-session-only): template administration (`app-templates/*`,
 `app-template-versions/*`), installing a new instance
 (`POST projects/{id}/app-instances/`), every schema-*mutation* endpoint
-(adding a model/field/relationship, editing a definition), runtime
-provisioning, `app-fields/{id}/unique/` and `.../indexed/` (see Field
-indexing/uniqueness below). This is a deliberate first-slice boundary,
+(adding a model/field/relationship/constraint, editing a definition),
+runtime provisioning, `app-fields/{id}/unique/` and `.../indexed/` (see
+Field indexing/uniqueness below). This is a deliberate first-slice boundary,
 not a technical limitation — see the readiness review's Decision section.
 
 Reachability alone grants nothing: every action, once reachable, still
@@ -114,6 +114,8 @@ derived from or reveal physical PostgreSQL table/column names.
 | List an instance's models | `GET app-instances/{instance_id}/models/` | Each: `{id, instance, key, label, position, source_definition_id}` |
 | List an instance's relationships | `GET app-instances/{instance_id}/relationships/` | Each: `{id, instance, key, label, position, source_definition_id, source_model, target_model, kind, deletion_policy}` |
 | Inspect one model/field/relationship | `GET app-models/{id}/`, `GET app-fields/{id}/`, `GET app-relationships/{id}/` | Same shapes as above |
+| List a model's composite unique constraints | `GET app-models/{model_id}/constraints/` | Each: `{id, model, key, label, position, source_definition_id, field_ids}` |
+| Inspect one constraint | `GET app-constraints/{id}/` | Same shape as above |
 
 `data_type` is one of exactly `text`, `integer`, `decimal`, `boolean`,
 `date`, `datetime`. `kind` is `many_to_one` or `many_to_many` (native
@@ -138,6 +140,29 @@ provisioned, populated instance (rejects cleanly with `400` if existing
 values would violate the new constraint; leaves all data untouched
 either way), and idempotent (calling either twice is a no-op the second
 time).
+
+`field_ids` (added by general composite uniqueness) is the set of >=2
+stable AppField ids this model-level `UNIQUE` constraint covers, in
+their current display order — never a physical constraint/index name;
+the underlying `databases.services.add_field_set_unique_constraint`
+primitive names the real Postgres object internally, and a client is
+never meant to need or discover that name. A constraint's field set is
+immutable after creation (no endpoint changes it); only `label`/
+`position` can be patched via `PATCH app-constraints/{id}/`
+(human-session-only), and that never touches the physical constraint —
+a display-label rename or a participating field's position/order
+changing is guaranteed not to recreate it. Declaring a new constraint
+(`POST app-models/{model_id}/constraints/`, human-session-only, needs
+>=2 field ids belonging to that same model with no repeats) works
+whether or not the instance is provisioned yet; against an
+already-provisioned, possibly populated instance it runs the same real
+DDL discipline as field uniqueness above — rejects cleanly with `400`
+if existing rows would violate it (data is left completely untouched
+either way), and is idempotent under retry. NULL semantics follow the
+same, already-documented single-field convention: if any participating
+field is nullable, two records can share NULL there (with identical
+values elsewhere) without violating the constraint — PostgreSQL's
+`UNIQUE` never treats NULL as equal to another NULL.
 
 List endpoints use standard DRF `LimitOffsetPagination`:
 `{count, next, previous, results}`.
@@ -324,10 +349,10 @@ that assumes any of it:
   that needs this defines its own separate `normalized_...` field and
   populates it itself (see the readiness review §6 for the pattern).
 - Multi-column sort.
-- Composite (multi-column) uniqueness on arbitrary fields — only
-  single-field `unique` exists. (A many-to-many relationship's own join
-  table does enforce a real composite-unique constraint internally, but
-  this is not a general capability exposed for arbitrary fields.)
+- A general, arbitrary multi-column *index* for search acceleration
+  beyond exact-match (composite uniqueness above is UNIQUE-only, not a
+  general composite-index feature) — see the Schema discovery section
+  above for what composite uniqueness itself now covers.
 - A generic bulk/staged record-import endpoint targeting an App Platform
   model (the existing `imports` app targets `databases.DBTable` only).
 - Any declarative, multi-record, atomic "action" or workflow concept.

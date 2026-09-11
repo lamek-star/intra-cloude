@@ -3,8 +3,10 @@
 Original baseline: commit `886e75f` (App Platform Phase 3, complete — 508
 passed, 2 skipped, 0 failed). **Updated** after Post-Phase-3 Integration
 Enablement closed both blocking gaps this review originally identified
-(§3 external bearer access, §6 field indexing/uniqueness), and **updated
+(§3 external bearer access, §6 field indexing/uniqueness), **updated
 again** after a later pass added native many-to-many relationships (§1,
+§10), and **updated once more** after general composite (multi-field)
+unique constraints closed the "Inventory (Part × Warehouse)" gap (§1,
 §10) — see §11/§12 for the current decision. This document evaluates
 whether the
 **generic** App Platform (`app_platform`, `databases`, `storage`,
@@ -39,8 +41,9 @@ document.
 | Nullable fields | SUPPORTED | `FieldDefinition.required` maps directly to `is_nullable` on the physical column. |
 | Defaults | SUPPORTED | `default_value`, validated per data type through `databases.ddl.default_clause_sql`, produces a real Postgres `DEFAULT` — confirmed live in Phase 3 step 2/3 (default-backfill on a populated table). |
 | Deterministic ordering | SUPPORTED | `Definition.position` + `Meta.ordering`, reorderable at any time, exempt from the post-provision structural freeze. |
-| Unique constraints (on record data) | **SUPPORTED** (single-field) | Closed by Post-Phase-3 Integration Enablement. `FieldDefinition.unique` (migration `0008`), wired through `add_column(is_unique=...)` at field-creation time (template install or live add, provisioned or not) and through a new `databases.services.add_unique_constraint` for retrofitting onto an already-materialized, possibly populated column — both backed by a real Postgres `UNIQUE` constraint, never an application-level pre-check (`app_platform/records.py`'s `create_record`/`update_record` rely entirely on the DB constraint + a clean error translation). Composite (multi-field) uniqueness remains NOT SUPPORTED — only single-column. |
-| Indexes | **SUPPORTED** (single-field B-tree) | Closed alongside uniqueness. `FieldDefinition.indexed`, wired through `add_column(is_indexed=...)` and a new `databases.services.add_index` retrofit function — a real `CREATE INDEX`, catalogued as a `DBIndex` row exactly like the pre-existing unique-column case. No arbitrary/composite/expression index support — one column, B-tree only, matching Postgres's own default index type. |
+| Unique constraints (on record data) | **SUPPORTED** (single-field) | Closed by Post-Phase-3 Integration Enablement. `FieldDefinition.unique` (migration `0008`), wired through `add_column(is_unique=...)` at field-creation time (template install or live add, provisioned or not) and through a new `databases.services.add_unique_constraint` for retrofitting onto an already-materialized, possibly populated column — both backed by a real Postgres `UNIQUE` constraint, never an application-level pre-check (`app_platform/records.py`'s `create_record`/`update_record` rely entirely on the DB constraint + a clean error translation). |
+| Composite (multi-field) unique constraints | **SUPPORTED** | Closes the "Inventory (Part × Warehouse)" gap this review previously tracked as PARTIAL. `ConstraintDefinition` (migration `0011`) declares a model-level UNIQUE constraint over >=2 of that model's own fields, referenced by stable AppField ids (never labels or physical names); `databases.services.add_field_set_unique_constraint` is the general N-column primitive this uses, deliberately separate from the many-to-many join table's own narrow `add_composite_unique_constraint` (exactly 2 fixed columns, one per table) so that path is untouched. Available at template install/fresh provisioning and as a live addition to an already-provisioned, possibly populated model — a populated model with clean data adds the constraint safely; one with existing duplicates is rejected with a clean error and its data is left completely untouched. A field left NULL never counts as a duplicate against another NULL (standard Postgres semantics, documented on `ConstraintDefinition` and enforced, not just asserted, by `app_platform/tests/test_composite_constraints.py`). |
+| Indexes | **SUPPORTED** (single-field B-tree) | Closed alongside uniqueness. `FieldDefinition.indexed`, wired through `add_column(is_indexed=...)` and a new `databases.services.add_index` retrofit function — a real `CREATE INDEX`, catalogued as a `DBIndex` row exactly like the pre-existing unique-column case. No arbitrary/composite/expression index support for plain (non-unique) search-acceleration indexes — one column, B-tree only; composite constraints above are UNIQUE-only, not a general composite-index feature. |
 | Enumerated/status fields | NOT SUPPORTED | `FieldDefinition.data_type` is exactly `text/integer/decimal/boolean/date/datetime` (DB-enforced). A "status" field today is unconstrained free text. |
 | Calculated/derived fields | NOT SUPPORTED | No formula/computed-column concept anywhere in the definition or build pipeline. |
 | References between models | SUPPORTED | A relationship value in the record API is keyed by the relationship's definition UUID and translated to/from the real physical FK column server-side (`records.py`'s `_field_map`/`_translate_in`/`_translate_out`) — the client never sees a physical column name. One caveat: relationship FK columns are always nullable; a relationship cannot be marked required, unlike a field. |
@@ -300,7 +303,7 @@ NOT SUPPORTED as a generic, declarative, app-definable capability:
 | Vehicle compatibility (many-to-many) | Native `many_to_many` relationship kind, real join table + UI (multi-select picker, both-sides read) | **SUPPORTED** | §1 | None | Later slice |
 | `CataloguePart` vs. `CompanyProduct` separation | Two models + relationship | PARTIAL | §8 | No field-level "don't overwrite" protection; application-level discipline required | First slice for the shape; ongoing discipline, not a platform fix |
 | `Warehouse` model | Generic model | SUPPORTED | §1 | — | Later slice |
-| `Inventory` (Part × Warehouse quantity) | Join-style model, two many-to-one relationships | PARTIAL | §1 | No *composite* unique constraint (only single-column `unique` exists) — duplicate `(Part, Warehouse)` rows aren't prevented by the schema | Later slice |
+| `Inventory` (Part × Warehouse quantity) | Join-style model, two many-to-one relationships, plus a model-level composite `UNIQUE(part, warehouse)` constraint | **SUPPORTED** | §1 | None — a real Postgres composite constraint now rejects a duplicate `(Part, Warehouse)` row at creation/update, populated-model retrofit fails safely on existing duplicates, and concurrent duplicate creation is blocked by the constraint itself, not an application-level check | Later slice |
 | `StockMovement` | Plain record creation | SUPPORTED (as a single insert) | §2 | Not atomic with an Inventory update in the same request — see §9 | Later slice |
 | `Supplier`, `PurchaseOrder`, `PurchaseOrderLine` | Generic models + relationships | SUPPORTED (CRUD shape) | §1, §2 | No computed totals (no calculated fields), no atomic multi-step workflow (§9) | Later slice |
 | `Customer`, `SalesOrder`, `SalesOrderLine`, `Invoice` | Generic models + relationships | SUPPORTED (CRUD shape) | §1, §2 | Same as above | Later slice |
@@ -322,7 +325,7 @@ NOT SUPPORTED as a generic, declarative, app-definable capability:
    instance/schema administration deliberately stay human-only).
 2. ~~No indexing/unique-constraint path for App Platform fields~~ —
    **closed** for single-field uniqueness and exact-match lookup, see
-   §1, §6. Composite constraints/indexes and non-exact search remain
+   §1, §6. Composite (non-unique) indexes and non-exact search remain
    out of scope, by design.
 
 **Formerly non-blocking, now also closed:**
@@ -330,6 +333,12 @@ NOT SUPPORTED as a generic, declarative, app-definable capability:
 3. ~~No many-to-many relationship kind~~ — **closed**, see §1. Native
    `many_to_many` relationships with a real join table and UI support;
    filtering/sorting by M:M membership stays out of scope, by design.
+4. ~~No composite (multi-field) uniqueness~~ — **closed**, see §1.
+   General model-level composite `UNIQUE` constraints over an arbitrary
+   set of a model's own fields, both fresh-provisioned and as a live
+   addition against a populated model; a genuinely duplicate-data model
+   is rejected safely rather than the platform silently dropping or
+   rewriting rows.
 
 **Remaining, non-blocking** (real gaps, but each can be designed around
 or deferred without blocking the first, deliberately small integration
@@ -344,7 +353,9 @@ slice):
 - No field-level "protect from external overwrite" concept.
 - No declarative multi-record transactional actions.
 - No field-level permissions.
-- No composite (multi-field) uniqueness or indexing.
+- No composite (non-unique) indexing -- an explicit multi-column index
+  for search acceleration beyond what a composite UNIQUE constraint's
+  own leading-column lookup already gives for free.
 
 ## 12. Integration decision
 
@@ -375,14 +386,12 @@ bearer-token credential, scoped to exactly this instance and its tenant
 database, with template/schema authoring done once by a human through
 the App Builder.
 
-Explicitly deferred to later slices: inventory/warehouses (needs general
-composite uniqueness across arbitrary fields, still absent — the
-many-to-many join table's own composite constraint is a narrow,
-purpose-built primitive, not that general capability), purchase/sales
-workflows and invoices (need the not-yet-built declarative-transaction
-capability, §9, for anything beyond simple CRUD). Vehicle compatibility
-(many-to-many) is no longer deferred — it's a supported capability as of
-§1, and can be included in an earlier slice if desired.
+Explicitly deferred to later slices: purchase/sales workflows and invoices
+(need the not-yet-built declarative-transaction capability, §9, for
+anything beyond simple CRUD). Vehicle compatibility (many-to-many) and
+inventory/warehouses (composite uniqueness across arbitrary fields) are
+no longer deferred — both are supported capabilities as of §1, and can
+be included in an earlier slice if desired.
 
 Do not attempt the full Spare Parts system in one integration, and do not
 build spare-parts-specific code into the platform — every capability this

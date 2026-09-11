@@ -1,5 +1,136 @@
 # Test Status
 
+## Composite (multi-field) uniqueness (2026-09-11)
+
+Closes the "Inventory (Part × Warehouse)" gap
+`docs/SPARE_PARTS_INTEGRATION_READINESS.md`'s readiness review tracked
+as PARTIAL (§1/§10), as a generic platform capability -- no
+spare-parts-specific code. Lets an App Model declare that a combination
+of >=2 of its own fields must be unique, referenced by stable AppField
+ids, never display labels or physical column names.
+
+**Primitive**: `databases.services.add_field_set_unique_constraint`
+(new) is the general N-column composite-uniqueness primitive, keyed by
+a caller-supplied stable `constraint_id` (never the table's own id) so,
+unlike the narrow, join-table-specific `add_composite_unique_constraint`
+many-to-many already uses (untouched by this work -- that primitive's
+own docstring now points at this one instead of calling the general
+capability out of scope), more than one such constraint can coexist per
+table. Idempotent (a `constraint_id` already provisioned returns the
+existing index without reissuing DDL); rejects fewer than two columns, a
+repeated column, or a column from a different table; DDL column order is
+always sorted by physical (id-derived) name, never caller-supplied
+order, so re-provisioning the identical constraint is byte-for-byte the
+same DDL regardless of argument order. A genuine duplicate-combination
+conflict surfaces as a clean `SchemaValidationError`/`400`, never a
+partial index or rewritten/deleted data (`ADD CONSTRAINT` is one
+transaction, matching every sibling primitive in this file).
+
+**Data model**: `ConstraintDefinition` (migration `0011`) -- a
+`ModelDefinition`-scoped row with a `fields` M2M to `FieldDefinition`
+(>=2, same model, no repeats -- enforced in `definitions.py`'s
+`ConstraintInput`/`instances.add_constraint`, not left to the DB layer
+alone, though Django's own M2M through-table unique-together is a real
+second line of defense against a repeated pair). Migration `0012`
+teaches the control-plane trigger guards about the two new mutable
+surfaces this introduces: `app_platform_constraintdefinition` folds
+into the existing `app_runtime_definition_guard` branch that already
+resolves ownership via `model_id` for `fielddefinition`'s identically-
+shaped case (its label/position-editable-anytime exemption therefore
+applies for free); a brand-new guard,
+`app_runtime_constraint_fields_guard`, blocks any write to the
+constraint-fields M2M through table once a runtime is provisioned, with
+the same sanctioned-INSERT-during-`schema_evolution` exemption every
+other guard in this file uses.
+
+**Provisioning**: `runtime_plan.compile_plan`/`plan_runtime` carry each
+model's constraints (definition id + sorted field ids) into the
+fingerprinted plan; `runtime_build.build` provisions them per-model
+immediately after that model's own columns exist, so the fingerprint
+changes -- and reprovisioning is forced -- whenever a constraint's field
+set changes. `schema_evolution.add_constraint_to_runtime` is the live-
+addition counterpart against an already-provisioned, possibly populated
+instance -- exposed via `instances.add_constraint`/
+`POST app-models/{id}/constraints/`, gated by the same `require_addition`
+(org-wide `database.schema.manage`) bar every other live schema change
+in this module uses.
+
+**NULL semantics**: documented deliberately, not assumed or asserted.
+PostgreSQL's `UNIQUE` constraint treats NULL as distinct from every
+other NULL (standard SQL semantics) -- the exact same convention
+`FieldDefinition.unique`'s own docstring already established for the
+single-column case, not a new or different behavior for the composite
+one. Two records sharing NULL in a nullable participating field are not
+duplicates even when every other constrained field matches; verified
+with a real test through the record API (`test_composite_constraints.py`)
+and at the primitive layer (`test_indexing.py`), not just claimed in a
+docstring.
+
+**Runtime/API**: a duplicate combination on create/update returns the
+exact same stable `400`/`"a record with this value already exists"`
+`records.py` already returns for single-field uniqueness --
+`_run()`'s `UniqueViolation` handling is constraint-agnostic, so
+*no `records.py` change was needed at all*. Concurrent duplicate
+creation is blocked by the real Postgres constraint, proven with a
+real-thread concurrency test against separate connections, never an
+application-level check. A constraint's `label`/`position` can be
+patched any time without touching DDL (reuses the existing generic
+`LabelInput` PATCH path, `app-constraints/{id}/`); its field set is
+immutable after creation, matching every other App Platform
+definition's "no rename/retype/delete" discipline -- reordering a
+participating field's own display position likewise never touches it.
+
+**App Builder**: a "Constraints" section per model in both the template
+draft builder (`app-templates/[id]`) and the live-instance model page
+(`app-models/[id]`) -- select >=2 already-saved fields via checkboxes
+plus an optional human-readable label; physical constraint/index names
+are never surfaced in either. The template builder's version is pure
+draft-JSON editing (no extra API call, matching how fields/relationships
+already work there); the live version is a dedicated
+`POST app-models/{id}/constraints/` call, matching the field-level
+`unique`/`indexed` retrofit actions' own human-session-only convention.
+`tsc --noEmit`, `eslint`, and `next build` all clean against both pages.
+
+**Tests**: 43 new backend tests -- 10 in `databases/tests/test_indexing.py`'s
+new `FieldSetUniqueConstraintTests` (the primitive in isolation: clean
+data, deterministic naming/column-order independence, duplicates,
+idempotency, fewer than two columns, a repeated column, a cross-table
+column, more than two columns, multiple independent constraints
+coexisting on one table, and NULL semantics) and 33 in the new
+`app_platform/tests/test_composite_constraints.py` (draft/template
+validation -- valid constraint, too few fields, repeated field, cross-
+model field, missing field; install; fresh provisioning with a real
+composite index; unique/duplicate create and update; same-A-different-B
+and different-A-same-B; concurrency; NULL semantics; coexistence with an
+existing single-field unique field on the same model; populated-clean
+vs. populated-duplicate live addition, including that a failed addition
+leaks nothing and leaves the schema fully usable; idempotent
+reprovisioning of the identical constraint; label-rename and field-
+reorder stability; invalid/repeated/missing field-reference rejection;
+and tenant isolation, including a direct-ORM-write trigger-guard proof
+for the new constraint-fields through table). Ruff/Mypy clean
+throughout; `makemigrations --check --dry-run` confirms nothing missed.
+Fresh full backend gate, run per-app to keep peak memory bounded (a
+single all-apps `manage.py test` invocation was killed by the host's own
+memory pressure, unrelated to this work -- see this file's own "local
+Docker gotcha" note below for the same class of environment issue):
+**574 passed, 2 skipped, 0 failed** across all 16 backend apps. This
+corrects the previously recorded "573" baseline below, which a direct
+re-count shows was already stale before this work started -- the 14
+untouched apps this pass also re-ran (`system`, `exports`, `analytics`,
+`accounts`, `organizations`, `permissions`, `workspaces`, `storage`,
+`datasets`, `imports`, `applications`, `environments`, `sharing`,
+`audit`) are byte-for-byte unmodified by this change (`git diff --stat`
+confirms zero touched lines outside `app_platform`/`databases`/docs/
+frontend), so their combined 531-passed/2-skipped total is this work's
+true, verified "before" baseline, not the prior doc's 573. The 2 skips
+remain the real-worker-SIGKILL restore probes, unrelated to this work.
+Frontend: `tsc --noEmit`, `eslint`,
+`vitest run` (10 passed), and `next build` all clean.
+`docs/EXTERNAL_APP_API_CONTRACT.md` and
+`docs/SPARE_PARTS_INTEGRATION_READINESS.md` updated -- "Inventory (Part
+× Warehouse)" moves from PARTIAL to **SUPPORTED**.
+
 ## Native many-to-many relationships (2026-09-11)
 
 Closes the one remaining non-blocking gap `docs/SPARE_PARTS_INTEGRATION_READINESS.md`'s
