@@ -10,6 +10,7 @@ import {
   type AppRelationshipKind,
   type AppTemplate,
   type AppTemplateVersion,
+  type DraftConstraint,
   type DraftField,
   type DraftModel,
   type DraftRelationship,
@@ -47,7 +48,7 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
   const [publishing, setPublishing] = useState(false);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<
-    { kind: "model" | "relationship"; id: string; label: string } | null
+    { kind: "model" | "relationship" | "constraint"; id: string; label: string } | null
   >(null);
   const [editFieldTarget, setEditFieldTarget] = useState<{ modelId: string; field: DraftField } | null>(
     null,
@@ -153,7 +154,22 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
     saveDraft({
       ...draft,
       models: draft.models.map((m) =>
-        m.id === model.id ? { ...m, fields: m.fields.filter((f) => f.id !== field.id) } : m,
+        m.id === model.id
+          ? {
+              ...m,
+              fields: m.fields.filter((f) => f.id !== field.id),
+              // A constraint referencing this field would otherwise leave
+              // the draft permanently unsavable (DefinitionInput.validate
+              // rejects a constraint whose field_ids aren't a subset of
+              // the model's current fields) -- cascade the same way
+              // deleteModel already cascades relationships above: drop
+              // the dangling reference, and the whole constraint if that
+              // leaves it under the 2-field minimum.
+              constraints: (m.constraints ?? [])
+                .map((c) => ({ ...c, field_ids: c.field_ids.filter((id) => id !== field.id) }))
+                .filter((c) => c.field_ids.length >= 2),
+            }
+          : m,
       ),
     });
   }
@@ -178,6 +194,42 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
     const fields = [...model.fields];
     [fields[index], fields[swapWith]] = [fields[swapWith], fields[index]];
     saveDraft({ ...draft, models: draft.models.map((m) => (m.id === modelId ? { ...m, fields } : m)) });
+  }
+
+  function addConstraint(modelId: string, constraint: DraftConstraint) {
+    saveDraft({
+      ...draft,
+      models: draft.models.map((m) =>
+        m.id === modelId ? { ...m, constraints: [...(m.constraints ?? []), constraint] } : m,
+      ),
+    });
+  }
+
+  async function deleteConstraint(model: DraftModel, constraint: DraftConstraint) {
+    if (!(await confirm({ title: `Delete constraint "${constraint.label}"?`, confirmLabel: "Delete", danger: true })))
+      return;
+    saveDraft({
+      ...draft,
+      models: draft.models.map((m) =>
+        m.id === model.id
+          ? { ...m, constraints: (m.constraints ?? []).filter((c) => c.id !== constraint.id) }
+          : m,
+      ),
+    });
+  }
+
+  function renameConstraint(modelId: string, constraintId: string, label: string) {
+    saveDraft({
+      ...draft,
+      models: draft.models.map((m) =>
+        m.id === modelId
+          ? {
+              ...m,
+              constraints: (m.constraints ?? []).map((c) => (c.id === constraintId ? { ...c, label } : c)),
+            }
+          : m,
+      ),
+    });
   }
 
   function addRelationship(rel: DraftRelationship) {
@@ -346,6 +398,49 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
               </div>
 
               {model.id && <AddFieldForm modelId={model.id} onAdd={addField} disabled={saving} />}
+
+              {model.id && (model.constraints ?? []).length > 0 && (
+                <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
+                  {(model.constraints ?? []).map((constraint) => (
+                    <div
+                      key={constraint.id ?? constraint.key}
+                      className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-1.5 text-sm"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-slate-800">{constraint.label}</span>
+                        <Badge tone="info">unique</Badge>
+                        {constraint.field_ids.map((fieldId) => (
+                          <Badge key={fieldId}>{fieldLabel(model, fieldId)}</Badge>
+                        ))}
+                      </div>
+                      {constraint.id && (
+                        <div className="flex items-center gap-3 text-xs">
+                          <button
+                            onClick={() =>
+                              setRenameTarget({ kind: "constraint", id: constraint.id!, label: constraint.label })
+                            }
+                            className="text-brand-600 hover:text-brand-500"
+                            disabled={saving}
+                          >
+                            Rename
+                          </button>
+                          <button
+                            onClick={() => deleteConstraint(model, constraint)}
+                            className="text-red-600 hover:text-red-500"
+                            disabled={saving}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {model.id && model.fields.filter((f) => f.id).length >= 2 && (
+                <AddConstraintForm model={model} onAdd={addConstraint} disabled={saving} />
+              )}
             </Card>
           ))}
         </div>
@@ -465,7 +560,11 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
         onSave={(label) => {
           if (!renameTarget) return;
           if (renameTarget.kind === "model") renameModel(renameTarget.id, label);
-          else renameRelationship(renameTarget.id, label);
+          else if (renameTarget.kind === "relationship") renameRelationship(renameTarget.id, label);
+          else {
+            const model = draft.models.find((m) => (m.constraints ?? []).some((c) => c.id === renameTarget.id));
+            if (model?.id) renameConstraint(model.id, renameTarget.id, label);
+          }
           setRenameTarget(null);
         }}
       />
@@ -485,6 +584,10 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
 
 function modelLabel(draft: AppDefinition, modelId: string): string {
   return draft.models.find((m) => m.id === modelId)?.label ?? modelId.slice(0, 8);
+}
+
+function fieldLabel(model: DraftModel, fieldId: string): string {
+  return model.fields.find((f) => f.id === fieldId)?.label ?? fieldId.slice(0, 8);
 }
 
 function AddModelForm({
@@ -613,6 +716,95 @@ function AddFieldForm({
       </label>
       <Button type="submit" size="sm" variant="secondary" disabled={disabled || !key || !label}>
         Add field
+      </Button>
+    </form>
+  );
+}
+
+// Model Settings -> Constraints -> Add Unique Constraint: select 2+ of
+// this model's own already-saved fields (a field with no id yet hasn't
+// round-tripped through the server, matching the same restriction
+// AddRelationshipForm already applies to models via `savedModels`) plus
+// an optional human-readable label. Physical constraint/index names are
+// never surfaced here -- see AppConstraintDefinition's own comment.
+function AddConstraintForm({
+  model,
+  onAdd,
+  disabled,
+}: {
+  model: DraftModel;
+  onAdd: (modelId: string, constraint: DraftConstraint) => void;
+  disabled: boolean;
+}) {
+  const [label, setLabel] = useState("");
+  const [key, setKey] = useState("");
+  const [fieldIds, setFieldIds] = useState<string[]>([]);
+  const savedFields = model.fields.filter((f) => f.id);
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!key || !label || fieldIds.length < 2 || !model.id) return;
+    onAdd(model.id, { key, label, field_ids: fieldIds });
+    setLabel("");
+    setKey("");
+    setFieldIds([]);
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="mt-3 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-3"
+    >
+      <div>
+        <Label htmlFor={`new-constraint-label-${model.id}`}>Unique constraint name</Label>
+        <Input
+          id={`new-constraint-label-${model.id}`}
+          value={label}
+          onChange={(e) => {
+            setLabel(e.target.value);
+            if (!key) setKey(slugify(e.target.value));
+          }}
+          placeholder="Unique combination"
+        />
+      </div>
+      <div>
+        <Label htmlFor={`new-constraint-key-${model.id}`}>Key</Label>
+        <Input
+          id={`new-constraint-key-${model.id}`}
+          pattern={KEY_PATTERN}
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="unique_combination"
+        />
+      </div>
+      <div>
+        <Label htmlFor={`new-constraint-fields-${model.id}`}>Fields (select 2 or more)</Label>
+        <div
+          id={`new-constraint-fields-${model.id}`}
+          className="flex max-h-24 flex-col gap-1 overflow-y-auto rounded-lg border border-slate-200 p-2"
+        >
+          {savedFields.map((f) => (
+            <label key={f.id} className="flex items-center gap-1.5 text-sm text-slate-700">
+              <Checkbox
+                checked={fieldIds.includes(f.id!)}
+                onChange={(e) =>
+                  setFieldIds((prev) =>
+                    e.target.checked ? [...prev, f.id!] : prev.filter((id) => id !== f.id),
+                  )
+                }
+              />
+              {f.label}
+            </label>
+          ))}
+        </div>
+      </div>
+      <Button
+        type="submit"
+        size="sm"
+        variant="secondary"
+        disabled={disabled || !key || !label || fieldIds.length < 2}
+      >
+        Add unique constraint
       </Button>
     </form>
   );
@@ -841,7 +1033,7 @@ function RenameModal({
   onClose,
   onSave,
 }: {
-  target: { kind: "model" | "relationship"; id: string; label: string } | null;
+  target: { kind: "model" | "relationship" | "constraint"; id: string; label: string } | null;
   saving: boolean;
   onClose: () => void;
   onSave: (label: string) => void;

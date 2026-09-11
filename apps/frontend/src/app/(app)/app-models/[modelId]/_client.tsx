@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   api,
   ApiError,
+  type AppConstraintDefinition,
   type AppFieldDataType,
   type AppFieldDefinition,
   type AppInstance,
@@ -51,6 +52,7 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
   const [model, setModel] = useState<AppModelDefinition | null>(null);
   const [instance, setInstance] = useState<AppInstance | null>(null);
   const [fields, setFields] = useState<AppFieldDefinition[] | null>(null);
+  const [constraints, setConstraints] = useState<AppConstraintDefinition[]>([]);
   const [outgoing, setOutgoing] = useState<AppRelationshipDefinition[]>([]);
   const [incoming, setIncoming] = useState<AppRelationshipDefinition[]>([]);
   const [page, setPage] = useState<AppRecordsPage | null>(null);
@@ -63,19 +65,23 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
   const [editingRecord, setEditingRecord] = useState<Record<string, unknown> | null>(null);
   const [addFieldError, setAddFieldError] = useState<string | null>(null);
   const [addingField, setAddingField] = useState(false);
+  const [addConstraintError, setAddConstraintError] = useState<string | null>(null);
+  const [addingConstraint, setAddingConstraint] = useState(false);
   const confirm = useConfirm();
 
   async function loadMeta() {
     const m = await api.get<AppModelDefinition>(`/app-models/${modelId}/`);
     setModel(m);
-    const [f, r, inst] = await Promise.all([
+    const [f, c, r, inst] = await Promise.all([
       api.get<Paginated<AppFieldDefinition>>(`/app-models/${modelId}/fields/?limit=100`),
+      api.get<Paginated<AppConstraintDefinition>>(`/app-models/${modelId}/constraints/?limit=100`),
       api.get<Paginated<AppRelationshipDefinition>>(
         `/app-instances/${m.instance}/relationships/?limit=500`,
       ),
       api.get<AppInstance>(`/app-instances/${m.instance}/`),
     ]);
     setFields(f.results);
+    setConstraints(c.results);
     setOutgoing(r.results.filter((rel) => rel.source_model === m.id));
     setIncoming(r.results.filter((rel) => rel.target_model === m.id && rel.kind === "many_to_many"));
     setInstance(inst);
@@ -136,6 +142,22 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
       setAddFieldError(err instanceof ApiError ? err.message : "Failed to add field.");
     } finally {
       setAddingField(false);
+    }
+  }
+
+  async function handleAddConstraint(constraint: { key: string; label: string; field_ids: string[] }) {
+    setAddConstraintError(null);
+    setAddingConstraint(true);
+    try {
+      const created = await api.post<AppConstraintDefinition>(
+        `/app-models/${modelId}/constraints/`,
+        constraint,
+      );
+      setConstraints((prev) => [...prev, created]);
+    } catch (err) {
+      setAddConstraintError(err instanceof ApiError ? err.message : "Failed to add constraint.");
+    } finally {
+      setAddingConstraint(false);
     }
   }
 
@@ -200,6 +222,26 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
       <div className="mb-4">
         <AddFieldForm onAdd={handleAddField} disabled={addingField} />
       </div>
+
+      {constraints.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-1.5">
+          {constraints.map((c) => (
+            <Badge key={c.id} tone="info">
+              {c.label}: unique ({c.field_ids.map((id) => fieldLabelFor(fields, id)).join(" + ")})
+            </Badge>
+          ))}
+        </div>
+      )}
+      {addConstraintError && (
+        <div className="mb-3">
+          <ErrorBanner message={addConstraintError} />
+        </div>
+      )}
+      {fields.length >= 2 && (
+        <div className="mb-4">
+          <AddConstraintForm fields={fields} onAdd={handleAddConstraint} disabled={addingConstraint} />
+        </div>
+      )}
 
       <div className="mb-3">
         <Input
@@ -902,6 +944,96 @@ function AddFieldForm({
       </label>
       <Button type="submit" size="sm" variant="secondary" disabled={disabled || !key || !label}>
         {disabled ? "..." : "Add field"}
+      </Button>
+    </form>
+  );
+}
+
+function fieldLabelFor(fields: AppFieldDefinition[], fieldId: string): string {
+  return fields.find((f) => f.id === fieldId)?.label ?? fieldId.slice(0, 8);
+}
+
+// Model Settings -> Constraints -> Add Unique Constraint, against an
+// already-installed (possibly already-provisioned, possibly populated)
+// model: select 2+ of its own fields plus an optional human-readable
+// label. A populated-and-clean model adds this safely as real DDL; a
+// populated-and-duplicate one is rejected with the same clean 400
+// records.py already returns for a single-field retrofit, surfaced via
+// addConstraintError above -- existing data is never touched either way.
+function AddConstraintForm({
+  fields,
+  onAdd,
+  disabled,
+}: {
+  fields: AppFieldDefinition[];
+  onAdd: (constraint: { key: string; label: string; field_ids: string[] }) => void;
+  disabled: boolean;
+}) {
+  const [label, setLabel] = useState("");
+  const [key, setKey] = useState("");
+  const [fieldIds, setFieldIds] = useState<string[]>([]);
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!key || !label || fieldIds.length < 2) return;
+    onAdd({ key, label, field_ids: fieldIds });
+    setLabel("");
+    setKey("");
+    setFieldIds([]);
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-3 border-t border-slate-100 pt-3">
+      <div>
+        <Label htmlFor="new-constraint-label">Unique constraint name</Label>
+        <Input
+          id="new-constraint-label"
+          value={label}
+          onChange={(e) => {
+            setLabel(e.target.value);
+            if (!key) setKey(slugify(e.target.value));
+          }}
+          placeholder="Unique combination"
+        />
+      </div>
+      <div>
+        <Label htmlFor="new-constraint-key">Key</Label>
+        <Input
+          id="new-constraint-key"
+          pattern={KEY_PATTERN}
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="unique_combination"
+        />
+      </div>
+      <div>
+        <Label htmlFor="new-constraint-fields">Fields (select 2 or more)</Label>
+        <div
+          id="new-constraint-fields"
+          className="flex max-h-24 flex-col gap-1 overflow-y-auto rounded-lg border border-slate-200 p-2"
+        >
+          {fields.map((f) => (
+            <label key={f.id} className="flex items-center gap-1.5 text-sm text-slate-700">
+              <Checkbox
+                checked={fieldIds.includes(f.id)}
+                onChange={(e) =>
+                  setFieldIds((prev) =>
+                    e.target.checked ? [...prev, f.id] : prev.filter((id) => id !== f.id),
+                  )
+                }
+              />
+              {f.label}
+            </label>
+          ))}
+        </div>
+      </div>
+      <Button
+        type="submit"
+        size="sm"
+        variant="secondary"
+        disabled={disabled || !key || !label || fieldIds.length < 2}
+      >
+        {disabled ? "..." : "Add unique constraint"}
       </Button>
     </form>
   );
