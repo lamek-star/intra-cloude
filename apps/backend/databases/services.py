@@ -466,15 +466,18 @@ def add_composite_unique_constraint(
     allow_managed_schema: bool = False,
 ) -> DBIndex:
     """A narrow, join-table-specific primitive -- exactly two named
-    columns, never an arbitrary list. This is deliberately NOT the general
-    "composite uniqueness for arbitrary App Platform fields" capability
-    (out of scope, see docs/SPARE_PARTS_INTEGRATION_READINESS.md); it
-    exists solely so app_platform's many-to-many join tables can enforce
-    "no duplicate (source, target) pair" as a real database constraint.
-    Idempotent like add_unique_constraint/add_index: an existing
-    constraint already covering both columns is returned as-is. Neither
-    column's own `is_unique` is set -- that would mean "this column alone
-    is unique," which is false here; only the pair is."""
+    columns, keyed by the table's own id (so only one such constraint can
+    ever exist per table). It exists solely so app_platform's many-to-many
+    join tables can enforce "no duplicate (source, target) pair" as a real
+    database constraint, and stays exactly this narrow deliberately: the
+    general "composite uniqueness over an arbitrary set of App Platform
+    fields, possibly more than one such constraint per model" capability
+    is `add_field_set_unique_constraint` below, added later, specifically
+    so this join-table path would never need to change. Idempotent like
+    add_unique_constraint/add_index: an existing constraint already
+    covering both columns is returned as-is. Neither column's own
+    `is_unique` is set -- that would mean "this column alone is unique,"
+    which is false here; only the pair is."""
     org_id = table.organization_id
     _require(
         actor,
@@ -533,6 +536,118 @@ def add_composite_unique_constraint(
         resource_id=table.id,
         request_id=request_id,
         context={"columns": [column_a.name, column_b.name]},
+    )
+    return index
+
+
+def add_field_set_unique_constraint(
+    *,
+    actor,
+    table: DBTable,
+    columns: list[DBColumn],
+    constraint_id: uuid.UUID,
+    request_id: str = "",
+    allow_managed_schema: bool = False,
+) -> DBIndex:
+    """The general composite-uniqueness primitive `add_composite_unique_
+    constraint` above deliberately isn't: an arbitrary (>=2) list of named
+    columns, keyed by a caller-supplied stable `constraint_id` rather than
+    the table's own id -- so, unlike that join-table-specific primitive,
+    more than one such constraint can coexist on the same table. Built for
+    app_platform's own general "composite uniqueness for arbitrary fields"
+    feature (App Model constraints, docs/SPARE_PARTS_INTEGRATION_
+    READINESS.md's "Inventory (Part x Warehouse)" row); `add_composite_
+    unique_constraint` itself is untouched -- many-to-many join tables keep
+    using it exactly as before.
+
+    `constraint_id` is expected to be the caller's own durable definition
+    id (never re-derived from the column/table set), so the physical
+    constraint name is stable across a display-label rename or a field's
+    position/order changing -- reprovisioning the identical constraint_id
+    is idempotent, matching add_unique_constraint/add_index/
+    add_composite_unique_constraint above: an index already named for this
+    constraint_id is returned as-is rather than re-issuing DDL.
+
+    NULL semantics: PostgreSQL's UNIQUE constraint treats NULL as distinct
+    from every other NULL (standard SQL semantics), the exact same
+    platform convention FieldDefinition.unique's own docstring
+    (app_platform/models.py) already documents for a single-column unique
+    field -- two rows can share NULL in every one of the constrained
+    columns without violating this constraint. Composite uniqueness does
+    not change or strengthen that: if any participating column is
+    nullable, a combination containing NULL is never guaranteed unique by
+    this constraint alone. Callers that need every field genuinely
+    required should mark them so at the field-definition level; this
+    primitive does not do that on a caller's behalf."""
+    org_id = table.organization_id
+    _require(
+        actor,
+        "database.schema.manage",
+        org_id,
+        action="database.table.field_set_unique.add",
+        resource_type="db_table",
+        resource_id=table.id,
+        request_id=request_id,
+    )
+    _require_unmanaged_schema(table.tenant_database, allow_managed_schema=allow_managed_schema)
+
+    if len(columns) < 2:
+        raise SchemaValidationError("A composite unique constraint needs at least two columns")
+    if len({column.id for column in columns}) != len(columns):
+        raise SchemaValidationError("A composite unique constraint cannot repeat the same column")
+    if any(column.table_id != table.id for column in columns):
+        raise SchemaValidationError("All columns must belong to the given table")
+
+    # "idx_" + a UUID's hex digits is inherently a valid, safe identifier
+    # (the same construction every sibling function above uses), but this
+    # constraint_id is a caller-supplied value, not one this function
+    # mints itself -- validated explicitly rather than trusted by
+    # construction, per Section 5's two-layer identifier defense.
+    index_name = validate_identifier(f"idx_{constraint_id.hex}")
+
+    existing = DBIndex.objects.filter(table=table, name=index_name, is_unique=True).first()
+    if existing is not None:
+        return existing
+
+    # Sorted by physical column name (itself a deterministic, id-derived
+    # string -- runtime_plan.physical_name -- never a caller-controlled
+    # display order) so the DDL, and therefore the constraint, is
+    # byte-identical across reprovisioning regardless of the order
+    # `columns` was passed in.
+    ordered = sorted(columns, key=lambda column: column.name)
+    ddl = sql.SQL("ALTER TABLE {schema}.{table} ADD CONSTRAINT {name} UNIQUE ({cols})").format(
+        schema=sql.Identifier(table.tenant_database.schema_name),
+        table=sql.Identifier(table.name),
+        name=sql.Identifier(index_name),
+        cols=sql.SQL(", ").join(sql.Identifier(column.name) for column in ordered),
+    )
+    drop_ddl = sql.SQL("ALTER TABLE {schema}.{table} DROP CONSTRAINT {name}").format(
+        schema=sql.Identifier(table.tenant_database.schema_name),
+        table=sql.Identifier(table.name),
+        name=sql.Identifier(index_name),
+    )
+    try:
+        _execute_tenant_ddl(ddl)
+    except DjangoIntegrityError as exc:
+        raise SchemaValidationError(
+            "Cannot add a unique constraint: existing rows already duplicate this combination of columns."
+        ) from exc
+
+    def _write():
+        index = DBIndex.objects.create(table=table, name=index_name, is_unique=True)
+        index.columns.add(*ordered)
+        return index
+
+    index = _write_catalog(_write, compensating_ddl=drop_ddl)
+
+    audit.record(
+        actor=actor,
+        organization_id=org_id,
+        action="database.table.field_set_unique.add",
+        resource_type="db_table",
+        resource_id=table.id,
+        request_id=request_id,
+        context={"columns": [column.name for column in ordered]},
     )
     return index
 
