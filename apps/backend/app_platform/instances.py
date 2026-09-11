@@ -8,6 +8,7 @@ from audit import services as audit
 from . import schema_evolution
 from .access import check, get_owned, require_manage
 from .definitions import (
+    ConstraintInput,
     FieldInput,
     ModelInput,
     RelationshipInput,
@@ -18,6 +19,7 @@ from .definitions import (
 from .models import (
     AppInstance,
     AppTemplateVersion,
+    ConstraintDefinition,
     FieldDefinition,
     ModelDefinition,
     RelationshipDefinition,
@@ -82,11 +84,21 @@ def install(actor, project, data):
                 position=model_position,
             )
             models[item["id"]] = model
+            fields = {}
             for field_position, field in enumerate(item["fields"]):
                 values = {key: value for key, value in field.items() if key != "id"}
-                FieldDefinition.objects.create(
+                fields[field["id"]] = FieldDefinition.objects.create(
                     model=model, source_definition_id=field["id"], position=field_position, **values
                 )
+            for constraint_position, constraint in enumerate(item.get("constraints", [])):
+                created = ConstraintDefinition.objects.create(
+                    model=model,
+                    key=constraint["key"],
+                    label=constraint["label"],
+                    source_definition_id=constraint["id"],
+                    position=constraint_position,
+                )
+                created.fields.set([fields[field_id] for field_id in constraint["field_ids"]])
         for relation_position, item in enumerate(definition["relationships"]):
             RelationshipDefinition.objects.create(
                 instance=instance,
@@ -195,6 +207,46 @@ def add_relationship(actor, instance, data):
     return relation
 
 
+def add_constraint(actor, model, data):
+    """Declares a composite UNIQUE constraint over >=2 of `model`'s own
+    fields -- pre-provision this is a pure metadata write (nothing
+    physical exists yet to constrain); once provisioned it needs the
+    exact same bar as any other live schema change
+    (schema_evolution.require_addition) and runs real DDL via
+    schema_evolution.add_constraint_to_runtime against the model's
+    already-materialized table, populated or not (a genuine duplicate
+    combination fails safely -- see that function's own docstring)."""
+    instance = model.instance
+    require_manage(actor, instance)
+    values = validated(ConstraintInput, data)
+    with transaction.atomic():
+        _lock_instance(instance)
+        receipt = schema_evolution.ready_receipt(instance)
+        if receipt is not None:
+            schema_evolution.require_addition(actor, instance)
+            schema_evolution.mark_addition_transaction()
+        if model.constraints.count() >= 20:
+            raise serializers.ValidationError("Constraint limit reached.")
+        unique_key(model.constraints, values["key"])
+        fields = []
+        for field_id in values["field_ids"]:
+            try:
+                fields.append(model.fields.get(pk=field_id))
+            except FieldDefinition.DoesNotExist as exc:
+                raise serializers.ValidationError(
+                    "Constraint fields must belong to this model."
+                ) from exc
+        constraint = ConstraintDefinition.objects.create(
+            model=model, key=values["key"], label=values["label"], position=model.constraints.count()
+        )
+        constraint.fields.set(fields)
+        if receipt is not None:
+            with transaction.atomic(using="tenant"):
+                schema_evolution.add_constraint_to_runtime(receipt, constraint, actor)
+        event(actor, instance, "constraint.create", constraint.id, live=receipt is not None)
+    return constraint
+
+
 def mark_field_unique(actor, field):
     """Retrofits uniqueness onto an EXISTING field -- Post-Phase-3
     Integration Enablement, Part 3. Pre-provision this is a pure metadata
@@ -259,7 +311,8 @@ def update_instance(actor, instance, data):
 
 
 def update_definition(actor, obj, data):
-    instance = obj.model.instance if isinstance(obj, FieldDefinition) else obj.instance
+    model_scoped = isinstance(obj, (FieldDefinition, ConstraintDefinition))
+    instance = obj.model.instance if model_scoped else obj.instance
     require_manage(actor, instance)
     serializer_type = (
         FieldPatch

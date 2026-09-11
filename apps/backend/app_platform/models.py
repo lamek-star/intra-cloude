@@ -140,6 +140,42 @@ class FieldDefinition(Definition):
         return self.label
 
 
+class ConstraintDefinition(Definition):
+    """A model-level composite UNIQUE constraint -- Post-Phase-3
+    Integration Enablement's general composite-uniqueness capability
+    (docs/SPARE_PARTS_INTEGRATION_READINESS.md's "Inventory (Part x
+    Warehouse)" row). `fields` is a set of >=2 FieldDefinitions belonging
+    to this same `model` (enforced by definitions.py/instances.py, never
+    by a DB constraint spanning two tables); physical enforcement is a
+    real Postgres UNIQUE constraint added via
+    databases.services.add_field_set_unique_constraint, keyed by this
+    row's own stable `id` -- never by the field set or by `label` -- so a
+    display-label rename or a field's position/order changing never
+    touches DDL or requires reprovisioning.
+
+    NULL semantics: PostgreSQL's UNIQUE constraint treats NULL as
+    distinct from every other NULL. If any participating field is
+    `required=False`, two records can share NULL in that field (with
+    identical values elsewhere) without violating this constraint -- the
+    same, already-established platform convention FieldDefinition.unique
+    documents above for a single-column unique field, not a new or
+    different behavior for the composite case."""
+
+    model = models.ForeignKey(ModelDefinition, on_delete=models.CASCADE, related_name="constraints")
+    fields = models.ManyToManyField(FieldDefinition, related_name="unique_constraints")
+
+    class Meta(Definition.Meta):
+        constraints = [
+            models.UniqueConstraint(fields=["model", "key"], name="app_constraint_key_unique"),
+            models.UniqueConstraint(
+                fields=["model", "source_definition_id"], name="app_constraint_source_unique"
+            ),
+        ]
+
+    def __str__(self):
+        return self.label
+
+
 class RelationshipDefinition(Definition):
     instance = models.ForeignKey(AppInstance, on_delete=models.CASCADE, related_name="relationships")
     source_model = models.ForeignKey(ModelDefinition, on_delete=models.PROTECT, related_name="outgoing")

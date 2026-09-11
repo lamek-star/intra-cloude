@@ -14,6 +14,8 @@ urlpatterns = [
     path("app-instances/<uuid:object_id>/models/", views.ModelList.as_view()),
     path("app-models/<uuid:object_id>/", views.DefinitionDetail.as_view()),
     path("app-models/<uuid:object_id>/fields/", views.FieldList.as_view()),
+    path("app-models/<uuid:object_id>/constraints/", views.ConstraintList.as_view()),
+    path("app-constraints/<uuid:object_id>/", views.ConstraintDetail.as_view()),
     path("app-models/<uuid:object_id>/records/", record_views.RecordListCreateView.as_view()),
     path("app-models/<uuid:object_id>/records/<uuid:record_id>/", record_views.RecordDetailView.as_view()),
     path(

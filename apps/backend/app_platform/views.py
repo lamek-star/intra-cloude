@@ -20,11 +20,13 @@ from .models import (
     AppInstance,
     AppTemplate,
     AppTemplateVersion,
+    ConstraintDefinition,
     FieldDefinition,
     ModelDefinition,
     RelationshipDefinition,
 )
 from .serializers import (
+    ConstraintSerializer,
     FieldSerializer,
     InstanceSerializer,
     ModelSerializer,
@@ -209,6 +211,25 @@ class FieldList(FoundationView):
         )
 
 
+class ConstraintList(FoundationView):
+    # Read-only for a bearer token -- adding a constraint is schema
+    # mutation, left human-only, matching ModelList/FieldList/
+    # RelationshipList above.
+    service_account_methods = frozenset({"GET"})
+
+    def get(self, request, object_id):
+        obj = get_owned(ModelDefinition, object_id, request.user, "instance__organization")
+        read_instance(request.user, obj.instance)
+        return self.page(request, obj.constraints.all(), ConstraintSerializer)
+
+    def post(self, request, object_id):
+        obj = get_owned(ModelDefinition, object_id, request.user, "instance__organization")
+        return Response(
+            ConstraintSerializer(instances.add_constraint(request.user, obj, request.data)).data,
+            status=201,
+        )
+
+
 class RelationshipList(FoundationView):
     service_account_methods = frozenset({"GET"})
 
@@ -236,7 +257,8 @@ class DefinitionDetail(FoundationView):
 
     def get(self, request, object_id):
         obj = get_owned(self.model, object_id, request.user, self.organization_path)
-        instance = obj.model.instance if isinstance(obj, FieldDefinition) else obj.instance
+        model_scoped = isinstance(obj, (FieldDefinition, ConstraintDefinition))
+        instance = obj.model.instance if model_scoped else obj.instance
         read_instance(request.user, instance)
         return Response(self.serializer(obj).data)
 
@@ -248,6 +270,12 @@ class DefinitionDetail(FoundationView):
 class FieldDetail(DefinitionDetail):
     model = FieldDefinition
     serializer = FieldSerializer
+    organization_path = "model__instance__organization"
+
+
+class ConstraintDetail(DefinitionDetail):
+    model = ConstraintDefinition
+    serializer = ConstraintSerializer
     organization_path = "model__instance__organization"
 
 

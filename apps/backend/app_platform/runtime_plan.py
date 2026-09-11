@@ -46,12 +46,18 @@ def compile_plan(instance_id, definition):
                     "indexed": field.get("indexed", False),
                 }
             )
+        constraints = []
+        for constraint in sorted(model.get("constraints", []), key=lambda item: item["id"]):
+            constraints.append(
+                {"definition_id": constraint["id"], "field_ids": sorted(constraint["field_ids"])}
+            )
         models.append(
             {
                 "definition_id": model["id"],
                 "name": physical_name("m", model["id"]),
                 "primary_key": {"name": "id", "data_type": "uuid", "generated": True},
                 "columns": columns,
+                "constraints": constraints,
             }
         )
     relationships = []
@@ -121,8 +127,17 @@ def plan_runtime(actor, instance):
                         }
                         for field in model.fields.all()
                     ],
+                    "constraints": [
+                        {
+                            "id": str(constraint.id),
+                            "key": constraint.key,
+                            "label": constraint.label,
+                            "field_ids": [str(field.id) for field in constraint.fields.all()],
+                        }
+                        for constraint in model.constraints.all()
+                    ],
                 }
-                for model in instance.models.prefetch_related("fields")
+                for model in instance.models.prefetch_related("fields", "constraints__fields")
             ],
             "relationships": [
                 {

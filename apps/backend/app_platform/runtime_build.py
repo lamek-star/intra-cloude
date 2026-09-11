@@ -99,6 +99,7 @@ def build(receipt, actor):
         table = services.create_table(actor=actor, tenant_database=database, name=model["name"])
         tables[model["definition_id"]] = table
         bindings["models"][model["definition_id"]] = str(table.id)
+        field_columns = {}
         for field in model["columns"]:
             column = services.add_column(
                 actor=actor,
@@ -113,6 +114,15 @@ def build(receipt, actor):
                 is_indexed=field.get("indexed", False),
             )
             bindings["fields"][field["definition_id"]] = str(column.id)
+            field_columns[field["definition_id"]] = column
+        for constraint in model.get("constraints", []):
+            index = services.add_field_set_unique_constraint(
+                actor=actor,
+                table=table,
+                columns=[field_columns[field_id] for field_id in constraint["field_ids"]],
+                constraint_id=uuid.UUID(constraint["definition_id"]),
+            )
+            bindings.setdefault("constraints", {})[constraint["definition_id"]] = str(index.id)
     for relation in plan["relationships"]:
         source, target = tables[relation["source_model"]], tables[relation["target_model"]]
         if relation["kind"] == "many_to_many":

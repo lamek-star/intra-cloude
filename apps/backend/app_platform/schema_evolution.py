@@ -30,7 +30,13 @@ from databases.models import DBColumn, DBForeignKey, DBTable
 from databases.services import SchemaValidationError
 
 from .access import check, require_manage
-from .models import FieldDefinition, ModelDefinition, RelationshipDefinition, RuntimeProvision
+from .models import (
+    ConstraintDefinition,
+    FieldDefinition,
+    ModelDefinition,
+    RelationshipDefinition,
+    RuntimeProvision,
+)
 from .runtime_plan import physical_name
 
 
@@ -175,6 +181,32 @@ def set_field_indexed(receipt: RuntimeProvision, field: FieldDefinition, actor) 
     if not field.indexed:
         field.indexed = True
         field.save(update_fields=["indexed"])
+
+
+def add_constraint_to_runtime(receipt: RuntimeProvision, constraint: ConstraintDefinition, actor) -> None:
+    """Retrofits a composite UNIQUE constraint onto an already-provisioned
+    model -- the live-addition counterpart to fresh provisioning's own
+    per-model constraint loop in runtime_build.build(). Idempotent like
+    add_model_to_runtime/add_field_to_runtime/add_relationship_to_runtime
+    above (services.add_field_set_unique_constraint itself is, keyed by
+    this constraint's own stable id); a genuine duplicate-combination
+    conflict surfaces as a clean ValidationError with the existing data
+    completely untouched -- see that function's own docstring for why
+    (ADD CONSTRAINT is one statement inside one transaction)."""
+    table = _table_for(receipt, constraint.model)
+    columns = [_column_for(receipt, field) for field in constraint.fields.all()]
+    try:
+        index = services.add_field_set_unique_constraint(
+            actor=actor,
+            table=table,
+            columns=columns,
+            constraint_id=constraint.id,
+            allow_managed_schema=True,
+        )
+    except SchemaValidationError as exc:
+        raise ValidationError(str(exc)) from exc
+    receipt.bindings.setdefault("constraints", {})[str(constraint.id)] = str(index.id)
+    receipt.save(update_fields=["bindings"])
 
 
 def add_relationship_to_runtime(receipt: RuntimeProvision, relation: RelationshipDefinition, actor) -> None:

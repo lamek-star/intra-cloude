@@ -66,6 +66,32 @@ class SnapshotField(FieldInput):
     id = serializers.UUIDField(default=uuid.uuid4)
 
 
+class ConstraintInput(StrictSerializer):
+    """A model-level composite UNIQUE constraint. `field_ids` references
+    stable AppField definition ids, never display labels or column
+    names -- reused as-is for both a draft/template snapshot (where the
+    ids are other elements of the same unpublished definition) and a live
+    instance's add-constraint action (instances.add_constraint, where
+    they must resolve to real FieldDefinition rows on the same model --
+    checked there, not here, since this serializer has no access to a
+    live model's fields)."""
+
+    key = KeyField()
+    label = serializers.CharField(max_length=200)  # type: ignore[assignment]  # DRF declarative field, removed by its metaclass
+    field_ids = serializers.ListField(
+        child=serializers.UUIDField(), min_length=2, max_length=32
+    )  # type: ignore[assignment]
+
+    def validate(self, data):
+        if len(set(data["field_ids"])) != len(data["field_ids"]):
+            raise serializers.ValidationError({"field_ids": "A field cannot be repeated in one constraint."})
+        return data
+
+
+class SnapshotConstraint(ConstraintInput):
+    id = serializers.UUIDField(default=uuid.uuid4)
+
+
 class ModelInput(StrictSerializer):
     key = KeyField()
     label = serializers.CharField(max_length=200)  # type: ignore[assignment]  # DRF declarative field, removed by its metaclass
@@ -74,6 +100,9 @@ class ModelInput(StrictSerializer):
 class SnapshotModel(ModelInput):
     id = serializers.UUIDField(default=uuid.uuid4)
     fields = serializers.ListField(child=SnapshotField(), max_length=100)  # type: ignore[assignment]
+    constraints = serializers.ListField(  # type: ignore[assignment]
+        child=SnapshotConstraint(), max_length=20, required=False, default=list
+    )
 
 
 class RelationshipInput(ModelInput):
@@ -115,6 +144,13 @@ class DefinitionInput(StrictSerializer):
         unique(data["models"])
         for model in data["models"]:
             unique(model["fields"])
+            unique(model.get("constraints", []))
+            field_ids = {field["id"] for field in model["fields"]}
+            for constraint in model.get("constraints", []):
+                if not set(constraint["field_ids"]).issubset(field_ids):
+                    raise serializers.ValidationError(
+                        "Constraint fields must belong to the same model."
+                    )
         unique(data["relationships"])
         model_ids = {model["id"] for model in data["models"]}
         for relation in data["relationships"]:
