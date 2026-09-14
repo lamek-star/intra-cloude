@@ -14,6 +14,8 @@ urlpatterns: list[URLPattern | URLResolver] = [
     path("", include("audit.urls")),
     path("", include("imports.urls")),
     path("", include("applications.urls")),
+    path("", include("oauth_provider.admin_urls")),
+    path("", include("catalogue_storage.urls")),
     path("", include("environments.urls")),
     path("", include("sharing.urls")),
     path("", include("exports.urls")),

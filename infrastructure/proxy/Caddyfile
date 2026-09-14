@@ -37,7 +37,7 @@
 		Referrer-Policy "same-origin"
 	}
 
-	@backend path /api/* /healthz /readyz
+	@backend path /api/* /healthz /readyz /oauth/* /.well-known/*
 	handle @backend {
 		reverse_proxy backend:8000
 	}
