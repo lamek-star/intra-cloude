@@ -349,8 +349,9 @@ secure defaults; readable code over clever code.
 See `README.md` for the full tree. Key rule: Django is organized into
 bounded apps (`accounts`, `organizations`, `permissions`, `workspaces`,
 `storage`, `databases`, `datasets`, `imports`, `applications`,
-`environments`, `sharing`, `audit`, `system`, `exports`, `analytics`) per
-`docs/architecture/DATA_MODEL.md` Section 1 — not one monolithic app.
+`oauth_provider`, `catalogue_storage`, `environments`, `sharing`, `audit`,
+`system`, `exports`, `analytics`) per `docs/architecture/DATA_MODEL.md`
+Section 1 — not one monolithic app.
 Business logic lives in service layers, not views or
 serializers.
 

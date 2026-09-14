@@ -1160,6 +1160,19 @@ CI as an automated gate.
    through the Setup & Removal UI, and (new 2026-09-03) a real Restore
    run through the Backup & Restore tab against a provisioned appliance
    with real data — §5's own checklist now includes this.
+   **Partially unblocked 2026-09-14**: the owner chose the disposable-VM
+   path over testing destructively on the real dev machine.
+   `scripts/New-QualificationVM.ps1`/`Checkpoint-QualificationVM.ps1`/
+   `Restore-QualificationVM.ps1` (see `scripts/README.md`) provision a
+   Generation 2, nested-virtualization-enabled Hyper-V VM and checkpoint/
+   roll it back between destructive matrix sections — confirmed this
+   machine already has Hyper-V active and meets every
+   `Test-Prerequisites.ps1` check, and the Control Center build (33/33
+   tests) and MSI both build clean, ready to test. Still blocked on: the
+   owner supplying a Windows install ISO (deliberately not fetched here)
+   and actually running Windows Setup + the matrix's own elevated,
+   interactive scenarios — neither is something this session can do from
+   an unelevated dev session.
 2. A real code-signing certificate (`WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64`
    repo secret) if signed releases are wanted before shipping.
 3. ~~A decision on whether/when to push `rebrand/intraforge` and open a
