@@ -1,15 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { Button, ErrorBanner, Input, Label } from "@/components/ui";
+import { isSafeNextPath } from "@/lib/safe-next";
+import { Button, ErrorBanner, Input, Label, PageLoading } from "@/components/ui";
 
 export default function RegisterPage() {
+  return (
+    <Suspense fallback={<PageLoading />}>
+      <RegisterPageInner />
+    </Suspense>
+  );
+}
+
+function RegisterPageInner() {
   const { register } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next");
   const [email, setEmail] = useState("");
   const [firstName, setFirstName] = useState("");
   const [password, setPassword] = useState("");
@@ -22,12 +33,19 @@ export default function RegisterPage() {
     setSubmitting(true);
     try {
       await register(email, password, firstName);
-      router.push("/orgs");
+      // The one-time /welcome onboarding step still applies to a new
+      // user arriving via an external application's sign-up link --
+      // "skip organization" is honored exactly the same way, it just
+      // hands off to `next` (the external app's callback) instead of
+      // /dashboard once the user picks Continue/Create.
+      router.push(isSafeNextPath(next) ? `/welcome?next=${encodeURIComponent(next)}` : "/welcome");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
       setSubmitting(false);
     }
   }
+
+  const loginHref = isSafeNextPath(next) ? `/login?next=${encodeURIComponent(next)}` : "/login";
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-white px-4">
@@ -86,7 +104,7 @@ export default function RegisterPage() {
 
         <p className="mt-5 text-center text-sm text-slate-500">
           Already have an account?{" "}
-          <Link href="/login" className="text-brand-600 hover:text-brand-500">
+          <Link href={loginHref} className="text-brand-600 hover:text-brand-500">
             Sign in
           </Link>
         </p>
