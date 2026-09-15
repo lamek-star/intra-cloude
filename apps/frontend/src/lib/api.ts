@@ -537,16 +537,20 @@ export type DraftField = {
   default_value?: FieldDefaultValue;
 };
 
-// Field membership references stable AppField ids -- the same ids
-// DraftField.id echoes -- never a display label or physical column name.
-// A brand-new element omits `id` just like DraftField/DraftRelationship;
-// the server assigns one. At least 2 field ids are required (app_platform/
-// definitions.py's ConstraintInput.field_ids).
+// Membership references stable AppField/AppRelationship ids -- the same
+// ids DraftField.id/DraftRelationship.id echo -- never a display label or
+// physical column/table name. A brand-new element omits `id` just like
+// DraftField/DraftRelationship; the server assigns one. At least 2
+// field_ids/relationship_ids combined are required (app_platform/
+// definitions.py's ConstraintInput). A relationship member must be a
+// many_to_one relationship owned by this same model (its own FK column) --
+// many_to_many is never eligible.
 export type DraftConstraint = {
   id?: string;
   key: string;
   label: string;
   field_ids: string[];
+  relationship_ids?: string[];
 };
 
 export type DraftModel = {
@@ -654,10 +658,11 @@ export type AppConstraintDefinition = {
   label: string;
   position: number;
   source_definition_id: string | null;
-  // Stable AppField ids, in current display order -- never a physical
-  // constraint/index name (see databases.services.
+  // Stable AppField/AppRelationship ids, in current display order -- never
+  // a physical constraint/index name (see databases.services.
   // add_field_set_unique_constraint's own naming, deliberately internal).
   field_ids: string[];
+  relationship_ids: string[];
 };
 
 export type AppRelationshipDefinition = {

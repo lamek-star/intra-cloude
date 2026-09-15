@@ -59,17 +59,29 @@ class ModelSerializer(serializers.ModelSerializer):
 
 
 class ConstraintSerializer(serializers.ModelSerializer):
-    # Field membership is exposed as stable AppField ids only, in their
-    # current display order -- never a physical constraint/index name
-    # (see databases.services.add_field_set_unique_constraint's own
+    # Membership is exposed as stable AppField/AppRelationship ids only,
+    # in their current display order -- never a physical constraint/index
+    # name (see databases.services.add_field_set_unique_constraint's own
     # naming, which is deliberately internal).
     field_ids: serializers.PrimaryKeyRelatedField = serializers.PrimaryKeyRelatedField(
         source="fields", many=True, read_only=True
     )
+    relationship_ids: serializers.PrimaryKeyRelatedField = serializers.PrimaryKeyRelatedField(
+        source="relationships", many=True, read_only=True
+    )
 
     class Meta:
         model = ConstraintDefinition
-        fields = ["id", "model", "key", "label", "position", "source_definition_id", "field_ids"]
+        fields = [
+            "id",
+            "model",
+            "key",
+            "label",
+            "position",
+            "source_definition_id",
+            "field_ids",
+            "relationship_ids",
+        ]
         read_only_fields = fields
 
 

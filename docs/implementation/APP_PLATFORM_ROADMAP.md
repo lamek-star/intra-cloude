@@ -11,7 +11,7 @@ unimplemented phase complete.
 | 1 | Application definitions, templates, immutable versions, installed instances | Complete | [436-test checkpoint](APP_PLATFORM_PHASE1.md) |
 | 2 | Generic application runtime | Complete | [Phase 2 qualification checkpoint](APP_PLATFORM_PHASE2.md) |
 | 3 | App Builder v1 | Complete (all 5 steps: App Builder UI, defaults/ordering, safe populated-schema changes, basic permissions, qualification) | No-code model/field/form/list editing; labels, defaults, required flags, ordering, relationships and basic permissions; safe populated-schema changes |
-| 4 | Inventory and Sales reference application | Pending Phase 3 | Spare-parts template covering inventory, purchasing and sales; real business scenario; no industry-specific core models |
+| 4 | Inventory and Sales reference application | Complete | [Phase 4 checkpoint](APP_PLATFORM_PHASE4.md) |
 | 5 | Workflow engine | Pending Phase 4 | Declarative states, transitions, conditions, approvals, actions, notifications and audit; concurrent/replayed transitions cannot duplicate effects |
 | 6 | Organizational hierarchy | Pending Phase 5 | Generic units supporting branches, campuses, departments, warehouses and teams; cycle prevention and organization isolation |
 | 7 | Enterprise permissions | Pending Phase 6 | Shared capability enforcement for user, role, app, module, action, record and unit scopes; revocation and export/reporting isolation tests |
@@ -56,3 +56,11 @@ start of this continuation. Phase 1 was deployed previously; on 2026-09-09
 Docker Desktop needed starting. All nine existing Compose services then ran,
 with the five configured health checks healthy. This is a service-health
 observation, not a fresh full test result.
+
+Phase 4 (2026-09-15) also found that this same running dev stack's
+control-plane database had never actually had migrations `0011`/`0012`
+(from an earlier session, before this phase's own `0013`) applied —
+`manage.py test`'s ephemeral database always migrates fresh, so the gap
+never surfaced there; only a real `manage.py migrate` against the
+persistent stack caught it. Closed as part of this phase's own live
+verification, not left as a silent surprise for the next session.

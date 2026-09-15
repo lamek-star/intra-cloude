@@ -145,7 +145,12 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
     }
   }
 
-  async function handleAddConstraint(constraint: { key: string; label: string; field_ids: string[] }) {
+  async function handleAddConstraint(constraint: {
+    key: string;
+    label: string;
+    field_ids: string[];
+    relationship_ids: string[];
+  }) {
     setAddConstraintError(null);
     setAddingConstraint(true);
     try {
@@ -227,7 +232,12 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
         <div className="mb-3 flex flex-wrap items-center gap-1.5">
           {constraints.map((c) => (
             <Badge key={c.id} tone="info">
-              {c.label}: unique ({c.field_ids.map((id) => fieldLabelFor(fields, id)).join(" + ")})
+              {c.label}: unique (
+              {[
+                ...c.field_ids.map((id) => fieldLabelFor(fields, id)),
+                ...c.relationship_ids.map((id) => relationshipLabelFor(outgoing, id)),
+              ].join(" + ")}
+              )
             </Badge>
           ))}
         </div>
@@ -237,9 +247,14 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
           <ErrorBanner message={addConstraintError} />
         </div>
       )}
-      {fields.length >= 2 && (
+      {fields.length + outgoing.filter((r) => r.kind === "many_to_one").length >= 2 && (
         <div className="mb-4">
-          <AddConstraintForm fields={fields} onAdd={handleAddConstraint} disabled={addingConstraint} />
+          <AddConstraintForm
+            fields={fields}
+            relationships={outgoing.filter((r) => r.kind === "many_to_one")}
+            onAdd={handleAddConstraint}
+            disabled={addingConstraint}
+          />
         </div>
       )}
 
@@ -953,6 +968,10 @@ function fieldLabelFor(fields: AppFieldDefinition[], fieldId: string): string {
   return fields.find((f) => f.id === fieldId)?.label ?? fieldId.slice(0, 8);
 }
 
+function relationshipLabelFor(relationships: AppRelationshipDefinition[], relationshipId: string): string {
+  return relationships.find((r) => r.id === relationshipId)?.label ?? relationshipId.slice(0, 8);
+}
+
 // Model Settings -> Constraints -> Add Unique Constraint, against an
 // already-installed (possibly already-provisioned, possibly populated)
 // model: select 2+ of its own fields plus an optional human-readable
@@ -962,24 +981,29 @@ function fieldLabelFor(fields: AppFieldDefinition[], fieldId: string): string {
 // addConstraintError above -- existing data is never touched either way.
 function AddConstraintForm({
   fields,
+  relationships,
   onAdd,
   disabled,
 }: {
   fields: AppFieldDefinition[];
-  onAdd: (constraint: { key: string; label: string; field_ids: string[] }) => void;
+  relationships: AppRelationshipDefinition[];
+  onAdd: (constraint: { key: string; label: string; field_ids: string[]; relationship_ids: string[] }) => void;
   disabled: boolean;
 }) {
   const [label, setLabel] = useState("");
   const [key, setKey] = useState("");
   const [fieldIds, setFieldIds] = useState<string[]>([]);
+  const [relationshipIds, setRelationshipIds] = useState<string[]>([]);
+  const combinedCount = fieldIds.length + relationshipIds.length;
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!key || !label || fieldIds.length < 2) return;
-    onAdd({ key, label, field_ids: fieldIds });
+    if (!key || !label || combinedCount < 2) return;
+    onAdd({ key, label, field_ids: fieldIds, relationship_ids: relationshipIds });
     setLabel("");
     setKey("");
     setFieldIds([]);
+    setRelationshipIds([]);
   }
 
   return (
@@ -1007,7 +1031,7 @@ function AddConstraintForm({
         />
       </div>
       <div>
-        <Label htmlFor="new-constraint-fields">Fields (select 2 or more)</Label>
+        <Label htmlFor="new-constraint-fields">Fields and relationships (select 2 or more)</Label>
         <div
           id="new-constraint-fields"
           className="flex max-h-24 flex-col gap-1 overflow-y-auto rounded-lg border border-slate-200 p-2"
@@ -1025,13 +1049,26 @@ function AddConstraintForm({
               {f.label}
             </label>
           ))}
+          {relationships.map((r) => (
+            <label key={r.id} className="flex items-center gap-1.5 text-sm text-slate-700">
+              <Checkbox
+                checked={relationshipIds.includes(r.id)}
+                onChange={(e) =>
+                  setRelationshipIds((prev) =>
+                    e.target.checked ? [...prev, r.id] : prev.filter((id) => id !== r.id),
+                  )
+                }
+              />
+              {r.label} <span className="text-xs text-slate-400">(relationship)</span>
+            </label>
+          ))}
         </div>
       </div>
       <Button
         type="submit"
         size="sm"
         variant="secondary"
-        disabled={disabled || !key || !label || fieldIds.length < 2}
+        disabled={disabled || !key || !label || combinedCount < 2}
       >
         {disabled ? "..." : "Add unique constraint"}
       </Button>

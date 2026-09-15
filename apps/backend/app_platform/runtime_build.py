@@ -95,6 +95,7 @@ def build(receipt, actor):
     )
     tables = {}
     bindings = {"models": {}, "fields": {}, "relationships": {}}
+    all_field_columns = {}
     for model in plan["models"]:
         table = services.create_table(actor=actor, tenant_database=database, name=model["name"])
         tables[model["definition_id"]] = table
@@ -115,14 +116,8 @@ def build(receipt, actor):
             )
             bindings["fields"][field["definition_id"]] = str(column.id)
             field_columns[field["definition_id"]] = column
-        for constraint in model.get("constraints", []):
-            index = services.add_field_set_unique_constraint(
-                actor=actor,
-                table=table,
-                columns=[field_columns[field_id] for field_id in constraint["field_ids"]],
-                constraint_id=uuid.UUID(constraint["definition_id"]),
-            )
-            bindings.setdefault("constraints", {})[constraint["definition_id"]] = str(index.id)
+        all_field_columns[model["definition_id"]] = field_columns
+    relationship_columns = {}
     for relation in plan["relationships"]:
         source, target = tables[relation["source_model"]], tables[relation["target_model"]]
         if relation["kind"] == "many_to_many":
@@ -149,6 +144,27 @@ def build(receipt, actor):
             "column": str(column.id),
             "foreign_key": str(foreign_key.id),
         }
+        relationship_columns[relation["definition_id"]] = column
+    # Constraints last -- a relationship-backed member's FK column is only
+    # built in the relationships pass just above, so a constraint spanning
+    # one couldn't resolve a column if built inline with its own model
+    # (this app_platform's own composite-uniqueness feature, generalized
+    # to allow relationship members alongside scalar fields).
+    for model in plan["models"]:
+        field_columns = all_field_columns[model["definition_id"]]
+        for constraint in model.get("constraints", []):
+            columns = [field_columns[field_id] for field_id in constraint["field_ids"]]
+            columns += [
+                relationship_columns[relationship_id]
+                for relationship_id in constraint.get("relationship_ids", [])
+            ]
+            index = services.add_field_set_unique_constraint(
+                actor=actor,
+                table=tables[model["definition_id"]],
+                columns=columns,
+                constraint_id=uuid.UUID(constraint["definition_id"]),
+            )
+            bindings.setdefault("constraints", {})[constraint["definition_id"]] = str(index.id)
     with connections["tenant"].cursor() as cursor:
         cursor.execute(
             sql.SQL("COMMENT ON SCHEMA {} IS {}").format(

@@ -75,6 +75,7 @@ def install(actor, project, data):
             created_by=actor,
         )
         models = {}
+        pending_constraints = []
         for model_position, item in enumerate(definition["models"]):
             model = ModelDefinition.objects.create(
                 instance=instance,
@@ -91,16 +92,10 @@ def install(actor, project, data):
                     model=model, source_definition_id=field["id"], position=field_position, **values
                 )
             for constraint_position, constraint in enumerate(item.get("constraints", [])):
-                created = ConstraintDefinition.objects.create(
-                    model=model,
-                    key=constraint["key"],
-                    label=constraint["label"],
-                    source_definition_id=constraint["id"],
-                    position=constraint_position,
-                )
-                created.fields.set([fields[field_id] for field_id in constraint["field_ids"]])
+                pending_constraints.append((model, fields, constraint_position, constraint))
+        relationships = {}
         for relation_position, item in enumerate(definition["relationships"]):
-            RelationshipDefinition.objects.create(
+            relationships[item["id"]] = RelationshipDefinition.objects.create(
                 instance=instance,
                 source_definition_id=item["id"],
                 key=item["key"],
@@ -110,6 +105,22 @@ def install(actor, project, data):
                 kind=item["kind"],
                 deletion_policy=item["deletion_policy"],
                 position=relation_position,
+            )
+        # Constraints are created last -- a relationship-backed member
+        # (see ConstraintDefinition's own docstring) must already exist as
+        # a real RelationshipDefinition row before it can be attached,
+        # regardless of where it appears in the draft's own array order.
+        for model, fields, constraint_position, constraint in pending_constraints:
+            created = ConstraintDefinition.objects.create(
+                model=model,
+                key=constraint["key"],
+                label=constraint["label"],
+                source_definition_id=constraint["id"],
+                position=constraint_position,
+            )
+            created.fields.set([fields[field_id] for field_id in constraint["field_ids"]])
+            created.relationships.set(
+                [relationships[relationship_id] for relationship_id in constraint["relationship_ids"]]
             )
         event(actor, instance, "install", instance.id)
     return instance
@@ -209,10 +220,10 @@ def add_relationship(actor, instance, data):
 
 def add_constraint(actor, model, data):
     """Declares a composite UNIQUE constraint over >=2 of `model`'s own
-    fields -- pre-provision this is a pure metadata write (nothing
-    physical exists yet to constrain); once provisioned it needs the
-    exact same bar as any other live schema change
-    (schema_evolution.require_addition) and runs real DDL via
+    fields and/or its own many_to_one relationships -- pre-provision this
+    is a pure metadata write (nothing physical exists yet to constrain);
+    once provisioned it needs the exact same bar as any other live schema
+    change (schema_evolution.require_addition) and runs real DDL via
     schema_evolution.add_constraint_to_runtime against the model's
     already-materialized table, populated or not (a genuine duplicate
     combination fails safely -- see that function's own docstring)."""
@@ -236,10 +247,19 @@ def add_constraint(actor, model, data):
                 raise serializers.ValidationError(
                     "Constraint fields must belong to this model."
                 ) from exc
+        relationships = []
+        for relationship_id in values["relationship_ids"]:
+            try:
+                relationships.append(model.outgoing.get(pk=relationship_id, kind="many_to_one"))
+            except RelationshipDefinition.DoesNotExist as exc:
+                raise serializers.ValidationError(
+                    "Constraint relationships must be a many-to-one relationship on this model."
+                ) from exc
         constraint = ConstraintDefinition.objects.create(
             model=model, key=values["key"], label=values["label"], position=model.constraints.count()
         )
         constraint.fields.set(fields)
+        constraint.relationships.set(relationships)
         if receipt is not None:
             with transaction.atomic(using="tenant"):
                 schema_evolution.add_constraint_to_runtime(receipt, constraint, actor)

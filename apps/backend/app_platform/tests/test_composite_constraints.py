@@ -72,6 +72,96 @@ def composite_sample():
     }
 
 
+def relationship_composite_sample():
+    """Item has two many_to_one relationships (to Bin and to Shelf) and a
+    composite UNIQUE constraint over both -- no scalar fields involved at
+    all. This is exactly Phase 4's Inventory(part, warehouse) shape: a
+    join-style model where every constraint member is a relationship's own
+    FK column, not a field. Declared with the constraint nested inside
+    `models` (which precedes `relationships` in this dict) while the
+    relationships themselves are only defined afterward -- proving
+    resolution doesn't depend on array position (instances.install defers
+    constraint creation until every relationship exists; see its own
+    comment)."""
+    item_id, bin_id, shelf_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+    bin_relation_id, shelf_relation_id = str(uuid.uuid4()), str(uuid.uuid4())
+    return {
+        "schema_version": 1,
+        "models": [
+            {
+                "id": item_id,
+                "key": "item",
+                "label": "Item",
+                "fields": [],
+                "constraints": [
+                    {
+                        "key": "bin_shelf_unique",
+                        "label": "Unique Bin+Shelf",
+                        "field_ids": [],
+                        "relationship_ids": [bin_relation_id, shelf_relation_id],
+                    }
+                ],
+            },
+            {"id": bin_id, "key": "bin", "label": "Bin", "fields": []},
+            {"id": shelf_id, "key": "shelf", "label": "Shelf", "fields": []},
+        ],
+        "relationships": [
+            {
+                "id": bin_relation_id,
+                "key": "bin",
+                "label": "Bin",
+                "source_model": item_id,
+                "target_model": bin_id,
+            },
+            {
+                "id": shelf_relation_id,
+                "key": "shelf",
+                "label": "Shelf",
+                "source_model": item_id,
+                "target_model": shelf_id,
+            },
+        ],
+    }
+
+
+def mixed_composite_sample():
+    """Item has one scalar field ('label') and one many_to_one
+    relationship (to Bin); the composite constraint spans both member
+    kinds at once."""
+    item_id, bin_id = str(uuid.uuid4()), str(uuid.uuid4())
+    label_id = str(uuid.uuid4())
+    relation_id = str(uuid.uuid4())
+    return {
+        "schema_version": 1,
+        "models": [
+            {
+                "id": item_id,
+                "key": "item",
+                "label": "Item",
+                "fields": [{"id": label_id, "key": "label", "label": "Label", "data_type": "text"}],
+                "constraints": [
+                    {
+                        "key": "label_bin_unique",
+                        "label": "Unique Label+Bin",
+                        "field_ids": [label_id],
+                        "relationship_ids": [relation_id],
+                    }
+                ],
+            },
+            {"id": bin_id, "key": "bin", "label": "Bin", "fields": []},
+        ],
+        "relationships": [
+            {
+                "id": relation_id,
+                "key": "bin",
+                "label": "Bin",
+                "source_model": item_id,
+                "target_model": bin_id,
+            }
+        ],
+    }
+
+
 class DraftValidationTests(TestCase):
     """Pure metadata validation -- definitions.validate_definition, no
     tenant DB involved."""
@@ -124,6 +214,69 @@ class DraftValidationTests(TestCase):
             self.assertEqual(model["constraints"], [])
 
 
+class RelationshipConstraintDraftValidationTests(TestCase):
+    """Relationship-backed and mixed composite constraints -- the
+    generalization of ConstraintDefinition beyond scalar fields alone."""
+
+    def test_a_relationship_only_constraint_is_accepted(self):
+        definition = definitions.validate_definition(relationship_composite_sample())
+        [item, _bin, _shelf] = definition["models"]
+        [constraint] = item["constraints"]
+        self.assertEqual(constraint["field_ids"], [])
+        self.assertEqual(len(constraint["relationship_ids"]), 2)
+
+    def test_a_mixed_field_and_relationship_constraint_is_accepted(self):
+        definition = definitions.validate_definition(mixed_composite_sample())
+        [item, _bin] = definition["models"]
+        [constraint] = item["constraints"]
+        self.assertEqual(len(constraint["field_ids"]), 1)
+        self.assertEqual(len(constraint["relationship_ids"]), 1)
+
+    def test_a_single_relationship_alone_is_rejected(self):
+        d = relationship_composite_sample()
+        d["models"][0]["constraints"][0]["relationship_ids"] = [
+            d["models"][0]["constraints"][0]["relationship_ids"][0]
+        ]
+        with self.assertRaises(ValidationError):
+            definitions.validate_definition(d)
+
+    def test_a_repeated_relationship_id_in_one_constraint_is_rejected(self):
+        d = relationship_composite_sample()
+        rel_id = d["models"][0]["constraints"][0]["relationship_ids"][0]
+        d["models"][0]["constraints"][0]["relationship_ids"] = [rel_id, rel_id]
+        with self.assertRaises(ValidationError):
+            definitions.validate_definition(d)
+
+    def test_a_many_to_many_relationship_is_not_eligible(self):
+        d = relationship_composite_sample()
+        d["relationships"][0]["kind"] = "many_to_many"
+        with self.assertRaises(ValidationError):
+            definitions.validate_definition(d)
+
+    def test_a_relationship_owned_by_a_different_model_is_rejected(self):
+        """Bin doesn't own either relationship (Item does, as the
+        many-to-one "many" side) -- a constraint declared under Bin
+        referencing Item's own relationship must be rejected."""
+        d = relationship_composite_sample()
+        bin_model = d["models"][1]
+        bin_model["constraints"] = [
+            {
+                "key": "borrowed",
+                "label": "Borrowed",
+                "field_ids": [],
+                "relationship_ids": d["models"][0]["constraints"][0]["relationship_ids"],
+            }
+        ]
+        with self.assertRaises(ValidationError):
+            definitions.validate_definition(d)
+
+    def test_a_nonexistent_relationship_id_is_rejected(self):
+        d = relationship_composite_sample()
+        d["models"][0]["constraints"][0]["relationship_ids"][1] = str(uuid.uuid4())
+        with self.assertRaises(ValidationError):
+            definitions.validate_definition(d)
+
+
 class InstallTests(TestCase):
     def setUp(self):
         call_command("seed_permissions", verbosity=0)
@@ -145,6 +298,39 @@ class InstallTests(TestCase):
             {f.key for f in constraint.fields.all()},
             {"name", "price"},
         )
+
+    def test_installing_a_relationship_only_constraint_resolves_both_relationships(self):
+        """The constraint is nested inside `item` (processed first in the
+        draft's `models` array) but references relationships that are
+        only defined afterward in the draft's `relationships` array --
+        proving install() resolves this regardless of declaration order
+        (see instances.install's own comment on why constraints are
+        created last)."""
+        draft = {"label": "App", "draft": relationship_composite_sample()}
+        template = templates.create_template(self.owner, self.org, draft)
+        version = templates.publish_template(self.owner, template)
+        instance = instances.install(
+            self.owner, self.project, {"label": "Runtime", "template_version": str(version.id)}
+        )
+        item = instance.models.get(key="item")
+        constraint = item.constraints.get(key="bin_shelf_unique")
+        self.assertEqual(constraint.fields.count(), 0)
+        self.assertEqual(
+            {r.key for r in constraint.relationships.all()},
+            {"bin", "shelf"},
+        )
+
+    def test_installing_a_mixed_constraint_resolves_both_kinds(self):
+        draft = {"label": "App", "draft": mixed_composite_sample()}
+        template = templates.create_template(self.owner, self.org, draft)
+        version = templates.publish_template(self.owner, template)
+        instance = instances.install(
+            self.owner, self.project, {"label": "Runtime", "template_version": str(version.id)}
+        )
+        item = instance.models.get(key="item")
+        constraint = item.constraints.get(key="label_bin_unique")
+        self.assertEqual({f.key for f in constraint.fields.all()}, {"label"})
+        self.assertEqual({r.key for r in constraint.relationships.all()}, {"bin"})
 
 
 class ProvisioningTestBase(TransactionTestCase):
@@ -300,6 +486,170 @@ class FreshProvisioningTests(ProvisioningTestBase):
         self.assertIsNone(second.data[str(self.price_field.id)])
 
 
+class RelationshipFreshProvisioningTests(ProvisioningTestBase):
+    """The exact shape Phase 4's Inventory(part, warehouse) needs: a
+    composite UNIQUE constraint spanning two relationship FK columns, with
+    no scalar fields involved at all."""
+
+    def setUp(self):
+        super().setUp()
+        self.instance = self._install(relationship_composite_sample())
+        self.item = self.instance.models.get(key="item")
+        self.bin_model = self.instance.models.get(key="bin")
+        self.shelf_model = self.instance.models.get(key="shelf")
+        self.bin_relation = self.item.outgoing.get(key="bin")
+        self.shelf_relation = self.item.outgoing.get(key="shelf")
+        self.plan, self.receipt = self._provision(self.instance)
+        self.bin_a = self._create_target(self.bin_model.id)
+        self.bin_b = self._create_target(self.bin_model.id)
+        self.shelf_a = self._create_target(self.shelf_model.id)
+        self.shelf_b = self._create_target(self.shelf_model.id)
+
+    def tearDown(self):
+        self._drop_schema(self.plan)
+        super().tearDown()
+
+    def _create_target(self, model_id):
+        resp = self.client.post(f"/api/v1/app-models/{model_id}/records/", {}, format="json")
+        assert resp.status_code == 201, resp.data
+        return resp.data["id"]
+
+    def _create_item(self, bin_id, shelf_id):
+        return self.client.post(
+            f"/api/v1/app-models/{self.item.id}/records/",
+            {str(self.bin_relation.id): bin_id, str(self.shelf_relation.id): shelf_id},
+            format="json",
+        )
+
+    def test_fresh_provisioning_creates_a_real_composite_unique_index_over_both_relationships(self):
+        column_a = self.receipt.bindings["relationships"][str(self.bin_relation.id)]["column"]
+        column_b = self.receipt.bindings["relationships"][str(self.shelf_relation.id)]["column"]
+        constraint = self.item.constraints.get(key="bin_shelf_unique")
+        index_id = self.receipt.bindings["constraints"][str(constraint.id)]
+        index = DBIndex.objects.get(pk=index_id)
+        self.assertTrue(index.is_unique)
+        self.assertEqual(
+            {str(c) for c in index.columns.values_list("id", flat=True)}, {column_a, column_b}
+        )
+        with connections["tenant"].cursor() as cursor:
+            cursor.execute(
+                "SELECT indexdef FROM pg_indexes WHERE schemaname = %s AND indexname = %s",
+                [self.receipt.database.schema_name, index.name],
+            )
+            [indexdef] = cursor.fetchone()
+        self.assertIn("UNIQUE", indexdef)
+
+    def test_unique_pair_succeeds(self):
+        resp = self._create_item(self.bin_a, self.shelf_a)
+        self.assertEqual(resp.status_code, 201, resp.data)
+
+    def test_duplicate_pair_create_is_rejected(self):
+        self._create_item(self.bin_a, self.shelf_a)
+        dupe = self._create_item(self.bin_a, self.shelf_a)
+        self.assertEqual(dupe.status_code, 400, dupe.data)
+        self.assertIn("already exists", dupe.data["detail"])
+
+    def test_same_bin_different_shelf_succeeds(self):
+        first = self._create_item(self.bin_a, self.shelf_a)
+        second = self._create_item(self.bin_a, self.shelf_b)
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(second.status_code, 201, second.data)
+
+    def test_null_relationship_is_not_treated_as_a_duplicate(self):
+        """A relationship FK column is always nullable (see
+        RelationshipDefinition's own architecture note) -- two records
+        both leaving `shelf` unset must not conflict even though `bin`
+        matches, the identical NULL semantics FieldDefinition.unique
+        already documents for the scalar case."""
+        first = self.client.post(
+            f"/api/v1/app-models/{self.item.id}/records/",
+            {str(self.bin_relation.id): self.bin_a},
+            format="json",
+        )
+        second = self.client.post(
+            f"/api/v1/app-models/{self.item.id}/records/",
+            {str(self.bin_relation.id): self.bin_a},
+            format="json",
+        )
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(second.status_code, 201, second.data)
+
+    def test_concurrent_duplicate_pair_creation_the_database_constraint_is_the_real_gate(self):
+        def create(_):
+            close_old_connections()
+            client = APIClient()
+            client.force_authenticate(self.actor)
+            try:
+                return client.post(
+                    f"/api/v1/app-models/{self.item.id}/records/",
+                    {str(self.bin_relation.id): self.bin_a, str(self.shelf_relation.id): self.shelf_a},
+                    format="json",
+                )
+            finally:
+                close_old_connections()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(pool.map(create, [None, None]))
+        statuses = sorted(r.status_code for r in responses)
+        self.assertEqual(statuses, [201, 400])
+
+
+class MixedFreshProvisioningTests(ProvisioningTestBase):
+    """A composite constraint spanning one scalar field and one
+    relationship at once."""
+
+    def setUp(self):
+        super().setUp()
+        self.instance = self._install(mixed_composite_sample())
+        self.item = self.instance.models.get(key="item")
+        self.bin_model = self.instance.models.get(key="bin")
+        self.label_field = self.item.fields.get(key="label")
+        self.bin_relation = self.item.outgoing.get(key="bin")
+        self.plan, self.receipt = self._provision(self.instance)
+        self.bin_a = self._create_target()
+        self.bin_b = self._create_target()
+
+    def tearDown(self):
+        self._drop_schema(self.plan)
+        super().tearDown()
+
+    def _create_target(self):
+        resp = self.client.post(f"/api/v1/app-models/{self.bin_model.id}/records/", {}, format="json")
+        assert resp.status_code == 201, resp.data
+        return resp.data["id"]
+
+    def _create_item(self, label, bin_id):
+        return self.client.post(
+            f"/api/v1/app-models/{self.item.id}/records/",
+            {str(self.label_field.id): label, str(self.bin_relation.id): bin_id},
+            format="json",
+        )
+
+    def test_fresh_provisioning_creates_a_real_composite_unique_index_spanning_field_and_relationship(
+        self,
+    ):
+        column_a = self.receipt.bindings["fields"][str(self.label_field.id)]
+        column_b = self.receipt.bindings["relationships"][str(self.bin_relation.id)]["column"]
+        constraint = self.item.constraints.get(key="label_bin_unique")
+        index_id = self.receipt.bindings["constraints"][str(constraint.id)]
+        index = DBIndex.objects.get(pk=index_id)
+        self.assertTrue(index.is_unique)
+        self.assertEqual(
+            {str(c) for c in index.columns.values_list("id", flat=True)}, {column_a, column_b}
+        )
+
+    def test_duplicate_combination_create_is_rejected(self):
+        self._create_item("A", self.bin_a)
+        dupe = self._create_item("A", self.bin_a)
+        self.assertEqual(dupe.status_code, 400, dupe.data)
+
+    def test_same_label_different_bin_succeeds(self):
+        first = self._create_item("A", self.bin_a)
+        second = self._create_item("A", self.bin_b)
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(second.status_code, 201, second.data)
+
+
 class SingleFieldUniqueRemainsUnaffectedTests(ProvisioningTestBase):
     """A composite constraint on two OTHER fields coexists with an
     existing single-field unique field on the same model without either
@@ -363,10 +713,17 @@ class LiveAdditionTestBase(ProvisioningTestBase):
         self._drop_schema(self.plan)
         super().tearDown()
 
-    def _add_constraint(self, model_id, field_ids, key="name_price_unique", label="Unique Name+Price"):
+    def _add_constraint(
+        self, model_id, field_ids, relationship_ids=(), key="name_price_unique", label="Unique Name+Price"
+    ):
         return self.client.post(
             f"/api/v1/app-models/{model_id}/constraints/",
-            {"key": key, "label": label, "field_ids": [str(f) for f in field_ids]},
+            {
+                "key": key,
+                "label": label,
+                "field_ids": [str(f) for f in field_ids],
+                "relationship_ids": [str(r) for r in relationship_ids],
+            },
             format="json",
         )
 
@@ -425,6 +782,54 @@ class LiveAdditionDuplicateDataTests(LiveAdditionTestBase):
         self.assertNotIn("SecretName", str(resp.data))
 
 
+class LiveAdditionRelationshipTests(LiveAdditionTestBase):
+    """Live-adding a constraint that mixes an existing scalar field with
+    an existing relationship (sample()'s own item -> group many_to_one),
+    against an already-provisioned, possibly populated instance."""
+
+    def _create_with_group(self, name, group_id):
+        return self.client.post(
+            f"/api/v1/app-models/{self.item.id}/records/",
+            {str(self.name_field.id): name, str(self.group_relation.id): group_id},
+            format="json",
+        )
+
+    def setUp(self):
+        super().setUp()
+        self.group_relation = self.item.outgoing.get(key="group")
+        group = self.client.post(f"/api/v1/app-models/{self.group.id}/records/", {}, format="json")
+        self.group_a = group.data["id"]
+        other_group = self.client.post(f"/api/v1/app-models/{self.group.id}/records/", {}, format="json")
+        self.group_b = other_group.data["id"]
+
+    def test_populated_clean_model_can_add_a_mixed_constraint(self):
+        self._create_with_group("A", self.group_a)
+        self._create_with_group("B", self.group_a)
+
+        resp = self._add_constraint(
+            self.item.id, [self.name_field.id], [self.group_relation.id], key="name_group_unique"
+        )
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual([str(r) for r in resp.data["relationship_ids"]], [str(self.group_relation.id)])
+
+        dupe = self._create_with_group("A", self.group_a)
+        self.assertEqual(dupe.status_code, 400, dupe.data)
+
+        different_group_still_works = self._create_with_group("A", self.group_b)
+        self.assertEqual(different_group_still_works.status_code, 201, different_group_still_works.data)
+
+    def test_populated_duplicate_model_rejects_the_constraint_safely(self):
+        self._create_with_group("Dupe", self.group_a)
+        self._create_with_group("Dupe", self.group_a)
+
+        resp = self._add_constraint(
+            self.item.id, [self.name_field.id], [self.group_relation.id], key="name_group_unique"
+        )
+        self.assertEqual(resp.status_code, 400, resp.data)
+        leftover = ConstraintDefinition.objects.filter(model=self.item, key="name_group_unique")
+        self.assertFalse(leftover.exists())
+
+
 class LiveAdditionValidationTests(LiveAdditionTestBase):
     def test_invalid_cross_model_field_reference_is_rejected(self):
         # "group" has no fields of its own in sample() -- add one so
@@ -448,6 +853,41 @@ class LiveAdditionValidationTests(LiveAdditionTestBase):
 
     def test_single_field_constraint_is_rejected(self):
         resp = self._add_constraint(self.item.id, [self.name_field.id])
+        self.assertEqual(resp.status_code, 400)
+
+    def test_relationship_owned_by_a_different_model_is_rejected(self):
+        reverse = self.client.post(
+            f"/api/v1/app-instances/{self.instance.id}/relationships/",
+            {
+                "key": "backref",
+                "label": "Backref",
+                "source_model": str(self.group.id),
+                "target_model": str(self.item.id),
+            },
+            format="json",
+        ).data
+        resp = self._add_constraint(self.item.id, [self.name_field.id], [reverse["id"]])
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(ConstraintDefinition.objects.filter(model=self.item).exists())
+
+    def test_many_to_many_relationship_is_rejected(self):
+        m2m = self.client.post(
+            f"/api/v1/app-instances/{self.instance.id}/relationships/",
+            {
+                "key": "compatible",
+                "label": "Compatible",
+                "source_model": str(self.item.id),
+                "target_model": str(self.group.id),
+                "kind": "many_to_many",
+            },
+            format="json",
+        ).data
+        resp = self._add_constraint(self.item.id, [self.name_field.id], [m2m["id"]])
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(ConstraintDefinition.objects.filter(model=self.item).exists())
+
+    def test_missing_relationship_reference_is_rejected(self):
+        resp = self._add_constraint(self.item.id, [self.name_field.id], [uuid.uuid4()])
         self.assertEqual(resp.status_code, 400)
 
 
@@ -583,3 +1023,21 @@ class TenantIsolationTests(LiveAdditionTestBase):
         with self.assertRaises(Exception) as ctx:
             constraint.fields.add(other_field["id"])
         self.assertIn("Reserved runtime constraint fields require a schema migration", str(ctx.exception))
+
+    def test_direct_unsanctioned_orm_write_to_constraint_relationships_is_still_blocked_once_provisioned(
+        self,
+    ):
+        """0013's own new mutable surface, tested the same way 0012's
+        constraint-fields guard is tested above: the trigger on
+        app_platform_constraintdefinition_relationships is a real
+        backstop, not merely enforced by instances.py/schema_evolution.py
+        at the Python layer."""
+        resp = self._add_constraint(self.item.id, [self.name_field.id, self.price_field.id])
+        constraint = ConstraintDefinition.objects.get(pk=resp.data["id"])
+        group_relation = self.item.outgoing.get(key="group")
+
+        with self.assertRaises(Exception) as ctx:
+            constraint.relationships.add(group_relation.id)
+        self.assertIn(
+            "Reserved runtime constraint relationships require a schema migration", str(ctx.exception)
+        )

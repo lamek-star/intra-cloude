@@ -5,10 +5,14 @@ passed, 2 skipped, 0 failed). **Updated** after Post-Phase-3 Integration
 Enablement closed both blocking gaps this review originally identified
 (§3 external bearer access, §6 field indexing/uniqueness), **updated
 again** after a later pass added native many-to-many relationships (§1,
-§10), and **updated once more** after general composite (multi-field)
-unique constraints closed the "Inventory (Part × Warehouse)" gap (§1,
-§10) — see §11/§12 for the current decision. This document evaluates
-whether the
+§10), **updated once more** after general composite (multi-field)
+unique constraints closed the "Inventory (Part × Warehouse)" gap for
+scalar fields (§1, §10), and **updated a final time** after composite
+constraints were generalized to also accept a model's own many_to_one
+relationships as members — the actual mechanism the Inventory
+(Part × Warehouse) case needs, since `part`/`warehouse` are relationships,
+not scalar fields (§1, §10) — see §11/§12 for the current decision. This
+document evaluates whether the
 **generic** App Platform (`app_platform`, `databases`, `storage`,
 `imports`, `permissions`, `sharing`, `applications`, `accounts`) provides
 the capabilities a separately developed Spare Parts Management frontend/
@@ -36,13 +40,13 @@ document.
 |---|---|---|
 | One-to-many relationships | SUPPORTED | `RelationshipDefinition.kind` is a real Postgres FK column from the "many" side (`app_platform/models.py`, `runtime_build.py`); a `PartNumber → Part` many-to-one relationship gives Part the one-to-many fan-out for free. |
 | Many-to-many relationships | **SUPPORTED** | Native `RelationshipInput.kind == "many_to_many"` (`app_platform/definitions.py`, `models.py`). Provisioning creates a real physical join table (fixed `source_id`/`target_id` FK columns, both `ON DELETE CASCADE`, a real composite `UNIQUE(source_id, target_id)` constraint via `databases.services.add_composite_unique_constraint`, a plain index on `target_id`) — both at initial provisioning (`runtime_build.py`) and as a live addition to an already-provisioned instance (`schema_evolution.py`). The record API's value shape is `list[str]`, readable from both the source (writable) and target (read-only) model, deleting a record cascades its associations away for free; see `docs/EXTERNAL_APP_API_CONTRACT.md`'s "Many-to-many associations" section. Filtering/sorting by M:M membership remains out of scope — a record's own M:M value is still fully readable/writable, just not queryable that way (`app_platform/tests/test_many_to_many.py`). |
-| Self-referencing relationships | SUPPORTED (untested) | Nothing in `instances.add_relationship` or `RelationshipInput` forbids `source_model == target_model`; `runtime_build.py`'s FK creation has no same-table guard. No existing automated test exercises this exact case — add one before relying on it for a "supersedes" chain. |
+| Self-referencing relationships | **SUPPORTED, tested** | Nothing in `instances.add_relationship` or `RelationshipInput` forbids `source_model == target_model`; `runtime_build.py`'s FK creation has no same-table guard. Closed by the Phase 4 reference template's `PartNumber.supersedes` (self-referencing `many_to_one`, `deletion_policy="set_null"`) and its dedicated tests (`app_platform/tests/test_spare_parts_reference_template.py`) — install-time metadata, real self-referencing FK on provisioning, and a real record created linking to another record of the same model through the record API. No longer an untested assumption. |
 | Parent/child records | PARTIAL | A relationship's `deletion_policy` is `restrict` or `set_null` only (DB-enforced `CheckConstraint`) — **no `cascade` option**. Deleting a parent either blocks or orphans children with a null reference; there is no automatic cascade delete. |
 | Nullable fields | SUPPORTED | `FieldDefinition.required` maps directly to `is_nullable` on the physical column. |
 | Defaults | SUPPORTED | `default_value`, validated per data type through `databases.ddl.default_clause_sql`, produces a real Postgres `DEFAULT` — confirmed live in Phase 3 step 2/3 (default-backfill on a populated table). |
 | Deterministic ordering | SUPPORTED | `Definition.position` + `Meta.ordering`, reorderable at any time, exempt from the post-provision structural freeze. |
 | Unique constraints (on record data) | **SUPPORTED** (single-field) | Closed by Post-Phase-3 Integration Enablement. `FieldDefinition.unique` (migration `0008`), wired through `add_column(is_unique=...)` at field-creation time (template install or live add, provisioned or not) and through a new `databases.services.add_unique_constraint` for retrofitting onto an already-materialized, possibly populated column — both backed by a real Postgres `UNIQUE` constraint, never an application-level pre-check (`app_platform/records.py`'s `create_record`/`update_record` rely entirely on the DB constraint + a clean error translation). |
-| Composite (multi-field) unique constraints | **SUPPORTED** | Closes the "Inventory (Part × Warehouse)" gap this review previously tracked as PARTIAL. `ConstraintDefinition` (migration `0011`) declares a model-level UNIQUE constraint over >=2 of that model's own fields, referenced by stable AppField ids (never labels or physical names); `databases.services.add_field_set_unique_constraint` is the general N-column primitive this uses, deliberately separate from the many-to-many join table's own narrow `add_composite_unique_constraint` (exactly 2 fixed columns, one per table) so that path is untouched. Available at template install/fresh provisioning and as a live addition to an already-provisioned, possibly populated model — a populated model with clean data adds the constraint safely; one with existing duplicates is rejected with a clean error and its data is left completely untouched. A field left NULL never counts as a duplicate against another NULL (standard Postgres semantics, documented on `ConstraintDefinition` and enforced, not just asserted, by `app_platform/tests/test_composite_constraints.py`). |
+| Composite (multi-field) unique constraints | **SUPPORTED** (fields and relationships) | Closes the "Inventory (Part × Warehouse)" gap this review previously tracked as PARTIAL — genuinely closed now, not just for scalar fields: `ConstraintDefinition` (migration `0011`) declares a model-level UNIQUE constraint over >=2 members drawn from that model's own fields *and/or* its own `many_to_one` relationships (migration `0013`), referenced by stable AppField/AppRelationship ids (never labels or physical names). A relationship member must be a `many_to_one` relationship owned by the constrained model (its own FK column) — `many_to_many` is never eligible (no single column exists to constrain). `databases.services.add_field_set_unique_constraint` is the general N-column primitive this uses, deliberately separate from the many-to-many join table's own narrow `add_composite_unique_constraint` (exactly 2 fixed columns, one per table) so that path is untouched. Available at template install/fresh provisioning (`runtime_build.py`, which builds every relationship's FK column before any constraint referencing it) and as a live addition to an already-provisioned, possibly populated model (`schema_evolution.py`) — a populated model with clean data adds the constraint safely; one with existing duplicates is rejected with a clean error and its data is left completely untouched. A member left NULL (every relationship FK column always is; so is any `required=False` field) never counts as a duplicate against another NULL (standard Postgres semantics, documented on `ConstraintDefinition` and enforced, not just asserted, by `app_platform/tests/test_composite_constraints.py`) — including the exact Inventory `(part, warehouse)` shape, live-verified through the real App Builder UI and record API. |
 | Indexes | **SUPPORTED** (single-field B-tree) | Closed alongside uniqueness. `FieldDefinition.indexed`, wired through `add_column(is_indexed=...)` and a new `databases.services.add_index` retrofit function — a real `CREATE INDEX`, catalogued as a `DBIndex` row exactly like the pre-existing unique-column case. No arbitrary/composite/expression index support for plain (non-unique) search-acceleration indexes — one column, B-tree only; composite constraints above are UNIQUE-only, not a general composite-index feature. |
 | Enumerated/status fields | NOT SUPPORTED | `FieldDefinition.data_type` is exactly `text/integer/decimal/boolean/date/datetime` (DB-enforced). A "status" field today is unconstrained free text. |
 | Calculated/derived fields | NOT SUPPORTED | No formula/computed-column concept anywhere in the definition or build pipeline. |
@@ -297,8 +301,8 @@ NOT SUPPORTED as a generic, declarative, app-definable capability:
 | `Part` model | Generic `ModelDefinition`/`FieldDefinition` | SUPPORTED | App Builder UI + API, live-verified throughout Phase 3 | — | First slice |
 | `PartNumber` model, many-to-one to `Part` | Relationship (many-to-one) + `unique`/`indexed` field | **SUPPORTED** | §1, §6 | None | First slice |
 | Multiple numbers per part | One `Part`, many `PartNumber` rows via the relationship above | SUPPORTED | §1 (one-to-many) | — | First slice |
-| Cross references between part numbers | Self-referencing relationship on `PartNumber` | SUPPORTED (untested) | §1 | No automated test proves this case; add one before relying on it | First slice |
-| Supersession (this number replaces that one) | Self-referencing relationship, or a join model | SUPPORTED (shape, untested) | §1 | Same as above | First slice |
+| Cross references between part numbers | Self-referencing relationship on `PartNumber` | **SUPPORTED, tested** | §1 | None — closed by Phase 4's `PartNumber.supersedes` and its dedicated test | First slice |
+| Supersession (this number replaces that one) | Self-referencing relationship, or a join model | **SUPPORTED, tested** | §1 | None — same relationship covers both cases | First slice |
 | `Vehicle` model | Generic model | SUPPORTED | §1 | — | Later slice |
 | Vehicle compatibility (many-to-many) | Native `many_to_many` relationship kind, real join table + UI (multi-select picker, both-sides read) | **SUPPORTED** | §1 | None | Later slice |
 | `CataloguePart` vs. `CompanyProduct` separation | Two models + relationship | PARTIAL | §8 | No field-level "don't overwrite" protection; application-level discipline required | First slice for the shape; ongoing discipline, not a platform fix |
@@ -335,10 +339,14 @@ NOT SUPPORTED as a generic, declarative, app-definable capability:
    filtering/sorting by M:M membership stays out of scope, by design.
 4. ~~No composite (multi-field) uniqueness~~ — **closed**, see §1.
    General model-level composite `UNIQUE` constraints over an arbitrary
-   set of a model's own fields, both fresh-provisioned and as a live
-   addition against a populated model; a genuinely duplicate-data model
-   is rejected safely rather than the platform silently dropping or
-   rewriting rows.
+   set of a model's own fields *and/or* its own `many_to_one`
+   relationships, both fresh-provisioned and as a live addition against
+   a populated model; a genuinely duplicate-data model is rejected safely
+   rather than the platform silently dropping or rewriting rows. The
+   relationship half of this was itself closed later than the field half
+   — the first pass only handled scalar fields, which didn't actually
+   cover the Inventory (Part × Warehouse) case since `part`/`warehouse`
+   are relationships, not fields; see §1's own composite-constraint row.
 
 **Remaining, non-blocking** (real gaps, but each can be designed around
 or deferred without blocking the first, deliberately small integration

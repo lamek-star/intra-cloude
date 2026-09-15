@@ -144,13 +144,17 @@ class ConstraintDefinition(Definition):
     """A model-level composite UNIQUE constraint -- Post-Phase-3
     Integration Enablement's general composite-uniqueness capability
     (docs/SPARE_PARTS_INTEGRATION_READINESS.md's "Inventory (Part x
-    Warehouse)" row). `fields` is a set of >=2 FieldDefinitions belonging
-    to this same `model` (enforced by definitions.py/instances.py, never
-    by a DB constraint spanning two tables); physical enforcement is a
-    real Postgres UNIQUE constraint added via
-    databases.services.add_field_set_unique_constraint, keyed by this
-    row's own stable `id` -- never by the field set or by `label` -- so a
-    display-label rename or a field's position/order changing never
+    Warehouse)" row). Membership is `fields` union `relationships`, >=2
+    combined, all belonging to this same `model` (enforced by
+    definitions.py/instances.py, never by a DB constraint spanning two
+    tables). A relationship is only eligible when its own FK column lives
+    on this model's table -- i.e. `relationship.source_model == model` and
+    `relationship.kind == "many_to_one"`; a `many_to_many` relationship has
+    no column on either side (it's a join table) and can never
+    participate. Physical enforcement is a real Postgres UNIQUE constraint
+    added via databases.services.add_field_set_unique_constraint, keyed by
+    this row's own stable `id` -- never by the member set or by `label` --
+    so a display-label rename or a member's position/order changing never
     touches DDL or requires reprovisioning.
 
     NULL semantics: PostgreSQL's UNIQUE constraint treats NULL as
@@ -163,6 +167,11 @@ class ConstraintDefinition(Definition):
 
     model = models.ForeignKey(ModelDefinition, on_delete=models.CASCADE, related_name="constraints")
     fields = models.ManyToManyField(FieldDefinition, related_name="unique_constraints")
+    # Forward-referenced by string -- RelationshipDefinition is declared
+    # later in this file. Also, deliberately, a many_to_one relationship
+    # (see the eligibility rule in the class docstring above), never
+    # enforced by the DB itself.
+    relationships = models.ManyToManyField("RelationshipDefinition", related_name="unique_constraints")
 
     class Meta(Definition.Meta):
         constraints = [

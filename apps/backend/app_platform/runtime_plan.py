@@ -49,7 +49,11 @@ def compile_plan(instance_id, definition):
         constraints = []
         for constraint in sorted(model.get("constraints", []), key=lambda item: item["id"]):
             constraints.append(
-                {"definition_id": constraint["id"], "field_ids": sorted(constraint["field_ids"])}
+                {
+                    "definition_id": constraint["id"],
+                    "field_ids": sorted(constraint["field_ids"]),
+                    "relationship_ids": sorted(constraint.get("relationship_ids", [])),
+                }
             )
         models.append(
             {
@@ -133,11 +137,16 @@ def plan_runtime(actor, instance):
                             "key": constraint.key,
                             "label": constraint.label,
                             "field_ids": [str(field.id) for field in constraint.fields.all()],
+                            "relationship_ids": [
+                                str(relation.id) for relation in constraint.relationships.all()
+                            ],
                         }
                         for constraint in model.constraints.all()
                     ],
                 }
-                for model in instance.models.prefetch_related("fields", "constraints__fields")
+                for model in instance.models.prefetch_related(
+                    "fields", "constraints__fields", "constraints__relationships"
+                )
             ],
             "relationships": [
                 {

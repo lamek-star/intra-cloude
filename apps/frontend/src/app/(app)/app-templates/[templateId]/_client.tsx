@@ -116,9 +116,20 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
   async function deleteModel(model: DraftModel) {
     if (!(await confirm({ title: `Delete model "${model.label}"?`, confirmLabel: "Delete", danger: true })))
       return;
+    const removedRelationshipIds = draft.relationships
+      .filter((r) => r.source_model === model.id || r.target_model === model.id)
+      .map((r) => r.id)
+      .filter((id): id is string => Boolean(id));
     saveDraft({
       ...draft,
-      models: draft.models.filter((m) => m.id !== model.id),
+      // A constraint elsewhere referencing a relationship this model's
+      // removal takes down with it would otherwise leave the draft
+      // permanently unsavable, same reasoning as deleteField's own
+      // cascade below.
+      models: removedRelationshipIds.reduce(
+        (models, relId) => pruneRelationshipFromConstraints(models, relId),
+        draft.models.filter((m) => m.id !== model.id),
+      ),
       relationships: draft.relationships.filter(
         (r) => r.source_model !== model.id && r.target_model !== model.id,
       ),
@@ -164,10 +175,10 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
               // the model's current fields) -- cascade the same way
               // deleteModel already cascades relationships above: drop
               // the dangling reference, and the whole constraint if that
-              // leaves it under the 2-field minimum.
+              // leaves its combined field+relationship membership under 2.
               constraints: (m.constraints ?? [])
                 .map((c) => ({ ...c, field_ids: c.field_ids.filter((id) => id !== field.id) }))
-                .filter((c) => c.field_ids.length >= 2),
+                .filter((c) => c.field_ids.length + (c.relationship_ids?.length ?? 0) >= 2),
             }
           : m,
       ),
@@ -239,7 +250,14 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
   async function deleteRelationship(rel: DraftRelationship) {
     if (!(await confirm({ title: `Delete relationship "${rel.label}"?`, confirmLabel: "Delete", danger: true })))
       return;
-    saveDraft({ ...draft, relationships: draft.relationships.filter((r) => r.id !== rel.id) });
+    saveDraft({
+      ...draft,
+      // Same dangling-reference cascade as deleteField/deleteModel above,
+      // for a constraint that references this relationship instead of a
+      // scalar field.
+      models: rel.id ? pruneRelationshipFromConstraints(draft.models, rel.id) : draft.models,
+      relationships: draft.relationships.filter((r) => r.id !== rel.id),
+    });
   }
 
   function renameRelationship(relId: string, label: string) {
@@ -412,6 +430,9 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
                         {constraint.field_ids.map((fieldId) => (
                           <Badge key={fieldId}>{fieldLabel(model, fieldId)}</Badge>
                         ))}
+                        {(constraint.relationship_ids ?? []).map((relId) => (
+                          <Badge key={relId}>{relationshipLabel(draft, relId)}</Badge>
+                        ))}
                       </div>
                       {constraint.id && (
                         <div className="flex items-center gap-3 text-xs">
@@ -438,9 +459,20 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
                 </div>
               )}
 
-              {model.id && model.fields.filter((f) => f.id).length >= 2 && (
-                <AddConstraintForm model={model} onAdd={addConstraint} disabled={saving} />
-              )}
+              {model.id &&
+                model.fields.filter((f) => f.id).length +
+                  draft.relationships.filter((r) => r.source_model === model.id && r.kind !== "many_to_many")
+                    .length >=
+                  2 && (
+                  <AddConstraintForm
+                    model={model}
+                    relationships={draft.relationships.filter(
+                      (r) => r.source_model === model.id && r.kind !== "many_to_many",
+                    )}
+                    onAdd={addConstraint}
+                    disabled={saving}
+                  />
+                )}
             </Card>
           ))}
         </div>
@@ -590,6 +622,22 @@ function fieldLabel(model: DraftModel, fieldId: string): string {
   return model.fields.find((f) => f.id === fieldId)?.label ?? fieldId.slice(0, 8);
 }
 
+function relationshipLabel(draft: AppDefinition, relationshipId: string): string {
+  return draft.relationships.find((r) => r.id === relationshipId)?.label ?? relationshipId.slice(0, 8);
+}
+
+function pruneRelationshipFromConstraints(models: DraftModel[], relationshipId: string): DraftModel[] {
+  return models.map((m) => ({
+    ...m,
+    constraints: (m.constraints ?? [])
+      .map((c) => ({
+        ...c,
+        relationship_ids: (c.relationship_ids ?? []).filter((id) => id !== relationshipId),
+      }))
+      .filter((c) => c.field_ids.length + c.relationship_ids.length >= 2),
+  }));
+}
+
 function AddModelForm({
   onAdd,
   disabled,
@@ -729,25 +777,30 @@ function AddFieldForm({
 // never surfaced here -- see AppConstraintDefinition's own comment.
 function AddConstraintForm({
   model,
+  relationships,
   onAdd,
   disabled,
 }: {
   model: DraftModel;
+  relationships: DraftRelationship[];
   onAdd: (modelId: string, constraint: DraftConstraint) => void;
   disabled: boolean;
 }) {
   const [label, setLabel] = useState("");
   const [key, setKey] = useState("");
   const [fieldIds, setFieldIds] = useState<string[]>([]);
+  const [relationshipIds, setRelationshipIds] = useState<string[]>([]);
   const savedFields = model.fields.filter((f) => f.id);
+  const combinedCount = fieldIds.length + relationshipIds.length;
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!key || !label || fieldIds.length < 2 || !model.id) return;
-    onAdd(model.id, { key, label, field_ids: fieldIds });
+    if (!key || !label || combinedCount < 2 || !model.id) return;
+    onAdd(model.id, { key, label, field_ids: fieldIds, relationship_ids: relationshipIds });
     setLabel("");
     setKey("");
     setFieldIds([]);
+    setRelationshipIds([]);
   }
 
   return (
@@ -778,7 +831,7 @@ function AddConstraintForm({
         />
       </div>
       <div>
-        <Label htmlFor={`new-constraint-fields-${model.id}`}>Fields (select 2 or more)</Label>
+        <Label htmlFor={`new-constraint-fields-${model.id}`}>Fields and relationships (select 2 or more)</Label>
         <div
           id={`new-constraint-fields-${model.id}`}
           className="flex max-h-24 flex-col gap-1 overflow-y-auto rounded-lg border border-slate-200 p-2"
@@ -796,14 +849,22 @@ function AddConstraintForm({
               {f.label}
             </label>
           ))}
+          {relationships.map((r) => (
+            <label key={r.id} className="flex items-center gap-1.5 text-sm text-slate-700">
+              <Checkbox
+                checked={relationshipIds.includes(r.id!)}
+                onChange={(e) =>
+                  setRelationshipIds((prev) =>
+                    e.target.checked ? [...prev, r.id!] : prev.filter((id) => id !== r.id),
+                  )
+                }
+              />
+              {r.label} <span className="text-xs text-slate-400">(relationship)</span>
+            </label>
+          ))}
         </div>
       </div>
-      <Button
-        type="submit"
-        size="sm"
-        variant="secondary"
-        disabled={disabled || !key || !label || fieldIds.length < 2}
-      >
+      <Button type="submit" size="sm" variant="secondary" disabled={disabled || !key || !label || combinedCount < 2}>
         Add unique constraint
       </Button>
     </form>

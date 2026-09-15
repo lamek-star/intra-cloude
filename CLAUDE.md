@@ -22,8 +22,8 @@ identity (logo, color tokens, typography, component patterns) lives in
 
 ## Current Status
 
-**App Platform** (`app_platform`) is feature-complete through Phase 3 (App
-Builder v1): Phase 1's metadata foundation (organization templates, immutable
+**App Platform** (`app_platform`) is feature-complete through Phase 4
+(Inventory and Sales reference application): Phase 1's metadata foundation (organization templates, immutable
 versions, project-owned instances, generic model/field/relationship
 definitions); Phase 2's real business-record runtime (a compiled, fingerprinted
 provisioning plan that creates real per-app Postgres tables, full record/
@@ -40,7 +40,39 @@ end-to-end (manifest flag, restore warning, and zero rows crossing the round
 trip) in Phase 3's qualification step, not just asserted. New endpoints use
 shared capabilities/ResourceGrants and require human sessions; environment-bound
 integration access is deferred. Fresh full backend gate: 508 tests pass, 2
-skipped.
+skipped. While scoping Phase 4, a real gap was found in the Post-Phase-3
+composite-uniqueness capability this section previously described as
+closed: `ConstraintDefinition` only ever accepted scalar fields, so the
+readiness doc's own "Inventory (Part × Warehouse)" example — a constraint
+over two *relationships* — was never actually achievable. Closed
+generically (migration `0013`): a composite `UNIQUE` constraint can now
+also cover a model's own `many_to_one` relationships (never `many_to_many`,
+which has no column to constrain), through the same install/provisioning/
+live-schema-evolution/API/App Builder paths as the field-only case,
+203 backend tests passing and live-verified through the real App Builder
+UI — a duplicate `(field, relationship)` combination genuinely rejected
+against a provisioned instance, not just asserted by a unit test. See
+`docs/SPARE_PARTS_INTEGRATION_READINESS.md` §1/§11 and
+`docs/EXTERNAL_APP_API_CONTRACT.md`'s constraint section.
+
+Phase 4 itself then built on that closed capability: a real "Spare Parts —
+Inventory & Sales" `AppTemplate` (`app_platform/reference_templates.py`),
+13 models/14 relationships covering inventory, purchasing, and sales
+entirely through Phases 1–3's existing generic primitives — no
+industry-specific concept added to `app_platform`. Deliberately excludes a
+`CataloguePart`/`CompanyProduct` split (that's `catalogue_storage`'s job),
+calculated fields, an enum/status type, and cross-request atomicity (a
+stock receipt updating Inventory stays separate record-CRUD calls) — each
+a documented decision in `docs/implementation/APP_PLATFORM_PHASE4.md`, not
+a silent gap. A new `seed_spare_parts_reference_app` management command
+publishes/installs/provisions it into a real organization (never invents
+one; enforces the same permission checks as the App Builder UI). 212
+backend tests pass; live-verified end-to-end against the running Docker
+stack — a real duplicate `(Part, Warehouse)` Inventory row genuinely
+rejected through the actual API, the self-referencing `PartNumber.
+supersedes` relationship (previously flagged untested) now has real
+coverage, and the instance's own App Builder/record-detail pages render
+every model correctly in a browser.
 
 **All 12 planned phases (0–11) are complete and verified end-to-end.**
 Full history, bugs found and fixed, and exact verification method for

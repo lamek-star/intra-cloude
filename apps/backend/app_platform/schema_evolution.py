@@ -150,6 +150,16 @@ def _column_for(receipt: RuntimeProvision, field: FieldDefinition) -> DBColumn:
     return DBColumn.objects.select_related("table__tenant_database").get(pk=column_id)
 
 
+def _column_for_relationship(receipt: RuntimeProvision, relation: RelationshipDefinition) -> DBColumn:
+    """A many_to_many relationship has no single column of its own (it's a
+    join table -- see ConstraintDefinition's eligibility rule); only a
+    many_to_one relationship's FK column can ever be resolved here."""
+    binding = receipt.bindings.get("relationships", {}).get(str(relation.id))
+    if not isinstance(binding, dict) or binding.get("kind") != "many_to_one":
+        raise ValidationError("This relationship's runtime column could not be found.")
+    return DBColumn.objects.select_related("table__tenant_database").get(pk=binding["column"])
+
+
 def set_field_unique(receipt: RuntimeProvision, field: FieldDefinition, actor) -> None:
     """Retrofits a UNIQUE constraint onto a field that was already
     live-added without one -- the populated-runtime half of Post-Phase-3
@@ -195,6 +205,7 @@ def add_constraint_to_runtime(receipt: RuntimeProvision, constraint: ConstraintD
     (ADD CONSTRAINT is one statement inside one transaction)."""
     table = _table_for(receipt, constraint.model)
     columns = [_column_for(receipt, field) for field in constraint.fields.all()]
+    columns += [_column_for_relationship(receipt, relation) for relation in constraint.relationships.all()]
     try:
         index = services.add_field_set_unique_constraint(
             actor=actor,

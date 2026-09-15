@@ -67,24 +67,35 @@ class SnapshotField(FieldInput):
 
 
 class ConstraintInput(StrictSerializer):
-    """A model-level composite UNIQUE constraint. `field_ids` references
-    stable AppField definition ids, never display labels or column
-    names -- reused as-is for both a draft/template snapshot (where the
-    ids are other elements of the same unpublished definition) and a live
-    instance's add-constraint action (instances.add_constraint, where
-    they must resolve to real FieldDefinition rows on the same model --
-    checked there, not here, since this serializer has no access to a
-    live model's fields)."""
+    """A model-level composite UNIQUE constraint. `field_ids`/
+    `relationship_ids` reference stable AppField/AppRelationship
+    definition ids, never display labels or physical column/table names --
+    reused as-is for both a draft/template snapshot (where the ids are
+    other elements of the same unpublished definition) and a live
+    instance's add-constraint action (instances.add_constraint, where they
+    must resolve to real FieldDefinition/RelationshipDefinition rows on
+    the same model -- checked there, not here, since this serializer has
+    no access to a live model's fields/relationships)."""
 
     key = KeyField()
     label = serializers.CharField(max_length=200)  # type: ignore[assignment]  # DRF declarative field, removed by its metaclass
     field_ids = serializers.ListField(
-        child=serializers.UUIDField(), min_length=2, max_length=32
+        child=serializers.UUIDField(), required=False, default=list, max_length=32
+    )  # type: ignore[assignment]
+    relationship_ids = serializers.ListField(
+        child=serializers.UUIDField(), required=False, default=list, max_length=32
     )  # type: ignore[assignment]
 
     def validate(self, data):
-        if len(set(data["field_ids"])) != len(data["field_ids"]):
-            raise serializers.ValidationError({"field_ids": "A field cannot be repeated in one constraint."})
+        combined = data["field_ids"] + data["relationship_ids"]
+        if len(combined) < 2:
+            raise serializers.ValidationError(
+                "A constraint needs at least two fields or relationships combined."
+            )
+        if len(set(combined)) != len(combined):
+            raise serializers.ValidationError(
+                {"field_ids": "A field or relationship cannot be repeated in one constraint."}
+            )
         return data
 
 
@@ -156,6 +167,27 @@ class DefinitionInput(StrictSerializer):
         for relation in data["relationships"]:
             if relation["source_model"] not in model_ids or relation["target_model"] not in model_ids:
                 raise serializers.ValidationError("Relationship models must belong to this definition.")
+
+        # A constraint's relationship members must be a many_to_one
+        # relationship whose own FK column lives on the constrained
+        # model's table -- i.e. that relationship's source_model. A
+        # many_to_many relationship has no such column (it's a join
+        # table) and is never eligible. Checked here, once relationships
+        # are known, rather than inside ConstraintInput itself.
+        relations_by_id = {relation["id"]: relation for relation in data["relationships"]}
+        for model in data["models"]:
+            for constraint in model.get("constraints", []):
+                for relationship_id in constraint["relationship_ids"]:
+                    relation = relations_by_id.get(relationship_id)
+                    if (
+                        relation is None
+                        or relation["source_model"] != model["id"]
+                        or relation["kind"] != "many_to_one"
+                    ):
+                        raise serializers.ValidationError(
+                            "Constraint relationships must be a many-to-one relationship "
+                            "owned by the same model."
+                        )
         return data
 
 
