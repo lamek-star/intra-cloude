@@ -70,9 +70,12 @@ class DefaultClauseSqlTests(SimpleTestCase):
         with self.assertRaises(DDLValidationError):
             default_clause_sql(DBColumn.DataType.JSON, {1, 2, 3})  # sets aren't JSON-serializable
 
-    def test_date_defaults_not_supported_yet(self):
+    def test_date_default_must_match_date_format(self):
+        default_clause_sql(DBColumn.DataType.DATE, "2026-01-01")
         with self.assertRaises(DDLValidationError):
-            default_clause_sql(DBColumn.DataType.DATE, "2026-01-01")
+            default_clause_sql(DBColumn.DataType.DATE, "01/01/2026")
+        with self.assertRaises(DDLValidationError):
+            default_clause_sql(DBColumn.DataType.DATE, "now()")
 
     def test_text_default_embeds_injection_attempt_safely(self):
         # This must not raise — the point of psycopg.sql.Literal is that

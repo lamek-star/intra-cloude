@@ -58,6 +58,7 @@ THIRD_PARTY_APPS = [
 # Bounded Django apps per docs/architecture/DATA_MODEL.md Section 1.
 # Each owns its own models/services/serializers/tests; no giant shared app.
 LOCAL_APPS = [
+    "app_platform",
     "accounts",
     "organizations",
     "permissions",
@@ -67,6 +68,8 @@ LOCAL_APPS = [
     "datasets",
     "imports",
     "applications",
+    "oauth_provider",
+    "catalogue_storage",
     "environments",
     "sharing",
     "audit",
@@ -187,6 +190,14 @@ SECURE_REFERRER_POLICY = "same-origin"
 # (Section 24 / Section 17 of the master prompt).
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "")
 CORS_ALLOW_CREDENTIALS = True
+
+# The `iss` claim oauth_provider's ID tokens carry, and the base URL its
+# discovery document (/.well-known/openid-configuration) advertises for
+# every other endpoint — must be the exact origin external clients (e.g.
+# the spare-parts site) reach this deployment at, i.e. the proxy's own
+# origin (docker-compose.yml's `proxy` service), never the internal
+# `backend:8000` service name.
+OIDC_ISSUER = env("OIDC_ISSUER", "https://localhost:8443")
 
 # --- Django REST Framework ---
 REST_FRAMEWORK = {

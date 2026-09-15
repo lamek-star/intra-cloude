@@ -92,6 +92,16 @@ def build_export(*, organization, passphrase: str | None = None) -> tuple[bytes,
     here is mocked or simulated."""
     export_id = str(uuid.uuid4())
     manifest = new_manifest(export_id=export_id)
+    from app_platform.models import AppInstance, AppTemplate
+
+    if (
+        AppTemplate.objects.filter(organization=organization).exists()
+        or AppInstance.objects.filter(organization=organization).exists()
+    ):
+        manifest["warnings"] = [
+            "App Platform templates, versions, instances and definitions are excluded; "
+            "use a full control-plane backup to preserve them."
+        ]
 
     workspaces_payload = []
     databases_manifest: dict = {}

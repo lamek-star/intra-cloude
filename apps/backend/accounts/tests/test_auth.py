@@ -45,6 +45,25 @@ class RegisterTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_register_creates_no_organization_or_membership(self):
+        """Registration must produce a valid, logged-in identity on its own —
+        organization membership is a separate, optional concern (see the
+        onboarding decision this covers)."""
+        from organizations.models import Membership, Organization
+
+        response = self.client.post(
+            reverse("auth-register"),
+            {"email": "org-less@example.com", "password": "a-strong-passw0rd!", "first_name": "Solo"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        user = User.objects.get(email="org-less@example.com")
+        self.assertFalse(Membership.objects.filter(user=user).exists())
+        self.assertFalse(Organization.objects.filter(created_by=user).exists())
+
+        orgs = self.client.get(reverse("organization-list-create"))
+        self.assertEqual(orgs.status_code, status.HTTP_200_OK)
+        self.assertEqual(orgs.data, [])
+
 
 class LoginLogoutTests(APITestCase):
     def setUp(self):

@@ -27,6 +27,8 @@ from django.http import Http404
 from django.utils import timezone
 
 from accounts.models import User
+from app_platform.access import RESOURCE_TYPE_APP_INSTANCE
+from app_platform.models import AppInstance
 from audit import services as audit
 from audit.models import AuditEvent
 from databases.connections import RESOURCE_TYPE_CONNECTED_DATABASE
@@ -71,6 +73,24 @@ LEVEL_PERMISSIONS: dict[str, dict[str, list[str]]] = {
         # Recommendation, Phase 8) — no write/admin level to grant.
         ShareGrant.Level.READ: ["database.read"],
     },
+    # App Platform Phase 3 step 4 ("basic permissions"): governs only an
+    # app instance's own metadata (its models/fields/relationships and
+    # whether they can be edited/schema-evolved) -- never the records an
+    # already-provisioned instance stores. Record data lives in a real
+    # tenant database table and is already shareable today via
+    # RESOURCE_TYPE_TENANT_DATABASE against that table directly
+    # (records.py's own resolve() checks database.read/database.write on
+    # it, not anything app_instance-scoped) -- a deliberate, pre-existing
+    # separation this step reuses rather than duplicates.
+    RESOURCE_TYPE_APP_INSTANCE: {
+        ShareGrant.Level.READ: ["app_instance.read"],
+        ShareGrant.Level.WRITE: ["app_instance.read", "app_instance.manage"],
+        ShareGrant.Level.ADMIN: [
+            "app_instance.read",
+            "app_instance.manage",
+            "app_instance.schema.manage",
+        ],
+    },
 }
 
 _RESOURCE_ORG_FILTERS = {
@@ -82,6 +102,9 @@ _RESOURCE_ORG_FILTERS = {
     ).exists(),
     RESOURCE_TYPE_CONNECTED_DATABASE: lambda resource_id, org_id: ConnectedDatabase.objects.filter(
         id=resource_id, project__workspace__organization_id=org_id
+    ).exists(),
+    RESOURCE_TYPE_APP_INSTANCE: lambda resource_id, org_id: AppInstance.objects.filter(
+        id=resource_id, organization_id=org_id
     ).exists(),
 }
 

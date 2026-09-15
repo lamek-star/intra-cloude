@@ -108,3 +108,42 @@ class MembershipTests(APITestCase):
             {"role_slug": "viewer"},
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+
+class OrgLessUserTests(APITestCase):
+    """A user is a valid, fully authenticated IntraForge identity with zero
+    organization memberships — this is a normal, permanent state, not a
+    transient step every user passes through on the way to owning an
+    organization. See docs/architecture (onboarding) for the decision this
+    covers."""
+
+    def setUp(self):
+        seed()
+        self.user = User.objects.create_user(email="solo@example.com", password="x")
+        self.client.force_login(self.user)
+
+    def test_organization_list_is_empty_not_an_error(self):
+        response = self.client.get(reverse("organization-list-create"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
+
+    def test_a_foreign_organizations_resources_are_denied_cleanly(self):
+        other_owner = User.objects.create_user(email="other-owner@example.com", password="x")
+        self.client.force_login(other_owner)
+        org = self.client.post(reverse("organization-list-create"), {"name": "Someone Else's Org"})
+        org_id = org.data["id"]
+
+        self.client.force_login(self.user)
+        detail = self.client.get(reverse("organization-detail", args=[org_id]))
+        self.assertIn(detail.status_code, (status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND))
+
+        members = self.client.get(reverse("membership-list-create", args=[org_id]))
+        self.assertIn(members.status_code, (status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND))
+
+    def test_creating_an_organization_later_still_works_for_a_previously_org_less_user(self):
+        response = self.client.post(reverse("organization-list-create"), {"name": "Late Org"})
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        listing = self.client.get(reverse("organization-list-create"))
+        self.assertEqual(len(listing.data), 1)
+        self.assertEqual(listing.data[0]["name"], "Late Org")

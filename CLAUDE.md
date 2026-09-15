@@ -22,6 +22,26 @@ identity (logo, color tokens, typography, component patterns) lives in
 
 ## Current Status
 
+**App Platform** (`app_platform`) is feature-complete through Phase 3 (App
+Builder v1): Phase 1's metadata foundation (organization templates, immutable
+versions, project-owned instances, generic model/field/relationship
+definitions); Phase 2's real business-record runtime (a compiled, fingerprinted
+provisioning plan that creates real per-app Postgres tables, full record/
+relationship/attachment CRUD, and a generic frontend); and Phase 3's visual App
+Builder UI, plus safe live additive schema changes (new model/field/
+relationship, with required-field backfill) against an already-provisioned,
+possibly populated instance, and basic app-instance-scoped sharing reusing the
+existing `sharing`/`ResourceGrant` mechanism. Existing `applications.Application`
+remains a separate integration identity. See `docs/APP_PLATFORM_ARCHITECTURE.md`,
+ADR-0014, and `docs/implementation/APP_PLATFORM_PHASE1.md`/
+`APP_PLATFORM_PHASE2.md`/`APP_PLATFORM_PHASE3.md`. Full control-plane backups
+cover this metadata; portable `.icp` explicitly excludes it — verified
+end-to-end (manifest flag, restore warning, and zero rows crossing the round
+trip) in Phase 3's qualification step, not just asserted. New endpoints use
+shared capabilities/ResourceGrants and require human sessions; environment-bound
+integration access is deferred. Fresh full backend gate: 508 tests pass, 2
+skipped.
+
 **All 12 planned phases (0–11) are complete and verified end-to-end.**
 Full history, bugs found and fixed, and exact verification method for
 every phase lives in `docs/architecture/ROADMAP.md` — this section stays
@@ -329,8 +349,9 @@ secure defaults; readable code over clever code.
 See `README.md` for the full tree. Key rule: Django is organized into
 bounded apps (`accounts`, `organizations`, `permissions`, `workspaces`,
 `storage`, `databases`, `datasets`, `imports`, `applications`,
-`environments`, `sharing`, `audit`, `system`, `exports`, `analytics`) per
-`docs/architecture/DATA_MODEL.md` Section 1 — not one monolithic app.
+`oauth_provider`, `catalogue_storage`, `environments`, `sharing`, `audit`,
+`system`, `exports`, `analytics`) per `docs/architecture/DATA_MODEL.md`
+Section 1 — not one monolithic app.
 Business logic lives in service layers, not views or
 serializers.
 

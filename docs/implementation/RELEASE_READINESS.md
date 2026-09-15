@@ -1,5 +1,26 @@
 # Release-Readiness Report (living document)
 
+## App Platform continuation checkpoint (2026-09-09)
+
+The [ten-phase roadmap](APP_PLATFORM_ROADMAP.md) now tracks the master brief.
+Phase 1 is complete; Phase 2 has a read-only runtime planner, with provisioning,
+records, attachments and screens still pending. Fresh full gate: 448 tests
+passed, zero failures/skips; lint/types/migration checks and backend image
+build pass. [Exact scope and evidence](APP_PLATFORM_PHASE2.md). This step is
+not deployed, does not complete the runtime, and changes no release-qualification
+decision or external evidence requirement.
+
+## App Platform Phase 1 checkpoint (2026-09-08)
+
+The definition/template foundation is implemented on isolated branch
+`feature/app-platform`; it does not complete the App Runtime or later phases.
+Fresh backend gate: 436 passed, zero failures/skips, including 32 new tests
+and the real restore worker probes. New metadata uses full control-plane
+backup; portable `.icp` explicitly excludes it. The existing release blockers
+and health-check P2 backlog remain unchanged. See
+[Phase 1 evidence](APP_PLATFORM_PHASE1.md) and
+[architecture](../APP_PLATFORM_ARCHITECTURE.md).
+
 ## Current checkpoint: pre-App-Platform health check, 2026-09-08
 
 **B — READY WITH NON-BLOCKING OPEN ITEMS** for scoped App Platform development;
@@ -1139,6 +1160,19 @@ CI as an automated gate.
    through the Setup & Removal UI, and (new 2026-09-03) a real Restore
    run through the Backup & Restore tab against a provisioned appliance
    with real data — §5's own checklist now includes this.
+   **Partially unblocked 2026-09-14**: the owner chose the disposable-VM
+   path over testing destructively on the real dev machine.
+   `scripts/New-QualificationVM.ps1`/`Checkpoint-QualificationVM.ps1`/
+   `Restore-QualificationVM.ps1` (see `scripts/README.md`) provision a
+   Generation 2, nested-virtualization-enabled Hyper-V VM and checkpoint/
+   roll it back between destructive matrix sections — confirmed this
+   machine already has Hyper-V active and meets every
+   `Test-Prerequisites.ps1` check, and the Control Center build (33/33
+   tests) and MSI both build clean, ready to test. Still blocked on: the
+   owner supplying a Windows install ISO (deliberately not fetched here)
+   and actually running Windows Setup + the matrix's own elevated,
+   interactive scenarios — neither is something this session can do from
+   an unelevated dev session.
 2. A real code-signing certificate (`WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64`
    repo secret) if signed releases are wanted before shipping.
 3. ~~A decision on whether/when to push `rebrand/intraforge` and open a

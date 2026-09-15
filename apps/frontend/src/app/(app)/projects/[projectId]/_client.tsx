@@ -2,13 +2,17 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { Database, Folder, Plug } from "lucide-react";
+import { Database, Folder, Layers, Plug } from "lucide-react";
 import {
   api,
   ApiError,
+  type AppInstance,
+  type AppTemplate,
+  type AppTemplateVersion,
   type Bucket,
   type ConnectedDatabase,
   type Organization,
+  type Paginated,
   type Project,
   type TenantDatabase,
   type Workspace,
@@ -40,11 +44,13 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
   const [buckets, setBuckets] = useState<Bucket[] | null>(null);
   const [databases, setDatabases] = useState<TenantDatabase[] | null>(null);
   const [connectedDatabases, setConnectedDatabases] = useState<ConnectedDatabase[] | null>(null);
+  const [appInstances, setAppInstances] = useState<AppInstance[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [bucketModalOpen, setBucketModalOpen] = useState(false);
   const [dbModalOpen, setDbModalOpen] = useState(false);
   const [connectedDbModalOpen, setConnectedDbModalOpen] = useState(false);
+  const [installModalOpen, setInstallModalOpen] = useState(false);
 
   async function load() {
     try {
@@ -61,6 +67,12 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
       setDatabases(db);
       setConnectedDatabases(cdb);
       api.get<Organization>(`/organizations/${ws.organization}/`).then(setOrg).catch(() => {});
+      // Best-effort -- a member without app_instance.read simply sees an
+      // empty section rather than a page-level error.
+      api
+        .get<Paginated<AppInstance>>(`/projects/${projectId}/app-instances/?limit=100`)
+        .then((page) => setAppInstances(page.results))
+        .catch(() => setAppInstances([]));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load project.");
       setErrorDetail(err);
@@ -211,6 +223,50 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
         )}
       </div>
 
+      {appInstances && (
+        <div className="mt-8">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-600">Apps</h2>
+            {org && (
+              <Button size="sm" onClick={() => setInstallModalOpen(true)}>
+                Install app
+              </Button>
+            )}
+          </div>
+          {appInstances.length === 0 ? (
+            <EmptyState
+              title="No apps installed yet"
+              description="Install a published app template to get a real, provisioned data model with record screens."
+              action={
+                org && (
+                  <Button size="sm" onClick={() => setInstallModalOpen(true)}>
+                    Install app
+                  </Button>
+                )
+              }
+            />
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {appInstances.map((inst) => (
+                <Link key={inst.id} href={`/app-instances/${inst.id}`} className="block text-left">
+                  <Card className="transition-colors hover:border-brand-400/40 hover:bg-slate-50">
+                    <div className="flex items-center gap-2">
+                      <Layers className="h-4 w-4 text-brand-600" />
+                      <p className="font-medium text-slate-900">{inst.label}</p>
+                    </div>
+                    {inst.archived && (
+                      <div className="mt-1.5">
+                        <Badge tone="warning">Archived</Badge>
+                      </div>
+                    )}
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <CreateBucketModal
         open={bucketModalOpen}
         projectId={projectId}
@@ -238,7 +294,155 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
           setConnectedDbModalOpen(false);
         }}
       />
+      {org && (
+        <InstallAppModal
+          open={installModalOpen}
+          projectId={projectId}
+          organizationId={org.id}
+          onClose={() => setInstallModalOpen(false)}
+          onInstalled={(inst) => {
+            setAppInstances((prev) => [...(prev ?? []), inst]);
+            setInstallModalOpen(false);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function InstallAppModal({
+  open,
+  projectId,
+  organizationId,
+  onClose,
+  onInstalled,
+}: {
+  open: boolean;
+  projectId: string;
+  organizationId: string;
+  onClose: () => void;
+  onInstalled: (inst: AppInstance) => void;
+}) {
+  const [templates, setTemplates] = useState<AppTemplate[] | null>(null);
+  const [templateId, setTemplateId] = useState("");
+  const [versions, setVersions] = useState<AppTemplateVersion[] | null>(null);
+  const [versionId, setVersionId] = useState("");
+  const [label, setLabel] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTemplates(null);
+    setTemplateId("");
+    setVersions(null);
+    setVersionId("");
+    setLabel("");
+    setError(null);
+    api
+      .get<Paginated<AppTemplate>>(`/organizations/${organizationId}/app-templates/?limit=100`)
+      .then((page) => setTemplates(page.results.filter((t) => !t.archived)))
+      .catch(() => setTemplates([]));
+  }, [open, organizationId]);
+
+  useEffect(() => {
+    if (!templateId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setVersions(null);
+      return;
+    }
+    api
+      .get<Paginated<AppTemplateVersion>>(`/app-templates/${templateId}/versions/?limit=100`)
+      .then((page) => {
+        setVersions(page.results);
+        setVersionId(page.results.at(-1)?.id ?? "");
+      })
+      .catch(() => setVersions([]));
+  }, [templateId]);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!versionId || !label) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      const inst = await api.post<AppInstance>(`/projects/${projectId}/app-instances/`, {
+        template_version: versionId,
+        label,
+      });
+      onInstalled(inst);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to install this app.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Install app">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {error && <ErrorBanner message={error} />}
+        <div>
+          <Label htmlFor="install-template">Template</Label>
+          {templates === null ? (
+            <p className="text-xs text-slate-500">Loading templates…</p>
+          ) : templates.length === 0 ? (
+            <p className="text-xs text-slate-500">
+              No app templates in this organization yet -- create one first.
+            </p>
+          ) : (
+            <Select id="install-template" value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
+              <option value="">Select a template…</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </Select>
+          )}
+        </div>
+        {templateId && (
+          <div>
+            <Label htmlFor="install-version">Version</Label>
+            {versions === null ? (
+              <p className="text-xs text-slate-500">Loading versions…</p>
+            ) : versions.length === 0 ? (
+              <p className="text-xs text-slate-500">This template has no published versions yet.</p>
+            ) : (
+              <Select id="install-version" value={versionId} onChange={(e) => setVersionId(e.target.value)}>
+                {versions.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    Version {v.number}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </div>
+        )}
+        {versionId && (
+          <div>
+            <Label htmlFor="install-label">Name this installed app</Label>
+            <Input
+              id="install-label"
+              autoFocus
+              required
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="Warehouse inventory"
+            />
+          </div>
+        )}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={submitting || !versionId || !label}>
+            {submitting ? "..." : "Install"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

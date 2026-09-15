@@ -515,3 +515,180 @@ export type DashboardRenderResult = {
   name: string;
   widgets: DashboardWidgetResult[];
 };
+
+// --- App Platform (docs/implementation/APP_PLATFORM_PHASE2.md) ---
+
+// The draft/version definition format `app_platform/definitions.py`
+// validates -- id is omitted by the builder for a brand-new element (the
+// server assigns one) and echoed back for an existing one, to preserve
+// definition lineage across edits (see APP_PLATFORM_PHASE3.md).
+// The one safe default per type app_platform/definitions.py's
+// validate_field_default accepts (reusing databases/ddl.py's own DDL
+// safe-set): text/decimal/date are validated strings, integer a number,
+// boolean a bool, datetime only ever the literal "now()".
+export type FieldDefaultValue = string | number | boolean | null;
+
+export type DraftField = {
+  id?: string;
+  key: string;
+  label: string;
+  data_type: AppFieldDataType;
+  required?: boolean;
+  default_value?: FieldDefaultValue;
+};
+
+// Field membership references stable AppField ids -- the same ids
+// DraftField.id echoes -- never a display label or physical column name.
+// A brand-new element omits `id` just like DraftField/DraftRelationship;
+// the server assigns one. At least 2 field ids are required (app_platform/
+// definitions.py's ConstraintInput.field_ids).
+export type DraftConstraint = {
+  id?: string;
+  key: string;
+  label: string;
+  field_ids: string[];
+};
+
+export type DraftModel = {
+  id?: string;
+  key: string;
+  label: string;
+  fields: DraftField[];
+  constraints?: DraftConstraint[];
+};
+
+export type AppRelationshipKind = "many_to_one" | "many_to_many";
+
+export type DraftRelationship = {
+  id?: string;
+  key: string;
+  label: string;
+  source_model: string;
+  target_model: string;
+  kind?: AppRelationshipKind;
+  deletion_policy?: "restrict" | "set_null";
+};
+
+export type AppDefinition = {
+  schema_version: 1;
+  models: DraftModel[];
+  relationships: DraftRelationship[];
+};
+
+export type AppTemplate = {
+  id: string;
+  organization: string;
+  label: string;
+  description: string;
+  draft: AppDefinition;
+  archived: boolean;
+  created_at: string;
+};
+
+export type AppTemplateVersion = {
+  id: string;
+  template: string;
+  number: number;
+  definition: AppDefinition;
+  checksum_sha256: string;
+  created_at: string;
+};
+
+export type AppInstance = {
+  id: string;
+  organization: string;
+  project: string;
+  source_version: string;
+  label: string;
+  archived: boolean;
+  created_at: string;
+};
+
+export type RuntimePlan = {
+  format_version: number;
+  instance_id: string;
+  database_id: string;
+  schema_name: string;
+  models: unknown[];
+  relationships: unknown[];
+  fingerprint: string;
+};
+
+export type RuntimeStatus = {
+  instance_id: string;
+  status: "ready" | "failed" | "pending";
+  fingerprint: string;
+  database_id: string | null;
+  bindings: Record<string, unknown>;
+  error: string;
+  completed_at: string | null;
+};
+
+export type AppModelDefinition = {
+  id: string;
+  instance: string;
+  key: string;
+  label: string;
+  position: number;
+  source_definition_id: string | null;
+};
+
+export type AppFieldDataType = "text" | "integer" | "decimal" | "boolean" | "date" | "datetime";
+
+export type AppFieldDefinition = {
+  id: string;
+  model: string;
+  key: string;
+  label: string;
+  data_type: AppFieldDataType;
+  required: boolean;
+  default_value: FieldDefaultValue;
+  position: number;
+  source_definition_id: string | null;
+};
+
+export type AppConstraintDefinition = {
+  id: string;
+  model: string;
+  key: string;
+  label: string;
+  position: number;
+  source_definition_id: string | null;
+  // Stable AppField ids, in current display order -- never a physical
+  // constraint/index name (see databases.services.
+  // add_field_set_unique_constraint's own naming, deliberately internal).
+  field_ids: string[];
+};
+
+export type AppRelationshipDefinition = {
+  id: string;
+  instance: string;
+  key: string;
+  label: string;
+  position: number;
+  source_definition_id: string | null;
+  source_model: string;
+  target_model: string;
+  kind: AppRelationshipKind;
+  deletion_policy: "restrict" | "set_null";
+};
+
+// Same shape as RowsPage — record values are just keyed by field/relationship
+// definition UUID instead of a physical column name (see records.py).
+export type AppRecordsPage = {
+  count: number;
+  limit: number;
+  offset: number;
+  results: Record<string, unknown>[];
+};
+
+export type AppRecordAttachment = {
+  id: string;
+  record_id: string;
+  file_id: string;
+  filename: string;
+  mime_type: string;
+  size: number;
+  status: string;
+  created_at: string;
+};

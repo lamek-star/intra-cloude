@@ -1,5 +1,118 @@
 # Threat Model — IntraForge
 
+## App Platform Phase 2 qualification pass
+
+Closes Phase 2 with tests spanning the previous three steps' boundaries
+rather than just re-asserting them: a real record id from one model's
+tenant table substituted into a second, unrelated model's attachment URL
+in the *same* organization confirms the `(model, record_id)` scoping (not
+org membership alone) actually rejects it; revoking a `ResourceGrant`
+mid-session denies the very next request, no stale-authorization window;
+two real threads concurrently updating the *same* record leave it in one
+of the two submitted states, never a corrupted mix (Postgres's per-row
+`UPDATE` locking, no application lock needed); and the new
+`RecordAttachment` control-plane row survives a real control+tenant backup/
+restore cycle. Also live-verified in a browser: a user with zero
+relationship to an app's organization gets the app's real "Not found."
+page at both the instance and model URLs, not a blank page or a leak.
+Record creation is confirmed *not* idempotent (a retried POST duplicates
+the record) — an accepted, named limitation shared with the generic data
+explorer's own row-insert endpoint, not a new gap. Full evidence:
+[APP_PLATFORM_PHASE2.md](../implementation/APP_PLATFORM_PHASE2.md)'s
+qualification step and `app_platform/tests/test_records.py`/
+`test_attachments.py`.
+
+## App Platform Phase 2 attachments boundary
+
+Attaching never accepts file bytes -- only a reference (`file_id`) to a
+`FileObject` that already passed the real upload pipeline (malware scan,
+checksum, MIME sniff), so this step inherits that pipeline's guarantees
+rather than needing its own. The cross-organization case is the one this
+step specifically had to guard against and test for: `get_member_file`
+only proves the actor belongs to *some* organization that owns the file,
+which is true whenever the actor happens to be a member of both the
+attaching app's organization and the file's — an explicit
+`file.organization_id == instance.organization_id` check closes that gap,
+verified by `test_file_from_a_foreign_organization_cannot_be_attached`,
+where the attaching actor is deliberately a member of both organizations.
+A quarantined or already-deleted file is rejected at attach time, and
+`storage.read` plus the file's live status are rechecked again at every
+download (not cached from attach time), so revoking Sharing or a later
+malware-scan quarantine takes effect immediately, matching storage's own
+`FileDownloadView` discipline exactly, not a separate, weaker copy of it.
+Listing attachments returns filename/mime type/size/status only -- never
+`object_key`, the same non-negotiable the storage app's own docstrings
+already state for that field. Deleting a record removes its attachment
+rows as a second, un-transacted step after the tenant-table row delete
+already committed (attachments are a control-plane model; the record is a
+raw tenant-table row) -- a crash between the two leaves an attachment row
+pointing at a now-nonexistent record, not a leaked file or a dangling
+storage object, and is cheap to reconcile later precisely because the
+record it points to is already gone. See `app_platform/tests/
+test_attachments.py` for the live-verified cases.
+
+## App Platform Phase 2 record CRUD boundary
+
+Record values are always addressed by definition UUID in the API; the
+runtime's generated physical table/column names are never accepted from or
+returned to a client. `databases.rows`/`databases.values` perform the actual
+type/required/decimal validation already relied on by the generic data
+explorer; this step only translates ids and adds a real PostgreSQL exception
+mapping (`django.db.IntegrityError`/`Error`, since Django's cursor wrapper
+re-raises driver errors under its own hierarchy, not the raw psycopg
+classes) so a foreign-key violation, decimal overflow, or a non-finite
+number is a clean 400, not a leaked 500. A relationship value is a real
+enforced foreign key with the deletion policy chosen at definition time, not
+an application-level check. Every create/update/delete is audited with the
+record id and (update only) which field/relationship ids changed, never the
+values themselves, matching the "never storing secret or full record
+payloads" constraint the docstring of this whole subsystem already commits
+to. Cross-organization model-id substitution is a 404 (via the same
+`get_owned` membership scoping used everywhere else in `app_platform`); a
+member with no `database.read`/`write` grant is a 403. See
+`app_platform/tests/test_records.py` for the live-verified cases: CRUD round
+trip, filter/search/order/pagination, relationship round trip and FK-
+violation rejection, required-field/decimal-overflow/unknown-field
+rejection, cross-org 404, permission-grant-gated 403, unprovisioned-instance
+404, and audited-without-payload-leak mutations.
+
+## App Platform Phase 2 provisioning boundary
+
+Runtime reservation is human-only and requires actual app schema and database
+capabilities; the worker rechecks authority. Strict request validation accepts
+only the plan fingerprint. Installed UUIDs produce validated physical names,
+and existing quoting/DDL services construct the schema. Durable reservation,
+instance/advisory locks, operation-marked tenant schemas and atomic control
+publication prevent a retry from rebuilding published data. An unmarked
+schema or any catalog owner blocks reconciliation. Published bindings and
+structural definitions/catalog rows have PostgreSQL guards; normal database
+services reject destructive schema operations before executing DDL.
+
+Generated records currently inherit existing database/Environment access;
+there is no parallel app record policy or field/record-level isolation claim.
+Broker enqueue and control/tenant commits are not distributed transactions.
+Pending receipts can require explicit re-enqueue or operator review. Matching
+quiesced control+tenant backups are required for complete runtime restoration.
+Real process/worker SIGKILL, concurrency, foreign organization, catalog guard
+and populated restore tests cover this step. See
+[ADR-0015](../architecture/adr/0015-runtime-provisioning.md) and
+[operating limits](../operations/RUNTIME_PROVISIONING.md).
+
+## App Platform Phase 1 boundary
+
+New metadata uses active membership plus `app_template.*`/`app_instance.*`
+capabilities and exact ResourceGrants; no role-name bypass or parallel policy
+engine. Service-account principals are denied until an explicit environment
+binding contract exists. Definitions use immutable UUIDs; keys are validated
+server-side, labels never become SQL, and no record DDL executes in Phase 1.
+Strict input schemas reject mass-assigned ownership and lineage. PostgreSQL
+guards reject version mutation, ownership changes, and cross-instance
+relationships. Published provenance and referenced models use PROTECT;
+archive is the supported removal operation. Portable export explicitly
+excludes these definitions; only full control-plane backups cover them.
+Regression evidence: `app_platform/tests/`; design:
+[ADR-0014](../architecture/adr/0014-app-platform-foundation.md).
+
 Status: Living document — implemented through Phase 12 (production
 hardening); no longer a Phase 0 draft. Updated alongside the code as new
 phases land, per CLAUDE.md's engineering process.

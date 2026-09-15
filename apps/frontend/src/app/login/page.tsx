@@ -1,15 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
 import { isMfaRequired, useAuth } from "@/lib/auth-context";
-import { Button, ErrorBanner, Input, Label } from "@/components/ui";
+import { isSafeNextPath } from "@/lib/safe-next";
+import { Button, ErrorBanner, Input, Label, PageLoading } from "@/components/ui";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<PageLoading />}>
+      <LoginPageInner />
+    </Suspense>
+  );
+}
+
+function LoginPageInner() {
   const { login, verifyMfa } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -32,13 +43,23 @@ export default function LoginPage() {
           return;
         }
       }
-      router.push("/orgs");
+      if (isSafeNextPath(next)) {
+        // A real, full navigation -- `next` may point outside the
+        // Next.js app entirely (e.g. back into /oauth/authorize on the
+        // same origin, for an external application's sign-in flow),
+        // which router.push() cannot reach.
+        window.location.assign(next);
+      } else {
+        router.push("/dashboard");
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
       setSubmitting(false);
     }
   }
+
+  const registerHref = isSafeNextPath(next) ? `/register?next=${encodeURIComponent(next)}` : "/register";
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-white px-4">
@@ -47,7 +68,7 @@ export default function LoginPage() {
           {/* eslint-disable-next-line @next/next/no-img-element -- fixed-size static brand asset */}
           <img src="/brand/icon-96.png" alt="IntraForge" width={44} height={44} className="mb-3 h-11 w-11" />
           <h1 className="text-lg font-semibold text-text-primary">IntraForge</h1>
-          <p className="mt-1 text-sm text-slate-500">Sign in to your organization</p>
+          <p className="mt-1 text-sm text-slate-500">Sign in to your account</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-slate-200 bg-white p-6">
@@ -106,7 +127,7 @@ export default function LoginPage() {
 
         <p className="mt-5 text-center text-sm text-slate-500">
           Don&apos;t have an account?{" "}
-          <Link href="/register" className="text-brand-600 hover:text-brand-500">
+          <Link href={registerHref} className="text-brand-600 hover:text-brand-500">
             Create one
           </Link>
         </p>

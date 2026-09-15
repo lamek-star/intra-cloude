@@ -1,5 +1,83 @@
 # API Documentation — IntraForge
 
+## App Platform record CRUD
+
+`GET/POST /api/v1/app-models/{model_id}/records/` and
+`GET/PATCH/DELETE /api/v1/app-models/{model_id}/records/{record_id}/` operate
+on a provisioned model's real rows. Field and relationship values are always
+keyed by their definition UUID (the same id `models`/`fields`/`relationships`
+endpoints already use), never by the runtime's generated physical column
+name. List supports `limit`/`offset`/`ordering`/`search` plus filtering by
+any field or relationship definition UUID as a query parameter (e.g.
+`?<field_id>=value`); `ordering` accepts a definition UUID or `-`-prefixed
+for descending, or the literal `id`. An unprovisioned or not-yet-ready
+instance is 404. Authorization is the existing `database.read`/
+`database.write` capability on the runtime's `TenantDatabase` resource, not
+a new app-specific grant — see PERMISSIONS.md. Unknown field/relationship
+ids, missing required fields, decimal overflow/nonfinite values, and a
+relationship value with no matching target record are all a clean 400, not
+a 500; create/update/delete are audited with the record id and (for update)
+which fields changed, never the field values themselves. Real PostgreSQL
+foreign keys and each relationship's deletion policy are enforced by the
+schema the provisioning step already built — see
+[operating limits](../operations/RUNTIME_PROVISIONING.md) and
+[Phase 2 progress](../implementation/APP_PLATFORM_PHASE2.md).
+
+## App Platform record attachments
+
+`GET/POST /api/v1/app-models/{model_id}/records/{record_id}/attachments/`,
+`DELETE .../attachments/{attachment_id}/`, and
+`GET .../attachments/{attachment_id}/download/` link an already-uploaded
+`storage.FileObject` to a record; this never accepts a file upload itself —
+`file_id` must name a file that already went through the real storage
+pipeline. Attaching requires `database.write` on the record and
+`storage.read` on the file's bucket, plus the file's organization must
+match the app's — membership in both organizations is not enough on its
+own. A quarantined or deleted file cannot be attached, and every download
+rechecks `storage.read` and the file's current status again (not just at
+attach time), so a file quarantined after being attached is denied at
+download. Listing returns id/record id/file id/filename/mime type/size/
+status/created-at — never the object-store key. Deleting a record cascades
+its attachment rows, as a second, non-atomic step after the tenant-table
+delete (attachments live in the control-plane database, the record in the
+tenant one). Generated list/form/detail screens and rendered audit history
+remain future steps.
+
+## App Platform asynchronous provisioning
+
+`POST /api/v1/app-instances/{id}/runtime/` accepts only a preflight
+`fingerprint`, durably reserves the plan, then queues provisioning. Requires
+active human membership, exact instance `app_instance.schema.manage`, plus
+organization-wide `database.create` and `database.schema.manage`. Returns
+202 for pending/retried work, 200 for ready replay, 409 for a stale plan.
+GET on the same route requires instance schema-management authority and
+returns status, database UUID, immutable catalog mappings and sanitized error.
+Unknown instance/foreign organization/unreserved GET is 404. Queue failure
+retains the receipt; repeat POST to retry. No editable SQL, database UUID,
+bindings, or status input is accepted.
+See [full contract](../operations/RUNTIME_PROVISIONING.md).
+
+## App Platform Phase 2 preflight
+
+`GET /api/v1/app-instances/{id}/runtime-plan/` previews a validated relational
+layout without executing DDL. Active human membership plus
+`app_instance.schema.manage` is required; exact instance ResourceGrants apply.
+Returns the instance/database identities, generated schema/table/column names,
+typed columns, references and a deterministic fingerprint. Archived/empty
+instances return 400; missing capability 403; foreign organization 404;
+mutation methods are not supported. This does not provide record CRUD or
+provision a runtime. See [contract and progress](../implementation/APP_PLATFORM_PHASE2.md).
+
+## App Platform Phase 1 foundation
+
+The human-session metadata API adds organization `app-templates`, template
+`versions`, project `app-instances`, and instance `models`/`relationships`
+plus model `fields`. All lists use limit/offset pagination. Detail UUIDs are
+organization-scoped server-side. The exact routes, accepted properties,
+capability checks, immutable fields, and deferred runtime behavior are in
+[App Platform architecture](../APP_PLATFORM_ARCHITECTURE.md). Existing
+`applications` routes still represent integration identities.
+
 Status: Phase 11 (all planned phases complete) — accounts (including
 TOTP MFA), organizations (including Teams), permissions, workspaces,
 storage, the database builder (schema *and* row data), audit, CSV

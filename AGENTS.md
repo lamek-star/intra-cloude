@@ -22,6 +22,147 @@ identity (logo, color tokens, typography, component patterns) lives in
 
 ## Current Status
 
+**App Platform Phase 2 (generic application runtime) is complete.** A
+permission-checked relational planner and resumable asynchronous
+provisioning create actual managed tenant tables, scalar columns and
+foreign keys, with durable receipts/mappings, schema guards, and matched
+control/tenant backup restoration. Typed record CRUD
+(`app_platform/records.py`) runs over that provisioned runtime — create/
+read/update/delete, search/filter/sort/pagination, and a real enforced
+foreign key per relationship, addressed by definition UUID rather than the
+runtime's generated physical column names, reusing the existing
+`database.read`/`write` permission rather than a new app-specific grant.
+Records carry attachments (`app_platform/attachments.py`): linking an
+already-uploaded `storage.FileObject` requires both that same
+record-write authority and `storage.read` on the file's bucket, with an
+explicit organization match closing a cross-org gap membership checks
+alone would miss, and downloads recheck `storage.read` plus quarantine/
+deletion status every time. `apps/frontend` has generic screens generated
+directly from an app's metadata (`/app-instances/[instanceId]`,
+`/app-models/[modelId]`, `/app-models/[modelId]/records/[recordId]`) —
+list/search/create/edit/delete, a relationship reference picker, attach/
+download/detach, and rendered audit history. A qualification pass proved,
+beyond the per-step tests: cross-model record-id substitution within the
+same organization is rejected, a revoked `ResourceGrant` denies the very
+next request, concurrent updates to the same record never corrupt it, a
+populated attachment survives a real backup/restore cycle, and a
+zero-relationship user gets a real "Not found." page in the live browser
+at both the instance and model URLs — plus everything live-verified in a
+real browser against a rebuilt dev stack, not just compiled. Record
+creation is confirmed *not* idempotent under retry, an accepted, named
+limitation shared with the generic data explorer, not a new gap. See
+ADR-0015, `docs/operations/RUNTIME_PROVISIONING.md`, and
+`docs/implementation/APP_PLATFORM_PHASE2.md`. This work is not deployed
+to the user's production appliance.
+
+**App Platform Phase 3 (App Builder v1) is complete**, split into steps
+per `docs/implementation/APP_PLATFORM_PHASE3.md`. Step 1 (App Builder UI
+for capability the backend already had) is done: `/orgs/[orgId]/
+app-templates`, a draft model/field/relationship builder at
+`/app-templates/[templateId]` that PATCHes the whole draft and always
+re-derives state from the server's response (preserving already-assigned
+ids across edits, since relationship pickers only ever offer already-saved
+models), a read-only version viewer, an "Install app" flow on the project
+page, and a "Provision runtime" action with live status polling on the
+instance page. Step 2 (defaults and ordering) is also done: `FieldDefinition`
+gained a validated `default_value` (reusing `databases.ddl`'s own DDL
+safe-set for validation, which surfaced and fixed a real gap there — date
+columns had no default support at all) that flows through provisioning into
+a real Postgres column `DEFAULT`, and `ModelDefinition`/`FieldDefinition`/
+`RelationshipDefinition` gained an explicit, always-reorderable `position`
+(replacing an implicit, tie-break-by-random-UUID order) that's deliberately
+exempt from the post-provision structural freeze, since reordering touches
+no DDL. Both live-verified end-to-end in a real browser: a field's default
+rendered, was edited, reordered above another field, republished, installed
+fresh, provisioned, and a record created leaving that field blank came back
+with the real database default applied. Step 3 (safe populated-schema
+changes) is also done: a new `schema_evolution.py` module lets
+`add_model`/`add_field`/`add_relationship` apply real DDL against an
+already-provisioned, possibly populated runtime (a new required field on a
+populated model needs a default, which then backfills existing rows via
+Postgres's own column `DEFAULT`), reusing `databases.services`'s validated
+DDL operations through a new `allow_managed_schema` escape hatch, gated by
+org-wide `database.schema.manage` — a schema-only app grant is never
+enough, matching provisioning's own rule. This required patching three of
+Phase 2's Postgres trigger guards (`0007_schema_evolution_guards.py`) that
+had no way to tell this new sanctioned path from an unsanctioned write;
+doing so surfaced a real pre-existing gap (step 2's reordering was
+silently rejected at the database layer on any already-provisioned
+instance the whole time) and a NULL-propagation bug in the fix's own first
+draft (an unset session flag made a negated condition evaluate to SQL
+`NULL`, which PL/pgSQL's `IF` treats as "don't raise" — caught by a
+pre-existing regression test). Frontend gained "Add model"/"Add
+relationship" on the instance page and "Add field" on the model page,
+live-verified end-to-end in a real browser in a follow-up session:
+against an already-provisioned, populated instance, added a model
+(record-creatable immediately), added a required field with a default to
+a populated model (the pre-existing row came back backfilled with the
+real Postgres column default), confirmed the same field without a
+default is rejected inline with no field created, and added a
+relationship whose reference picker offered and persisted a real
+foreign-key-backed row. Step 4 (basic permissions) is also done: an app
+instance's own metadata (not the records it stores once provisioned —
+those are already shareable today via the pre-existing
+`databases.tenant_database` sharing resource type, a separation this
+step reuses rather than duplicates) is now shareable through the exact
+same `sharing` app Phase 9 built, via one new
+`RESOURCE_TYPE_APP_INSTANCE` entry in its `LEVEL_PERMISSIONS` dispatch
+(read/write/admin → `app_instance.read`/`+.manage`/`+.schema.manage`,
+deliberately never `database.schema.manage`, which step 3 established
+must stay organization-wide only) and the existing `ShareSection`
+frontend component dropped onto the instance page unmodified.
+Live-verified both directions in a real browser: read-level sharing let
+a second member view but not rename an instance; write-level let them
+rename it. Step 5 (qualification) closed the phase: cross-org isolation
+and grant revocation were already comprehensively covered by steps 1-4's
+own tests (re-confirmed live — an unrelated org's member gets a real 404
+on an app instance by direct URL); two real, previously-unverified gaps
+were closed with new tests — the portable `.icp` package's long-standing
+App Platform exclusion (`exports/manifest.py`'s `EXCLUDED_SCOPE`, dating
+to Phase 1) was proven end-to-end for the first time, and a real
+concurrent-write scenario against step 3's `schema_evolution.py` (two
+threads adding fields to the same instance) was proven not to lose an
+update, confirming the existing `select_for_update()` lock in
+`ready_receipt()` actually does its job rather than just looking
+correct. Fresh full backend gate: 508 passed, 2 skipped, 0 failed. See
+`docs/implementation/APP_PLATFORM_PHASE3.md` and `TEST_STATUS.md` for
+the full account, including the honest remaining-debt list (all
+pre-existing, none new to this phase, none blocking).
+
+**Post-Phase-3 Integration Enablement** closed the two blocking gaps a
+follow-up external-integration readiness review found
+(`docs/SPARE_PARTS_INTEGRATION_READINESS.md`,
+`docs/EXTERNAL_APP_API_CONTRACT.md`), as generic platform capabilities,
+not spare-parts-specific code: (1) bearer-token `Application` clients
+(Phase 7) can now reach a scoped subset of `app_platform` — schema/
+instance discovery, record CRUD, attachments, read-only runtime status —
+via `FoundationView.service_account_methods`, gated by the exact same
+deny-by-default capability checks a human session uses; template/
+instance/schema administration stay human-session-only by design. (2)
+`FieldDefinition` gained `unique`/`indexed` (migration `0008`), backed by
+real Postgres `UNIQUE` constraints/B-tree indexes at field-creation time
+and via two new retrofit functions for an already-provisioned, possibly
+populated field (`databases.services.add_unique_constraint`/
+`add_index`) — idempotent, DB-constraint-enforced (not an application
+pre-check, verified with a real concurrent-create race), with a
+200,000-row disposable benchmark showing a real Postgres planner
+choosing an Index Scan (0.03ms) over a Seq Scan (24.6ms) on the same
+exact-match lookup. See `docs/implementation/TEST_STATUS.md` for the
+full test account.
+The master brief's ten development phases
+are tracked in `docs/implementation/APP_PLATFORM_ROADMAP.md`; current work and
+remaining runtime requirements are in `docs/implementation/APP_PLATFORM_PHASE2.md`.
+
+**App Platform Phase 1** is a separate metadata foundation in `app_platform`:
+organization templates, immutable versions, project-owned instances, and
+generic model/field/relationship definitions. Existing `applications.Application`
+remains an integration identity. See `docs/APP_PLATFORM_ARCHITECTURE.md`,
+ADR-0014, and `docs/implementation/APP_PLATFORM_PHASE1.md`. No business-record
+runtime or visual builder exists yet. Full control-plane backups cover the
+new metadata; portable `.icp` explicitly excludes it. New endpoints use shared
+capabilities/ResourceGrants and require human sessions; environment-bound
+integration access is deferred. Fresh full gate: 436 tests pass, zero skips.
+
 **All 12 planned phases (0–11) are complete and verified end-to-end.**
 Full history, bugs found and fixed, and exact verification method for
 every phase lives in `docs/architecture/ROADMAP.md` — this section stays

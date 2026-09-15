@@ -1,5 +1,21 @@
 # Backup & Restore Strategy — IntraForge
 
+App Platform Phase 2 provisioning adds runtime receipts/catalog UUID bindings
+to control PostgreSQL and real tables/records to tenant PostgreSQL. Complete
+runtime recovery therefore requires **matching control and tenant backups**,
+taken while writes/provisioning are quiesced. A populated paired restore,
+including guards and replay without rebuilding, is tested. Portable `.icp`
+still excludes app metadata; included runtime tables restore as ordinary data,
+not a working installed application. See
+[runtime recovery procedure](RUNTIME_PROVISIONING.md).
+
+App Platform Phase 1: full control-plane PostgreSQL backups preserve templates,
+versions, installed definitions, UUID lineage, constraints, and database guards.
+This was verified by a real pg_dump/pg_restore round trip. Portable `.icp`
+exports **exclude App Platform metadata** and report that limitation; they are
+not a complete backup of installed business applications. See
+[Phase 1 evidence](../implementation/APP_PLATFORM_PHASE1.md).
+
 Current assurance checkpoint: [pre-App-Platform health check](../implementation/PRE_APP_PLATFORM_HEALTH_CHECK.md).
 Fresh automated/local integration checks do not qualify Windows UI lifecycle
 or whole-infrastructure outage recovery. Configuration restore remains manual;

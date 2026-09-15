@@ -7,6 +7,12 @@ in a view or migration.
 """
 
 PERMISSIONS = {
+    "app_template.read": "Read organization-owned business application templates and versions",
+    "app_template.manage": "Create/edit/archive business application templates",
+    "app_template.publish": "Publish immutable template versions",
+    "app_instance.read": "Read installed business application definitions",
+    "app_instance.manage": "Install, rename, archive business applications",
+    "app_instance.schema.manage": "Manage installed application model, field, and relationship definitions",
     "workspace.manage": "Create Workspaces and Projects within an organization",
     "storage.read": "View/download files and folders",
     "storage.write": "Upload, create folders, rename, move",
