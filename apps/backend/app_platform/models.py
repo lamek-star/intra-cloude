@@ -449,3 +449,60 @@ class WorkflowNotificationDelivery(models.Model):
 
     def __str__(self):
         return f"{self.attempt_id} -> {self.url}"
+
+
+class UnitScopedGrant(models.Model):
+    """Phase 7 Step 3 ("unit scope"): grants one user read/write access to
+    a model's records, restricted to records whose org_unit_reference
+    field equals `unit`. Real FKs to both `model` and `unit` -- unlike
+    org_unit_reference itself, both rows here live in the control-plane
+    database (this app and org_units), so there's no cross-database
+    problem to work around.
+
+    Deliberately a dedicated model rather than forcing this into
+    permissions.ResourceGrant's single (resource_type, resource_id) shape
+    (which can't express a two-key "this model AND this unit" scope
+    without an opaque derived id no admin UI could ever display
+    meaningfully) or sharing.ShareGrant (built for exactly one resource
+    id per share, same problem). Enforcement still runs entirely through
+    `level` mapping onto real permission codes
+    (`unit_scope.LEVEL_PERMISSIONS`) checked in `records.py` -- this is a
+    grant *source*, the same relationship ShareGrant already has to
+    ResourceGrant, never a second authorization mechanism (ADR-0008).
+
+    Requires the target model to have exactly one org_unit_reference field
+    (validated at grant-creation time, not here) -- two such fields on one
+    model would make "restricted to unit X" ambiguous about which field it
+    means; not supported in this pass."""
+
+    class Level(models.TextChoices):
+        READ = "read", "Read"
+        WRITE = "write", "Write"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    model = models.ForeignKey(ModelDefinition, on_delete=models.CASCADE, related_name="unit_scoped_grants")
+    unit = models.ForeignKey(
+        "org_units.OrganizationalUnit", on_delete=models.CASCADE, related_name="app_model_grants"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="unit_scoped_grants"
+    )
+    level = models.CharField(max_length=10, choices=Level.choices)
+    granted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="unit_scoped_grants_created",
+    )
+    expires_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["model", "unit", "user"], name="app_unit_scoped_grant_unique"),
+        ]
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user} -> {self.level} on {self.model_id}/{self.unit_id}"

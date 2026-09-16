@@ -66,8 +66,23 @@ def _build_where(table: DBTable, *, filters: dict, search: str | None) -> tuple[
     for col_name, raw_value in (filters or {}).items():
         if col_name not in column_names:
             raise RowValueError(f"unknown column: {col_name}")
-        clauses.append(sql.SQL("{} = %s").format(sql.Identifier(col_name)))
-        params.append(raw_value)
+        if isinstance(raw_value, (list, tuple, set)):
+            # Internal/programmatic filtering only (e.g. app_platform's
+            # unit-scoped record access, restricting a column to a set of
+            # allowed values) -- the HTTP row API never sends a list here,
+            # only a single raw query-string value per filter key. An
+            # empty set can never match any row; build that explicitly
+            # rather than emitting invalid `IN ()` SQL.
+            values = list(raw_value)
+            if not values:
+                clauses.append(sql.SQL("1 = 0"))
+                continue
+            placeholders = sql.SQL(", ").join(sql.SQL("%s") for _ in values)
+            clauses.append(sql.SQL("{} IN ({})").format(sql.Identifier(col_name), placeholders))
+            params.extend(values)
+        else:
+            clauses.append(sql.SQL("{} = %s").format(sql.Identifier(col_name)))
+            params.append(raw_value)
 
     if search:
         text_columns = _text_column_names(table)

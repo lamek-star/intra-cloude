@@ -1,6 +1,6 @@
 # App Platform Phase 7 — Enterprise permissions
 
-Status: **IN PROGRESS** — Steps 1–2 of 4 complete, 2026-09-16 on
+Status: **IN PROGRESS** — Steps 1–3 of 4 complete, 2026-09-16 on
 `feature/app-platform`, right after Phase 6's completion (`e3d388c`). Per
 [the roadmap](APP_PLATFORM_ROADMAP.md): "Shared capability enforcement for
 user, role, app, module, action, record and unit scopes; revocation and
@@ -16,11 +16,11 @@ make it complete — this document is honest about what remains.
 2. **Module scope** — a `ResourceGrant` restricted to one `ModelDefinition`
    within an `AppInstance` (e.g. "can touch Tickets, not Invoices"), on top
    of the existing database-level grant. **Done, this checkpoint.**
-3. **Unit scope** — a `ResourceGrant` restricted to records whose
+3. **Unit scope** — access restricted to records whose
    `org_unit_reference` field is a given unit (row-level filtering, which
-   nothing in this platform does today — `ResourceGrant` currently grants
-   an entire resource, never a filtered subset of its rows). **Not
-   started.**
+   nothing else in this platform does — every existing grant, including
+   this phase's own module scope, covers an entire resource, never a
+   filtered subset of its rows). **Done, this checkpoint.**
 4. **Revocation tests + export/reporting isolation audit** — proving
    revoking a module/unit-scoped grant immediately closes access, and
    auditing `exports`/`analytics` for a real leak once row-level scopes
@@ -160,17 +160,124 @@ clean — including the concurrency test that was flaky under full-suite
 load in Step 1's own run, confirming that was a timing artifact, not a
 regression from either step.
 
+## Step 3: unit scope
+
+### What it proves
+
+That access to an app model's records can be restricted to a specific
+organizational unit, at the row level — not "this whole database" or
+"this whole model" (both already existed), but "records belonging to
+Branch X" specifically. This is the first row-level (as opposed to
+whole-resource) access control this platform has anywhere.
+
+### Design: a dedicated grant, still one shared enforcement path
+
+A `(model, unit)` scope is a genuine two-key restriction that neither
+`permissions.ResourceGrant` (one `resource_id` per grant) nor
+`sharing.ShareGrant` (built for exactly one resource id per share) can
+express without an opaque derived identifier no admin UI could display
+meaningfully. Rather than force it into either shape, Step 3 adds a new,
+dedicated `app_platform.UnitScopedGrant` model — real FKs to both `model`
+and `unit` (both live in the control-plane database, so unlike
+`org_unit_reference` itself there's no cross-database problem here). This
+is a grant *source*, exactly the relationship `ShareGrant` already has to
+`ResourceGrant`, never a second authorization mechanism (ADR-0008):
+`level` (`read`/`write`) still maps onto the real `database.read`/
+`database.write` permission codes, and every check still goes through
+`app_platform/records.py`, the same module module-scope (Step 2) already
+extended.
+
+A model is only unit-scopable if it has **exactly one**
+`org_unit_reference` field (`unit_scope.unit_reference_field`) — two such
+fields would make "restricted to unit X" ambiguous about which field it
+constrains, and that's rejected at grant-creation time, not silently
+guessed.
+
+### Enforcement: `resolve_scoped`, one new fallback path
+
+`records.py` gained `resolve_scoped` (used by every record CRUD function
+except attachments — see Known limits): tries the existing blanket check
+first (database- or module-scoped access, unchanged from Steps 1–2), and
+only when that fails, looks up the actor's `UnitScopedGrant` rows for this
+model/capability. `None` in the third return slot still means
+"unrestricted"; a non-empty set means "restricted to these units" and
+flows into:
+
+- **List**: the unit column is added to the query's filters as an
+  `IN (...)` clause — a genuinely new capability in `databases/rows.py`
+  (`_build_where` previously only supported equality; a list-valued
+  filter now builds a parameterized `IN` clause, with an empty list
+  building an explicit always-false clause rather than invalid SQL). This
+  is an internal/programmatic-only capability — the HTTP row API never
+  sends a list filter itself, only `app_platform.records` does.
+- **Get/Update/Delete**: fetch the row first (already necessary), then
+  check its current unit value against the granted set in Python (string-
+  compared, not raw UUID objects, to sidestep any psycopg-vs-Django UUID
+  representation mismatch) — `403`, not `404`, since this is a permission
+  boundary within the same organization, not a tenant-isolation one.
+- **Create/reassign-on-update**: the record's `org_unit_reference` value
+  must be present and inside the granted set — a unit-scoped actor can't
+  create an "unscoped" record (no unit at all) and can't move a record
+  into or out of a unit outside their grant.
+
+### API
+
+`POST`/`GET /app-models/{model_id}/unit-grants/`,
+`DELETE /app-unit-grants/{grant_id}/` — human-session-only (granting is an
+administrative sharing action, not something a bearer token needs on its
+own behalf), gated by the existing `sharing.manage` capability, with the
+same 404-not-403 cross-org isolation discipline (`unit_scope.
+get_member_grant`) every other resource in this codebase uses.
+
+### Test evidence
+
+`app_platform/tests/test_unit_scope.py` (19 tests, real provisioned
+runtime, real HTTP requests as two different real users — never calling
+service functions directly): no access at all before any grant; `read`
+level lists *only* the granted unit's records (the row-filtering proof
+that matters most) and cannot create; `write` level can create/update/
+delete within the granted unit but is rejected creating in a different
+unit, creating with no unit set, deleting a record outside the grant, and
+reassigning a record's unit outside the grant (with the record's value
+confirmed unchanged after the rejected attempt); revoking a grant removes
+access immediately (re-checked live); granting is capability-gated,
+rejects a model with more than one `org_unit_reference` field, rejects a
+unit from a different organization, rejects a non-member target user;
+cross-org isolation (IDOR) on both the grant-list and grant-revoke
+endpoints. `databases/tests/test_rows.py` gained 2 tests for the new
+list-valued-filter primitive in isolation (matches-any-of, empty-list-
+matches-nothing).
+
+Regression scope: `app_platform` + `databases` + `org_units` +
+`organizations` + `permissions` + `sharing` together (466 tests) pass,
+with the same single pre-existing, unrelated flaky concurrency test under
+full-suite load noted in Steps 1–2 (confirmed to pass reliably in
+isolation both times).
+
 ## Known limits (honest, not silently absorbed)
 
-- Steps 3–4 above are not started. **No permission in this system can yet
-  be scoped by organizational unit** — Step 1 only made it *possible* for
-  a record to declare which unit it belongs to; nothing reads that field
-  for authorization purposes yet. Revocation is proven for module scope
-  only so far; the export/reporting isolation audit (Step 4) has not
-  started at all.
-- No frontend UI for module-scope sharing yet (the existing `ShareSection`
-  component is resource-agnostic by design — see Unit 3 of the frontend's
-  own initiative — so wiring it to an app model's page is expected to be
-  small, but it has not been done or verified).
+- **Step 4 (export/reporting isolation audit) has not started.** Whether
+  `exports`/`analytics` can leak data across a module- or unit-scoped
+  boundary that a whole-database grant would never have exposed is a real
+  open question, not yet investigated.
+- **Attachments are not unit-scoped.** `attachments.py` still calls the
+  original `resolve()` (blanket-access-only) — a user with only a
+  `UnitScopedGrant` can create/read/delete records in their unit, but
+  cannot attach files to them or list/download attachments at all. This
+  is a real, deliberate scope cut for this pass (attaching a per-
+  attachment unit check would mean re-deriving which record's unit an
+  attachment belongs to on every attachment operation), not an oversight.
+- **A unit-scoped grant restricts to exactly the named unit, not its
+  descendants.** Phase 6's `OrganizationalUnit` tree isn't consulted here
+  — granting access to a parent unit does not extend to its children. A
+  subtree-aware version is a plausible future enhancement, not built here.
+- A caller-supplied list filter on the same column a unit-scoped grant
+  restricts is overridden by the enforced scope rather than intersected
+  with it (documented in `records.py::_apply_unit_scope_filter`) — never
+  a way to see outside the granted scope, just a minor UX rough edge.
+- No frontend UI for module-scope sharing or unit-scope grant management
+  yet (the existing `ShareSection` component is resource-agnostic by
+  design, so wiring it up is expected to be small, but has not been done
+  or verified).
 - No frontend UI to pick an `org_unit_reference` value by name rather than
   raw UUID.

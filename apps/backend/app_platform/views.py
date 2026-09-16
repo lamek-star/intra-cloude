@@ -11,12 +11,14 @@ from rest_framework.response import Response
 from rest_framework.serializers import ModelSerializer as DRFModelSerializer
 from rest_framework.views import APIView
 
+from accounts.models import User
+from org_units.models import OrganizationalUnit
 from organizations.services import get_member_organization
 from permissions.models import ResourceGrant
 from permissions.services import has_permission
 from workspaces.views import get_member_project
 
-from . import instances, templates, workflows
+from . import instances, templates, unit_scope, workflows
 from .access import check, get_owned
 from .models import (
     AppInstance,
@@ -40,6 +42,8 @@ from .serializers import (
     StateSerializer,
     TemplateSerializer,
     TransitionSerializer,
+    UnitScopeGrantCreateSerializer,
+    UnitScopedGrantSerializer,
     VersionSerializer,
     WorkflowSerializer,
 )
@@ -411,3 +415,56 @@ class ApplyTransitionView(FoundationView):
             request.user, transition, record_id, idempotency_key=idempotency_key
         )
         return Response(AttemptSerializer(attempt).data)
+
+
+class UnitScopeGrantList(FoundationView):
+    """Phase 7 Step 3 ("unit scope"): an administrative sharing action,
+    never something a bearer token needs to perform on its own behalf --
+    human-session-only, no service_account_methods opt-in."""
+
+    def get(self, request, object_id):
+        model = get_owned(ModelDefinition, object_id, request.user, "instance__organization")
+        if not has_permission(request.user, "sharing.manage", organization_id=model.instance.organization_id):
+            return Response(status=403)
+        return self.page(request, model.unit_scoped_grants.all(), UnitScopedGrantSerializer)
+
+    def post(self, request, object_id):
+        model = get_owned(ModelDefinition, object_id, request.user, "instance__organization")
+        serializer = UnitScopeGrantCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            target_unit = OrganizationalUnit.objects.get(
+                id=data["unit_id"], organization_id=model.instance.organization_id
+            )
+        except OrganizationalUnit.DoesNotExist as exc:
+            raise Http404 from exc
+        try:
+            target_user = User.objects.get(id=data["user_id"])
+        except User.DoesNotExist as exc:
+            raise Http404 from exc
+
+        try:
+            grant = unit_scope.grant_unit_scope(
+                actor=request.user,
+                model=model,
+                unit=target_unit,
+                user=target_user,
+                level=data["level"],
+                expires_at=data.get("expires_at"),
+            )
+        except unit_scope.UnitScopeValidationError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        except unit_scope.UnitScopePermissionDenied:
+            return Response(status=403)
+        return Response(UnitScopedGrantSerializer(grant).data, status=201)
+
+
+class UnitScopeGrantDetail(FoundationView):
+    def delete(self, request, object_id):
+        grant = unit_scope.get_member_grant(request.user, object_id)
+        try:
+            unit_scope.revoke_unit_scope(actor=request.user, grant=grant)
+        except unit_scope.UnitScopePermissionDenied:
+            return Response(status=403)
+        return Response(status=204)

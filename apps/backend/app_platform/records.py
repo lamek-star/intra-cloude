@@ -31,6 +31,7 @@ from databases.values import RowValueError
 from org_units.models import OrganizationalUnit
 from permissions.services import has_permission
 
+from . import unit_scope
 from .access import RESOURCE_TYPE_APP_MODEL
 from .models import FieldDefinition, ModelDefinition, RecordAttachment, RuntimeProvision
 from .runtime_plan import physical_name
@@ -60,22 +61,26 @@ def _receipt(model: ModelDefinition) -> RuntimeProvision:
     return receipt
 
 
-def _require(actor, model: ModelDefinition, capability: str, *, action: str) -> RuntimeProvision:
+def _has_blanket_access(
+    actor, model: ModelDefinition, receipt: RuntimeProvision, capability: str
+) -> bool:
+    """Whole-database or whole-model (Phase 7 "module scope") access --
+    everything short of a unit-scoped grant, which only resolve_scoped()
+    below falls back to."""
     instance = model.instance
-    receipt = _receipt(model)
-    # Module scope (Phase 7): a grant naming this exact model is checked as
-    # an alternative to the existing whole-database grant, never instead of
-    # it -- an actor with database-wide access is unaffected by this being
-    # here at all.
-    allowed = has_permission(
+    return has_permission(
         actor, capability, organization_id=instance.organization_id, resource=_resource(receipt.database_id)
     ) or has_permission(
         actor, capability, organization_id=instance.organization_id, resource=(RESOURCE_TYPE_APP_MODEL, model.id)
     )
-    if not allowed:
+
+
+def _require(actor, model: ModelDefinition, capability: str, *, action: str) -> RuntimeProvision:
+    receipt = _receipt(model)
+    if not _has_blanket_access(actor, model, receipt, capability):
         audit.record(
             actor=actor,
-            organization_id=instance.organization_id,
+            organization_id=model.instance.organization_id,
             action=action,
             resource_type="app_model",
             resource_id=model.id,
@@ -100,6 +105,34 @@ def resolve(
     without duplicating it."""
     receipt = _require(actor, model, capability, action=action)
     return receipt, _table(receipt, model)
+
+
+def resolve_scoped(
+    actor, model: ModelDefinition, capability: str, *, action: str
+) -> tuple[RuntimeProvision, DBTable, set | None]:
+    """Like resolve(), but when the actor lacks blanket (database- or
+    module-scoped) access, falls back to a Phase 7 Step 3 unit-scoped
+    grant and returns the set of unit ids access is restricted to instead
+    of raising. `None` in the third slot means unrestricted (no row
+    filtering needed) -- the same meaning list_records/get_record/etc.
+    already give it. Used by every record CRUD function below; deliberately
+    NOT used by attachments.py, which stays blanket-access-only for this
+    pass (see docs/implementation/APP_PLATFORM_PHASE7.md's known limits)."""
+    receipt = _receipt(model)
+    if _has_blanket_access(actor, model, receipt, capability):
+        return receipt, _table(receipt, model), None
+    units = unit_scope.granted_unit_ids(actor, model, capability)
+    if units:
+        return receipt, _table(receipt, model), units
+    audit.record(
+        actor=actor,
+        organization_id=model.instance.organization_id,
+        action=action,
+        resource_type="app_model",
+        resource_id=model.id,
+        result=AuditEvent.Result.DENIED,
+    )
+    raise RecordAccessDenied(f"{capability} required")
 
 
 def record_exists(table: DBTable, record_id) -> bool:
@@ -362,11 +395,47 @@ def _run(fn):
         raise RecordValueError("invalid record data") from exc
 
 
+def _unit_column(field_map: dict[str, _Mapping], model: ModelDefinition) -> tuple[str, str] | None:
+    """(definition_id, physical column name) of the model's single
+    org_unit_reference field, or None if it doesn't have exactly one --
+    the same "unit scoping doesn't apply" case unit_scope.
+    unit_reference_field already defines at grant-creation time."""
+    field = unit_scope.unit_reference_field(model)
+    if field is None:
+        return None
+    mapping = field_map.get(str(field.id))
+    if not isinstance(mapping, _ScalarField):
+        return None
+    return str(field.id), mapping.column
+
+
+def _apply_unit_scope_filter(
+    physical_filters: dict, field_map: dict[str, _Mapping], model: ModelDefinition, granted_units: set
+) -> dict:
+    """Restricts a list query's filters to the actor's granted units.
+    Overrides rather than intersects a caller-supplied filter on the same
+    column -- documented in APP_PLATFORM_PHASE7.md as a known, deliberately
+    accepted rough edge, never a way to see outside the granted scope."""
+    unit_info = _unit_column(field_map, model)
+    if unit_info is None:
+        # No single org_unit_reference field to scope by -- a unit-scoped
+        # grant on a model shaped like this can never match any record.
+        # Reuses the real query path's own empty-IN-list handling (always
+        # zero rows) rather than hand-building a matching result shape.
+        return {**physical_filters, "id": []}
+    _, unit_column = unit_info
+    return {**physical_filters, unit_column: [str(unit_id) for unit_id in granted_units]}
+
+
 def list_records(actor, model: ModelDefinition, *, limit, offset, ordering, filters, search) -> dict:
-    receipt, table = resolve(actor, model, "database.read", action="app_instance.record.list")
+    receipt, table, granted_units = resolve_scoped(
+        actor, model, "database.read", action="app_instance.record.list"
+    )
     field_map = _field_map(receipt, model)
 
     physical_filters = {_translate_key(field_map, key): value for key, value in (filters or {}).items()}
+    if granted_units is not None:
+        physical_filters = _apply_unit_scope_filter(physical_filters, field_map, model, granted_units)
     physical_ordering = None
     if ordering:
         desc = ordering.startswith("-")
@@ -404,15 +473,47 @@ def list_records(actor, model: ModelDefinition, *, limit, offset, ordering, filt
     return result
 
 
+def _check_row_in_unit_scope(
+    row: dict, field_map: dict[str, _Mapping], model: ModelDefinition, granted_units: set
+) -> None:
+    unit_info = _unit_column(field_map, model)
+    value = row.get(unit_info[1]) if unit_info is not None else None
+    # Values compared as strings, not raw UUID objects -- psycopg3 returns
+    # a native uuid.UUID for a UUID column, while `granted_units` came from
+    # a Django queryset (also UUID objects, but not guaranteed identical
+    # instances/representation), so string comparison sidesteps any
+    # cross-library type mismatch rather than assuming they match exactly.
+    if value is None or str(value) not in {str(unit_id) for unit_id in granted_units}:
+        raise RecordAccessDenied("record is outside your granted organizational unit")
+
+
 def get_record(actor, model: ModelDefinition, record_id) -> dict:
-    receipt, table = resolve(actor, model, "database.read", action="app_instance.record.read")
+    receipt, table, granted_units = resolve_scoped(
+        actor, model, "database.read", action="app_instance.record.read"
+    )
     row = _run(lambda: row_ops.get_row(table, record_id))
     field_map = _field_map(receipt, model)
+    if granted_units is not None:
+        _check_row_in_unit_scope(row, field_map, model, granted_units)
     return _translate_out(field_map, row, _read_m2m_values(field_map, record_id))
 
 
+def _check_new_value_in_unit_scope(data: dict, model: ModelDefinition, granted_units: set) -> None:
+    """A unit-scoped actor can only create/move a record into one of
+    their own granted units -- can't create an unscoped record (no unit
+    set at all) and can't assign a unit outside their grant."""
+    field = unit_scope.unit_reference_field(model)
+    value = data.get(str(field.id)) if field is not None else None
+    if field is None or value is None or str(value) not in {str(unit_id) for unit_id in granted_units}:
+        raise RecordAccessDenied("this record's organizational unit is outside your grant")
+
+
 def create_record(actor, model: ModelDefinition, data: dict) -> dict:
-    receipt, table = resolve(actor, model, "database.write", action="app_instance.record.create")
+    receipt, table, granted_units = resolve_scoped(
+        actor, model, "database.write", action="app_instance.record.create"
+    )
+    if granted_units is not None:
+        _check_new_value_in_unit_scope(data, model, granted_units)
     field_map = _field_map(receipt, model)
     _validate_org_unit_references(model, data)
     row_data, m2m_data = _translate_in(field_map, data)
@@ -436,8 +537,20 @@ def create_record(actor, model: ModelDefinition, data: dict) -> dict:
 
 
 def update_record(actor, model: ModelDefinition, record_id, data: dict) -> dict:
-    receipt, table = resolve(actor, model, "database.write", action="app_instance.record.update")
+    receipt, table, granted_units = resolve_scoped(
+        actor, model, "database.write", action="app_instance.record.update"
+    )
     field_map = _field_map(receipt, model)
+    if granted_units is not None:
+        # The record's *current* unit must already be in scope (can't
+        # touch a record outside your grant at all), and if this update
+        # changes the unit, the *new* value must be in scope too (can't
+        # move a record into, or out to, a unit outside your grant).
+        current_row = row_ops.get_row(table, record_id)
+        _check_row_in_unit_scope(current_row, field_map, model, granted_units)
+        unit_field = unit_scope.unit_reference_field(model)
+        if unit_field is not None and str(unit_field.id) in data:
+            _check_new_value_in_unit_scope(data, model, granted_units)
     _validate_org_unit_references(model, data)
     row_data, m2m_data = _translate_in(field_map, data)
     m2m = _m2m_mappings(field_map)
@@ -479,7 +592,12 @@ def update_record(actor, model: ModelDefinition, record_id, data: dict) -> dict:
 
 
 def delete_record(actor, model: ModelDefinition, record_id) -> None:
-    _receipt, table = resolve(actor, model, "database.write", action="app_instance.record.delete")
+    receipt, table, granted_units = resolve_scoped(
+        actor, model, "database.write", action="app_instance.record.delete"
+    )
+    if granted_units is not None:
+        current_row = row_ops.get_row(table, record_id)
+        _check_row_in_unit_scope(current_row, _field_map(receipt, model), model, granted_units)
     # Both join-table FK columns are physically ON DELETE CASCADE
     # (runtime_build._build_join_table / schema_evolution.
     # _add_join_table_to_runtime), so this plain base-row delete already

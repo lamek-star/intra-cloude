@@ -45,4 +45,6 @@ urlpatterns = [
         "app-models/<uuid:object_id>/records/<uuid:record_id>/transitions/<uuid:transition_id>/apply/",
         views.ApplyTransitionView.as_view(),
     ),
+    path("app-models/<uuid:object_id>/unit-grants/", views.UnitScopeGrantList.as_view()),
+    path("app-unit-grants/<uuid:object_id>/", views.UnitScopeGrantDetail.as_view()),
 ]

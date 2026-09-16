@@ -8,6 +8,7 @@ from .models import (
     FieldDefinition,
     ModelDefinition,
     RelationshipDefinition,
+    UnitScopedGrant,
     WorkflowDefinition,
     WorkflowState,
     WorkflowTransition,
@@ -139,6 +140,20 @@ class TransitionSerializer(serializers.ModelSerializer):
             "notify_url",
         ]
         read_only_fields = fields
+
+
+class UnitScopedGrantSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UnitScopedGrant
+        fields = ["id", "model", "unit", "user", "level", "granted_by", "expires_at", "created_at"]
+        read_only_fields = fields
+
+
+class UnitScopeGrantCreateSerializer(serializers.Serializer):
+    user_id = serializers.UUIDField()
+    unit_id = serializers.UUIDField()
+    level = serializers.ChoiceField(choices=UnitScopedGrant.Level.values)
+    expires_at = serializers.DateTimeField(required=False, allow_null=True, default=None)
 
 
 class AttemptSerializer(serializers.ModelSerializer):
