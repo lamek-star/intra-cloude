@@ -506,3 +506,36 @@ class UnitScopedGrant(models.Model):
 
     def __str__(self):
         return f"{self.user} -> {self.level} on {self.model_id}/{self.unit_id}"
+
+
+class AppInstanceUpgrade(models.Model):
+    """Phase 9: a durable receipt for one `upgrades.apply_upgrade` call --
+    operational history, not declarative metadata (deliberately not a
+    `Definition` subclass, the same distinction `WorkflowTransitionAttempt`
+    already draws above). `summary` is the full three-way diff this call
+    computed (see `upgrades.py`): every item added or label-synced, and
+    every item that needed a human because it conflicted with a local
+    customization, changed something a live migration can't safely apply,
+    or was removed upstream -- recorded even when it wasn't applied, never
+    silently dropped. There is nothing here to *resume*: `apply_upgrade`
+    runs entirely inside one control-plane transaction (plus one nested
+    tenant transaction for any real DDL), so a crash mid-call leaves
+    nothing partially applied -- Postgres's own transactional DDL is the
+    recovery mechanism, matching every other schema_evolution.py caller
+    (RuntimeProvision/WorkflowTransitionAttempt need their own resumable-
+    job machinery only because they span an async Celery task; this
+    doesn't)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    instance = models.ForeignKey(AppInstance, on_delete=models.CASCADE, related_name="upgrades")
+    from_version = models.ForeignKey(AppTemplateVersion, on_delete=models.PROTECT, related_name="+")
+    to_version = models.ForeignKey(AppTemplateVersion, on_delete=models.PROTECT, related_name="+")
+    summary = models.JSONField()
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "id"]
+
+    def __str__(self):
+        return f"{self.instance_id}: v{self.from_version.number} -> v{self.to_version.number}"

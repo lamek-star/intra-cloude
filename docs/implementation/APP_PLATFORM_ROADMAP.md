@@ -16,8 +16,8 @@ unimplemented phase complete.
 | 6 | Organizational hierarchy | Complete | [Phase 6 checkpoint](APP_PLATFORM_PHASE6.md) |
 | 7 | Enterprise permissions | Complete | [Phase 7 checkpoint](APP_PLATFORM_PHASE7.md) |
 | 8 | Management templates | Complete | [Phase 8 checkpoint](APP_PLATFORM_PHASE8.md) |
-| 9 | Template versioning and upgrades | Pending Phase 8's own follow-up work | Three-way comparison, customer overrides, conflict handling, migration/recovery, preserved stable IDs and business data |
-| 10 | Developer extension platform | Pending Phase 9 | Documented APIs, environment-bound service accounts, reliable webhooks, custom clients/workers and controlled extension boundaries |
+| 9 | Template versioning and upgrades | Complete | [Phase 9 checkpoint](APP_PLATFORM_PHASE9.md) |
+| 10 | Developer extension platform | Pending Phase 9's own follow-up work | Documented APIs, environment-bound service accounts, reliable webhooks, custom clients/workers and controlled extension boundaries |
 
 ## Delivery rules
 

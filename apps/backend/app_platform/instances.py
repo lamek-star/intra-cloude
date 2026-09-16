@@ -202,7 +202,7 @@ def lock_active(instance, *, structural=True):
     return instance
 
 
-def add_model(actor, instance, data):
+def add_model(actor, instance, data, *, source_definition_id=None):
     require_manage(actor, instance)
     values = validated(ModelInput, data)
     with transaction.atomic():
@@ -215,7 +215,10 @@ def add_model(actor, instance, data):
             raise serializers.ValidationError("Model limit reached.")
         unique_key(instance.models, values["key"])
         model = ModelDefinition.objects.create(
-            instance=instance, position=instance.models.count(), **values
+            instance=instance,
+            position=instance.models.count(),
+            source_definition_id=source_definition_id,
+            **values,
         )
         if receipt is not None:
             with transaction.atomic(using="tenant"):
@@ -224,7 +227,7 @@ def add_model(actor, instance, data):
     return model
 
 
-def add_field(actor, model, data):
+def add_field(actor, model, data, *, source_definition_id=None):
     instance = model.instance
     require_manage(actor, instance)
     values = validated(FieldInput, data)
@@ -237,7 +240,12 @@ def add_field(actor, model, data):
         if model.fields.count() >= 100:
             raise serializers.ValidationError("Field limit reached.")
         unique_key(model.fields, values["key"])
-        field = FieldDefinition.objects.create(model=model, position=model.fields.count(), **values)
+        field = FieldDefinition.objects.create(
+            model=model,
+            position=model.fields.count(),
+            source_definition_id=source_definition_id,
+            **values,
+        )
         if receipt is not None:
             with transaction.atomic(using="tenant"):
                 schema_evolution.add_field_to_runtime(receipt, field, actor)
@@ -245,7 +253,7 @@ def add_field(actor, model, data):
     return field
 
 
-def add_relationship(actor, instance, data):
+def add_relationship(actor, instance, data, *, source_definition_id=None):
     require_manage(actor, instance)
     values = validated(RelationshipInput, data)
     with transaction.atomic():
@@ -265,7 +273,10 @@ def add_relationship(actor, instance, data):
                     "Relationship models must belong to this instance."
                 ) from exc
         relation = RelationshipDefinition.objects.create(
-            instance=instance, position=instance.relationships.count(), **values
+            instance=instance,
+            position=instance.relationships.count(),
+            source_definition_id=source_definition_id,
+            **values,
         )
         if receipt is not None:
             with transaction.atomic(using="tenant"):
@@ -274,7 +285,7 @@ def add_relationship(actor, instance, data):
     return relation
 
 
-def add_constraint(actor, model, data):
+def add_constraint(actor, model, data, *, source_definition_id=None):
     """Declares a composite UNIQUE constraint over >=2 of `model`'s own
     fields and/or its own many_to_one relationships -- pre-provision this
     is a pure metadata write (nothing physical exists yet to constrain);
@@ -312,7 +323,11 @@ def add_constraint(actor, model, data):
                     "Constraint relationships must be a many-to-one relationship on this model."
                 ) from exc
         constraint = ConstraintDefinition.objects.create(
-            model=model, key=values["key"], label=values["label"], position=model.constraints.count()
+            model=model,
+            key=values["key"],
+            label=values["label"],
+            position=model.constraints.count(),
+            source_definition_id=source_definition_id,
         )
         constraint.fields.set(fields)
         constraint.relationships.set(relationships)

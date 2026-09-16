@@ -22,23 +22,26 @@ identity (logo, color tokens, typography, component patterns) lives in
 
 ## Current Status
 
-**App Platform** (`app_platform`) has completed Phases 0–8 of its own
+**App Platform** (`app_platform`) has completed Phases 0–9 of its own
 ten-phase plan (metadata foundation and immutable template versions;
 generic per-app Postgres runtime with full record/relationship/
 attachment CRUD and a generic frontend; the visual App Builder plus safe
 live additive schema changes and basic instance-scoped sharing;
 relationship-spanning composite `UNIQUE` constraints; the "Spare Parts"
 reference application; a generic workflow engine; organizational
-hierarchy; enterprise permissions (module/unit-scoped grants); and eight
+hierarchy; enterprise permissions (module/unit-scoped grants); eight
 further management-template reference applications — school, HR, CRM,
-procurement, assets, projects, documents, warehouses). Existing
-`applications.Application` remains a separate integration identity from
-any of these business apps. Full control-plane backups cover this
-metadata; portable `.icp` explicitly excludes it. New endpoints use
-shared capabilities/ResourceGrants and require human sessions;
-environment-bound integration access is deferred (Phase 9/10 territory).
-Full history, exact verification method, and every real bug found and
-fixed for each phase lives in
+procurement, assets, projects, documents, warehouses; and template
+versioning/upgrades — a three-way diff between an instance's install
+snapshot, its live configuration, and a newer template version that adds
+what's safe and never silently overwrites a customer's own local
+changes). Existing `applications.Application` remains a separate
+integration identity from any of these business apps. Full control-plane
+backups cover this metadata; portable `.icp` explicitly excludes it. New
+endpoints use shared capabilities/ResourceGrants and require human
+sessions; environment-bound integration access is deferred (Phase 10
+territory). Full history, exact verification method, and every real bug
+found and fixed for each phase lives in
 [`docs/implementation/APP_PLATFORM_ROADMAP.md`](docs/implementation/APP_PLATFORM_ROADMAP.md)
 and its per-phase checkpoint docs — this section stays a short pointer,
 not a running log. See also `docs/APP_PLATFORM_ARCHITECTURE.md` and

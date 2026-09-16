@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from .models import (
     AppInstance,
+    AppInstanceUpgrade,
     AppTemplate,
     AppTemplateVersion,
     ConstraintDefinition,
@@ -34,6 +35,13 @@ class InstanceSerializer(serializers.ModelSerializer):
     class Meta:
         model = AppInstance
         fields = ["id", "organization", "project", "source_version", "label", "archived", "created_at"]
+        read_only_fields = fields
+
+
+class UpgradeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AppInstanceUpgrade
+        fields = ["id", "instance", "from_version", "to_version", "summary", "created_at"]
         read_only_fields = fields
 
 

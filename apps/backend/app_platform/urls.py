@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import attachment_views, record_views, runtime_views, views
+from . import attachment_views, record_views, runtime_views, upgrade_views, views
 
 urlpatterns = [
     path("app-instances/<uuid:object_id>/runtime/", runtime_views.Runtime.as_view()),
@@ -47,4 +47,9 @@ urlpatterns = [
     ),
     path("app-models/<uuid:object_id>/unit-grants/", views.UnitScopeGrantList.as_view()),
     path("app-unit-grants/<uuid:object_id>/", views.UnitScopeGrantDetail.as_view()),
+    path(
+        "app-instances/<uuid:object_id>/upgrade/<uuid:version_id>/",
+        upgrade_views.UpgradeView.as_view(),
+    ),
+    path("app-instances/<uuid:object_id>/upgrades/", upgrade_views.UpgradeHistoryList.as_view()),
 ]
