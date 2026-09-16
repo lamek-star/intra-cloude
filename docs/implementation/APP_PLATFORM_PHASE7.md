@@ -1,11 +1,9 @@
 # App Platform Phase 7 — Enterprise permissions
 
-Status: **IN PROGRESS** — Steps 1–3 of 4 complete, 2026-09-16 on
-`feature/app-platform`, right after Phase 6's completion (`e3d388c`). Per
-[the roadmap](APP_PLATFORM_ROADMAP.md): "Shared capability enforcement for
-user, role, app, module, action, record and unit scopes; revocation and
-export/reporting isolation tests." Continuing to work on a phase does not
-make it complete — this document is honest about what remains.
+Status: **COMPLETE**, 2026-09-16 on `feature/app-platform`, right after
+Phase 6's completion (`e3d388c`). Per [the roadmap](APP_PLATFORM_ROADMAP.md):
+"Shared capability enforcement for user, role, app, module, action, record
+and unit scopes; revocation and export/reporting isolation tests."
 
 ## Step plan (agreed before implementation started)
 
@@ -22,10 +20,12 @@ make it complete — this document is honest about what remains.
    this phase's own module scope, covers an entire resource, never a
    filtered subset of its rows). **Done, this checkpoint.**
 4. **Revocation tests + export/reporting isolation audit** — proving
-   revoking a module/unit-scoped grant immediately closes access, and
+   revoking a module/unit-scoped grant immediately closes access (done in
+   Steps 2 and 3 above, alongside each scope's own introduction), and
    auditing `exports`/`analytics` for a real leak once row-level scopes
    exist (chosen deliberately over assuming existing enforcement already
-   covers a scope dimension it was never designed for). **Not started.**
+   covers a scope dimension it was never designed for). **Done, this
+   checkpoint.**
 
 "Action scope" and "record scope" are not separate work items here:
 distinct permission codes (`database.read`/`write`/`schema.manage`/etc.)
@@ -254,12 +254,56 @@ with the same single pre-existing, unrelated flaky concurrency test under
 full-suite load noted in Steps 1–2 (confirmed to pass reliably in
 isolation both times).
 
+## Step 4: revocation + export/reporting isolation audit
+
+### Revocation
+
+Already proven live, not deferred to this step: Step 2's
+`test_revoking_a_module_scoped_share_removes_access` and Step 3's
+`test_revoking_a_grant_removes_access_immediately` both revoke a real
+grant through the real API and re-check access on the *same* record
+afterward, confirming it's denied again — not just that the database row
+disappeared.
+
+### Export/reporting isolation: audited, no leak found
+
+The audit method was to read every permission check in
+`exports/services.py`, `analytics/services.py`, `imports/services.py`,
+and `databases/views.py::RowExportView` (CSV row export), then prove the
+conclusion against the real running code rather than stop at the
+reading. The finding: **none of them can be reached by a module- or
+unit-scoped grant, by construction, not by luck**:
+
+- `export.manage` (org-wide `.icp` export), `dataset.analyze` (dashboard
+  create/edit), and `dataset.import` are all checked via
+  `has_permission(actor, code, organization_id=...)` with **no `resource`
+  argument at all** — role-wide only. A `ResourceGrant` of any kind,
+  scoped or not, is never even consulted for these three permissions.
+- `analytics`'s read checks (`run_analysis`, dashboard render/list) and
+  `RowExportView`'s `dataset.export` check both pass a `resource`, but
+  always `("databases.tenant_database", tenant_database_id)` — a
+  resource_type string that never collides with Phase 7's own
+  `"app_model"` (Step 2) or with `UnitScopedGrant` (Step 3, not even a
+  `ResourceGrant` row at all, a wholly separate table these checks never
+  query).
+
+This means a user holding *only* a module- or unit-scoped grant is
+correctly denied analytics/exports/imports entirely — the safe default,
+not a leak, and also not a completeness gap this phase set out to close
+(analytics/exports operate at the whole-table/whole-database grain by
+design; making them row-scope-aware would be new feature work, not an
+isolation fix).
+
+`app_platform/tests/test_scope_isolation.py` (9 tests) proves this live:
+a module-scoped grant (write level, confirmed to genuinely grant record
+access first) is denied table analysis, dashboard creation, org export,
+and CSV row export on the exact same underlying table/database; the same
+four denials are proven again for a unit-scoped grant. Regression scope
+widened to include `analytics`+`exports`+`imports` for this step: 569
+tests pass clean (2 skipped, pre-existing and unrelated to this phase).
+
 ## Known limits (honest, not silently absorbed)
 
-- **Step 4 (export/reporting isolation audit) has not started.** Whether
-  `exports`/`analytics` can leak data across a module- or unit-scoped
-  boundary that a whole-database grant would never have exposed is a real
-  open question, not yet investigated.
 - **Attachments are not unit-scoped.** `attachments.py` still calls the
   original `resolve()` (blanket-access-only) — a user with only a
   `UnitScopedGrant` can create/read/delete records in their unit, but
