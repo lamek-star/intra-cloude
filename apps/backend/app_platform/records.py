@@ -31,6 +31,7 @@ from databases.values import RowValueError
 from org_units.models import OrganizationalUnit
 from permissions.services import has_permission
 
+from .access import RESOURCE_TYPE_APP_MODEL
 from .models import FieldDefinition, ModelDefinition, RecordAttachment, RuntimeProvision
 from .runtime_plan import physical_name
 
@@ -62,8 +63,14 @@ def _receipt(model: ModelDefinition) -> RuntimeProvision:
 def _require(actor, model: ModelDefinition, capability: str, *, action: str) -> RuntimeProvision:
     instance = model.instance
     receipt = _receipt(model)
+    # Module scope (Phase 7): a grant naming this exact model is checked as
+    # an alternative to the existing whole-database grant, never instead of
+    # it -- an actor with database-wide access is unaffected by this being
+    # here at all.
     allowed = has_permission(
         actor, capability, organization_id=instance.organization_id, resource=_resource(receipt.database_id)
+    ) or has_permission(
+        actor, capability, organization_id=instance.organization_id, resource=(RESOURCE_TYPE_APP_MODEL, model.id)
     )
     if not allowed:
         audit.record(

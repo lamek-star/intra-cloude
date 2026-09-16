@@ -12,6 +12,13 @@ from permissions.services import has_permission
 # the string across an app boundary.
 RESOURCE_TYPE_APP_INSTANCE = "app_instance"
 
+# Phase 7 ("module scope"): a ResourceGrant/ShareGrant naming a single
+# ModelDefinition rather than the whole tenant database (RESOURCE_TYPE_
+# TENANT_DATABASE, already usable today) or the whole instance's metadata
+# (RESOURCE_TYPE_APP_INSTANCE above). Checked as an alternative to, never
+# instead of, the existing database-level grant in records.py::_require.
+RESOURCE_TYPE_APP_MODEL = "app_model"
+
 
 def check(actor, organization_id, capability, resource=None):
     # A service-account actor (bearer-token `Application`) is deliberately

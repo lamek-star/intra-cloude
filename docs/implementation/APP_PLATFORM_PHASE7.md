@@ -1,6 +1,6 @@
 # App Platform Phase 7 — Enterprise permissions
 
-Status: **IN PROGRESS** — Step 1 of 4 complete, 2026-09-16 on
+Status: **IN PROGRESS** — Steps 1–2 of 4 complete, 2026-09-16 on
 `feature/app-platform`, right after Phase 6's completion (`e3d388c`). Per
 [the roadmap](APP_PLATFORM_ROADMAP.md): "Shared capability enforcement for
 user, role, app, module, action, record and unit scopes; revocation and
@@ -15,7 +15,7 @@ make it complete — this document is honest about what remains.
    this; Step 1 closes it. **Done, this checkpoint.**
 2. **Module scope** — a `ResourceGrant` restricted to one `ModelDefinition`
    within an `AppInstance` (e.g. "can touch Tickets, not Invoices"), on top
-   of the existing database-level grant. **Not started.**
+   of the existing database-level grant. **Done, this checkpoint.**
 3. **Unit scope** — a `ResourceGrant` restricted to records whose
    `org_unit_reference` field is a given unit (row-level filtering, which
    nothing in this platform does today — `ResourceGrant` currently grants
@@ -114,11 +114,63 @@ timing-sensitive under full-suite load, confirmed to pass reliably in
 isolation and untouched by this step's diff) — not silently ignored, but
 not this step's regression either.
 
+## Step 2: module scope
+
+### What it proves
+
+That a `ShareGrant`/`ResourceGrant` can restrict a user to one model's
+records within an app instance, not the whole tenant database — the exact
+granularity gap the existing sharing mechanism's own code comments already
+flagged as absent (`RESOURCE_TYPE_APP_INSTANCE`'s docstring in
+`sharing/services.py`: app-instance sharing "governs only an app
+instance's own metadata... never the records," and record data was "already
+shareable today via `RESOURCE_TYPE_TENANT_DATABASE`... a deliberate,
+pre-existing separation" — but only at the whole-database granularity).
+
+### Design: reuse, not a parallel mechanism
+
+No new grant type, no new endpoint. A new `ResourceGrant`/`ShareGrant`
+`resource_type` string, `"app_model"` (`app_platform.access.
+RESOURCE_TYPE_APP_MODEL`), registered into `sharing/services.py`'s existing
+`LEVEL_PERMISSIONS` (`read` → `database.read`; `write` → `database.read` +
+`database.write`; no `admin` level — schema changes stay instance-level,
+never per-model) and `_RESOURCE_ORG_FILTERS` (a model must belong to an
+`AppInstance` owned by the sharing organization). `app_platform/records.py`
+`_require` (shared by every record CRUD endpoint and `attachments.py`,
+which already calls the same function) now checks
+`has_permission(..., resource=(RESOURCE_TYPE_APP_MODEL, model.id))` as an
+**alternative** to the existing whole-database check — an actor who
+already has `database.read`/`write` via a role or a database-level grant
+is completely unaffected; this only adds a narrower path to the same
+capability, never narrows an existing one.
+
+### Test evidence
+
+`sharing/tests/test_sharing.py::AppModelScopeSharingTests` (6 tests,
+extending the exact pattern `AppInstanceSharingTests` already established):
+no access before any share; `read` level grants list but not create;
+`write` level grants both; **the scope proof that matters most** — a
+`write`-level share on one model (`sample()`'s `"item"`) grants no access
+at all to a sibling model in the same instance (`"group"`); revoking the
+share immediately removes access (re-checked live, not just asserting the
+row is gone); sharing a model id from a different organization is
+rejected. Regression scope: `app_platform` + `databases` + `org_units` +
+`organizations` + `permissions` + `sharing` together (445 tests) pass
+clean — including the concurrency test that was flaky under full-suite
+load in Step 1's own run, confirming that was a timing artifact, not a
+regression from either step.
+
 ## Known limits (honest, not silently absorbed)
 
-- Steps 2–4 above are not started. In particular, **no permission in this
-  system can yet be scoped by unit or by module** — this step only makes
-  it *possible* for a record to declare which unit it belongs to; nothing
-  reads that field for authorization purposes yet.
+- Steps 3–4 above are not started. **No permission in this system can yet
+  be scoped by organizational unit** — Step 1 only made it *possible* for
+  a record to declare which unit it belongs to; nothing reads that field
+  for authorization purposes yet. Revocation is proven for module scope
+  only so far; the export/reporting isolation audit (Step 4) has not
+  started at all.
+- No frontend UI for module-scope sharing yet (the existing `ShareSection`
+  component is resource-agnostic by design — see Unit 3 of the frontend's
+  own initiative — so wiring it to an app model's page is expected to be
+  small, but it has not been done or verified).
 - No frontend UI to pick an `org_unit_reference` value by name rather than
   raw UUID.

@@ -6,13 +6,16 @@ client would use, as the shared principal.
 """
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connections
 from django.test import override_settings
 from django.urls import reverse
+from psycopg import sql
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from accounts.models import User
-from app_platform import instances, templates
+from app_platform import instances, provisioning, templates
+from app_platform.runtime_plan import plan_runtime
 from app_platform.tests.test_foundation import sample
 from audit.models import AuditEvent
 from organizations.models import Membership, Organization
@@ -295,4 +298,110 @@ class AppInstanceSharingTests(SharingTestBase):
         import uuid
 
         resp = self._share(resource_type="app_instance", resource_id=str(uuid.uuid4()))
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class AppModelScopeSharingTests(SharingTestBase):
+    """Phase 7 "module scope": a share naming one ModelDefinition grants
+    access to that model's records only -- not the whole tenant database,
+    and not a sibling model in the same instance. Uses `sample()`'s two
+    models ("item" and "group") specifically to prove the second half."""
+
+    def _install_instance(self):
+        org = Organization.objects.get(pk=self.org_id)
+        project = Project.objects.get(pk=self.project_id)
+        template = templates.create_template(self.admin, org, {"label": "App", "draft": sample()})
+        version = templates.publish_template(self.admin, template)
+        return instances.install(
+            self.admin, project, {"label": "Runtime", "template_version": str(version.id)}
+        )
+
+    def _install_and_provision_instance(self):
+        instance = self._install_instance()
+        plan = plan_runtime(self.admin, instance)
+        provisioning.reserve(self.admin, instance, plan["fingerprint"])
+        provisioning.execute(instance.id, self.admin)
+        self._schema_names.append(plan["schema_name"])
+        return instance
+
+    def setUp(self):
+        super().setUp()
+        self._schema_names = []
+
+    def tearDown(self):
+        with connections["tenant"].cursor() as cursor:
+            for schema_name in self._schema_names:
+                cursor.execute(
+                    sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(schema_name))
+                )
+        super().tearDown()
+
+    def test_before_any_share_the_member_cannot_touch_the_models_records(self):
+        instance = self._install_and_provision_instance()
+        item = instance.models.get(key="item")
+        self.client.force_login(self.member)
+        resp = self.client.get(f"/api/v1/app-models/{item.id}/records/")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_read_level_share_grants_list_but_not_create(self):
+        instance = self._install_and_provision_instance()
+        item = instance.models.get(key="item")
+        share = self._share(resource_type="app_model", resource_id=str(item.id), level="read")
+        self.assertEqual(share.status_code, status.HTTP_201_CREATED, share.data)
+
+        self.client.force_login(self.member)
+        listing = self.client.get(f"/api/v1/app-models/{item.id}/records/")
+        self.assertEqual(listing.status_code, status.HTTP_200_OK)
+        create = self.client.post(f"/api/v1/app-models/{item.id}/records/", {}, format="json")
+        self.assertEqual(create.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_write_level_share_grants_list_and_create(self):
+        instance = self._install_and_provision_instance()
+        item = instance.models.get(key="item")
+        name_field = item.fields.get(key="name")
+        share = self._share(resource_type="app_model", resource_id=str(item.id), level="write")
+        self.assertEqual(share.status_code, status.HTTP_201_CREATED, share.data)
+
+        self.client.force_login(self.member)
+        create = self.client.post(
+            f"/api/v1/app-models/{item.id}/records/", {str(name_field.id): "Bolt"}, format="json"
+        )
+        self.assertEqual(create.status_code, status.HTTP_201_CREATED, create.data)
+
+    def test_a_module_scoped_share_does_not_reach_a_sibling_model(self):
+        instance = self._install_and_provision_instance()
+        item = instance.models.get(key="item")
+        group = instance.models.get(key="group")
+        share = self._share(resource_type="app_model", resource_id=str(item.id), level="write")
+        self.assertEqual(share.status_code, status.HTTP_201_CREATED, share.data)
+
+        self.client.force_login(self.member)
+        allowed = self.client.get(f"/api/v1/app-models/{item.id}/records/")
+        self.assertEqual(allowed.status_code, status.HTTP_200_OK)
+        denied = self.client.get(f"/api/v1/app-models/{group.id}/records/")
+        self.assertEqual(denied.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_revoking_a_module_scoped_share_removes_access(self):
+        instance = self._install_and_provision_instance()
+        item = instance.models.get(key="item")
+        share = self._share(resource_type="app_model", resource_id=str(item.id), level="read")
+        share_id = share.data["id"]
+
+        self.client.force_login(self.member)
+        self.assertEqual(
+            self.client.get(f"/api/v1/app-models/{item.id}/records/").status_code, status.HTTP_200_OK
+        )
+
+        self.client.force_login(self.admin)
+        revoke = self.client.delete(reverse("share-grant-detail", args=[share_id]))
+        self.assertEqual(revoke.status_code, status.HTTP_204_NO_CONTENT)
+
+        self.client.force_login(self.member)
+        resp = self.client.get(f"/api/v1/app-models/{item.id}/records/")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_sharing_a_model_id_outside_the_organization_is_rejected(self):
+        import uuid
+
+        resp = self._share(resource_type="app_model", resource_id=str(uuid.uuid4()))
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)

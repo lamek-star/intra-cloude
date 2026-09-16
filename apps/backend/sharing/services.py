@@ -27,8 +27,8 @@ from django.http import Http404
 from django.utils import timezone
 
 from accounts.models import User
-from app_platform.access import RESOURCE_TYPE_APP_INSTANCE
-from app_platform.models import AppInstance
+from app_platform.access import RESOURCE_TYPE_APP_INSTANCE, RESOURCE_TYPE_APP_MODEL
+from app_platform.models import AppInstance, ModelDefinition
 from audit import services as audit
 from audit.models import AuditEvent
 from databases.connections import RESOURCE_TYPE_CONNECTED_DATABASE
@@ -91,6 +91,14 @@ LEVEL_PERMISSIONS: dict[str, dict[str, list[str]]] = {
             "app_instance.schema.manage",
         ],
     },
+    # Phase 7 "module scope": one model's records, not the whole instance
+    # (RESOURCE_TYPE_APP_INSTANCE, metadata only anyway) or the whole
+    # tenant database (RESOURCE_TYPE_TENANT_DATABASE, every model at once).
+    # No admin level -- schema changes stay instance-level, never per-model.
+    RESOURCE_TYPE_APP_MODEL: {
+        ShareGrant.Level.READ: ["database.read"],
+        ShareGrant.Level.WRITE: ["database.read", "database.write"],
+    },
 }
 
 _RESOURCE_ORG_FILTERS = {
@@ -105,6 +113,9 @@ _RESOURCE_ORG_FILTERS = {
     ).exists(),
     RESOURCE_TYPE_APP_INSTANCE: lambda resource_id, org_id: AppInstance.objects.filter(
         id=resource_id, organization_id=org_id
+    ).exists(),
+    RESOURCE_TYPE_APP_MODEL: lambda resource_id, org_id: ModelDefinition.objects.filter(
+        id=resource_id, instance__organization_id=org_id
     ).exists(),
 }
 
