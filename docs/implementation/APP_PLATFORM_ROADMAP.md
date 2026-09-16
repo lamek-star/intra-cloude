@@ -15,8 +15,8 @@ unimplemented phase complete.
 | 5 | Workflow engine | Complete | [Phase 5 checkpoint](APP_PLATFORM_PHASE5.md) |
 | 6 | Organizational hierarchy | Complete | [Phase 6 checkpoint](APP_PLATFORM_PHASE6.md) |
 | 7 | Enterprise permissions | Complete | [Phase 7 checkpoint](APP_PLATFORM_PHASE7.md) |
-| 8 | Management templates | Pending Phase 7 | Configured templates for school, HR, CRM, procurement, assets, projects, documents and warehouses; representative end-to-end scenarios |
-| 9 | Template versioning and upgrades | Pending Phase 8 | Three-way comparison, customer overrides, conflict handling, migration/recovery, preserved stable IDs and business data |
+| 8 | Management templates | Complete | [Phase 8 checkpoint](APP_PLATFORM_PHASE8.md) |
+| 9 | Template versioning and upgrades | Pending Phase 8's own follow-up work | Three-way comparison, customer overrides, conflict handling, migration/recovery, preserved stable IDs and business data |
 | 10 | Developer extension platform | Pending Phase 9 | Documented APIs, environment-bound service accounts, reliable webhooks, custom clients/workers and controlled extension boundaries |
 
 ## Delivery rules
@@ -64,3 +64,10 @@ control-plane database had never actually had migrations `0011`/`0012`
 never surfaced there; only a real `manage.py migrate` against the
 persistent stack caught it. Closed as part of this phase's own live
 verification, not left as a silent surprise for the next session.
+
+Phase 8 (2026-09-16) found the identical class of gap a second time:
+Phase 7's `0015`/`0016` migrations were also never applied to this same
+persistent dev stack, surfaced only by live-verifying the new
+`org_unit_reference`-using HR/Assets templates against it (see
+[APP_PLATFORM_PHASE8.md](APP_PLATFORM_PHASE8.md)). Closed the same way,
+with a `manage.py migrate` against the running container.

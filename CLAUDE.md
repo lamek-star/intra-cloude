@@ -22,83 +22,27 @@ identity (logo, color tokens, typography, component patterns) lives in
 
 ## Current Status
 
-**App Platform** (`app_platform`) is feature-complete through Phase 5
-(Workflow engine): Phase 1's metadata foundation (organization templates, immutable
-versions, project-owned instances, generic model/field/relationship
-definitions); Phase 2's real business-record runtime (a compiled, fingerprinted
-provisioning plan that creates real per-app Postgres tables, full record/
-relationship/attachment CRUD, and a generic frontend); and Phase 3's visual App
-Builder UI, plus safe live additive schema changes (new model/field/
-relationship, with required-field backfill) against an already-provisioned,
-possibly populated instance, and basic app-instance-scoped sharing reusing the
-existing `sharing`/`ResourceGrant` mechanism. Existing `applications.Application`
-remains a separate integration identity. See `docs/APP_PLATFORM_ARCHITECTURE.md`,
-ADR-0014, and `docs/implementation/APP_PLATFORM_PHASE1.md`/
-`APP_PLATFORM_PHASE2.md`/`APP_PLATFORM_PHASE3.md`. Full control-plane backups
-cover this metadata; portable `.icp` explicitly excludes it — verified
-end-to-end (manifest flag, restore warning, and zero rows crossing the round
-trip) in Phase 3's qualification step, not just asserted. New endpoints use
-shared capabilities/ResourceGrants and require human sessions; environment-bound
-integration access is deferred. Fresh full backend gate: 508 tests pass, 2
-skipped. While scoping Phase 4, a real gap was found in the Post-Phase-3
-composite-uniqueness capability this section previously described as
-closed: `ConstraintDefinition` only ever accepted scalar fields, so the
-readiness doc's own "Inventory (Part × Warehouse)" example — a constraint
-over two *relationships* — was never actually achievable. Closed
-generically (migration `0013`): a composite `UNIQUE` constraint can now
-also cover a model's own `many_to_one` relationships (never `many_to_many`,
-which has no column to constrain), through the same install/provisioning/
-live-schema-evolution/API/App Builder paths as the field-only case,
-203 backend tests passing and live-verified through the real App Builder
-UI — a duplicate `(field, relationship)` combination genuinely rejected
-against a provisioned instance, not just asserted by a unit test. See
-`docs/SPARE_PARTS_INTEGRATION_READINESS.md` §1/§11 and
-`docs/EXTERNAL_APP_API_CONTRACT.md`'s constraint section.
-
-Phase 4 itself then built on that closed capability: a real "Spare Parts —
-Inventory & Sales" `AppTemplate` (`app_platform/reference_templates.py`),
-13 models/14 relationships covering inventory, purchasing, and sales
-entirely through Phases 1–3's existing generic primitives — no
-industry-specific concept added to `app_platform`. Deliberately excludes a
-`CataloguePart`/`CompanyProduct` split (that's `catalogue_storage`'s job),
-calculated fields, an enum/status type, and cross-request atomicity (a
-stock receipt updating Inventory stays separate record-CRUD calls) — each
-a documented decision in `docs/implementation/APP_PLATFORM_PHASE4.md`, not
-a silent gap. A new `seed_spare_parts_reference_app` management command
-publishes/installs/provisions it into a real organization (never invents
-one; enforces the same permission checks as the App Builder UI). 212
-backend tests pass; live-verified end-to-end against the running Docker
-stack — a real duplicate `(Part, Warehouse)` Inventory row genuinely
-rejected through the actual API, the self-referencing `PartNumber.
-supersedes` relationship (previously flagged untested) now has real
-coverage, and the instance's own App Builder/record-detail pages render
-every model correctly in a browser.
-
-Phase 5 added a generic workflow engine: `WorkflowDefinition`/
-`WorkflowState`/`WorkflowTransition` declare a controlled vocabulary of
-legal values for one of a model's own `text` fields plus the legal
-transitions between them — pure control-plane metadata, never read by
-`runtime_plan.py`/`runtime_build.py`, so authoring or installing a
-workflow never touches the tenant schema. "Concurrent/replayed transitions
-cannot duplicate effects" (the roadmap's own exit bar) is met by combining
-two patterns already proven elsewhere in this codebase: a
-`WorkflowTransitionAttempt` idempotency-key row (same shape as `exports.
-RestoreJob`/`provisioning.RuntimeProvision`) for replay safety, and a new
-reusable compare-and-swap primitive, `databases/rows.py::update_row_if`,
-for concurrency safety — verified with a real `ThreadPoolExecutor` race
-where two different, mutually-exclusive transitions fire at the same
-starting state and exactly one wins cleanly. Approvals are a capability
-gate (`app_instance.workflow.approve`) on specific transitions, not a
-stateful approval-inbox; notifications are a real Celery-delivered HTTP
-POST (reusing `databases/connectors.py::assert_host_is_safe`'s SSRF guard)
-but are not cryptographically signed, since no per-target secret-storage
-model exists yet — both documented as known limits, not silently absorbed.
-363 `app_platform`+`databases` backend tests pass together; live-verified
-end-to-end against the running Docker stack — a workflow authored through
-the real App Builder UI, installed and provisioned, and a record's state
-walked through both transitions (including an approval-gated one) via the
-record-detail page's new "Workflow" section, with each transition showing
-up as a real audit event. See `docs/implementation/APP_PLATFORM_PHASE5.md`.
+**App Platform** (`app_platform`) has completed Phases 0–8 of its own
+ten-phase plan (metadata foundation and immutable template versions;
+generic per-app Postgres runtime with full record/relationship/
+attachment CRUD and a generic frontend; the visual App Builder plus safe
+live additive schema changes and basic instance-scoped sharing;
+relationship-spanning composite `UNIQUE` constraints; the "Spare Parts"
+reference application; a generic workflow engine; organizational
+hierarchy; enterprise permissions (module/unit-scoped grants); and eight
+further management-template reference applications — school, HR, CRM,
+procurement, assets, projects, documents, warehouses). Existing
+`applications.Application` remains a separate integration identity from
+any of these business apps. Full control-plane backups cover this
+metadata; portable `.icp` explicitly excludes it. New endpoints use
+shared capabilities/ResourceGrants and require human sessions;
+environment-bound integration access is deferred (Phase 9/10 territory).
+Full history, exact verification method, and every real bug found and
+fixed for each phase lives in
+[`docs/implementation/APP_PLATFORM_ROADMAP.md`](docs/implementation/APP_PLATFORM_ROADMAP.md)
+and its per-phase checkpoint docs — this section stays a short pointer,
+not a running log. See also `docs/APP_PLATFORM_ARCHITECTURE.md` and
+ADR-0014.
 
 **All 12 planned phases (0–11) are complete and verified end-to-end.**
 Full history, bugs found and fixed, and exact verification method for
