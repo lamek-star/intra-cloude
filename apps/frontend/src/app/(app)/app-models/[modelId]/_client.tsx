@@ -13,6 +13,9 @@ import {
   type AppRecordsPage,
   type AppRelationshipDefinition,
   type AppRelationshipKind,
+  type AppTransitionDefinition,
+  type AppWorkflowDefinition,
+  type AppWorkflowState,
   type FieldDefaultValue,
   type Paginated,
 } from "@/lib/api";
@@ -67,6 +70,17 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
   const [addingField, setAddingField] = useState(false);
   const [addConstraintError, setAddConstraintError] = useState<string | null>(null);
   const [addingConstraint, setAddingConstraint] = useState(false);
+  const [workflows, setWorkflows] = useState<AppWorkflowDefinition[]>([]);
+  const [workflowStates, setWorkflowStates] = useState<Record<string, AppWorkflowState[]>>({});
+  const [workflowTransitions, setWorkflowTransitions] = useState<Record<string, AppTransitionDefinition[]>>(
+    {},
+  );
+  const [addWorkflowError, setAddWorkflowError] = useState<string | null>(null);
+  const [addingWorkflow, setAddingWorkflow] = useState(false);
+  const [addStateError, setAddStateError] = useState<string | null>(null);
+  const [addingState, setAddingState] = useState(false);
+  const [addTransitionError, setAddTransitionError] = useState<string | null>(null);
+  const [addingTransition, setAddingTransition] = useState(false);
   const confirm = useConfirm();
 
   async function loadMeta() {
@@ -85,6 +99,29 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
     setOutgoing(r.results.filter((rel) => rel.source_model === m.id));
     setIncoming(r.results.filter((rel) => rel.target_model === m.id && rel.kind === "many_to_many"));
     setInstance(inst);
+
+    const wf = await api.get<Paginated<AppWorkflowDefinition>>(`/app-models/${modelId}/workflows/?limit=50`);
+    setWorkflows(wf.results);
+    const [statesEntries, transitionsEntries] = await Promise.all([
+      Promise.all(
+        wf.results.map(
+          async (w) =>
+            [w.id, (await api.get<Paginated<AppWorkflowState>>(`/app-workflows/${w.id}/states/?limit=50`)).results] as const,
+        ),
+      ),
+      Promise.all(
+        wf.results.map(
+          async (w) =>
+            [
+              w.id,
+              (await api.get<Paginated<AppTransitionDefinition>>(`/app-workflows/${w.id}/transitions/?limit=200`))
+                .results,
+            ] as const,
+        ),
+      ),
+    ]);
+    setWorkflowStates(Object.fromEntries(statesEntries));
+    setWorkflowTransitions(Object.fromEntries(transitionsEntries));
   }
 
   async function loadRecords(newOffset = offset, q = search) {
@@ -163,6 +200,63 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
       setAddConstraintError(err instanceof ApiError ? err.message : "Failed to add constraint.");
     } finally {
       setAddingConstraint(false);
+    }
+  }
+
+  async function handleAddWorkflow(workflow: { key: string; label: string; state_field: string }) {
+    setAddWorkflowError(null);
+    setAddingWorkflow(true);
+    try {
+      const created = await api.post<AppWorkflowDefinition>(`/app-models/${modelId}/workflows/`, workflow);
+      setWorkflows((prev) => [...prev, created]);
+      setWorkflowStates((prev) => ({ ...prev, [created.id]: [] }));
+      setWorkflowTransitions((prev) => ({ ...prev, [created.id]: [] }));
+    } catch (err) {
+      setAddWorkflowError(err instanceof ApiError ? err.message : "Failed to add workflow.");
+    } finally {
+      setAddingWorkflow(false);
+    }
+  }
+
+  async function handleAddState(workflowId: string, state: { key: string; label: string }) {
+    setAddStateError(null);
+    setAddingState(true);
+    try {
+      const created = await api.post<AppWorkflowState>(`/app-workflows/${workflowId}/states/`, state);
+      setWorkflowStates((prev) => ({ ...prev, [workflowId]: [...(prev[workflowId] ?? []), created] }));
+    } catch (err) {
+      setAddStateError(err instanceof ApiError ? err.message : "Failed to add state.");
+    } finally {
+      setAddingState(false);
+    }
+  }
+
+  async function handleAddTransition(
+    workflowId: string,
+    transition: {
+      key: string;
+      label: string;
+      from_state: string | null;
+      to_state: string;
+      requires_approval: boolean;
+      notify_url?: string;
+    },
+  ) {
+    setAddTransitionError(null);
+    setAddingTransition(true);
+    try {
+      const created = await api.post<AppTransitionDefinition>(
+        `/app-workflows/${workflowId}/transitions/`,
+        transition,
+      );
+      setWorkflowTransitions((prev) => ({
+        ...prev,
+        [workflowId]: [...(prev[workflowId] ?? []), created],
+      }));
+    } catch (err) {
+      setAddTransitionError(err instanceof ApiError ? err.message : "Failed to add transition.");
+    } finally {
+      setAddingTransition(false);
     }
   }
 
@@ -254,6 +348,86 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
             relationships={outgoing.filter((r) => r.kind === "many_to_one")}
             onAdd={handleAddConstraint}
             disabled={addingConstraint}
+          />
+        </div>
+      )}
+
+      {workflows.length > 0 && (
+        <div className="mb-4 space-y-3">
+          <h3 className="text-xs font-semibold text-slate-500">Workflows</h3>
+          {workflows.map((workflow) => {
+            const states = workflowStates[workflow.id] ?? [];
+            const transitions = workflowTransitions[workflow.id] ?? [];
+            return (
+              <div key={workflow.id} className="rounded-md bg-slate-50 p-3">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-medium text-slate-800">{workflow.label}</span>
+                  <Badge tone="info">state: {fieldLabelFor(fields, workflow.state_field)}</Badge>
+                </div>
+                {states.length > 0 && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    {states.map((s) => (
+                      <Badge key={s.id}>{s.label}</Badge>
+                    ))}
+                  </div>
+                )}
+                {transitions.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {transitions.map((t) => (
+                      <div key={t.id} className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
+                        <span className="font-medium text-slate-700">{t.label}:</span>
+                        <span>{t.from_state ? stateLabelFor(states, t.from_state) : "(any state)"}</span>
+                        <span>&rarr;</span>
+                        <span>{stateLabelFor(states, t.to_state)}</span>
+                        {t.requires_approval && <Badge tone="warning">requires approval</Badge>}
+                        {t.notify_url && <Badge>notifies</Badge>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {addStateError && (
+                  <div className="mt-2">
+                    <ErrorBanner message={addStateError} />
+                  </div>
+                )}
+                <div className="mt-3 border-t border-slate-200 pt-2">
+                  <AddStateForm
+                    workflowId={workflow.id}
+                    onAdd={handleAddState}
+                    disabled={addingState}
+                  />
+                </div>
+                {addTransitionError && (
+                  <div className="mt-2">
+                    <ErrorBanner message={addTransitionError} />
+                  </div>
+                )}
+                {states.length > 0 && (
+                  <div className="mt-2 border-t border-slate-200 pt-2">
+                    <AddTransitionForm
+                      workflowId={workflow.id}
+                      states={states}
+                      onAdd={handleAddTransition}
+                      disabled={addingTransition}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {addWorkflowError && (
+        <div className="mb-3">
+          <ErrorBanner message={addWorkflowError} />
+        </div>
+      )}
+      {fields.filter((f) => f.data_type === "text").length > 0 && (
+        <div className="mb-4">
+          <AddWorkflowForm
+            fields={fields.filter((f) => f.data_type === "text")}
+            onAdd={handleAddWorkflow}
+            disabled={addingWorkflow}
           />
         </div>
       )}
@@ -970,6 +1144,254 @@ function fieldLabelFor(fields: AppFieldDefinition[], fieldId: string): string {
 
 function relationshipLabelFor(relationships: AppRelationshipDefinition[], relationshipId: string): string {
   return relationships.find((r) => r.id === relationshipId)?.label ?? relationshipId.slice(0, 8);
+}
+
+function stateLabelFor(states: AppWorkflowState[], stateId: string): string {
+  return states.find((s) => s.id === stateId)?.label ?? stateId.slice(0, 8);
+}
+
+// Model Settings -> Workflows -> Add Workflow, against an already-
+// installed instance: pure control-plane metadata, so this works whether
+// or not the instance is provisioned (docs/implementation/
+// APP_PLATFORM_PHASE5.md) -- no populated-data safety concern the way
+// AddConstraintForm/AddFieldForm above have. Only the model's own *text*
+// fields are offered as a state field (no enum type exists in this
+// platform).
+function AddWorkflowForm({
+  fields,
+  onAdd,
+  disabled,
+}: {
+  fields: AppFieldDefinition[];
+  onAdd: (workflow: { key: string; label: string; state_field: string }) => void;
+  disabled: boolean;
+}) {
+  const [label, setLabel] = useState("");
+  const [key, setKey] = useState("");
+  const [stateField, setStateField] = useState(fields[0]?.id ?? "");
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!key || !label || !stateField) return;
+    onAdd({ key, label, state_field: stateField });
+    setLabel("");
+    setKey("");
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
+      <div>
+        <Label htmlFor="new-workflow-label">New workflow name</Label>
+        <Input
+          id="new-workflow-label"
+          value={label}
+          onChange={(e) => {
+            setLabel(e.target.value);
+            if (!key) setKey(slugify(e.target.value));
+          }}
+          placeholder="Lifecycle"
+        />
+      </div>
+      <div>
+        <Label htmlFor="new-workflow-key">Key</Label>
+        <Input
+          id="new-workflow-key"
+          pattern={KEY_PATTERN}
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="lifecycle"
+        />
+      </div>
+      <div>
+        <Label htmlFor="new-workflow-field">State field</Label>
+        <Select id="new-workflow-field" value={stateField} onChange={(e) => setStateField(e.target.value)}>
+          {fields.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.label}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <Button type="submit" size="sm" disabled={disabled || !key || !label || !stateField}>
+        {disabled ? "..." : "Add workflow"}
+      </Button>
+    </form>
+  );
+}
+
+function AddStateForm({
+  workflowId,
+  onAdd,
+  disabled,
+}: {
+  workflowId: string;
+  onAdd: (workflowId: string, state: { key: string; label: string }) => void;
+  disabled: boolean;
+}) {
+  const [label, setLabel] = useState("");
+  const [key, setKey] = useState("");
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!key || !label) return;
+    onAdd(workflowId, { key, label });
+    setLabel("");
+    setKey("");
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-2">
+      <div>
+        <Label htmlFor={`new-state-label-${workflowId}`}>New state name</Label>
+        <Input
+          id={`new-state-label-${workflowId}`}
+          value={label}
+          onChange={(e) => {
+            setLabel(e.target.value);
+            if (!key) setKey(slugify(e.target.value));
+          }}
+          placeholder="Draft"
+        />
+      </div>
+      <div>
+        <Label htmlFor={`new-state-key-${workflowId}`}>Key</Label>
+        <Input
+          id={`new-state-key-${workflowId}`}
+          pattern={KEY_PATTERN}
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="draft"
+        />
+      </div>
+      <Button type="submit" size="sm" variant="secondary" disabled={disabled || !key || !label}>
+        {disabled ? "..." : "Add state"}
+      </Button>
+    </form>
+  );
+}
+
+// Conditions/field_actions aren't authored through this UI in this pass
+// (a deliberate scope cut, not an oversight -- the backend fully supports
+// and tests them via the direct API; see the phase doc's "Known
+// limits"): a transition added here is always unconditional with no
+// side-effect field writes.
+function AddTransitionForm({
+  workflowId,
+  states,
+  onAdd,
+  disabled,
+}: {
+  workflowId: string;
+  states: AppWorkflowState[];
+  onAdd: (
+    workflowId: string,
+    transition: {
+      key: string;
+      label: string;
+      from_state: string | null;
+      to_state: string;
+      requires_approval: boolean;
+      notify_url?: string;
+    },
+  ) => void;
+  disabled: boolean;
+}) {
+  const [label, setLabel] = useState("");
+  const [key, setKey] = useState("");
+  const [fromState, setFromState] = useState(""); // "" means "any state"
+  const [toState, setToState] = useState(states[0]?.id ?? "");
+  const [requiresApproval, setRequiresApproval] = useState(false);
+  const [notifyUrl, setNotifyUrl] = useState("");
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!key || !label || !toState) return;
+    onAdd(workflowId, {
+      key,
+      label,
+      from_state: fromState || null,
+      to_state: toState,
+      requires_approval: requiresApproval,
+      notify_url: notifyUrl || undefined,
+    });
+    setLabel("");
+    setKey("");
+    setFromState("");
+    setRequiresApproval(false);
+    setNotifyUrl("");
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-2">
+      <div>
+        <Label htmlFor={`new-transition-label-${workflowId}`}>New transition name</Label>
+        <Input
+          id={`new-transition-label-${workflowId}`}
+          value={label}
+          onChange={(e) => {
+            setLabel(e.target.value);
+            if (!key) setKey(slugify(e.target.value));
+          }}
+          placeholder="Submit"
+        />
+      </div>
+      <div>
+        <Label htmlFor={`new-transition-key-${workflowId}`}>Key</Label>
+        <Input
+          id={`new-transition-key-${workflowId}`}
+          pattern={KEY_PATTERN}
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="submit"
+        />
+      </div>
+      <div>
+        <Label htmlFor={`new-transition-from-${workflowId}`}>From</Label>
+        <Select
+          id={`new-transition-from-${workflowId}`}
+          value={fromState}
+          onChange={(e) => setFromState(e.target.value)}
+        >
+          <option value="">(any state)</option>
+          {states.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.label}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <div>
+        <Label htmlFor={`new-transition-to-${workflowId}`}>To</Label>
+        <Select
+          id={`new-transition-to-${workflowId}`}
+          value={toState}
+          onChange={(e) => setToState(e.target.value)}
+        >
+          {states.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.label}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <label className="flex items-center gap-1.5 text-sm text-slate-700">
+        <Checkbox checked={requiresApproval} onChange={(e) => setRequiresApproval(e.target.checked)} />
+        Requires approval
+      </label>
+      <div>
+        <Label htmlFor={`new-transition-notify-${workflowId}`}>Notify URL (optional)</Label>
+        <Input
+          id={`new-transition-notify-${workflowId}`}
+          value={notifyUrl}
+          onChange={(e) => setNotifyUrl(e.target.value)}
+          placeholder="https://..."
+        />
+      </div>
+      <Button type="submit" size="sm" variant="secondary" disabled={disabled || !key || !label || !toState}>
+        {disabled ? "..." : "Add transition"}
+      </Button>
+    </form>
+  );
 }
 
 // Model Settings -> Constraints -> Add Unique Constraint, against an

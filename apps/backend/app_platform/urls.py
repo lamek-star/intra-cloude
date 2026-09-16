@@ -35,4 +35,14 @@ urlpatterns = [
     path("app-fields/<uuid:object_id>/indexed/", views.FieldIndexedView.as_view()),
     path("app-instances/<uuid:object_id>/relationships/", views.RelationshipList.as_view()),
     path("app-relationships/<uuid:object_id>/", views.RelationshipDetail.as_view()),
+    path("app-models/<uuid:object_id>/workflows/", views.WorkflowList.as_view()),
+    path("app-workflows/<uuid:object_id>/", views.WorkflowDetail.as_view()),
+    path("app-workflows/<uuid:object_id>/states/", views.StateList.as_view()),
+    path("app-workflow-states/<uuid:object_id>/", views.StateDetail.as_view()),
+    path("app-workflows/<uuid:object_id>/transitions/", views.TransitionList.as_view()),
+    path("app-transitions/<uuid:object_id>/", views.TransitionDetail.as_view()),
+    path(
+        "app-models/<uuid:object_id>/records/<uuid:record_id>/transitions/<uuid:transition_id>/apply/",
+        views.ApplyTransitionView.as_view(),
+    ),
 ]

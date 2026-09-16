@@ -9,6 +9,9 @@ import {
   type AppModelDefinition,
   type AppRecordAttachment,
   type AppRelationshipDefinition,
+  type AppTransitionDefinition,
+  type AppWorkflowDefinition,
+  type AppWorkflowState,
   type AuditEvent,
   type Bucket,
   type FileObject,
@@ -42,12 +45,28 @@ export default function AppRecordClient({ modelId, recordId }: { modelId: string
   const [values, setValues] = useState<Record<string, string | string[]>>({});
   const [attachments, setAttachments] = useState<AppRecordAttachment[] | null>(null);
   const [history, setHistory] = useState<AuditEvent[] | null>(null);
+  const [workflows, setWorkflows] = useState<AppWorkflowDefinition[]>([]);
+  const [workflowStates, setWorkflowStates] = useState<Record<string, AppWorkflowState[]>>({});
+  const [workflowTransitions, setWorkflowTransitions] = useState<Record<string, AppTransitionDefinition[]>>(
+    {},
+  );
+  const [transitionError, setTransitionError] = useState<string | null>(null);
+  const [applyingTransitionId, setApplyingTransitionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [attachModalOpen, setAttachModalOpen] = useState(false);
   const confirm = useConfirm();
+
+  function loadHistory(organizationId: string) {
+    api
+      .get<Paginated<AuditEvent>>(
+        `/organizations/${organizationId}/audit/?resource_type=app_model&resource_id=${modelId}&limit=${HISTORY_PAGE_SIZE}`,
+      )
+      .then((page) => setHistory(page.results.filter((event) => event.context?.record_id === recordId)))
+      .catch(() => setHistory([]));
+  }
 
   function fieldValuesFrom(
     row: Record<string, unknown>,
@@ -100,14 +119,30 @@ export default function AppRecordClient({ modelId, recordId }: { modelId: string
         .then(setAttachments)
         .catch(() => setAttachments([]));
 
-      api
-        .get<Paginated<AuditEvent>>(
-          `/organizations/${inst.organization}/audit/?resource_type=app_model&resource_id=${modelId}&limit=${HISTORY_PAGE_SIZE}`,
-        )
-        .then((page) =>
-          setHistory(page.results.filter((event) => event.context?.record_id === recordId)),
-        )
-        .catch(() => setHistory([]));
+      loadHistory(inst.organization);
+
+      const wf = await api.get<Paginated<AppWorkflowDefinition>>(`/app-models/${modelId}/workflows/?limit=50`);
+      setWorkflows(wf.results);
+      const [statesEntries, transitionsEntries] = await Promise.all([
+        Promise.all(
+          wf.results.map(
+            async (w) =>
+              [w.id, (await api.get<Paginated<AppWorkflowState>>(`/app-workflows/${w.id}/states/?limit=50`)).results] as const,
+          ),
+        ),
+        Promise.all(
+          wf.results.map(
+            async (w) =>
+              [
+                w.id,
+                (await api.get<Paginated<AppTransitionDefinition>>(`/app-workflows/${w.id}/transitions/?limit=200`))
+                  .results,
+              ] as const,
+          ),
+        ),
+      ]);
+      setWorkflowStates(Object.fromEntries(statesEntries));
+      setWorkflowTransitions(Object.fromEntries(transitionsEntries));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load this record.");
       setErrorDetail(err);
@@ -158,6 +193,23 @@ export default function AppRecordClient({ modelId, recordId }: { modelId: string
       setSaveError(err instanceof ApiError ? err.message : "Failed to save record.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleApplyTransition(transitionId: string) {
+    if (!instance) return;
+    setTransitionError(null);
+    setApplyingTransitionId(transitionId);
+    try {
+      await api.post(`/app-models/${modelId}/records/${recordId}/transitions/${transitionId}/apply/`, {});
+      const updated = await api.get<Record<string, unknown>>(`/app-models/${modelId}/records/${recordId}/`);
+      setRecord(updated);
+      setValues(fieldValuesFrom(updated));
+      loadHistory(instance.organization);
+    } catch (err) {
+      setTransitionError(err instanceof ApiError ? err.message : "Failed to apply this transition.");
+    } finally {
+      setApplyingTransitionId(null);
     }
   }
 
@@ -251,6 +303,63 @@ export default function AppRecordClient({ modelId, recordId }: { modelId: string
           </div>
         </form>
       </Card>
+
+      {workflows.length > 0 && (
+        <div className="mb-8">
+          <h2 className="mb-3 text-sm font-semibold text-slate-600">Workflow</h2>
+          {transitionError && (
+            <div className="mb-3">
+              <ErrorBanner message={transitionError} />
+            </div>
+          )}
+          <div className="space-y-3">
+            {workflows.map((workflow) => {
+              const states = workflowStates[workflow.id] ?? [];
+              const transitions = workflowTransitions[workflow.id] ?? [];
+              const currentValue = record[workflow.state_field];
+              const currentState = states.find((s) => s.key === currentValue);
+              // Only transitions that are valid from wherever this record
+              // currently is -- from_state === null means "any state".
+              const available = transitions.filter(
+                (t) => t.from_state === null || t.from_state === currentState?.id,
+              );
+              return (
+                <Card key={workflow.id}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-800">{workflow.label}</span>
+                    <Badge tone="info">
+                      {currentState?.label ?? (currentValue ? String(currentValue) : "—")}
+                    </Badge>
+                  </div>
+                  {available.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {available.map((t) => (
+                        <Button
+                          key={t.id}
+                          size="sm"
+                          variant="secondary"
+                          disabled={applyingTransitionId !== null}
+                          onClick={() => handleApplyTransition(t.id)}
+                          title={
+                            t.requires_approval
+                              ? "Requires the app_instance.workflow.approve capability"
+                              : undefined
+                          }
+                        >
+                          {applyingTransitionId === t.id ? "..." : t.label}
+                          {t.requires_approval ? " *" : ""}
+                        </Button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-400">No transitions available from this state.</p>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="mb-8">
         <div className="mb-3 flex items-center justify-between">

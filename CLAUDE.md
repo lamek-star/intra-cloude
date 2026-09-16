@@ -22,8 +22,8 @@ identity (logo, color tokens, typography, component patterns) lives in
 
 ## Current Status
 
-**App Platform** (`app_platform`) is feature-complete through Phase 4
-(Inventory and Sales reference application): Phase 1's metadata foundation (organization templates, immutable
+**App Platform** (`app_platform`) is feature-complete through Phase 5
+(Workflow engine): Phase 1's metadata foundation (organization templates, immutable
 versions, project-owned instances, generic model/field/relationship
 definitions); Phase 2's real business-record runtime (a compiled, fingerprinted
 provisioning plan that creates real per-app Postgres tables, full record/
@@ -73,6 +73,32 @@ rejected through the actual API, the self-referencing `PartNumber.
 supersedes` relationship (previously flagged untested) now has real
 coverage, and the instance's own App Builder/record-detail pages render
 every model correctly in a browser.
+
+Phase 5 added a generic workflow engine: `WorkflowDefinition`/
+`WorkflowState`/`WorkflowTransition` declare a controlled vocabulary of
+legal values for one of a model's own `text` fields plus the legal
+transitions between them — pure control-plane metadata, never read by
+`runtime_plan.py`/`runtime_build.py`, so authoring or installing a
+workflow never touches the tenant schema. "Concurrent/replayed transitions
+cannot duplicate effects" (the roadmap's own exit bar) is met by combining
+two patterns already proven elsewhere in this codebase: a
+`WorkflowTransitionAttempt` idempotency-key row (same shape as `exports.
+RestoreJob`/`provisioning.RuntimeProvision`) for replay safety, and a new
+reusable compare-and-swap primitive, `databases/rows.py::update_row_if`,
+for concurrency safety — verified with a real `ThreadPoolExecutor` race
+where two different, mutually-exclusive transitions fire at the same
+starting state and exactly one wins cleanly. Approvals are a capability
+gate (`app_instance.workflow.approve`) on specific transitions, not a
+stateful approval-inbox; notifications are a real Celery-delivered HTTP
+POST (reusing `databases/connectors.py::assert_host_is_safe`'s SSRF guard)
+but are not cryptographically signed, since no per-target secret-storage
+model exists yet — both documented as known limits, not silently absorbed.
+363 `app_platform`+`databases` backend tests pass together; live-verified
+end-to-end against the running Docker stack — a workflow authored through
+the real App Builder UI, installed and provisioned, and a record's state
+walked through both transitions (including an approval-gated one) via the
+record-detail page's new "Workflow" section, with each transition showing
+up as a real audit event. See `docs/implementation/APP_PLATFORM_PHASE5.md`.
 
 **All 12 planned phases (0–11) are complete and verified end-to-end.**
 Full history, bugs found and fixed, and exact verification method for

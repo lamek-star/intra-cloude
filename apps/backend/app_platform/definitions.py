@@ -2,11 +2,14 @@
 
 import json
 import uuid
+from urllib.parse import urlparse
 
 from rest_framework import serializers
 
+from databases.connectors import UnsafeHost, assert_host_is_safe
 from databases.ddl import DDLValidationError, default_clause_sql
 from databases.identifiers import IdentifierError, validate_column_name
+from databases.values import RowValueError, validate_and_convert
 
 from .models import FieldDefinition
 
@@ -31,6 +34,37 @@ class KeyField(serializers.CharField):
             return validate_column_name(value)
         except IdentifierError as exc:
             raise serializers.ValidationError(str(exc)) from exc
+
+
+def validate_action_value(data_type, value):
+    """A workflow transition's field-action value must be a literal
+    already-safe to hand to databases.rows.update_row_if for this field's
+    real data type -- the same conversion/validation update_row/insert_row
+    already run on any ordinary record write, just performed at
+    definition time too (like validate_field_default above) so a value
+    that will be rejected when the transition is actually applied is
+    caught here instead."""
+    try:
+        return validate_and_convert(value, data_type)
+    except RowValueError as exc:
+        raise serializers.ValidationError({"value": str(exc)}) from exc
+
+
+def validate_notify_url(url):
+    """A workflow transition's notification target must be a real http(s)
+    URL whose host isn't an SSRF pivot -- reuses the exact same guard
+    ConnectedDatabase.host already relies on (Section 30 of the master
+    prompt), not a second implementation. Re-checked again immediately
+    before every delivery attempt (app_platform/tasks.py), since DNS can
+    rebind between definition time and send time."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise serializers.ValidationError({"notify_url": "Must be an http:// or https:// URL."})
+    try:
+        assert_host_is_safe(parsed.hostname)
+    except UnsafeHost as exc:
+        raise serializers.ValidationError({"notify_url": str(exc)}) from exc
+    return url
 
 
 def validate_field_default(data_type, value):
@@ -103,6 +137,84 @@ class SnapshotConstraint(ConstraintInput):
     id = serializers.UUIDField(default=uuid.uuid4)
 
 
+class StateInput(StrictSerializer):
+    key = KeyField()
+    label = serializers.CharField(max_length=200)  # type: ignore[assignment]  # DRF declarative field, removed by its metaclass
+
+
+class SnapshotState(StateInput):
+    id = serializers.UUIDField(default=uuid.uuid4)
+
+
+class ConditionInput(StrictSerializer):
+    """One ANDed check against one of the workflow's own model's fields --
+    deliberately as narrow as databases/rows.py's own exact-match-only
+    filtering (Section 12), not a general expression language."""
+
+    field_id = serializers.UUIDField()
+    operator = serializers.ChoiceField(choices=["eq", "ne", "is_null", "is_not_null"])
+    value = serializers.JSONField(required=False, allow_null=True, default=None)
+
+    def validate(self, data):
+        if data["operator"] in ("is_null", "is_not_null"):
+            if data.get("value") is not None:
+                raise serializers.ValidationError({"value": "Not used for is_null/is_not_null."})
+        elif data.get("value") is None:
+            raise serializers.ValidationError({"value": "Required for eq/ne."})
+        return data
+
+
+class ActionInput(StrictSerializer):
+    """A literal field write applied in the same compare-and-swap UPDATE
+    as the state change (databases.rows.update_row_if) -- literal-only,
+    never a calculated/derived value, which is also what makes a replayed
+    apply naturally idempotent (setting a column to a fixed value twice is
+    a no-op the second time)."""
+
+    field_id = serializers.UUIDField()
+    value = serializers.JSONField(allow_null=True)
+
+
+class TransitionInput(StrictSerializer):
+    key = KeyField()
+    label = serializers.CharField(max_length=200)  # type: ignore[assignment]  # DRF declarative field, removed by its metaclass
+    from_state = serializers.UUIDField(required=False, allow_null=True, default=None)
+    to_state = serializers.UUIDField()
+    conditions = serializers.ListField(  # type: ignore[assignment]
+        child=ConditionInput(), required=False, default=list, max_length=20
+    )
+    field_actions = serializers.ListField(  # type: ignore[assignment]
+        child=ActionInput(), required=False, default=list, max_length=20
+    )
+    requires_approval = serializers.BooleanField(default=False)  # type: ignore[assignment]  # DRF declarative field, removed by its metaclass
+    notify_url = serializers.CharField(  # type: ignore[assignment]  # DRF declarative field, removed by its metaclass
+        max_length=2000, required=False, allow_blank=True, default=""
+    )
+
+    def validate(self, data):
+        if data["notify_url"]:
+            validate_notify_url(data["notify_url"])
+        return data
+
+
+class SnapshotTransition(TransitionInput):
+    id = serializers.UUIDField(default=uuid.uuid4)
+
+
+class WorkflowInput(StrictSerializer):
+    key = KeyField()
+    label = serializers.CharField(max_length=200)  # type: ignore[assignment]  # DRF declarative field, removed by its metaclass
+    state_field = serializers.UUIDField()
+
+
+class SnapshotWorkflow(WorkflowInput):
+    id = serializers.UUIDField(default=uuid.uuid4)
+    states = serializers.ListField(child=SnapshotState(), max_length=50)  # type: ignore[assignment]
+    transitions = serializers.ListField(  # type: ignore[assignment]
+        child=SnapshotTransition(), max_length=200, required=False, default=list
+    )
+
+
 class ModelInput(StrictSerializer):
     key = KeyField()
     label = serializers.CharField(max_length=200)  # type: ignore[assignment]  # DRF declarative field, removed by its metaclass
@@ -113,6 +225,9 @@ class SnapshotModel(ModelInput):
     fields = serializers.ListField(child=SnapshotField(), max_length=100)  # type: ignore[assignment]
     constraints = serializers.ListField(  # type: ignore[assignment]
         child=SnapshotConstraint(), max_length=20, required=False, default=list
+    )
+    workflows = serializers.ListField(  # type: ignore[assignment]
+        child=SnapshotWorkflow(), max_length=10, required=False, default=list
     )
 
 
@@ -157,11 +272,46 @@ class DefinitionInput(StrictSerializer):
             unique(model["fields"])
             unique(model.get("constraints", []))
             field_ids = {field["id"] for field in model["fields"]}
+            field_by_id = {field["id"]: field for field in model["fields"]}
             for constraint in model.get("constraints", []):
                 if not set(constraint["field_ids"]).issubset(field_ids):
                     raise serializers.ValidationError(
                         "Constraint fields must belong to the same model."
                     )
+
+            unique(model.get("workflows", []))
+            for workflow in model.get("workflows", []):
+                if workflow["state_field"] not in field_ids:
+                    raise serializers.ValidationError(
+                        "A workflow's state field must belong to the same model."
+                    )
+                if field_by_id[workflow["state_field"]]["data_type"] != "text":
+                    raise serializers.ValidationError("A workflow's state field must be a text field.")
+                unique(workflow["states"])
+                unique(workflow["transitions"])
+                state_ids = {state["id"] for state in workflow["states"]}
+                for transition in workflow["transitions"]:
+                    if transition["to_state"] not in state_ids:
+                        raise serializers.ValidationError(
+                            "A transition's to_state must belong to its own workflow."
+                        )
+                    if transition["from_state"] is not None and transition["from_state"] not in state_ids:
+                        raise serializers.ValidationError(
+                            "A transition's from_state must belong to its own workflow."
+                        )
+                    for condition in transition["conditions"]:
+                        if condition["field_id"] not in field_ids:
+                            raise serializers.ValidationError(
+                                "A condition's field must belong to the workflow's own model."
+                            )
+                    for action in transition["field_actions"]:
+                        if action["field_id"] not in field_ids:
+                            raise serializers.ValidationError(
+                                "An action's field must belong to the workflow's own model."
+                            )
+                        action["value"] = validate_action_value(
+                            field_by_id[action["field_id"]]["data_type"], action["value"]
+                        )
         unique(data["relationships"])
         model_ids = {model["id"] for model in data["models"]}
         for relation in data["relationships"]:

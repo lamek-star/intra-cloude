@@ -26,6 +26,13 @@ class RowNotFound(Exception):
     pass
 
 
+class RowConflict(Exception):
+    """The row exists but no longer matches the caller's expected
+    values -- a genuine concurrent change, not a missing row. Distinct
+    from RowNotFound so a caller can return 409 (conflict) rather than
+    404 (missing)."""
+
+
 def _column_names(table: DBTable) -> list[str]:
     # DBColumn's default Meta.ordering is alphabetical by name (sensible
     # for schema browsing) — but for row data, columns should appear in
@@ -203,6 +210,76 @@ def update_row(table: DBTable, row_id, data: dict) -> dict:
         row = cursor.fetchone()
         if row is None:
             raise RowNotFound(str(row_id))
+        result_columns = [d[0] for d in cursor.description]
+    return dict(zip(result_columns, row, strict=True))
+
+
+def update_row_if(table: DBTable, row_id, *, expected: dict, data: dict) -> dict:
+    """Like update_row, but the UPDATE's WHERE clause also requires each
+    `expected` column to still hold its given value -- a compare-and-swap,
+    not a read-then-write. This is the concurrency-safety primitive App
+    Platform's workflow engine uses to apply a state transition: only one
+    of two racing, mutually-exclusive transitions starting from the same
+    recorded state can ever succeed, with the loser getting a clean
+    RowConflict rather than a corrupted write -- a real Postgres operation
+    is the gate, matching this project's existing "let it race, let the
+    database be the real gate" discipline (see app_platform/records.py's
+    own many-to-many update docstring) rather than an application-level
+    lock. `expected` may be empty (no extra WHERE conditions at all -- a
+    transition valid from any current state)."""
+    if not data:
+        raise RowValueError("no fields to update")
+
+    columns_by_name = {c.name: c for c in table.columns.all()}
+
+    def _validated(items):
+        names, values = [], []
+        for name, raw_value in items.items():
+            column = columns_by_name.get(name)
+            if column is None:
+                raise RowValueError(f"unknown column: {name}")
+            if column.is_primary_key:
+                raise RowValueError(f"{name!r} cannot be modified")
+            names.append(name)
+            values.append(validate_and_convert(raw_value, column.data_type))
+        return names, values
+
+    set_columns, set_values = _validated(data)
+    expected_columns, expected_values = _validated(expected or {})
+
+    column_names = _column_names(table)
+    where_clauses = [sql.SQL("{} = %s").format(sql.Identifier("id"))]
+    where_params: list = [row_id]
+    for name, value in zip(expected_columns, expected_values, strict=True):
+        # SQL's three-valued logic means "= NULL" never matches anything,
+        # even a genuinely NULL column -- a real bug caught by
+        # databases/tests/test_row_conditional_update.py's own
+        # null-expected-value test, not by inspection.
+        if value is None:
+            where_clauses.append(sql.SQL("{} IS NULL").format(sql.Identifier(name)))
+        else:
+            where_clauses.append(sql.SQL("{} = %s").format(sql.Identifier(name)))
+            where_params.append(value)
+    query = (
+        sql.SQL("UPDATE {} SET {}").format(
+            _table_sql(table),
+            sql.SQL(", ").join(sql.SQL("{} = %s").format(sql.Identifier(c)) for c in set_columns),
+        )
+        + sql.SQL(" WHERE ")
+        + sql.SQL(" AND ").join(where_clauses)
+        + sql.SQL(" RETURNING {}").format(sql.SQL(", ").join(sql.Identifier(c) for c in column_names))
+    )
+    with connections["tenant"].cursor() as cursor:
+        cursor.execute(query, [*set_values, *where_params])
+        row = cursor.fetchone()
+        if row is None:
+            # Zero rows matched -- distinguish "doesn't exist" from
+            # "exists but expected no longer holds" with one cheap lookup,
+            # the same not-found-vs-conflict split
+            # app_platform/provisioning.py's reserve() already makes for a
+            # stale-fingerprint reservation attempt.
+            get_row(table, row_id)  # raises RowNotFound if truly missing
+            raise RowConflict(str(row_id))
         result_columns = [d[0] for d in cursor.description]
     return dict(zip(result_columns, row, strict=True))
 

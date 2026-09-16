@@ -8,6 +8,10 @@ from .models import (
     FieldDefinition,
     ModelDefinition,
     RelationshipDefinition,
+    WorkflowDefinition,
+    WorkflowState,
+    WorkflowTransition,
+    WorkflowTransitionAttempt,
 )
 
 
@@ -99,5 +103,55 @@ class RelationshipSerializer(serializers.ModelSerializer):
             "target_model",
             "kind",
             "deletion_policy",
+        ]
+        read_only_fields = fields
+
+
+class WorkflowSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WorkflowDefinition
+        fields = ["id", "model", "key", "label", "position", "source_definition_id", "state_field"]
+        read_only_fields = fields
+
+
+class StateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WorkflowState
+        fields = ["id", "workflow", "key", "label", "position", "source_definition_id"]
+        read_only_fields = fields
+
+
+class TransitionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WorkflowTransition
+        fields = [
+            "id",
+            "workflow",
+            "key",
+            "label",
+            "position",
+            "source_definition_id",
+            "from_state",
+            "to_state",
+            "conditions",
+            "field_actions",
+            "requires_approval",
+            "notify_url",
+        ]
+        read_only_fields = fields
+
+
+class AttemptSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WorkflowTransitionAttempt
+        fields = [
+            "id",
+            "transition",
+            "record_id",
+            "state_before",
+            "state_after",
+            "completed_at",
+            "last_error",
+            "created_at",
         ]
         read_only_fields = fields

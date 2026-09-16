@@ -12,7 +12,11 @@ from .definitions import (
     FieldInput,
     ModelInput,
     RelationshipInput,
+    StateInput,
     StrictSerializer,
+    TransitionInput,
+    WorkflowInput,
+    validate_action_value,
     validate_definition,
     validate_field_default,
 )
@@ -24,6 +28,9 @@ from .models import (
     ModelDefinition,
     RelationshipDefinition,
     RuntimeProvision,
+    WorkflowDefinition,
+    WorkflowState,
+    WorkflowTransition,
 )
 
 
@@ -76,6 +83,7 @@ def install(actor, project, data):
         )
         models = {}
         pending_constraints = []
+        pending_workflows = []
         for model_position, item in enumerate(definition["models"]):
             model = ModelDefinition.objects.create(
                 instance=instance,
@@ -93,6 +101,8 @@ def install(actor, project, data):
                 )
             for constraint_position, constraint in enumerate(item.get("constraints", [])):
                 pending_constraints.append((model, fields, constraint_position, constraint))
+            for workflow_position, workflow in enumerate(item.get("workflows", [])):
+                pending_workflows.append((model, fields, workflow_position, workflow))
         relationships = {}
         for relation_position, item in enumerate(definition["relationships"]):
             relationships[item["id"]] = RelationshipDefinition.objects.create(
@@ -122,8 +132,54 @@ def install(actor, project, data):
             created.relationships.set(
                 [relationships[relationship_id] for relationship_id in constraint["relationship_ids"]]
             )
+        # Workflows reference only their own model's fields (never
+        # relationships), so they have no ordering dependency on the
+        # relationships pass above -- processed last purely to keep this
+        # function's own pass order easy to read top-to-bottom.
+        for model, fields, workflow_position, workflow in pending_workflows:
+            created_workflow = WorkflowDefinition.objects.create(
+                model=model,
+                key=workflow["key"],
+                label=workflow["label"],
+                source_definition_id=workflow["id"],
+                position=workflow_position,
+                state_field=fields[workflow["state_field"]],
+            )
+            states = {}
+            for state_position, state in enumerate(workflow["states"]):
+                states[state["id"]] = WorkflowState.objects.create(
+                    workflow=created_workflow,
+                    key=state["key"],
+                    label=state["label"],
+                    source_definition_id=state["id"],
+                    position=state_position,
+                )
+            for transition_position, transition in enumerate(workflow["transitions"]):
+                WorkflowTransition.objects.create(
+                    workflow=created_workflow,
+                    key=transition["key"],
+                    label=transition["label"],
+                    source_definition_id=transition["id"],
+                    position=transition_position,
+                    from_state=states[transition["from_state"]] if transition["from_state"] else None,
+                    to_state=states[transition["to_state"]],
+                    conditions=_resolve_field_refs(fields, transition["conditions"]),
+                    field_actions=_resolve_field_refs(fields, transition["field_actions"]),
+                    requires_approval=transition["requires_approval"],
+                    notify_url=transition["notify_url"],
+                )
         event(actor, instance, "install", instance.id)
     return instance
+
+
+def _resolve_field_refs(fields, items):
+    """Translates a draft's condition/action list from draft-scoped field
+    ids to the real, newly-created FieldDefinition ids those items now
+    live under -- the same "draft id -> real object" translation
+    constraint.fields.set([fields[field_id] ...]) already does for a real
+    FK, just done by hand here since conditions/field_actions are plain
+    JSON, not a relation."""
+    return [{**item, "field_id": str(fields[item["field_id"]].id)} for item in items]
 
 
 def validated(serializer_type, data):
@@ -267,6 +323,104 @@ def add_constraint(actor, model, data):
     return constraint
 
 
+def _validated_field_refs(model, items, *, action=False):
+    resolved = []
+    for item in items:
+        try:
+            field = model.fields.get(pk=item["field_id"])
+        except FieldDefinition.DoesNotExist as exc:
+            raise serializers.ValidationError(
+                "A condition/action field must belong to this workflow's own model."
+            ) from exc
+        value = validate_action_value(field.data_type, item["value"]) if action else item.get("value")
+        resolved.append({**item, "field_id": str(field.id), "value": value})
+    return resolved
+
+
+def add_workflow(actor, model, data):
+    """Declares a new workflow over one of `model`'s own text fields --
+    pure control-plane metadata. Unlike every other add_* function in this
+    module, there is deliberately no schema_evolution/tenant-DDL branch:
+    nothing here is ever read by runtime_plan.py/runtime_build.py, so
+    there is nothing to provision regardless of whether the instance is
+    already provisioned."""
+    instance = model.instance
+    require_manage(actor, instance, schema=False)
+    values = validated(WorkflowInput, data)
+    with transaction.atomic():
+        _lock_instance(instance)
+        if model.workflows.count() >= 10:
+            raise serializers.ValidationError("Workflow limit reached.")
+        unique_key(model.workflows, values["key"])
+        try:
+            state_field = model.fields.get(pk=values["state_field"])
+        except FieldDefinition.DoesNotExist as exc:
+            raise serializers.ValidationError(
+                "A workflow's state field must belong to this model."
+            ) from exc
+        if state_field.data_type != FieldDefinition.DataType.TEXT:
+            raise serializers.ValidationError("A workflow's state field must be a text field.")
+        workflow = WorkflowDefinition.objects.create(
+            model=model,
+            key=values["key"],
+            label=values["label"],
+            state_field=state_field,
+            position=model.workflows.count(),
+        )
+        event(actor, instance, "workflow.create", workflow.id)
+    return workflow
+
+
+def add_state(actor, workflow, data):
+    instance = workflow.model.instance
+    require_manage(actor, instance, schema=False)
+    values = validated(StateInput, data)
+    with transaction.atomic():
+        _lock_instance(instance)
+        if workflow.states.count() >= 50:
+            raise serializers.ValidationError("State limit reached.")
+        unique_key(workflow.states, values["key"])
+        state = WorkflowState.objects.create(workflow=workflow, position=workflow.states.count(), **values)
+        event(actor, instance, "workflow.state.create", state.id)
+    return state
+
+
+def add_transition(actor, workflow, data):
+    instance = workflow.model.instance
+    require_manage(actor, instance, schema=False)
+    values = validated(TransitionInput, data)
+    with transaction.atomic():
+        _lock_instance(instance)
+        if workflow.transitions.count() >= 200:
+            raise serializers.ValidationError("Transition limit reached.")
+        unique_key(workflow.transitions, values["key"])
+        from_state = None
+        if values["from_state"] is not None:
+            try:
+                from_state = workflow.states.get(pk=values["from_state"])
+            except WorkflowState.DoesNotExist as exc:
+                raise serializers.ValidationError("from_state must belong to this workflow.") from exc
+        try:
+            to_state = workflow.states.get(pk=values["to_state"])
+        except WorkflowState.DoesNotExist as exc:
+            raise serializers.ValidationError("to_state must belong to this workflow.") from exc
+        model = workflow.model
+        transition = WorkflowTransition.objects.create(
+            workflow=workflow,
+            key=values["key"],
+            label=values["label"],
+            from_state=from_state,
+            to_state=to_state,
+            conditions=_validated_field_refs(model, values["conditions"]),
+            field_actions=_validated_field_refs(model, values["field_actions"], action=True),
+            requires_approval=values["requires_approval"],
+            notify_url=values["notify_url"],
+            position=workflow.transitions.count(),
+        )
+        event(actor, instance, "workflow.transition.create", transition.id)
+    return transition
+
+
 def mark_field_unique(actor, field):
     """Retrofits uniqueness onto an EXISTING field -- Post-Phase-3
     Integration Enablement, Part 3. Pre-provision this is a pure metadata
@@ -331,9 +485,18 @@ def update_instance(actor, instance, data):
 
 
 def update_definition(actor, obj, data):
-    model_scoped = isinstance(obj, (FieldDefinition, ConstraintDefinition))
-    instance = obj.model.instance if model_scoped else obj.instance
-    require_manage(actor, instance)
+    if isinstance(obj, (FieldDefinition, ConstraintDefinition, WorkflowDefinition)):
+        instance = obj.model.instance
+    elif isinstance(obj, (WorkflowState, WorkflowTransition)):
+        instance = obj.workflow.model.instance
+    else:
+        instance = obj.instance
+    # A workflow/state/transition rename is never structural/DDL-adjacent
+    # (it's pure control-plane metadata, unlike every other definition
+    # type here) -- app_instance.manage is the correct bar, matching
+    # add_workflow/add_state/add_transition's own capability choice above.
+    schema = not isinstance(obj, (WorkflowDefinition, WorkflowState, WorkflowTransition))
+    require_manage(actor, instance, schema=schema)
     serializer_type = (
         FieldPatch
         if isinstance(obj, FieldDefinition)

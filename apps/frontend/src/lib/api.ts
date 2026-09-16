@@ -553,12 +553,67 @@ export type DraftConstraint = {
   relationship_ids?: string[];
 };
 
+// Phase 5 (docs/implementation/APP_PLATFORM_PHASE5.md): a workflow's
+// "state" is just the value of one of the model's own text fields -- there
+// is no enum type in this platform. `state_field` must reference a field
+// on this same model with data_type "text".
+export type WorkflowConditionOperator = "eq" | "ne" | "is_null" | "is_not_null";
+
+export type DraftCondition = {
+  field_id: string;
+  operator: WorkflowConditionOperator;
+  value?: FieldDefaultValue;
+};
+
+export type DraftAction = {
+  field_id: string;
+  value: FieldDefaultValue;
+};
+
+export type DraftState = {
+  id?: string;
+  key: string;
+  label: string;
+};
+
+// `from_state` omitted/null means "valid from any current state". Actions
+// are literal field writes only (no calculated values) applied in the
+// same write as the state change -- see ConstraintDefinition-adjacent
+// WorkflowTransition's own docstring (app_platform/models.py) for why
+// that's also what makes a replayed apply naturally idempotent.
+// `requires_approval` gates this specific transition behind the
+// app_instance.workflow.approve capability, in addition to the ordinary
+// database.write every record write already needs. `notify_url`, if set,
+// is validated server-side against the same SSRF host guard
+// ConnectedDatabase.host already uses.
+export type DraftTransition = {
+  id?: string;
+  key: string;
+  label: string;
+  from_state?: string | null;
+  to_state: string;
+  conditions?: DraftCondition[];
+  field_actions?: DraftAction[];
+  requires_approval?: boolean;
+  notify_url?: string;
+};
+
+export type DraftWorkflow = {
+  id?: string;
+  key: string;
+  label: string;
+  state_field: string;
+  states: DraftState[];
+  transitions?: DraftTransition[];
+};
+
 export type DraftModel = {
   id?: string;
   key: string;
   label: string;
   fields: DraftField[];
   constraints?: DraftConstraint[];
+  workflows?: DraftWorkflow[];
 };
 
 export type AppRelationshipKind = "many_to_one" | "many_to_many";
@@ -663,6 +718,53 @@ export type AppConstraintDefinition = {
   // add_field_set_unique_constraint's own naming, deliberately internal).
   field_ids: string[];
   relationship_ids: string[];
+};
+
+export type AppWorkflowDefinition = {
+  id: string;
+  model: string;
+  key: string;
+  label: string;
+  position: number;
+  source_definition_id: string | null;
+  state_field: string;
+};
+
+export type AppWorkflowState = {
+  id: string;
+  workflow: string;
+  key: string;
+  label: string;
+  position: number;
+  source_definition_id: string | null;
+};
+
+export type AppTransitionDefinition = {
+  id: string;
+  workflow: string;
+  key: string;
+  label: string;
+  position: number;
+  source_definition_id: string | null;
+  from_state: string | null;
+  to_state: string;
+  conditions: DraftCondition[];
+  field_actions: DraftAction[];
+  requires_approval: boolean;
+  notify_url: string;
+};
+
+// Returned by POST .../transitions/{id}/apply/ -- a durable receipt, not
+// the updated record itself (re-fetch the record separately if needed).
+export type AppTransitionAttempt = {
+  id: string;
+  transition: string;
+  record_id: string;
+  state_before: string;
+  state_after: string;
+  completed_at: string | null;
+  last_error: string;
+  created_at: string;
 };
 
 export type AppRelationshipDefinition = {

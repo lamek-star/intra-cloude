@@ -1,7 +1,9 @@
 """Small metadata endpoints. Mutations and permission checks stay in services."""
 
 from django.db.models import Model, Q
+from django.http import Http404
 from django.utils import timezone
+from rest_framework import serializers as drf_serializers
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.permissions import IsAuthenticated
@@ -14,7 +16,7 @@ from permissions.models import ResourceGrant
 from permissions.services import has_permission
 from workspaces.views import get_member_project
 
-from . import instances, templates
+from . import instances, templates, workflows
 from .access import check, get_owned
 from .models import (
     AppInstance,
@@ -24,15 +26,22 @@ from .models import (
     FieldDefinition,
     ModelDefinition,
     RelationshipDefinition,
+    WorkflowDefinition,
+    WorkflowState,
+    WorkflowTransition,
 )
 from .serializers import (
+    AttemptSerializer,
     ConstraintSerializer,
     FieldSerializer,
     InstanceSerializer,
     ModelSerializer,
     RelationshipSerializer,
+    StateSerializer,
     TemplateSerializer,
+    TransitionSerializer,
     VersionSerializer,
+    WorkflowSerializer,
 )
 
 
@@ -93,6 +102,19 @@ def read_template(actor, template):
 
 def read_instance(actor, instance):
     check(actor, instance.organization_id, "app_instance.read", ("app_instance", instance.id))
+
+
+def _instance_for(obj):
+    """Resolves the owning AppInstance for any definition object,
+    regardless of how many hops deep it's nested -- Field/Constraint/
+    Workflow are one hop (via `.model`), State/Transition are two (via
+    `.workflow.model`), everything else (Model/Relationship) has its own
+    direct `.instance`."""
+    if isinstance(obj, (FieldDefinition, ConstraintDefinition, WorkflowDefinition)):
+        return obj.model.instance
+    if isinstance(obj, (WorkflowState, WorkflowTransition)):
+        return obj.workflow.model.instance
+    return obj.instance
 
 
 class TemplateList(FoundationView):
@@ -257,9 +279,7 @@ class DefinitionDetail(FoundationView):
 
     def get(self, request, object_id):
         obj = get_owned(self.model, object_id, request.user, self.organization_path)
-        model_scoped = isinstance(obj, (FieldDefinition, ConstraintDefinition))
-        instance = obj.model.instance if model_scoped else obj.instance
-        read_instance(request.user, instance)
+        read_instance(request.user, _instance_for(obj))
         return Response(self.serializer(obj).data)
 
     def patch(self, request, object_id):
@@ -299,3 +319,95 @@ class FieldIndexedView(FoundationView):
     def post(self, request, object_id):
         field = get_owned(FieldDefinition, object_id, request.user, "model__instance__organization")
         return Response(FieldSerializer(instances.mark_field_indexed(request.user, field)).data)
+
+
+class WorkflowList(FoundationView):
+    # Read-only for a bearer token -- authoring a workflow stays
+    # human-only, matching every other add_* definition endpoint.
+    service_account_methods = frozenset({"GET"})
+
+    def get(self, request, object_id):
+        obj = get_owned(ModelDefinition, object_id, request.user, "instance__organization")
+        read_instance(request.user, obj.instance)
+        return self.page(request, obj.workflows.all(), WorkflowSerializer)
+
+    def post(self, request, object_id):
+        obj = get_owned(ModelDefinition, object_id, request.user, "instance__organization")
+        return Response(
+            WorkflowSerializer(instances.add_workflow(request.user, obj, request.data)).data, status=201
+        )
+
+
+class StateList(FoundationView):
+    service_account_methods = frozenset({"GET"})
+
+    def get(self, request, object_id):
+        obj = get_owned(WorkflowDefinition, object_id, request.user, "model__instance__organization")
+        read_instance(request.user, obj.model.instance)
+        return self.page(request, obj.states.all(), StateSerializer)
+
+    def post(self, request, object_id):
+        obj = get_owned(WorkflowDefinition, object_id, request.user, "model__instance__organization")
+        return Response(
+            StateSerializer(instances.add_state(request.user, obj, request.data)).data, status=201
+        )
+
+
+class TransitionList(FoundationView):
+    service_account_methods = frozenset({"GET"})
+
+    def get(self, request, object_id):
+        obj = get_owned(WorkflowDefinition, object_id, request.user, "model__instance__organization")
+        read_instance(request.user, obj.model.instance)
+        return self.page(request, obj.transitions.all(), TransitionSerializer)
+
+    def post(self, request, object_id):
+        obj = get_owned(WorkflowDefinition, object_id, request.user, "model__instance__organization")
+        return Response(
+            TransitionSerializer(instances.add_transition(request.user, obj, request.data)).data, status=201
+        )
+
+
+class WorkflowDetail(DefinitionDetail):
+    model = WorkflowDefinition
+    serializer = WorkflowSerializer
+    organization_path = "model__instance__organization"
+
+
+class StateDetail(DefinitionDetail):
+    model = WorkflowState
+    serializer = StateSerializer
+    organization_path = "workflow__model__instance__organization"
+
+
+class TransitionDetail(DefinitionDetail):
+    model = WorkflowTransition
+    serializer = TransitionSerializer
+    organization_path = "workflow__model__instance__organization"
+
+
+class ApplyTransitionView(FoundationView):
+    """Applying a transition is fundamentally a record write -- open to a
+    scoped bearer token the same way record CRUD already is (Phase 7),
+    unlike every workflow *authoring* endpoint above, which stays
+    human-only. All real authorization (database.write, plus
+    app_instance.workflow.approve when the transition requires it) is
+    enforced inside workflows.apply_transition itself, not here."""
+
+    service_account_methods = frozenset({"POST"})
+
+    def post(self, request, object_id, record_id, transition_id):
+        model = get_owned(ModelDefinition, object_id, request.user, "instance__organization")
+        transition = get_owned(
+            WorkflowTransition, transition_id, request.user, "workflow__model__instance__organization"
+        )
+        if transition.workflow.model_id != model.id:
+            raise Http404("This transition does not belong to this model.")
+        key_header = request.headers.get("Idempotency-Key")
+        idempotency_key = (
+            drf_serializers.UUIDField().run_validation(key_header) if key_header is not None else None
+        )
+        attempt = workflows.apply_transition(
+            request.user, transition, record_id, idempotency_key=idempotency_key
+        )
+        return Response(AttemptSerializer(attempt).data)

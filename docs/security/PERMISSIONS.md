@@ -1,5 +1,23 @@
 # Permissions & Authorization Model — IntraForge
 
+## App Platform Phase 5 workflow engine
+
+Applying a workflow transition requires exactly the same `database.write`
+on the instance's `TenantDatabase` resource every other record write
+already requires — a transition is fundamentally a record update, not a
+new resource type or a new baseline capability. A transition additionally
+marked `requires_approval` requires the new `app_instance.workflow.approve`
+capability *in addition to* `database.write`, checked the same
+`access.check`/`ResourceGrant`-scoped way as every other capability in
+this catalog — not a new authorization primitive, and not a stateful
+pending/approved workflow state of its own (see
+`docs/implementation/APP_PLATFORM_PHASE5.md` for that scope decision).
+Authoring a workflow definition (states/transitions) requires
+`app_instance.manage` (not `.schema.manage` — workflow metadata is pure
+control-plane declaration, never physically provisioned as tenant schema,
+so it doesn't need the stronger DDL-adjacent capability
+`app_instance.schema.manage` gates).
+
 ## App Platform Phase 2 attachments
 
 Attaching a file requires `database.write` on the record's runtime

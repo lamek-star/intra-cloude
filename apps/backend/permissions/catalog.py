@@ -13,6 +13,10 @@ PERMISSIONS = {
     "app_instance.read": "Read installed business application definitions",
     "app_instance.manage": "Install, rename, archive business applications",
     "app_instance.schema.manage": "Manage installed application model, field, and relationship definitions",
+    "app_instance.workflow.approve": (
+        "Apply a workflow transition marked as requiring approval, in addition to the ordinary "
+        "database.write every record edit already needs"
+    ),
     "workspace.manage": "Create Workspaces and Projects within an organization",
     "storage.read": "View/download files and folders",
     "storage.write": "Upload, create folders, rename, move",

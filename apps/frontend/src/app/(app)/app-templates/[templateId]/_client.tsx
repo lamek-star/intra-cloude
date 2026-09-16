@@ -14,6 +14,9 @@ import {
   type DraftField,
   type DraftModel,
   type DraftRelationship,
+  type DraftState,
+  type DraftTransition,
+  type DraftWorkflow,
   type FieldDefaultValue,
   type Organization,
   type Paginated,
@@ -179,6 +182,22 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
               constraints: (m.constraints ?? [])
                 .map((c) => ({ ...c, field_ids: c.field_ids.filter((id) => id !== field.id) }))
                 .filter((c) => c.field_ids.length + (c.relationship_ids?.length ?? 0) >= 2),
+              // Same reasoning for workflows: a workflow whose state_field
+              // was just deleted is meaningless (dropped entirely); a
+              // transition's own conditions/field_actions referencing this
+              // field are pruned but the transition itself stays valid
+              // with fewer of them (unlike a constraint, zero conditions/
+              // actions is a perfectly normal transition).
+              workflows: (m.workflows ?? [])
+                .filter((w) => w.state_field !== field.id)
+                .map((w) => ({
+                  ...w,
+                  transitions: (w.transitions ?? []).map((t) => ({
+                    ...t,
+                    conditions: (t.conditions ?? []).filter((c) => c.field_id !== field.id),
+                    field_actions: (t.field_actions ?? []).filter((a) => a.field_id !== field.id),
+                  })),
+                })),
             }
           : m,
       ),
@@ -237,6 +256,53 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
           ? {
               ...m,
               constraints: (m.constraints ?? []).map((c) => (c.id === constraintId ? { ...c, label } : c)),
+            }
+          : m,
+      ),
+    });
+  }
+
+  // Workflows are additive-only in this pass, matching the backend
+  // (instances.py exposes add_workflow/add_state/add_transition but no
+  // delete/structural-edit endpoint for an already-installed instance) --
+  // no delete/rename UI here either, deliberately, not an oversight.
+  function addWorkflow(modelId: string, workflow: DraftWorkflow) {
+    saveDraft({
+      ...draft,
+      models: draft.models.map((m) =>
+        m.id === modelId ? { ...m, workflows: [...(m.workflows ?? []), workflow] } : m,
+      ),
+    });
+  }
+
+  function addState(modelId: string, workflowId: string, state: DraftState) {
+    saveDraft({
+      ...draft,
+      models: draft.models.map((m) =>
+        m.id === modelId
+          ? {
+              ...m,
+              workflows: (m.workflows ?? []).map((w) =>
+                w.id === workflowId ? { ...w, states: [...w.states, state] } : w,
+              ),
+            }
+          : m,
+      ),
+    });
+  }
+
+  function addTransition(modelId: string, workflowId: string, transition: DraftTransition) {
+    saveDraft({
+      ...draft,
+      models: draft.models.map((m) =>
+        m.id === modelId
+          ? {
+              ...m,
+              workflows: (m.workflows ?? []).map((w) =>
+                w.id === workflowId
+                  ? { ...w, transitions: [...(w.transitions ?? []), transition] }
+                  : w,
+              ),
             }
           : m,
       ),
@@ -473,6 +539,81 @@ export default function AppTemplateClient({ templateId }: { templateId: string }
                     disabled={saving}
                   />
                 )}
+
+              {model.id && (model.workflows ?? []).length > 0 && (
+                <div className="mt-3 space-y-3 border-t border-slate-100 pt-3">
+                  <h3 className="text-xs font-semibold text-slate-500">Workflows</h3>
+                  {(model.workflows ?? []).map((workflow) => (
+                    <div key={workflow.id ?? workflow.key} className="rounded-md bg-slate-50 p-3">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="font-medium text-slate-800">{workflow.label}</span>
+                        <Badge tone="info">state: {fieldLabel(model, workflow.state_field)}</Badge>
+                      </div>
+                      {workflow.states.length > 0 && (
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          {workflow.states.map((state) => (
+                            <Badge key={state.id ?? state.key}>{state.label}</Badge>
+                          ))}
+                        </div>
+                      )}
+                      {(workflow.transitions ?? []).length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          {(workflow.transitions ?? []).map((transition) => (
+                            <div
+                              key={transition.id ?? transition.key}
+                              className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600"
+                            >
+                              <span className="font-medium text-slate-700">{transition.label}:</span>
+                              <span>
+                                {transition.from_state
+                                  ? stateLabel(workflow, transition.from_state)
+                                  : "(any state)"}
+                              </span>
+                              <span>&rarr;</span>
+                              <span>{stateLabel(workflow, transition.to_state)}</span>
+                              {transition.requires_approval && (
+                                <Badge tone="warning">requires approval</Badge>
+                              )}
+                              {transition.notify_url && <Badge>notifies</Badge>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {workflow.id && (
+                        <div className="mt-3 border-t border-slate-200 pt-2">
+                          <AddStateForm
+                            modelId={model.id!}
+                            workflowId={workflow.id}
+                            onAdd={addState}
+                            disabled={saving}
+                          />
+                        </div>
+                      )}
+                      {workflow.id && workflow.states.filter((s) => s.id).length > 0 && (
+                        <div className="mt-2 border-t border-slate-200 pt-2">
+                          <AddTransitionForm
+                            modelId={model.id!}
+                            workflow={workflow}
+                            onAdd={addTransition}
+                            disabled={saving}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {model.id && model.fields.filter((f) => f.id && f.data_type === "text").length > 0 && (
+                <div className="mt-3 border-t border-slate-100 pt-3">
+                  <AddWorkflowForm
+                    modelId={model.id}
+                    fields={model.fields.filter((f) => f.data_type === "text")}
+                    onAdd={addWorkflow}
+                    disabled={saving}
+                  />
+                </div>
+              )}
             </Card>
           ))}
         </div>
@@ -624,6 +765,10 @@ function fieldLabel(model: DraftModel, fieldId: string): string {
 
 function relationshipLabel(draft: AppDefinition, relationshipId: string): string {
   return draft.relationships.find((r) => r.id === relationshipId)?.label ?? relationshipId.slice(0, 8);
+}
+
+function stateLabel(workflow: DraftWorkflow, stateId: string): string {
+  return workflow.states.find((s) => s.id === stateId)?.label ?? stateId.slice(0, 8);
 }
 
 function pruneRelationshipFromConstraints(models: DraftModel[], relationshipId: string): DraftModel[] {
@@ -866,6 +1011,244 @@ function AddConstraintForm({
       </div>
       <Button type="submit" size="sm" variant="secondary" disabled={disabled || !key || !label || combinedCount < 2}>
         Add unique constraint
+      </Button>
+    </form>
+  );
+}
+
+// Phase 5 (docs/implementation/APP_PLATFORM_PHASE5.md): a workflow's state
+// field must be one of this model's own *text* fields (no enum type
+// exists) -- only those are offered here. Conditions/field_actions aren't
+// authored through this UI in this pass (a deliberate scope cut, not an
+// oversight -- the backend fully supports and tests them; see the phase
+// doc's "Known limits"); a transition here is always unconditional with
+// no side-effect field writes.
+function AddWorkflowForm({
+  modelId,
+  fields,
+  onAdd,
+  disabled,
+}: {
+  modelId: string;
+  fields: DraftField[];
+  onAdd: (modelId: string, workflow: DraftWorkflow) => void;
+  disabled: boolean;
+}) {
+  const [label, setLabel] = useState("");
+  const [key, setKey] = useState("");
+  const [stateField, setStateField] = useState(fields[0]?.id ?? "");
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!key || !label || !stateField) return;
+    onAdd(modelId, { key, label, state_field: stateField, states: [] });
+    setLabel("");
+    setKey("");
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-2">
+      <div>
+        <Label htmlFor={`new-workflow-label-${modelId}`}>New workflow name</Label>
+        <Input
+          id={`new-workflow-label-${modelId}`}
+          value={label}
+          onChange={(e) => {
+            setLabel(e.target.value);
+            if (!key) setKey(slugify(e.target.value));
+          }}
+          placeholder="Lifecycle"
+        />
+      </div>
+      <div>
+        <Label htmlFor={`new-workflow-key-${modelId}`}>Key</Label>
+        <Input
+          id={`new-workflow-key-${modelId}`}
+          pattern={KEY_PATTERN}
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="lifecycle"
+        />
+      </div>
+      <div>
+        <Label htmlFor={`new-workflow-field-${modelId}`}>State field</Label>
+        <Select
+          id={`new-workflow-field-${modelId}`}
+          value={stateField}
+          onChange={(e) => setStateField(e.target.value)}
+        >
+          {fields.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.label}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <Button type="submit" size="sm" disabled={disabled || !key || !label || !stateField}>
+        Add workflow
+      </Button>
+    </form>
+  );
+}
+
+function AddStateForm({
+  modelId,
+  workflowId,
+  onAdd,
+  disabled,
+}: {
+  modelId: string;
+  workflowId: string;
+  onAdd: (modelId: string, workflowId: string, state: DraftState) => void;
+  disabled: boolean;
+}) {
+  const [label, setLabel] = useState("");
+  const [key, setKey] = useState("");
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!key || !label) return;
+    onAdd(modelId, workflowId, { key, label });
+    setLabel("");
+    setKey("");
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-2">
+      <div>
+        <Label htmlFor={`new-state-label-${workflowId}`}>New state name</Label>
+        <Input
+          id={`new-state-label-${workflowId}`}
+          value={label}
+          onChange={(e) => {
+            setLabel(e.target.value);
+            if (!key) setKey(slugify(e.target.value));
+          }}
+          placeholder="Draft"
+        />
+      </div>
+      <div>
+        <Label htmlFor={`new-state-key-${workflowId}`}>Key</Label>
+        <Input
+          id={`new-state-key-${workflowId}`}
+          pattern={KEY_PATTERN}
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="draft"
+        />
+      </div>
+      <Button type="submit" size="sm" variant="secondary" disabled={disabled || !key || !label}>
+        Add state
+      </Button>
+    </form>
+  );
+}
+
+function AddTransitionForm({
+  modelId,
+  workflow,
+  onAdd,
+  disabled,
+}: {
+  modelId: string;
+  workflow: DraftWorkflow;
+  onAdd: (modelId: string, workflowId: string, transition: DraftTransition) => void;
+  disabled: boolean;
+}) {
+  const [label, setLabel] = useState("");
+  const [key, setKey] = useState("");
+  const [fromState, setFromState] = useState(""); // "" means "any state"
+  const [toState, setToState] = useState(workflow.states.find((s) => s.id)?.id ?? "");
+  const [requiresApproval, setRequiresApproval] = useState(false);
+  const [notifyUrl, setNotifyUrl] = useState("");
+  const savedStates = workflow.states.filter((s) => s.id);
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!key || !label || !toState || !workflow.id) return;
+    onAdd(modelId, workflow.id, {
+      key,
+      label,
+      from_state: fromState || null,
+      to_state: toState,
+      requires_approval: requiresApproval,
+      notify_url: notifyUrl || undefined,
+    });
+    setLabel("");
+    setKey("");
+    setFromState("");
+    setRequiresApproval(false);
+    setNotifyUrl("");
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-2">
+      <div>
+        <Label htmlFor={`new-transition-label-${workflow.id}`}>New transition name</Label>
+        <Input
+          id={`new-transition-label-${workflow.id}`}
+          value={label}
+          onChange={(e) => {
+            setLabel(e.target.value);
+            if (!key) setKey(slugify(e.target.value));
+          }}
+          placeholder="Submit"
+        />
+      </div>
+      <div>
+        <Label htmlFor={`new-transition-key-${workflow.id}`}>Key</Label>
+        <Input
+          id={`new-transition-key-${workflow.id}`}
+          pattern={KEY_PATTERN}
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="submit"
+        />
+      </div>
+      <div>
+        <Label htmlFor={`new-transition-from-${workflow.id}`}>From</Label>
+        <Select
+          id={`new-transition-from-${workflow.id}`}
+          value={fromState}
+          onChange={(e) => setFromState(e.target.value)}
+        >
+          <option value="">(any state)</option>
+          {savedStates.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.label}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <div>
+        <Label htmlFor={`new-transition-to-${workflow.id}`}>To</Label>
+        <Select
+          id={`new-transition-to-${workflow.id}`}
+          value={toState}
+          onChange={(e) => setToState(e.target.value)}
+        >
+          {savedStates.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.label}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <label className="flex items-center gap-1.5 text-sm text-slate-700">
+        <Checkbox checked={requiresApproval} onChange={(e) => setRequiresApproval(e.target.checked)} />
+        Requires approval
+      </label>
+      <div>
+        <Label htmlFor={`new-transition-notify-${workflow.id}`}>Notify URL (optional)</Label>
+        <Input
+          id={`new-transition-notify-${workflow.id}`}
+          value={notifyUrl}
+          onChange={(e) => setNotifyUrl(e.target.value)}
+          placeholder="https://..."
+        />
+      </div>
+      <Button type="submit" size="sm" variant="secondary" disabled={disabled || !key || !label || !toState}>
+        Add transition
       </Button>
     </form>
   );
