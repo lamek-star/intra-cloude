@@ -202,6 +202,23 @@ export type Team = {
   created_at: string;
 };
 
+export type OrganizationalUnit = {
+  id: string;
+  organization: string;
+  parent: string | null;
+  unit_type: string;
+  name: string;
+  created_at: string;
+  created_by: string;
+};
+
+export type UnitMembership = {
+  id: string;
+  unit: string;
+  user: User;
+  created_at: string;
+};
+
 export type Workspace = {
   id: string;
   organization: string;

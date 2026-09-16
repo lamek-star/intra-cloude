@@ -61,6 +61,7 @@ LOCAL_APPS = [
     "app_platform",
     "accounts",
     "organizations",
+    "org_units",
     "permissions",
     "workspaces",
     "storage",

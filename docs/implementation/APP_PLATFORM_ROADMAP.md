@@ -13,7 +13,7 @@ unimplemented phase complete.
 | 3 | App Builder v1 | Complete (all 5 steps: App Builder UI, defaults/ordering, safe populated-schema changes, basic permissions, qualification) | No-code model/field/form/list editing; labels, defaults, required flags, ordering, relationships and basic permissions; safe populated-schema changes |
 | 4 | Inventory and Sales reference application | Complete | [Phase 4 checkpoint](APP_PLATFORM_PHASE4.md) |
 | 5 | Workflow engine | Complete | [Phase 5 checkpoint](APP_PLATFORM_PHASE5.md) |
-| 6 | Organizational hierarchy | Pending Phase 5 | Generic units supporting branches, campuses, departments, warehouses and teams; cycle prevention and organization isolation |
+| 6 | Organizational hierarchy | Complete | [Phase 6 checkpoint](APP_PLATFORM_PHASE6.md) |
 | 7 | Enterprise permissions | Pending Phase 6 | Shared capability enforcement for user, role, app, module, action, record and unit scopes; revocation and export/reporting isolation tests |
 | 8 | Management templates | Pending Phase 7 | Configured templates for school, HR, CRM, procurement, assets, projects, documents and warehouses; representative end-to-end scenarios |
 | 9 | Template versioning and upgrades | Pending Phase 8 | Three-way comparison, customer overrides, conflict handling, migration/recovery, preserved stable IDs and business data |

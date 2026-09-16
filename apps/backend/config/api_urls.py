@@ -8,6 +8,7 @@ urlpatterns: list[URLPattern | URLResolver] = [
     path("", include("app_platform.urls")),
     path("", include("accounts.urls")),
     path("", include("organizations.urls")),
+    path("", include("org_units.urls")),
     path("", include("workspaces.urls")),
     path("", include("storage.urls")),
     path("", include("databases.urls")),
