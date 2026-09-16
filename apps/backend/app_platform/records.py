@@ -13,6 +13,7 @@ records remain under the existing database permissions" decision -- this is
 not a second, parallel enforcement path).
 """
 
+import uuid
 from dataclasses import dataclass
 
 from django.db import Error as DjangoDatabaseError
@@ -27,9 +28,10 @@ from audit.models import AuditEvent
 from databases import rows as row_ops
 from databases.models import DBTable
 from databases.values import RowValueError
+from org_units.models import OrganizationalUnit
 from permissions.services import has_permission
 
-from .models import ModelDefinition, RecordAttachment, RuntimeProvision
+from .models import FieldDefinition, ModelDefinition, RecordAttachment, RuntimeProvision
 from .runtime_plan import physical_name
 
 RESOURCE_TYPE_TENANT_DATABASE = "databases.tenant_database"
@@ -170,6 +172,36 @@ def _resolve_join_tables(mappings: dict[str, _ManyToManyField]) -> dict[str, DBT
         return {}
     tables = DBTable.objects.select_related("tenant_database").filter(pk__in=ids)
     return {str(table.id): table for table in tables}
+
+
+def _validate_org_unit_references(model: ModelDefinition, data: dict) -> None:
+    """org_unit_reference is the one field type whose target row lives in a
+    different Postgres database (the control plane) than the value being
+    written (a per-tenant database) -- a real FK constraint is impossible
+    across that boundary, so existence and organization-match are checked
+    here explicitly, the same "validate before it reaches storage"
+    discipline this codebase already applies wherever a real DB constraint
+    can't cover a rule (e.g. definitions.py's own default_value/notify_url
+    validation)."""
+    reference_field_ids = set(
+        str(field_id)
+        for field_id in model.fields.filter(
+            data_type=FieldDefinition.DataType.ORG_UNIT_REFERENCE
+        ).values_list("id", flat=True)
+    )
+    if not reference_field_ids:
+        return
+    for definition_id, value in data.items():
+        if definition_id not in reference_field_ids or value is None:
+            continue
+        try:
+            unit_id = uuid.UUID(str(value))
+        except (ValueError, AttributeError, TypeError) as exc:
+            raise RecordValueError(f"{definition_id}: not a valid organizational unit id") from exc
+        if not OrganizationalUnit.objects.filter(
+            id=unit_id, organization_id=model.instance.organization_id
+        ).exists():
+            raise RecordValueError(f"{definition_id}: no such organizational unit in this organization")
 
 
 def _translate_in(field_map: dict[str, _Mapping], data: dict) -> tuple[dict, dict[str, list]]:
@@ -375,6 +407,7 @@ def get_record(actor, model: ModelDefinition, record_id) -> dict:
 def create_record(actor, model: ModelDefinition, data: dict) -> dict:
     receipt, table = resolve(actor, model, "database.write", action="app_instance.record.create")
     field_map = _field_map(receipt, model)
+    _validate_org_unit_references(model, data)
     row_data, m2m_data = _translate_in(field_map, data)
     m2m = _m2m_mappings(field_map)
     join_tables = _resolve_join_tables(m2m)
@@ -398,6 +431,7 @@ def create_record(actor, model: ModelDefinition, data: dict) -> dict:
 def update_record(actor, model: ModelDefinition, record_id, data: dict) -> dict:
     receipt, table = resolve(actor, model, "database.write", action="app_instance.record.update")
     field_map = _field_map(receipt, model)
+    _validate_org_unit_references(model, data)
     row_data, m2m_data = _translate_in(field_map, data)
     m2m = _m2m_mappings(field_map)
     join_tables = _resolve_join_tables(m2m)

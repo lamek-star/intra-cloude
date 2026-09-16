@@ -101,6 +101,15 @@ class FieldDefinition(Definition):
         BOOLEAN = "boolean", "Boolean"
         DATE = "date", "Date"
         DATETIME = "datetime", "Datetime"
+        # Phase 6/7: a reference to an org_units.OrganizationalUnit. Stored
+        # physically as a plain UUID column (see runtime_plan.physical_data_type)
+        # with NO real Postgres FK -- OrganizationalUnit lives in the control-
+        # plane database, this field's value lives in a per-tenant database,
+        # and Postgres cannot enforce a cross-database foreign key. Existence
+        # and organization-match are validated in records.py at write time
+        # instead (the same "validate before it reaches storage" discipline
+        # CLAUDE.md requires for anything a real DB constraint can't cover).
+        ORG_UNIT_REFERENCE = "org_unit_reference", "Organizational Unit Reference"
 
     model = models.ForeignKey(ModelDefinition, on_delete=models.CASCADE, related_name="fields")
     data_type = models.CharField(max_length=20, choices=DataType.choices)
@@ -130,7 +139,10 @@ class FieldDefinition(Definition):
             models.UniqueConstraint(fields=["model", "source_definition_id"], name="app_field_source_unique"),
             models.CheckConstraint(
                 condition=models.Q(
-                    data_type__in=["text", "integer", "decimal", "boolean", "date", "datetime"]
+                    data_type__in=[
+                        "text", "integer", "decimal", "boolean", "date", "datetime",
+                        "org_unit_reference",
+                    ]
                 ),
                 name="app_field_type_valid",
             ),

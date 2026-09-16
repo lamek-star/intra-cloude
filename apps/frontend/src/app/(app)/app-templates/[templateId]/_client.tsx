@@ -37,7 +37,15 @@ import {
 } from "@/components/ui";
 import { useConfirm } from "@/components/ConfirmProvider";
 
-const DATA_TYPES: AppFieldDataType[] = ["text", "integer", "decimal", "boolean", "date", "datetime"];
+const DATA_TYPES: AppFieldDataType[] = [
+  "text",
+  "integer",
+  "decimal",
+  "boolean",
+  "date",
+  "datetime",
+  "org_unit_reference",
+];
 const KEY_PATTERN = "[a-z][a-z0-9_]*";
 
 export default function AppTemplateClient({ templateId }: { templateId: string }) {

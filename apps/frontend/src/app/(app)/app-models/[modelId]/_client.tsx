@@ -40,7 +40,15 @@ import {
 import { useConfirm } from "@/components/ConfirmProvider";
 
 const PAGE_SIZE = 25;
-const DATA_TYPES: AppFieldDataType[] = ["text", "integer", "decimal", "boolean", "date", "datetime"];
+const DATA_TYPES: AppFieldDataType[] = [
+  "text",
+  "integer",
+  "decimal",
+  "boolean",
+  "date",
+  "datetime",
+  "org_unit_reference",
+];
 const KEY_PATTERN = "[a-z][a-z0-9_]*";
 
 function slugify(value: string): string {

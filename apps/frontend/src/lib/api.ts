@@ -709,7 +709,14 @@ export type AppModelDefinition = {
   source_definition_id: string | null;
 };
 
-export type AppFieldDataType = "text" | "integer" | "decimal" | "boolean" | "date" | "datetime";
+export type AppFieldDataType =
+  | "text"
+  | "integer"
+  | "decimal"
+  | "boolean"
+  | "date"
+  | "datetime"
+  | "org_unit_reference";
 
 export type AppFieldDefinition = {
   id: string;

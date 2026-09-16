@@ -37,7 +37,7 @@ from .models import (
     RelationshipDefinition,
     RuntimeProvision,
 )
-from .runtime_plan import physical_name
+from .runtime_plan import physical_data_type, physical_name
 
 
 def require_addition(actor, instance) -> None:
@@ -122,7 +122,7 @@ def add_field_to_runtime(receipt: RuntimeProvision, field: FieldDefinition, acto
             actor=actor,
             table=table,
             name=physical_name("f", str(field.id)),
-            data_type=field.data_type,
+            data_type=physical_data_type(field.data_type),
             is_nullable=not field.required,
             precision=18 if field.data_type == "decimal" else None,
             scale=4 if field.data_type == "decimal" else None,

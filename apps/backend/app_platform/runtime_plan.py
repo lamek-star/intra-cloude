@@ -22,6 +22,18 @@ def physical_name(prefix: str, identity: str) -> str:
     return validate_identifier(f"{prefix}_{uuid.UUID(identity).hex}")
 
 
+def physical_data_type(data_type: str) -> str:
+    """Maps a FieldDefinition.DataType onto the databases.Column.DataType
+    vocabulary actually used for DDL. Only org_unit_reference differs --
+    it's a real UUID column with no Postgres FK (the referenced
+    OrganizationalUnit lives in the control-plane database, not this
+    tenant's), so its logical type is app_platform-only and never reaches
+    databases.services.add_column/create_table directly."""
+    if data_type == "org_unit_reference":
+        return "uuid"
+    return data_type
+
+
 def compile_plan(instance_id, definition):
     """Compile an already installed definition; revalidate even internal input."""
     definition = validate_definition(definition)
@@ -37,7 +49,7 @@ def compile_plan(instance_id, definition):
                 {
                     "definition_id": field["id"],
                     "name": physical_name("f", field["id"]),
-                    "data_type": field["data_type"],
+                    "data_type": physical_data_type(field["data_type"]),
                     "is_nullable": not field["required"],
                     "precision": 18 if field["data_type"] == "decimal" else None,
                     "scale": 4 if field["data_type"] == "decimal" else None,
