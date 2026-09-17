@@ -20,7 +20,17 @@ context and the original product brief folded into that document; brand
 identity (logo, color tokens, typography, component patterns) lives in
 `DESIGN.md`.
 
-## Current Status
+## Local Edition continuation — 2026-09-18
+
+The active productization target is **IntraForge Local Edition v1.0**, on the
+existing codebase. All ten App Platform phases are implemented; upgrade UI
+and webhooks overview also exist at `43c3bc0`. Fresh qualification is in
+progress and is distinct from Windows/commercial release qualification.
+See [current state](docs/implementation/CURRENT_STATE.md) for the active
+checkpoint. Older status narratives below are historical evidence, not the
+current implementation inventory. Scope is business correctness, offline
+operation, recovery, usability and qualification; no new speculative phase.
+## Historical status checkpoints
 
 **App Platform Phase 2 (generic application runtime) is complete.** A
 permission-checked relational planner and resumable asynchronous

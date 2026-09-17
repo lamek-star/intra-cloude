@@ -1,0 +1,72 @@
+# Disposable qualification only. Never point this at production volumes.
+name: intraforge-local-qualification
+x-backend: &backend
+  image: intraforge-local-runtime:qualification
+  build: ../../apps/backend
+  env_file: ${QUALIFICATION_ENV_FILE:?Set QUALIFICATION_ENV_FILE to an isolated environment file}
+  networks: [isolated]
+  volumes:
+    - backups:/backups
+    - ../../VERSION:/VERSION:ro
+services:
+  postgres-control:
+    image: postgres:18
+    env_file: ${QUALIFICATION_ENV_FILE}
+    networks: [isolated]
+    volumes: [control:/var/lib/postgresql]
+  postgres-tenant:
+    image: postgres:18
+    env_file: ${QUALIFICATION_ENV_FILE}
+    networks: [isolated]
+    volumes: [tenant:/var/lib/postgresql]
+  valkey:
+    image: valkey/valkey:9-alpine
+    networks: [isolated]
+  object-storage:
+    image: minio/minio:latest
+    command: server /data
+    env_file: ${QUALIFICATION_ENV_FILE}
+    networks: [isolated]
+    volumes: [objects:/data]
+  backend:
+    <<: *backend
+  worker:
+    <<: *backend
+    command: celery -A config worker -l info --concurrency=2
+  frontend:
+    image: intraforge-local-frontend:qualification
+    build: ../../apps/frontend
+    networks: [isolated]
+  proxy:
+    image: caddy:2-alpine
+    ports: ["127.0.0.1:8444:443"]
+    environment:
+      PROXY_TLS_HOSTNAMES: localhost
+    volumes:
+      - ../../infrastructure/proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - certificates:/data
+    networks: [isolated, edge]
+  runner:
+    <<: *backend
+    image: intraforge-local-tests:qualification
+    build:
+      context: ../..
+      dockerfile: scripts/qualification/Dockerfile
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.test
+      RUN_RESTORE_WORKER_TESTS: "1"
+    volumes:
+      - ../../apps/backend:/app
+      - ../../tests:/repo-tests:ro
+      - ../../VERSION:/VERSION:ro
+    command: sleep infinity
+networks:
+  isolated:
+    internal: true
+  edge: {}
+volumes:
+  control: {}
+  tenant: {}
+  objects: {}
+  backups: {}
+  certificates: {}

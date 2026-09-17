@@ -1,6 +1,14 @@
 # Release-Readiness Report (living document)
 
-## App Platform continuation checkpoint (2026-09-09)
+## Local Edition continuation (2026-09-18)
+
+The current mandate is Local Edition v1.0 productization. All ten App Platform
+development phases and the upgrade/webhooks UI are implemented. The current
+assessment and fresh qualification results belong in [CURRENT_STATE.md](CURRENT_STATE.md).
+Historical checkpoints below do not establish current-HEAD qualification.
+Windows/commercial qualification remains separate from application development.
+
+## Historical App Platform continuation checkpoint (2026-09-09)
 
 The [ten-phase roadmap](APP_PLATFORM_ROADMAP.md) now tracks the master brief.
 Phase 1 is complete; Phase 2 has a read-only runtime planner, with provisioning,

@@ -172,7 +172,14 @@ Caddy proxy (`https://localhost:8443`, not the Django test client): a
 real login, then `GET /api/v1/app-instances/{id}/upgrades/` returning the
 real upgrade history record with its full diff summary intact.
 
-## Known limits (honest, not silently absorbed)
+## Follow-through (2026-09-17)
+
+Commit `43c3bc0` added the instance-page upgrade preview/apply/history UI.
+The no-UI limitation below describes the phase's original checkpoint only;
+it is closed in the current implementation. Fresh consolidated qualification
+is tracked in [CURRENT_STATE.md](CURRENT_STATE.md).
+
+## Original phase limits (historical; UI superseded above)
 
 - **No frontend UI.** `preview_upgrade`/`apply_upgrade`/upgrade history
   are API-only this pass; the App Builder has no "Upgrade" button or
