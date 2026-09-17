@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from storage.backends import get_client, safe_content_disposition
 
 from . import attachments
-from .access import get_owned
+from .access import environment_scope_denied, get_owned
 from .definitions import StrictSerializer
 from .models import ModelDefinition
 from .views import FoundationView
@@ -40,6 +40,8 @@ class AttachmentListCreateView(FoundationView):
 
     def get(self, request, object_id, record_id):
         model = _get_model(request, object_id)
+        if environment_scope_denied(request, model):
+            return Response(status=403)
         try:
             rows = attachments.list_attachments(request.user, model, record_id)
         except attachments.AttachmentAccessDenied:
@@ -48,6 +50,8 @@ class AttachmentListCreateView(FoundationView):
 
     def post(self, request, object_id, record_id):
         model = _get_model(request, object_id)
+        if environment_scope_denied(request, model):
+            return Response(status=403)
         serializer = AttachInput(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -66,6 +70,8 @@ class AttachmentDetailView(FoundationView):
 
     def delete(self, request, object_id, record_id, attachment_id):
         model = _get_model(request, object_id)
+        if environment_scope_denied(request, model):
+            return Response(status=403)
         try:
             attachments.detach_attachment(request.user, model, record_id, attachment_id)
         except attachments.AttachmentAccessDenied:
@@ -78,6 +84,8 @@ class AttachmentDownloadView(FoundationView):
 
     def get(self, request, object_id, record_id, attachment_id):
         model = _get_model(request, object_id)
+        if environment_scope_denied(request, model):
+            return Response(status=403)
         try:
             file_obj = attachments.prepare_download(request.user, model, record_id, attachment_id)
         except attachments.AttachmentAccessDenied as exc:

@@ -80,6 +80,28 @@ goes through the identical deny-by-default `has_permission()`/
 at all gets a `403` on every reachable endpoint too, exactly like a human
 member with no role.
 
+### Environment scoping (Phase 10)
+
+`POST environments/{environment_id}/credentials/` issues a credential
+bound to that one `Environment` (`environments` app) — distinct from
+`POST applications/{application_id}/credentials/` above, which always
+issues an unscoped one. When a credential is Environment-scoped:
+every `app-models/{model_id}/records/*` and `.../attachments/*` endpoint
+above now checks that the *target instance's own runtime database* is
+bound to that *exact same* Environment — `GET
+app-instances/{id}/runtime/` returns the `database_id` to check this
+against, and an admin binds a database to an Environment via `PATCH
+environments/{environment_id}/database/`. A credential with no
+Environment at all is unrestricted by this check (existing behavior,
+unchanged); a credential that *is* Environment-scoped gets a plain `403`
+(no body) against an instance whose database is bound to a *different*
+Environment, or to *no* Environment at all — explicit binding is
+required, "no conflicting binding" is not enough to allow through. This
+mirrors `databases`/`storage`'s own row/file endpoints exactly (same
+`environments.services.check_environment_scope` call); before this
+phase, App Platform's record/attachment endpoints were the one bearer-
+token-reachable surface in this codebase with no such check at all.
+
 ### CORS
 
 `CORS_ALLOWED_ORIGINS` is an explicit allowlist (deny-by-default),
@@ -311,6 +333,71 @@ file may be attached to multiple records; a record may have unlimited
 attachments (no count cap in code). There is **no bulk-attach
 endpoint** — one file per request.
 
+## Webhooks (Phase 10)
+
+App Platform pushes events toward an external application via
+`environments.EnvironmentWebhook` (`environments` app) — the same
+subscription/signing-secret store used for every other Environment-
+scoped configuration, not a separate App Platform concept:
+
+- `POST environments/{environment_id}/webhooks/` — `{"url", "event_types":
+  [...], "enabled"}`. `event_types` is an allowlist of the event-type
+  strings below; an empty list subscribes to every event type. The
+  response's `signing_secret` is shown **exactly once**, at creation
+  time — write it down; it is never retrievable again (same discipline
+  as a credential's `secret`).
+- A webhook fires only for events an instance emits *while its own
+  runtime database is bound to that webhook's Environment* (`PATCH
+  environments/{environment_id}/database/`) — an instance with no
+  Environment binding at all has no possible subscribers, by
+  construction, regardless of what webhooks exist elsewhere in the
+  organization.
+
+Event types:
+
+| Event type | Fires when |
+|---|---|
+| `app_instance.record.create` | A record is created |
+| `app_instance.record.update` | A record is updated |
+| `app_instance.record.delete` | A record is deleted |
+| `app_instance.workflow.transition` | A workflow transition is applied (independent of that transition's own `notify_url`, if any — see below) |
+
+Delivery is `POST` to the webhook's `url`, `Content-Type:
+application/json`, with two headers: `X-IntraForge-Event` (the event
+type string above) and `X-IntraForge-Signature`, `sha256=<hex>` — an
+HMAC-SHA256 of the *exact raw request body bytes*, keyed by the
+webhook's own signing secret. Verify it before trusting the payload:
+
+```python
+import hmac, hashlib
+
+expected = "sha256=" + hmac.new(signing_secret.encode(), raw_body, hashlib.sha256).hexdigest()
+if not hmac.compare_digest(expected, request.headers["X-IntraForge-Signature"]):
+    reject()
+```
+
+Payload shape is deliberately thin — ids and the event type only, never
+a record's actual field values (fetch those via the real record API if
+needed; a webhook receiver should treat the payload as a "something
+changed, go look" notification, not a data feed):
+
+```json
+{"event_id": "...", "event_type": "app_instance.record.create", "instance_id": "...", "model": {"id": "...", "key": "..."}, "record_id": "..."}
+```
+
+A `workflow.transition` payload replaces `model`/`record_id` with
+`transition` (`{key, label}`), `from_state`/`to_state`, and `record_id`.
+
+Delivery is at-most-once and retried on failure (5 attempts, exponential
+backoff) by a Celery worker — never inline with the request that
+triggered the event, and never re-checked against the record's later
+state (a payload reflects the moment the event was dispatched, like any
+webhook system). This is **separate** from the older, per-transition
+`notify_url` field (`docs/implementation/APP_PLATFORM_PHASE5.md`) — that
+mechanism is unsigned and Environment-independent, kept exactly as
+shipped and unaffected by this section; a transition with both set
+fires both, independently.
+
 ## Permissions a client should expect to be gated by
 
 Two separate resources, checked separately — see the readiness review §4
@@ -364,5 +451,8 @@ that assumes any of it:
   model (the existing `imports` app targets `databases.DBTable` only).
 - Any declarative, multi-record, atomic "action" or workflow concept.
 - Field-level (as opposed to instance/database-level) permissions.
-- Webhooks or any push/event-notification mechanism out of App Platform
-  toward an external application.
+- Webhook delivery *history*/redelivery as an API a client can query or
+  trigger (a `WebhookDelivery` row exists internally for at-most-once/
+  retry bookkeeping, but there is no endpoint to list or replay one —
+  see the Webhooks section above for what *is* implemented: real,
+  signed, Environment-scoped event delivery).

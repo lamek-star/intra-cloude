@@ -22,7 +22,7 @@ from audit.models import AuditEvent
 from databases import rows as row_ops
 from permissions.services import has_permission
 
-from . import records
+from . import records, webhooks
 from .models import WorkflowNotificationDelivery, WorkflowTransition, WorkflowTransitionAttempt
 from .runtime_plan import physical_name
 
@@ -178,6 +178,20 @@ def apply_transition(
             # discipline).
             delivery_id = delivery.id
             transaction.on_commit(lambda: _enqueue_delivery(delivery_id))
+        # Phase 10: a second, independent dispatch to any EnvironmentWebhook
+        # subscribed on the Environment this instance's runtime database is
+        # bound to -- never coupled to notify_url (a transition with no
+        # notify_url at all still fires this if a webhook is subscribed,
+        # and vice versa).
+        payload = {
+            "transition": {"key": transition.key, "label": transition.label},
+            "from_state": transition.from_state.key if transition.from_state_id else None,
+            "to_state": transition.to_state.key,
+            "record_id": str(record_id),
+        }
+        transaction.on_commit(
+            lambda: webhooks.dispatch_event(receipt, instance, webhooks.EVENT_WORKFLOW_TRANSITION, payload)
+        )
         return attempt
     except Exception as exc:
         with transaction.atomic():

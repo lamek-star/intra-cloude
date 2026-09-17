@@ -69,3 +69,34 @@ def require_manage(actor, instance, schema=True):
         "app_instance.schema.manage" if schema else "app_instance.manage",
         ("app_instance", instance.id),
     )
+
+
+def environment_scope_denied(request, model) -> bool:
+    """Phase 10: True if this request must be denied -- authenticated via
+    an Environment-scoped `ApplicationCredential` (environments app,
+    Phase 22) whose Environment doesn't match the one this model's own
+    instance's runtime database is bound to. Mirrors `databases/
+    views.py::_environment_scope_denied` exactly (same
+    `environments.services.check_environment_scope` call, same "only
+    ever restricts credential-authenticated requests" behavior) -- before
+    this function, app_platform's record/attachment endpoints were the
+    one bearer-token-reachable surface in this codebase with no
+    Environment-scope check at all, letting a Development-scoped
+    credential reach any instance's records regardless of which
+    Environment (if any) its runtime database was actually bound to.
+
+    An instance with no completed `RuntimeProvision`, or one whose
+    database has no Environment binding at all, has nothing to check
+    against -- left as `False` (not denied) here; `records.py`/
+    `attachments.py`'s own 404/403 already explain the former, and an
+    unbound database is simply not reachable through *any*
+    Environment-scoped credential regardless (the same "explicit binding
+    required" rule `check_environment_scope` itself documents)."""
+    from .models import RuntimeProvision
+
+    receipt = RuntimeProvision.objects.filter(instance=model.instance).select_related("database").first()
+    if receipt is None or receipt.database_id is None:
+        return False
+    from environments.services import check_environment_scope
+
+    return not check_environment_scope(request, tenant_database=receipt.database)

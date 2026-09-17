@@ -451,6 +451,49 @@ class WorkflowNotificationDelivery(models.Model):
         return f"{self.attempt_id} -> {self.url}"
 
 
+class WebhookDelivery(models.Model):
+    """Phase 10: a durable "at most once" outbox row for one
+    `environments.EnvironmentWebhook` delivery of an App Platform event
+    (`app_platform/webhooks.py`) -- the "reliable webhooks" this phase's
+    own exit bar names, and the concrete mechanism `docs/
+    EXTERNAL_APP_API_CONTRACT.md` previously flagged outright as **NOT
+    YET IMPLEMENTED** ("Webhooks or any push/event-notification mechanism
+    out of App Platform toward an external application").
+
+    Deliberately a separate model from `WorkflowNotificationDelivery`,
+    not a widening of it: that one is exactly one `notify_url` per
+    transition, denormalized, unsigned, and unchanged since Phase 5. This
+    is N subscribed `EnvironmentWebhook` rows per event (record CRUD or a
+    workflow transition), HMAC-signed with that webhook's own encrypted
+    signing secret, and only ever fires when the emitting instance's
+    runtime database is bound to an Environment -- see `webhooks.
+    dispatch_event`'s own docstring. `payload` is a snapshot taken at
+    dispatch time, the same "never a live re-read" reasoning
+    `WorkflowNotificationDelivery.url` already documents. `instance` is
+    kept alongside `webhook` (rather than resolved through it) purely for
+    cheap history queries -- `webhook.environment_id` already implies
+    which Environment received a delivery, but not which AppInstance
+    caused it."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    webhook = models.ForeignKey(
+        "environments.EnvironmentWebhook", on_delete=models.CASCADE, related_name="app_platform_deliveries"
+    )
+    instance = models.ForeignKey(AppInstance, on_delete=models.CASCADE, related_name="webhook_deliveries")
+    event_type = models.CharField(max_length=100)
+    payload = models.JSONField()
+    delivered_at = models.DateTimeField(null=True)
+    attempt_count = models.PositiveIntegerField(default=0)
+    last_error = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self):
+        return f"{self.event_type} -> {self.webhook_id}"
+
+
 class UnitScopedGrant(models.Model):
     """Phase 7 Step 3 ("unit scope"): grants one user read/write access to
     a model's records, restricted to records whose org_unit_reference

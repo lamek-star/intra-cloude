@@ -31,7 +31,7 @@ from databases.values import RowValueError
 from org_units.models import OrganizationalUnit
 from permissions.services import has_permission
 
-from . import unit_scope
+from . import unit_scope, webhooks
 from .access import RESOURCE_TYPE_APP_MODEL
 from .models import FieldDefinition, ModelDefinition, RecordAttachment, RuntimeProvision
 from .runtime_plan import physical_name
@@ -533,6 +533,7 @@ def create_record(actor, model: ModelDefinition, data: dict) -> dict:
 
     row = _run(_do)
     event(actor, model, "record.create", row["id"])
+    _dispatch_webhook(receipt, model, webhooks.EVENT_RECORD_CREATE, row["id"])
     return _translate_out(field_map, row, _read_m2m_values(field_map, row["id"]))
 
 
@@ -588,6 +589,7 @@ def update_record(actor, model: ModelDefinition, record_id, data: dict) -> dict:
 
     row = _run(_do)
     event(actor, model, "record.update", record_id, fields=sorted(data))
+    _dispatch_webhook(receipt, model, webhooks.EVENT_RECORD_UPDATE, record_id)
     return _translate_out(field_map, row, _read_m2m_values(field_map, record_id))
 
 
@@ -614,6 +616,7 @@ def delete_record(actor, model: ModelDefinition, record_id) -> None:
     # against); not silently ignored, see THREAT_MODEL.md.
     RecordAttachment.objects.filter(model=model, record_id=record_id).delete()
     event(actor, model, "record.delete", record_id)
+    _dispatch_webhook(receipt, model, webhooks.EVENT_RECORD_DELETE, record_id)
 
 
 def event(actor, model: ModelDefinition, action, record_id, **context):
@@ -624,4 +627,20 @@ def event(actor, model: ModelDefinition, action, record_id, **context):
         resource_type="app_model",
         resource_id=model.id,
         context={"record_id": str(record_id), **context},
+    )
+
+
+def _dispatch_webhook(receipt: RuntimeProvision, model: ModelDefinition, event_type: str, record_id) -> None:
+    # transaction.on_commit -- see webhooks.dispatch_event's own docstring
+    # for why: queuing a delivery for a change that then rolls back would
+    # deliver an event that never really happened. create_record/
+    # update_record/delete_record's own tenant-DDL work has already
+    # committed (via _run's transaction.atomic(using="tenant")) by the
+    # time this is called, but a caller of *this* module could still be
+    # wrapping the whole request in an outer control-plane transaction
+    # (Django's ATOMIC_REQUESTS, or a future caller) -- on_commit is
+    # correct regardless of whether one exists.
+    payload = {"model": {"id": str(model.id), "key": model.key}, "record_id": str(record_id)}
+    transaction.on_commit(
+        lambda: webhooks.dispatch_event(receipt, model.instance, event_type, payload)
     )

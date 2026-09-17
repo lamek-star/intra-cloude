@@ -17,7 +17,12 @@ unimplemented phase complete.
 | 7 | Enterprise permissions | Complete | [Phase 7 checkpoint](APP_PLATFORM_PHASE7.md) |
 | 8 | Management templates | Complete | [Phase 8 checkpoint](APP_PLATFORM_PHASE8.md) |
 | 9 | Template versioning and upgrades | Complete | [Phase 9 checkpoint](APP_PLATFORM_PHASE9.md) |
-| 10 | Developer extension platform | Pending Phase 9's own follow-up work | Documented APIs, environment-bound service accounts, reliable webhooks, custom clients/workers and controlled extension boundaries |
+| 10 | Developer extension platform | Complete | [Phase 10 checkpoint](APP_PLATFORM_PHASE10.md) |
+
+**All ten planned phases are complete.** This roadmap's own exit bar is
+met in full; ongoing App Platform work (bug fixes, hardening, frontend
+follow-through) continues under the project's normal engineering process,
+not as a numbered phase of this specific ten-phase plan.
 
 ## Delivery rules
 
