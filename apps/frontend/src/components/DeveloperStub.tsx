@@ -6,9 +6,10 @@ import { ComingSoon, ErrorBanner, PageHeader, PageLoading } from "@/components/u
 import { DeveloperNav } from "@/components/DeveloperNav";
 
 /** Shared shell for a Developer nav tab whose backend surface doesn't
- * exist yet (Environments, API Keys, Storage, Database, Auth, Webhooks,
- * API Logs, Usage). One component instead of eight near-identical
- * client files -- each tab's `page.tsx` just supplies the copy. */
+ * exist yet (API Keys, Storage, Database, Auth, API Logs, Usage). One
+ * component instead of several near-identical client files -- each
+ * tab's `page.tsx` just supplies the copy. Environments and Webhooks
+ * moved to real client pages once their backend surfaces shipped. */
 export function DeveloperStub({
   orgId,
   tabKey,

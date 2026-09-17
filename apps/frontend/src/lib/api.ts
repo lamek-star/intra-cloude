@@ -700,6 +700,48 @@ export type RuntimeStatus = {
   completed_at: string | null;
 };
 
+// Phase 9 -- template versioning and upgrades. `UpgradeDiffItem` fields
+// beyond id/key vary by bucket: `add` entries carry the new item's own
+// draft shape, `label_sync` carries from/to, `manual_review` carries a
+// `reason` (`"label_conflict"` -> template_label/live_label,
+// `"structural_change_unsupported"` -> changed_fields,
+// `"removed_upstream_unsupported"` -> none) -- see
+// docs/implementation/APP_PLATFORM_PHASE9.md for the full merge policy.
+export type UpgradeDiffItem = {
+  id: string;
+  key: string;
+  label?: string;
+  reason?: string;
+  from?: string;
+  to?: string;
+  template_label?: string;
+  live_label?: string;
+  changed_fields?: string[];
+  [key: string]: unknown;
+};
+
+export type UpgradeDiffBucket = {
+  add: UpgradeDiffItem[];
+  label_sync: UpgradeDiffItem[];
+  manual_review: UpgradeDiffItem[];
+};
+
+export type UpgradeDiff = {
+  models: UpgradeDiffBucket;
+  fields: UpgradeDiffBucket;
+  relationships: UpgradeDiffBucket;
+  constraints: UpgradeDiffBucket;
+};
+
+export type AppInstanceUpgrade = {
+  id: string;
+  instance: string;
+  from_version: string;
+  to_version: string;
+  summary: UpgradeDiff;
+  created_at: string;
+};
+
 export type AppModelDefinition = {
   id: string;
   instance: string;

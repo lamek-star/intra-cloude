@@ -2,18 +2,22 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { Boxes } from "lucide-react";
+import { Boxes, ChevronDown, ChevronUp } from "lucide-react";
 import {
   api,
   ApiError,
   type AppInstance,
+  type AppInstanceUpgrade,
   type AppModelDefinition,
   type AppRelationshipDefinition,
   type AppRelationshipKind,
+  type AppTemplateVersion,
   type Paginated,
   type Project,
   type RuntimePlan,
   type RuntimeStatus,
+  type UpgradeDiff,
+  type UpgradeDiffBucket,
 } from "@/lib/api";
 import {
   Badge,
@@ -29,6 +33,11 @@ import {
   PageLoading,
   Select,
   Spinner,
+  Table,
+  Td,
+  Th,
+  THead,
+  TRow,
 } from "@/components/ui";
 import { ShareSection } from "@/components/ShareSection";
 
@@ -248,6 +257,12 @@ export default function AppInstanceClient({ instanceId }: { instanceId: string }
             </div>
           )}
         </Card>
+      )}
+
+      {!instance.archived && (
+        <div className="mb-6">
+          <UpgradeSection instance={instance} onUpgraded={load} />
+        </div>
       )}
 
       <h2 className="mb-3 text-sm font-semibold text-slate-600">Models</h2>
@@ -555,5 +570,248 @@ function AddRelationshipForm({
         {disabled ? "..." : "Add relationship"}
       </Button>
     </form>
+  );
+}
+
+// --- Upgrade (Phase 9: three-way comparison against a newer template version) ---
+
+function UpgradeSection({ instance, onUpgraded }: { instance: AppInstance; onUpgraded: () => void }) {
+  const [versions, setVersions] = useState<AppTemplateVersion[] | null>(null);
+  const [history, setHistory] = useState<AppInstanceUpgrade[] | null>(null);
+  const [selectedVersion, setSelectedVersion] = useState("");
+  const [diff, setDiff] = useState<UpgradeDiff | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const sourceVersion = await api.get<AppTemplateVersion>(
+          `/app-template-versions/${instance.source_version}/`,
+        );
+        const [versionPage, historyPage] = await Promise.all([
+          api.get<Paginated<AppTemplateVersion>>(
+            `/app-templates/${sourceVersion.template}/versions/?limit=100`,
+          ),
+          api.get<Paginated<AppInstanceUpgrade>>(`/app-instances/${instance.id}/upgrades/?limit=50`),
+        ]);
+        if (cancelled) return;
+        setVersions(versionPage.results);
+        setHistory(historyPage.results);
+      } catch {
+        // A 403/404 here just means this actor can't administer this
+        // app's schema, or the template itself isn't readable to them --
+        // hide the section entirely, the same soft-fail runtime status
+        // above already uses for an equivalent capability gap.
+        if (!cancelled) {
+          setVersions([]);
+          setHistory([]);
+        }
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [instance.source_version, instance.id]);
+
+  const versionsById = new Map((versions ?? []).map((v) => [v.id, v] as const));
+  // AppInstanceUpgrade rows are returned most-recent-first (backend
+  // ordering) -- the first one's to_version is the actual current
+  // baseline (upgrades.py's own _base_version), never
+  // instance.source_version once any upgrade has applied (that field is
+  // permanent install provenance, immutable at the DB level).
+  const latestUpgrade = history && history.length > 0 ? history[0] : null;
+  const baseVersion = latestUpgrade
+    ? versionsById.get(latestUpgrade.to_version)
+    : versionsById.get(instance.source_version);
+  const availableVersions = (versions ?? []).filter((v) => v.number > (baseVersion?.number ?? 0));
+
+  async function handlePreview() {
+    if (!selectedVersion) return;
+    setPreviewError(null);
+    setPreviewing(true);
+    setDiff(null);
+    try {
+      setDiff(await api.get<UpgradeDiff>(`/app-instances/${instance.id}/upgrade/${selectedVersion}/`));
+    } catch (err) {
+      setPreviewError(err instanceof ApiError ? err.message : "Failed to preview this upgrade.");
+    } finally {
+      setPreviewing(false);
+    }
+  }
+
+  async function handleApply() {
+    if (!selectedVersion) return;
+    setApplyError(null);
+    setApplying(true);
+    try {
+      const upgrade = await api.post<AppInstanceUpgrade>(
+        `/app-instances/${instance.id}/upgrade/${selectedVersion}/`,
+        {},
+      );
+      setHistory((prev) => [upgrade, ...(prev ?? [])]);
+      setDiff(null);
+      setSelectedVersion("");
+      onUpgraded();
+    } catch (err) {
+      setApplyError(err instanceof ApiError ? err.message : "Failed to apply this upgrade.");
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  if (versions === null) return null; // still loading -- avoid a layout flash
+  if (availableVersions.length === 0 && (!history || history.length === 0)) return null;
+
+  return (
+    <Card>
+      <h3 className="mb-1 text-sm font-semibold text-slate-700">Upgrade</h3>
+      <p className="mb-4 text-xs text-slate-500">
+        Compare this app against a newer published version of its template. Additions and untouched label
+        changes apply automatically; anything that conflicts with a change made here, or that can&apos;t be
+        applied to an already-provisioned model, is listed for review instead — nothing is ever silently
+        overwritten.
+      </p>
+
+      {availableVersions.length > 0 ? (
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <Label htmlFor="upgrade-version">Target version</Label>
+            <Select
+              id="upgrade-version"
+              value={selectedVersion}
+              onChange={(e) => {
+                setSelectedVersion(e.target.value);
+                setDiff(null);
+              }}
+            >
+              <option value="">Select a version…</option>
+              {availableVersions.map((v) => (
+                <option key={v.id} value={v.id}>
+                  Version {v.number}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handlePreview}
+            disabled={!selectedVersion || previewing}
+          >
+            {previewing ? "Comparing…" : "Preview"}
+          </Button>
+          {diff && (
+            <Button size="sm" onClick={handleApply} disabled={applying}>
+              {applying ? "Applying…" : "Apply upgrade"}
+            </Button>
+          )}
+        </div>
+      ) : (
+        <p className="text-xs text-slate-400">Already on the newest published version.</p>
+      )}
+
+      {previewError && (
+        <div className="mt-3">
+          <ErrorBanner message={previewError} />
+        </div>
+      )}
+      {applyError && (
+        <div className="mt-3">
+          <ErrorBanner message={applyError} />
+        </div>
+      )}
+
+      {diff && (
+        <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
+          <DiffBucketRow label="Models" bucket={diff.models} />
+          <DiffBucketRow label="Fields" bucket={diff.fields} />
+          <DiffBucketRow label="Relationships" bucket={diff.relationships} />
+          <DiffBucketRow label="Constraints" bucket={diff.constraints} />
+          {diff.models.add.length +
+            diff.models.label_sync.length +
+            diff.models.manual_review.length +
+            diff.fields.add.length +
+            diff.fields.label_sync.length +
+            diff.fields.manual_review.length +
+            diff.relationships.add.length +
+            diff.relationships.label_sync.length +
+            diff.relationships.manual_review.length +
+            diff.constraints.add.length +
+            diff.constraints.label_sync.length +
+            diff.constraints.manual_review.length ===
+            0 && <p className="text-xs text-slate-400">No differences — already up to date.</p>}
+        </div>
+      )}
+
+      {history && history.length > 0 && (
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <button
+            type="button"
+            onClick={() => setHistoryOpen((v) => !v)}
+            className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700"
+          >
+            {historyOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            Upgrade history ({history.length})
+          </button>
+          {historyOpen && (
+            <Table>
+              <THead>
+                <Th>From</Th>
+                <Th>To</Th>
+                <Th>When</Th>
+              </THead>
+              <tbody>
+                {history.map((u) => (
+                  <TRow key={u.id}>
+                    <Td>Version {versionsById.get(u.from_version)?.number ?? "—"}</Td>
+                    <Td>Version {versionsById.get(u.to_version)?.number ?? "—"}</Td>
+                    <Td className="text-slate-500">{new Date(u.created_at).toLocaleString()}</Td>
+                  </TRow>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+const MANUAL_REVIEW_REASON_LABEL: Record<string, string> = {
+  label_conflict: "Renamed here and upstream, differently",
+  structural_change_unsupported: "Changed in a way that can't be applied automatically",
+  removed_upstream_unsupported: "Removed from the template upstream",
+};
+
+function DiffBucketRow({ label, bucket }: { label: string; bucket: UpgradeDiffBucket }) {
+  const total = bucket.add.length + bucket.label_sync.length + bucket.manual_review.length;
+  if (total === 0) return null;
+  return (
+    <div>
+      <p className="mb-1.5 text-xs font-semibold text-slate-600">{label}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {bucket.add.map((item) => (
+          <Badge key={`add-${item.id}`} tone="success">
+            + {item.label ?? item.key}
+          </Badge>
+        ))}
+        {bucket.label_sync.map((item) => (
+          <Badge key={`sync-${item.id}`} tone="info">
+            {item.key}: {item.from} → {item.to}
+          </Badge>
+        ))}
+        {bucket.manual_review.map((item) => (
+          <Badge key={`review-${item.id}`} tone="warning">
+            {item.key}: {MANUAL_REVIEW_REASON_LABEL[item.reason ?? ""] ?? item.reason}
+          </Badge>
+        ))}
+      </div>
+    </div>
   );
 }
