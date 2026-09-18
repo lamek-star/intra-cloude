@@ -120,14 +120,24 @@ class ProvisioningAndWorkflowTests(TransactionTestCase):
         project = self._create(
             "project", name="Website Revamp", code="WEB-01", project_client=client["id"], status="planning"
         )
-        milestone = self._create("milestone", name="Design Sign-off", milestone_project=project["id"], status="pending")
-        task = self._create(
-            "task_item", title="Wireframes", task_item_project=project["id"], task_item_milestone=milestone["id"],
-            status="todo", priority="high",
+        milestone = self._create(
+            "milestone", name="Design Sign-off", milestone_project=project["id"], status="pending"
         )
-        self._create("task_assignment", task_assignment_task=task["id"], assignee_name="Morgan Lee", role="designer")
+        task = self._create(
+            "task_item",
+            title="Wireframes",
+            task_item_project=project["id"],
+            task_item_milestone=milestone["id"],
+            status="todo",
+            priority="high",
+        )
+        self._create(
+            "task_assignment", task_assignment_task=task["id"], assignee_name="Morgan Lee", role="designer"
+        )
         self._create("time_entry", time_entry_task=task["id"], logged_date="2026-09-16", hours="3.5")
-        self._create("risk", title="Scope creep", risk_project=project["id"], severity="medium", status="open")
+        self._create(
+            "risk", title="Scope creep", risk_project=project["id"], severity="medium", status="open"
+        )
 
         # Deleting the milestone should orphan the task, not block it.
         delete = self.client.delete(f"{self._records_url('milestone')}{milestone['id']}/")

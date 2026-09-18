@@ -40,6 +40,7 @@ from storage.services import publish_upload
 from workspaces.models import Project, Workspace
 
 from . import container
+from .budgets import PackageBudgetError, validate_archive_budget
 from .manifest import validate_manifest_shape
 from .preparation import RestorePlan
 
@@ -118,10 +119,16 @@ def open_package(container_bytes: bytes, *, passphrase: str | None = None) -> tu
         raise PackageValidationError("not a valid package: corrupt archive") from exc
 
     try:
+        validate_archive_budget(zf)
+    except PackageBudgetError as exc:
+        zf.close()
+        raise PackageValidationError(str(exc)) from exc
+
+    try:
         manifest = json.loads(zf.read("manifest.json"))
     except KeyError as exc:
         raise PackageValidationError("not a valid package: missing manifest.json") from exc
-    except json.JSONDecodeError as exc:
+    except (ValueError, UnicodeError, RecursionError) as exc:
         raise PackageValidationError("not a valid package: corrupt manifest.json") from exc
     except _CORRUPT_ARCHIVE_ERRORS as exc:
         # zipfile validates each member's data lazily, on read — not at

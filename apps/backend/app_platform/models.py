@@ -4,6 +4,7 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 def empty_definition():
@@ -183,7 +184,9 @@ class ConstraintDefinition(Definition):
     # later in this file. Also, deliberately, a many_to_one relationship
     # (see the eligibility rule in the class docstring above), never
     # enforced by the DB itself.
-    relationships = models.ManyToManyField("RelationshipDefinition", related_name="unique_constraints")
+    relationships: "models.ManyToManyField[RelationshipDefinition, models.Model]" = models.ManyToManyField(
+        "RelationshipDefinition", related_name="unique_constraints"
+    )
 
     class Meta(Definition.Meta):
         constraints = [
@@ -422,7 +425,7 @@ class WorkflowTransitionAttempt(models.Model):
 
 
 class WorkflowNotificationDelivery(models.Model):
-    """A "send at most once" outbox row for one transition attempt's
+    """An at-least-once outbox row for one transition attempt's
     notification -- one row per attempt that had a `notify_url` at the
     moment it completed. `url` is a denormalized copy taken at that
     moment, not a live read of the transition's current `notify_url`, so
@@ -430,9 +433,8 @@ class WorkflowNotificationDelivery(models.Model):
     history. `delivered_at` is the exact same kind of durable completion
     marker WorkflowTransitionAttempt.completed_at is -- the Celery
     delivery task (app_platform/tasks.py) checks it before ever dialing
-    out, giving replay-safety for the one genuinely non-idempotent effect
-    in this whole subsystem (an HTTP POST, unlike a literal field write,
-    isn't idempotent to the receiver by construction)."""
+    out. Remote acceptance before that marker commits can cause a repeat;
+    receivers must deduplicate the stable event_id."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     attempt = models.ForeignKey(
@@ -443,6 +445,8 @@ class WorkflowNotificationDelivery(models.Model):
     attempt_count = models.PositiveIntegerField(default=0)
     last_error = models.CharField(max_length=200, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    next_attempt_at = models.DateTimeField(default=timezone.now, db_index=True)
+    exhausted_at = models.DateTimeField(null=True)
 
     class Meta:
         ordering = ["created_at", "id"]
@@ -452,7 +456,7 @@ class WorkflowNotificationDelivery(models.Model):
 
 
 class WebhookDelivery(models.Model):
-    """Phase 10: a durable "at most once" outbox row for one
+    """Phase 10: a durable at-least-once outbox row for one
     `environments.EnvironmentWebhook` delivery of an App Platform event
     (`app_platform/webhooks.py`) -- the "reliable webhooks" this phase's
     own exit bar names, and the concrete mechanism `docs/
@@ -486,6 +490,8 @@ class WebhookDelivery(models.Model):
     attempt_count = models.PositiveIntegerField(default=0)
     last_error = models.CharField(max_length=200, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    next_attempt_at = models.DateTimeField(default=timezone.now, db_index=True)
+    exhausted_at = models.DateTimeField(null=True)
 
     class Meta:
         ordering = ["created_at", "id"]

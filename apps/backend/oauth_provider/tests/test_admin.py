@@ -75,7 +75,9 @@ class OAuthClientAdminTests(APITestCase):
     def test_admin_can_disable_a_client(self):
         client, _ = services.create_client(name="Toggle Me", redirect_uris=["https://x.example.com/cb"])
         self.client.force_login(self.admin)
-        response = self.client.patch(reverse("oauth-client-detail", args=[client.id]), {"enabled": False}, format="json")
+        response = self.client.patch(
+            reverse("oauth-client-detail", args=[client.id]), {"enabled": False}, format="json"
+        )
         self.assertEqual(response.status_code, 200)
         client.refresh_from_db()
         self.assertFalse(client.enabled)
@@ -98,7 +100,9 @@ class OAuthClientAdminTests(APITestCase):
         client, _ = services.create_client(name="Protected", redirect_uris=["https://x.example.com/cb"])
         self.client.force_login(self.plain_user)
         self.assertEqual(
-            self.client.patch(reverse("oauth-client-detail", args=[client.id]), {"enabled": False}, format="json").status_code,
+            self.client.patch(
+                reverse("oauth-client-detail", args=[client.id]), {"enabled": False}, format="json"
+            ).status_code,
             403,
         )
         self.assertEqual(

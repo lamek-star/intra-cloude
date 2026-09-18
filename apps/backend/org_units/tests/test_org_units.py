@@ -130,7 +130,8 @@ class CycleAndIsolationTests(OrgUnitTestBase):
         other_org = self.client.post(reverse("organization-list-create"), {"name": "Other Org"})
         other_org_id = other_org.data["id"]
         other_unit = self.client.post(
-            reverse("org-unit-list-create", args=[other_org_id]), {"name": "Other Root", "unit_type": "branch"}
+            reverse("org-unit-list-create", args=[other_org_id]),
+            {"name": "Other Root", "unit_type": "branch"},
         )
         other_unit_id = other_unit.data["id"]
 

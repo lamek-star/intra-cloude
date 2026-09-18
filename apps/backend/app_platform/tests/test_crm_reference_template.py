@@ -53,7 +53,16 @@ class InstallTests(TestCase):
         keys = set(instance.models.values_list("key", flat=True))
         self.assertEqual(
             keys,
-            {"account", "contact", "lead", "campaign", "opportunity", "opportunity_line_item", "activity", "note"},
+            {
+                "account",
+                "contact",
+                "lead",
+                "campaign",
+                "opportunity",
+                "opportunity_line_item",
+                "activity",
+                "note",
+            },
         )
 
     def test_opportunity_campaign_is_nullable_on_delete(self):

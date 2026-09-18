@@ -31,9 +31,9 @@ from databases.values import RowValueError
 from org_units.models import OrganizationalUnit
 from permissions.services import has_permission
 
-from . import unit_scope, webhooks
+from . import operation_journal, unit_scope
 from .access import RESOURCE_TYPE_APP_MODEL
-from .models import FieldDefinition, ModelDefinition, RecordAttachment, RuntimeProvision
+from .models import FieldDefinition, ModelDefinition, RuntimeProvision
 from .runtime_plan import physical_name
 
 RESOURCE_TYPE_TENANT_DATABASE = "databases.tenant_database"
@@ -71,7 +71,10 @@ def _has_blanket_access(
     return has_permission(
         actor, capability, organization_id=instance.organization_id, resource=_resource(receipt.database_id)
     ) or has_permission(
-        actor, capability, organization_id=instance.organization_id, resource=(RESOURCE_TYPE_APP_MODEL, model.id)
+        actor,
+        capability,
+        organization_id=instance.organization_id,
+        resource=(RESOURCE_TYPE_APP_MODEL, model.id),
     )
 
 
@@ -141,6 +144,19 @@ def record_exists(table: DBTable, record_id) -> bool:
     except row_ops.RowNotFound:
         return False
     return True
+
+
+def lock_record(table: DBTable, record_id) -> dict:
+    """Read under a tenant row lock so authorization/conditions cannot race a write."""
+    if not connections["tenant"].in_atomic_block:
+        raise RuntimeError("Record locking requires a tenant transaction")
+    with connections["tenant"].cursor() as cursor:
+        cursor.execute(sql.SQL("SELECT id FROM {} WHERE id = %s FOR UPDATE").format(
+            sql.Identifier(table.tenant_database.schema_name, table.name)
+        ), [record_id])
+        if cursor.fetchone() is None:
+            raise row_ops.RowNotFound()
+    return row_ops.get_row(table, record_id)
 
 
 @dataclass(frozen=True)
@@ -223,12 +239,12 @@ def _validate_org_unit_references(model: ModelDefinition, data: dict) -> None:
     discipline this codebase already applies wherever a real DB constraint
     can't cover a rule (e.g. definitions.py's own default_value/notify_url
     validation)."""
-    reference_field_ids = set(
+    reference_field_ids = {
         str(field_id)
         for field_id in model.fields.filter(
             data_type=FieldDefinition.DataType.ORG_UNIT_REFERENCE
         ).values_list("id", flat=True)
-    )
+    }
     if not reference_field_ids:
         return
     for definition_id, value in data.items():
@@ -508,7 +524,7 @@ def _check_new_value_in_unit_scope(data: dict, model: ModelDefinition, granted_u
         raise RecordAccessDenied("this record's organizational unit is outside your grant")
 
 
-def create_record(actor, model: ModelDefinition, data: dict) -> dict:
+def create_record(actor, model: ModelDefinition, data: dict, *, idempotency_key=None) -> dict:
     receipt, table, granted_units = resolve_scoped(
         actor, model, "database.write", action="app_instance.record.create"
     )
@@ -519,9 +535,16 @@ def create_record(actor, model: ModelDefinition, data: dict) -> dict:
     row_data, m2m_data = _translate_in(field_map, data)
     m2m = _m2m_mappings(field_map)
     join_tables = _resolve_join_tables(m2m)
+    request_key, fingerprint = operation_journal.request_identity(actor, model, idempotency_key, data)
 
     def _do():
         with transaction.atomic(using="tenant"):
+            replayed = operation_journal.replay(receipt, request_key, fingerprint)
+            if replayed is not None:
+                if granted_units is not None:
+                    current = lock_record(table, replayed["id"])
+                    _check_row_in_unit_scope(current, field_map, model, granted_units)
+                return replayed
             row = row_ops.insert_row(table, row_data)
             for definition_id, other_ids in m2m_data.items():
                 mapping = m2m[definition_id]
@@ -529,12 +552,14 @@ def create_record(actor, model: ModelDefinition, data: dict) -> dict:
                     join_tables[mapping.join_table_id], mapping.own_column, mapping.other_column,
                     row["id"], other_ids,
                 )
-            return row
+            result = _translate_out(field_map, row, _read_m2m_values(field_map, row["id"]))
+            operation_journal.append(
+                receipt, actor, model, "record.create", row["id"],
+                request_key=request_key, request_fingerprint=fingerprint, response=result,
+            )
+            return result
 
-    row = _run(_do)
-    event(actor, model, "record.create", row["id"])
-    _dispatch_webhook(receipt, model, webhooks.EVENT_RECORD_CREATE, row["id"])
-    return _translate_out(field_map, row, _read_m2m_values(field_map, row["id"]))
+    return _run(_do)
 
 
 def update_record(actor, model: ModelDefinition, record_id, data: dict) -> dict:
@@ -547,8 +572,6 @@ def update_record(actor, model: ModelDefinition, record_id, data: dict) -> dict:
         # touch a record outside your grant at all), and if this update
         # changes the unit, the *new* value must be in scope too (can't
         # move a record into, or out to, a unit outside your grant).
-        current_row = row_ops.get_row(table, record_id)
-        _check_row_in_unit_scope(current_row, field_map, model, granted_units)
         unit_field = unit_scope.unit_reference_field(model)
         if unit_field is not None and str(unit_field.id) in data:
             _check_new_value_in_unit_scope(data, model, granted_units)
@@ -559,19 +582,16 @@ def update_record(actor, model: ModelDefinition, record_id, data: dict) -> dict:
 
     def _do():
         with transaction.atomic(using="tenant"):
+            current_row = lock_record(table, record_id)
+            if granted_units is not None:
+                _check_row_in_unit_scope(current_row, field_map, model, granted_units)
             row = (
                 row_ops.update_row(table, record_id, row_data)
                 if row_data
                 else row_ops.get_row(table, record_id)
             )
-            # A diff against current state, not a delete-everything-then-
-            # reinsert -- inherently racy against a second concurrent
-            # update of the same record/relationship, by design: the real
-            # composite UNIQUE constraint on the join table (not this
-            # diff) is the actual gate against a duplicate landing,
-            # matching this project's "database constraint is the real
-            # gate" discipline (see test_many_to_many.py's concurrency
-            # test).
+            # The base-row lock serializes relationship-set replacement.
+            # The database UNIQUE constraint also protects raw join-table writes.
             for definition_id, desired_ids in m2m_data.items():
                 mapping = m2m[definition_id]
                 join_table = join_tables[mapping.join_table_id]
@@ -585,11 +605,10 @@ def update_record(actor, model: ModelDefinition, record_id, data: dict) -> dict:
                     join_table, mapping.own_column, mapping.other_column, record_id,
                     list(desired_set - current_set),
                 )
+            operation_journal.append(receipt, actor, model, "record.update", record_id, fields=sorted(data))
             return row
 
     row = _run(_do)
-    event(actor, model, "record.update", record_id, fields=sorted(data))
-    _dispatch_webhook(receipt, model, webhooks.EVENT_RECORD_UPDATE, record_id)
     return _translate_out(field_map, row, _read_m2m_values(field_map, record_id))
 
 
@@ -597,26 +616,21 @@ def delete_record(actor, model: ModelDefinition, record_id) -> None:
     receipt, table, granted_units = resolve_scoped(
         actor, model, "database.write", action="app_instance.record.delete"
     )
-    if granted_units is not None:
-        current_row = row_ops.get_row(table, record_id)
-        _check_row_in_unit_scope(current_row, _field_map(receipt, model), model, granted_units)
     # Both join-table FK columns are physically ON DELETE CASCADE
     # (runtime_build._build_join_table / schema_evolution.
     # _add_join_table_to_runtime), so this plain base-row delete already
     # removes every M:M association referencing this record on both
     # sides -- no extra code needed here.
-    _run(lambda: row_ops.delete_row(table, record_id))
-    # Attachments live in the control-plane database; this is a second,
-    # non-atomic step after the tenant-table delete already committed (same
-    # documented limit as the rest of this module -- no distributed
-    # atomicity claim). A crash between the two leaves orphaned attachment
-    # rows pointing at a now-nonexistent record, not a dangling file byte:
-    # the FileObject itself is untouched, only the association is meant to
-    # go. Cheap to reconcile later (the record no longer exists to list them
-    # against); not silently ignored, see THREAT_MODEL.md.
-    RecordAttachment.objects.filter(model=model, record_id=record_id).delete()
-    event(actor, model, "record.delete", record_id)
-    _dispatch_webhook(receipt, model, webhooks.EVENT_RECORD_DELETE, record_id)
+    def _do():
+        with transaction.atomic(using="tenant"):
+            current_row = lock_record(table, record_id)
+            if granted_units is not None:
+                _check_row_in_unit_scope(current_row, _field_map(receipt, model), model, granted_units)
+            row_ops.delete_row(table, record_id)
+            operation_journal.append(receipt, actor, model, "record.delete", record_id)
+
+    _run(_do)
+    # The durable journal replays attachment cleanup after tenant commit.
 
 
 def event(actor, model: ModelDefinition, action, record_id, **context):
@@ -629,18 +643,3 @@ def event(actor, model: ModelDefinition, action, record_id, **context):
         context={"record_id": str(record_id), **context},
     )
 
-
-def _dispatch_webhook(receipt: RuntimeProvision, model: ModelDefinition, event_type: str, record_id) -> None:
-    # transaction.on_commit -- see webhooks.dispatch_event's own docstring
-    # for why: queuing a delivery for a change that then rolls back would
-    # deliver an event that never really happened. create_record/
-    # update_record/delete_record's own tenant-DDL work has already
-    # committed (via _run's transaction.atomic(using="tenant")) by the
-    # time this is called, but a caller of *this* module could still be
-    # wrapping the whole request in an outer control-plane transaction
-    # (Django's ATOMIC_REQUESTS, or a future caller) -- on_commit is
-    # correct regardless of whether one exists.
-    payload = {"model": {"id": str(model.id), "key": model.key}, "record_id": str(record_id)}
-    transaction.on_commit(
-        lambda: webhooks.dispatch_event(receipt, model.instance, event_type, payload)
-    )

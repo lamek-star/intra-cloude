@@ -138,11 +138,19 @@ class ProvisioningAndWorkflowTests(TransactionTestCase):
             "requisition_line", requisition_line_requisition=requisition["id"],
             item_description="Office chairs", quantity=10, estimated_cost="150.00",
         )
-        self._create("approval", approval_requisition=requisition["id"], approver_name="Finance Lead", decision="approved")
+        self._create(
+            "approval",
+            approval_requisition=requisition["id"],
+            approver_name="Finance Lead",
+            decision="approved",
+        )
 
         purchase_order = self._create(
-            "purchase_order", purchase_order_vendor=vendor["id"], purchase_order_requisition=requisition["id"],
-            status="ordered", total_amount="1500.00",
+            "purchase_order",
+            purchase_order_vendor=vendor["id"],
+            purchase_order_requisition=requisition["id"],
+            status="ordered",
+            total_amount="1500.00",
         )
         purchase_order_line = self._create(
             "purchase_order_line", purchase_order_line_purchase_order=purchase_order["id"],
@@ -165,8 +173,12 @@ class ProvisioningAndWorkflowTests(TransactionTestCase):
         duplicate = self.client.post(
             self._records_url("goods_receipt_line"),
             {
-                str(self._relation("goods_receipt_line", "goods_receipt_line_goods_receipt").id): goods_receipt["id"],
-                str(self._relation("goods_receipt_line", "goods_receipt_line_purchase_order_line").id): purchase_order_line["id"],
+                str(
+                    self._relation("goods_receipt_line", "goods_receipt_line_goods_receipt").id
+                ): goods_receipt["id"],
+                str(
+                    self._relation("goods_receipt_line", "goods_receipt_line_purchase_order_line").id
+                ): purchase_order_line["id"],
                 str(self._field("goods_receipt_line", "quantity_received").id): 10,
             },
             format="json",
@@ -174,7 +186,11 @@ class ProvisioningAndWorkflowTests(TransactionTestCase):
         self.assertEqual(duplicate.status_code, 400, duplicate.data)
 
         vendor_invoice = self._create(
-            "vendor_invoice", vendor_invoice_purchase_order=purchase_order["id"], vendor_invoice_vendor=vendor["id"],
-            invoice_number="VINV-0001", amount="1500.00", status="unpaid",
+            "vendor_invoice",
+            vendor_invoice_purchase_order=purchase_order["id"],
+            vendor_invoice_vendor=vendor["id"],
+            invoice_number="VINV-0001",
+            amount="1500.00",
+            status="unpaid",
         )
         self.assertEqual(vendor_invoice[str(self._field("vendor_invoice", "invoice_number").id)], "VINV-0001")

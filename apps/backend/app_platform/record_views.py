@@ -56,7 +56,10 @@ class RecordListCreateView(FoundationView):
         if environment_scope_denied(request, model):
             return Response(status=403)
         try:
-            row = records.create_record(request.user, model, request.data)
+            row = records.create_record(
+                request.user, model, request.data,
+                idempotency_key=request.headers.get("Idempotency-Key"),
+            )
         except records.RecordAccessDenied:
             return Response(status=403)
         except records.RecordValueError as exc:

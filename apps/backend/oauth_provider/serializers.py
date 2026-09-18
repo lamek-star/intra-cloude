@@ -13,7 +13,9 @@ def _validate_uri_list(value, field_name):
         # authorize time; this is just cheap input hygiene at
         # registration time so an obviously broken entry never gets saved.
         if uri.startswith("javascript:") or uri.startswith("data:"):
-            raise serializers.ValidationError(f"{field_name} entries may not use the {uri.split(':')[0]}: scheme.")
+            raise serializers.ValidationError(
+                f"{field_name} entries may not use the {uri.split(':')[0]}: scheme."
+            )
     return value
 
 

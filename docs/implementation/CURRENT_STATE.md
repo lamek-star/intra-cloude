@@ -38,15 +38,15 @@ Old phase/test counts describe their historical checkpoints, not this HEAD.
 
 | Priority | Area | State / evidence |
 |---|---|---|
-| P0 | Inventory consistency | PARTIAL: reference template explicitly uses independent inventory/movement CRUD; no atomic business operation |
+| P0 | Inventory consistency | PARTIAL, foundation fixed: ADR-0016's operation journal (record-level idempotency, `FOR UPDATE` locking, durable at-least-once webhook/audit projection) is implemented and passing; the ADR's own second half — an opt-in generic quantity ledger with DB-trigger-enforced atomic balance/movement effects — is not yet built. No atomic receive/sell business operation exists; reference templates are unchanged beyond formatting. |
 | P0 | Full business recovery | PARTIAL: database/object/configuration backup primitives exist; complete disposable business recovery drill still required |
 | P0 | Offline business journey | UNVERIFIED at current HEAD; will use an isolated network without changing host connectivity |
 | P0 | Windows installer | EXTERNALLY BLOCKED: disposable-VM scripts exist; ISO/elevated interactive lifecycle evidence absent |
-| P1 | Webhook reliability | PARTIAL: HTTP-before-marker and commit-before-enqueue windows; failure injection required before correction |
-| P1 | Connector SSRF | BROKEN validation/use binding: checks DNS then psycopg resolves original hostname again |
-| P1 | Archive budgets | PARTIAL: package validation lacks comprehensive expanded-size/count bounds |
-| P1 | Browser coverage | PARTIAL: 3 spec files / historically 5 smoke tests; business journeys missing |
-| P1 | Permission usability | PARTIAL: module/unit grants API-only; unit-only attachment access denied |
+| P1 | Webhook reliability | FIXED 2026-09-18: durable retry schedule (`next_attempt_at`/`exhausted_at`, migration `0019_durable_delivery_schedule`), address-pinned serialized delivery (`app_platform/delivery_transport.py`, `outbound_http.py`), recovery beat task `recover_operation_publication` (every 60s). Reproduced-then-fixed; see `webhook-reproduction.log` → `security-regression.log`, `delivery-recovery-tests.log` (34 passed). |
+| P1 | Connector SSRF | FIXED 2026-09-18: `databases/connectors.py::assert_host_is_safe` now returns the validated address(es) and the connection is bound to that address (`hostaddr=`), so libpq/outbound HTTP can no longer re-resolve and land somewhere else after the check. See `databases/tests/test_connector_address_binding.py`, `security-reproduction.log` → `security-regression.log`. |
+| P1 | Archive budgets | FIXED 2026-09-18: `exports/budgets.py` bounds member count/expanded size/manifest size before any decompression; `exports/container.py` also validates header size and Argon2 KDF cost parameters before key derivation. See `exports/tests/test_resource_budgets.py`. |
+| P1 | Browser coverage | FIXED 2026-09-18: `apps/frontend/e2e/app-platform.spec.ts` added (offline App Builder publish/install/provision/create/search/retain journey, plus a sign-in accessibility check); passing 2/2 after an initial flaky failure was corrected (`browser-app-builder.log`). Broader business-journey e2e coverage beyond this one spec is still open. |
+| P1 | Permission usability | FIXED 2026-09-18: `app_platform/attachments.py` now authorizes against the record's unit scope instead of only checking the record exists, and hides attachments whose storage bucket access was revoked; a real "Record access" UI (`apps/frontend/src/components/AppModelAccess.tsx`) was added for granting/revoking per-unit record access. See `attachment-scope-corrected-tests.log` (9 passed). |
 | P1 | Release evidence | PARTIAL: report-only image scanning, incomplete license/SBOM/rootfs automation |
 | P2 | Workflow configuration | PARTIAL: fixed conditions/actions API-only, no approval inbox |
 | External | Signing / physical LAN | Real certificate / second-machine verification unavailable in repository evidence |
@@ -56,6 +56,32 @@ Portable `.icp` excludes App Platform metadata and is NOT full business
 recovery. Full recovery requires a quiesced, matched control/tenant/object
 backup and protected configuration/secrets. No distributed atomicity is
 claimed by the existing independent backup commands.
+
+## 2026-09-18 session: P1 fixes verified, not yet committed
+
+The five P1 rows marked FIXED above were implemented and verified against the
+disposable qualification harness (`scripts/qualification/compose.yaml`,
+project `intraforge-local-qualification`) between 00:47 and 01:28 the same
+day. The session's last and most complete run
+(`C:/Users/Hp/.codex/tmp/intraforge-local-20260918/hardening-full-pytest.log`)
+shows **930 backend tests passed**, with a clean `ruff` and `mypy` run
+(`journal-mypy.log`, `hardening-mypy.log` — 0 errors across 319 source
+files), installer Pester tests 94/94 (`installer-corrected-tests.log`),
+Control Center .NET tests 33/33, and prerequisite-check Pester 14/14
+(`prerequisite-regression.log`). Each fixed area has its own
+reproduce-the-bug-first log followed by a corrected/regression log proving
+the fix, per this repository's own standing methodology — see the table
+evidence above and the raw logs under
+`C:/Users/Hp/.codex/tmp/intraforge-local-20260918/`.
+
+As of this checkpoint, that work is present in the working tree
+(`app_platform/operation_journal.py`, `delivery_transport.py`,
+`outbound_http.py`, migration `0019`, `exports/budgets.py`,
+`AppModelAccess.tsx`, `app-platform.spec.ts`, ADR-0016, plus ~30 touched
+files, mostly `ruff format` reflow) but **not committed**. It has not been
+re-verified after this checkpoint's own review; before committing, rerun at
+minimum the app_platform/databases/exports test files listed above against
+a live stack, since the working tree may have changed since the logged run.
 
 ## Active work
 

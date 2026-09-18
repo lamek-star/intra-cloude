@@ -51,13 +51,13 @@ class OEMPart(models.Model):
     class Meta:
         ordering = ["part_number"]
 
+    def __str__(self):
+        return f"{self.manufacturer} {self.part_number}"
+
     def save(self, *args, **kwargs):
         if not self.normalized_part_number:
             self.normalized_part_number = normalize_part_number(self.part_number)
         super().save(*args, **kwargs)
-
-    def __str__(self):
-        return f"{self.manufacturer} {self.part_number}"
 
 
 class Diagram(models.Model):
@@ -76,7 +76,9 @@ class Diagram(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     provider = models.CharField(max_length=100)  # e.g. "toyota-epc"
     provider_diagram_id = models.CharField(max_length=200)  # the provider's own figure/diagram code
-    diagram_code = models.CharField(max_length=200, blank=True)  # human-facing label, may equal provider_diagram_id
+    diagram_code = models.CharField(
+        max_length=200, blank=True
+    )  # human-facing label, may equal provider_diagram_id
     # Set only once real local storage permission is confirmed for this
     # provider -- see LicenseStatus and docs/CATALOGUE_STORAGE.md
     # "Licensing". SET_NULL (not CASCADE): deleting the underlying

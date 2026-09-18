@@ -136,20 +136,26 @@ def warehouses_reference_definition() -> dict:
         stock_level_bin_location_rel,
         _relationship("inbound_shipment_warehouse", "Warehouse", ids["inbound_shipment"], ids["warehouse"]),
         _relationship(
-            "inbound_shipment_line_shipment", "Inbound Shipment",
-            ids["inbound_shipment_line"], ids["inbound_shipment"],
+            "inbound_shipment_line_shipment",
+            "Inbound Shipment",
+            ids["inbound_shipment_line"],
+            ids["inbound_shipment"],
         ),
         _relationship("inbound_shipment_line_item", "Item", ids["inbound_shipment_line"], ids["item"]),
         _relationship("outbound_shipment_warehouse", "Warehouse", ids["outbound_shipment"], ids["warehouse"]),
         _relationship(
-            "outbound_shipment_line_shipment", "Outbound Shipment",
-            ids["outbound_shipment_line"], ids["outbound_shipment"],
+            "outbound_shipment_line_shipment",
+            "Outbound Shipment",
+            ids["outbound_shipment_line"],
+            ids["outbound_shipment"],
         ),
         _relationship("outbound_shipment_line_item", "Item", ids["outbound_shipment_line"], ids["item"]),
         # Two distinct relationships from the same model to the same
         # target model -- each needs its own globally-unique key.
         _relationship("source_warehouse", "Source Warehouse", ids["transfer_order"], ids["warehouse"]),
-        _relationship("destination_warehouse", "Destination Warehouse", ids["transfer_order"], ids["warehouse"]),
+        _relationship(
+            "destination_warehouse", "Destination Warehouse", ids["transfer_order"], ids["warehouse"]
+        ),
     ]
 
     return {

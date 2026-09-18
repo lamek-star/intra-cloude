@@ -18,7 +18,9 @@ PERMISSIONS = {
         "database.write every record edit already needs"
     ),
     "workspace.manage": "Create Workspaces and Projects within an organization",
-    "org_unit.read": "View an organization's structural units (branches, departments, teams, etc.) and their membership",
+    "org_unit.read": (
+        "View an organization's structural units (branches, departments, teams, etc.) and their membership"
+    ),
     "org_unit.manage": "Create/rename/reparent/delete organizational units",
     "org_unit.membership.manage": "Add/remove users from organizational units",
     "storage.read": "View/download files and folders",

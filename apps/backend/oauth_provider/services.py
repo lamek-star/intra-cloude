@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import hashlib
 from dataclasses import dataclass
+from datetime import timedelta
 from urllib.parse import urlsplit
 
 import jwt
@@ -140,7 +141,7 @@ def issue_authorization_code(
         code_challenge=code_challenge,
         code_challenge_method=code_challenge_method,
         nonce=nonce,
-        expires_at=timezone.now() + timezone.timedelta(seconds=AUTHORIZATION_CODE_TTL_SECONDS),
+        expires_at=timezone.now() + timedelta(seconds=AUTHORIZATION_CODE_TTL_SECONDS),
     )
     return code
 
@@ -170,8 +171,8 @@ def exchange_authorization_code(
         auth_code = OAuthAuthorizationCode.objects.select_related("user").get(
             code_hash=code_hash, client=client
         )
-    except OAuthAuthorizationCode.DoesNotExist:
-        raise OAuthError("invalid_grant", "Unknown authorization code for this client.")
+    except OAuthAuthorizationCode.DoesNotExist as exc:
+        raise OAuthError("invalid_grant", "Unknown authorization code for this client.") from exc
 
     # Single-use: a code already marked used is treated exactly like one
     # that never existed — replaying a captured code never succeeds, and
@@ -203,12 +204,14 @@ def exchange_authorization_code(
         client=client,
         user=auth_code.user,
         scope=auth_code.scope,
-        expires_at=timezone.now() + timezone.timedelta(seconds=ACCESS_TOKEN_TTL_SECONDS),
+        expires_at=timezone.now() + timedelta(seconds=ACCESS_TOKEN_TTL_SECONDS),
     )
 
     id_token = None
     if "openid" in auth_code.scope.split():
-        id_token = issue_id_token(client=client, user=auth_code.user, nonce=auth_code.nonce, scope=auth_code.scope)
+        id_token = issue_id_token(
+            client=client, user=auth_code.user, nonce=auth_code.nonce, scope=auth_code.scope
+        )
 
     return TokenResponse(
         access_token=access_token,
@@ -319,6 +322,8 @@ def jwks() -> dict:
     keys = []
     for signing_key in OAuthSigningKey.objects.all():
         public_key = serialization.load_pem_public_key(signing_key.public_key_pem.encode())
+        if not isinstance(public_key, rsa.RSAPublicKey):
+            raise ValueError("The configured signing key must be RSA.")
         numbers = public_key.public_numbers()
         keys.append(
             {
@@ -341,9 +346,11 @@ def issue_id_token(*, client: OAuthClient, user, nonce: str, scope: str) -> str:
         "iss": settings.OIDC_ISSUER,
         "aud": client.client_id,
         "iat": int(now.timestamp()),
-        "exp": int((now + timezone.timedelta(seconds=ID_TOKEN_TTL_SECONDS)).timestamp()),
+        "exp": int((now + timedelta(seconds=ID_TOKEN_TTL_SECONDS)).timestamp()),
         **userinfo_claims(user, scope),
     }
     if nonce:
         claims["nonce"] = nonce
-    return jwt.encode(claims, private_pem, algorithm=signing_key.algorithm, headers={"kid": str(signing_key.id)})
+    return jwt.encode(
+        claims, private_pem, algorithm=signing_key.algorithm, headers={"kid": str(signing_key.id)}
+    )

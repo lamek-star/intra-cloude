@@ -64,7 +64,15 @@ class InstallTests(TestCase):
         instance = self._install()
         keys = set(instance.models.values_list("key", flat=True))
         self.assertEqual(
-            keys, {"document_category", "document_folder", "document", "document_version", "tag", "document_review"}
+            keys,
+            {
+                "document_category",
+                "document_folder",
+                "document",
+                "document_version",
+                "tag",
+                "document_review",
+            },
         )
 
     def test_folder_parent_folder_is_self_referencing(self):
@@ -153,7 +161,10 @@ class ProvisioningAndWorkflowTests(TransactionTestCase):
             status="draft", version=1,
         )
         self._create(
-            "document_version", document_version_document=document["id"], version_number=1, notes="Initial draft"
+            "document_version",
+            document_version_document=document["id"],
+            version_number=1,
+            notes="Initial draft",
         )
         # One version row per (document, version_number) -- a duplicate is
         # genuinely rejected by the real composite constraint.
@@ -168,9 +179,14 @@ class ProvisioningAndWorkflowTests(TransactionTestCase):
         self.assertEqual(duplicate.status_code, 400, duplicate.data)
 
         review = self._create(
-            "document_review", document_review_document=document["id"], reviewer_name="Legal", decision="approved"
+            "document_review",
+            document_review_document=document["id"],
+            reviewer_name="Legal",
+            decision="approved",
         )
-        self.assertEqual(review[str(self._relation("document_review", "document_review_document").id)], document["id"])
+        self.assertEqual(
+            review[str(self._relation("document_review", "document_review_document").id)], document["id"]
+        )
 
         tag = self._create("tag", name="HR")
         tags_relation = self._relation("document", "tags")

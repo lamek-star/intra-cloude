@@ -124,7 +124,11 @@ class DiagramImageView(APIView):
 
     def get(self, request, diagram_id):
         diagram = Diagram.objects.filter(pk=diagram_id).first()
-        if diagram is None or diagram.license_status != Diagram.LicenseStatus.LOCALLY_STORED or not diagram.file_id:
+        if (
+            diagram is None
+            or diagram.license_status != Diagram.LicenseStatus.LOCALLY_STORED
+            or not diagram.file_id
+        ):
             return Response(status=status.HTTP_404_NOT_FOUND)
         file_obj = diagram.file
         body = get_client().get_stream(file_obj.object_key)

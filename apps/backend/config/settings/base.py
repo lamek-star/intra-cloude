@@ -169,6 +169,11 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+# Portable imports are memory-backed. Bound expansion before member reads.
+PORTABLE_MAX_MEMBERS = int(env("PORTABLE_MAX_MEMBERS", "10000"))
+PORTABLE_MAX_EXPANDED_BYTES = int(env("PORTABLE_MAX_EXPANDED_BYTES", str(512 * 1024 * 1024)))
+PORTABLE_MAX_MEMBER_BYTES = int(env("PORTABLE_MAX_MEMBER_BYTES", str(64 * 1024 * 1024)))
+PORTABLE_MAX_MANIFEST_BYTES = int(env("PORTABLE_MAX_MANIFEST_BYTES", str(4 * 1024 * 1024)))
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -286,6 +291,10 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {
 # not a manual checklist item that quietly stops happening"). Only takes
 # effect for the `beat` service, which schedules these against `worker`.
 CELERY_BEAT_SCHEDULE = {
+    "recover-app-operation-publication": {
+        "task": "app_platform.tasks.recover_operation_publication",
+        "schedule": 60.0,
+    },
     "backup-control-db-nightly": {
         "task": "system.tasks.run_backup_task",
         "schedule": crontab(hour=2, minute=0),

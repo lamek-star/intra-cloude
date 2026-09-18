@@ -142,7 +142,10 @@ class ProvisioningAndWorkflowTests(TransactionTestCase):
         item = self._create("item", sku="SKU-001", name="Widget")
 
         self._create(
-            "stock_level", stock_level_item=item["id"], stock_level_bin_location=bin_a["id"], quantity_on_hand=50
+            "stock_level",
+            stock_level_item=item["id"],
+            stock_level_bin_location=bin_a["id"],
+            quantity_on_hand=50,
         )
         # One stock row per (item, bin location) -- a duplicate is
         # genuinely rejected by the real composite constraint.
@@ -176,10 +179,15 @@ class ProvisioningAndWorkflowTests(TransactionTestCase):
         )
 
         transfer = self._create(
-            "transfer_order", source_warehouse=main_warehouse["id"], destination_warehouse=overflow_warehouse["id"],
+            "transfer_order",
+            source_warehouse=main_warehouse["id"],
+            destination_warehouse=overflow_warehouse["id"],
             status="pending",
         )
-        self.assertEqual(transfer[str(self._relation("transfer_order", "source_warehouse").id)], main_warehouse["id"])
         self.assertEqual(
-            transfer[str(self._relation("transfer_order", "destination_warehouse").id)], overflow_warehouse["id"]
+            transfer[str(self._relation("transfer_order", "source_warehouse").id)], main_warehouse["id"]
+        )
+        self.assertEqual(
+            transfer[str(self._relation("transfer_order", "destination_warehouse").id)],
+            overflow_warehouse["id"],
         )

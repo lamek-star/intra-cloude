@@ -64,20 +64,25 @@ _ALWAYS_UNSAFE_ATTRS = ("is_link_local", "is_unspecified", "is_reserved", "is_mu
 _PRIVATE_NETWORK_ATTRS = ("is_private", "is_loopback")
 
 
-def assert_host_is_safe(host: str) -> None:
+def assert_host_is_safe(host: str) -> tuple[str, ...]:
     """Resolves `host` and rejects it if it lands on an address this
     process must never be tricked into reaching. Re-checked on every
     connection attempt (not just once at creation time) so a host that
     later resolves differently (DNS rebinding) doesn't get a free pass
     from an earlier check."""
     try:
-        addr_infos = socket.getaddrinfo(host, None)
+        addr_infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
     except socket.gaierror as exc:
         raise UnsafeHost(f"could not resolve host {host!r}") from exc
 
+    if not addr_infos:
+        raise UnsafeHost("host has no usable addresses")
+    addresses: tuple[str, ...] = tuple(dict.fromkeys(str(info[4][0]) for info in addr_infos))
     block_private = settings.CONNECTED_DATABASE_BLOCK_PRIVATE_NETWORKS
     for *_rest, sockaddr in addr_infos:
         ip = ipaddress.ip_address(sockaddr[0])
+        if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+            ip = ip.ipv4_mapped
         # Loopback is exempted from the always-unsafe bucket even though
         # `is_reserved` is True for it: Python's ipaddress module reports
         # IPv6 `::1` as reserved (unlike IPv4 `127.0.0.1`, where
@@ -96,6 +101,7 @@ def assert_host_is_safe(host: str) -> None:
             raise UnsafeHost(f"{host!r} resolves to a non-routable address ({ip}) and cannot be used")
         if block_private and any(getattr(ip, attr) for attr in _PRIVATE_NETWORK_ATTRS):
             raise UnsafeHost(f"{host!r} resolves to a private address ({ip}), blocked on this deployment")
+    return addresses
 
 
 @dataclass(frozen=True)
@@ -122,10 +128,13 @@ class TableInfo:
 
 
 def _connect(params: ConnectionParams) -> psycopg.Connection:
-    assert_host_is_safe(params.host)
+    addresses = assert_host_is_safe(params.host)
     try:
         return psycopg.connect(
             host=params.host,
+            # Bind the connection to the address we validated. Keep host for
+            # TLS verify-full/SNI; never let libpq resolve it a second time.
+            hostaddr=addresses[0],
             port=params.port,
             dbname=params.database,
             user=params.username,

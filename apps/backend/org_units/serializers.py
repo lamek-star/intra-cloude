@@ -24,16 +24,23 @@ class OrganizationalUnitTreeSerializer(serializers.ModelSerializer):
         return OrganizationalUnitTreeSerializer(obj.children.all(), many=True).data
 
 
-class OrganizationalUnitCreateSerializer(serializers.Serializer):
+class UnitParentInput(serializers.Serializer):
+    def get_fields(self):
+        fields = super().get_fields()
+        # Serializer.parent is an internal binding attribute. Keep the wire
+        # field named parent without shadowing that attribute on the class.
+        fields["parent"] = serializers.UUIDField(required=False, allow_null=True)
+        return fields
+
+
+class OrganizationalUnitCreateSerializer(UnitParentInput):
     name = serializers.CharField(max_length=200)
     unit_type = serializers.CharField(max_length=100)
-    parent = serializers.UUIDField(required=False, allow_null=True)
 
 
-class OrganizationalUnitUpdateSerializer(serializers.Serializer):
+class OrganizationalUnitUpdateSerializer(UnitParentInput):
     name = serializers.CharField(max_length=200, required=False)
     unit_type = serializers.CharField(max_length=100, required=False)
-    parent = serializers.UUIDField(required=False, allow_null=True)
 
 
 class UnitMembershipSerializer(serializers.ModelSerializer):

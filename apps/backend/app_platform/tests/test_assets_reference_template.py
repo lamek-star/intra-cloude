@@ -170,6 +170,10 @@ class ProvisioningAndWorkflowTests(TransactionTestCase):
         self.assertEqual(duplicate.status_code, 400, duplicate.data)
 
         disposal = self._create(
-            "disposal", disposal_asset=asset["id"], disposed_at="2026-09-16", method="recycled", proceeds="0.00"
+            "disposal",
+            disposal_asset=asset["id"],
+            disposed_at="2026-09-16",
+            method="recycled",
+            proceeds="0.00",
         )
         self.assertEqual(disposal[str(self._relation("disposal", "disposal_asset").id)], asset["id"])

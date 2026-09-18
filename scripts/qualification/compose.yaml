@@ -33,6 +33,9 @@ services:
   worker:
     <<: *backend
     command: celery -A config worker -l info --concurrency=2
+  beat:
+    <<: *backend
+    command: celery -A config beat -l info --schedule=/tmp/qualification-celerybeat
   frontend:
     image: intraforge-local-frontend:qualification
     build: ../../apps/frontend
@@ -55,6 +58,9 @@ services:
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.test
       RUN_RESTORE_WORKER_TESTS: "1"
+      # Tests exercise encryption explicitly; do not inherit appliance defaults.
+      BACKUP_ENCRYPTION_KEY: ""
+      OIDC_ISSUER: https://localhost:8443
     volumes:
       - ../../apps/backend:/app
       - ../../tests:/repo-tests:ro

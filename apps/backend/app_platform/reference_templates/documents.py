@@ -28,7 +28,14 @@ from ._helpers import _field, _model, _relationship
 def documents_reference_definition() -> dict:
     ids = {
         key: str(uuid.uuid4())
-        for key in ("document_category", "document_folder", "document", "document_version", "tag", "document_review")
+        for key in (
+            "document_category",
+            "document_folder",
+            "document",
+            "document_version",
+            "tag",
+            "document_review",
+        )
     }
 
     document_category = _model(
@@ -52,7 +59,9 @@ def documents_reference_definition() -> dict:
             _field("is_public", "Is Public", "boolean", default_value=False),
         ],
     )
-    version_number_id, version_number_field = _field("version_number", "Version Number", "integer", required=True)
+    version_number_id, version_number_field = _field(
+        "version_number", "Version Number", "integer", required=True
+    )
     document_version = _model(
         ids["document_version"], "document_version", "Document Version",
         [

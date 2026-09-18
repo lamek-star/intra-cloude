@@ -86,6 +86,8 @@ def _build_join_table(actor, database, relation, source_table, target_table):
 
 
 def build(receipt, actor):
+    from .operation_journal import install
+
     plan = receipt.plan
     database = services.create_tenant_database(
         actor=actor,
@@ -172,4 +174,5 @@ def build(receipt, actor):
                 sql.Literal(marker(receipt)),
             )
         )
+    install(database.schema_name)
     return database, bindings

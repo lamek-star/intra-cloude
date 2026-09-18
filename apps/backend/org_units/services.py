@@ -91,7 +91,7 @@ def update_unit(
     actor,
     name: str | None = None,
     unit_type: str | None = None,
-    parent: OrganizationalUnit | None | object = None,
+    parent: OrganizationalUnit | None = None,
     parent_given: bool = False,
 ) -> OrganizationalUnit:
     """`parent`/`parent_given` distinguish "not passed" from "explicitly

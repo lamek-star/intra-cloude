@@ -11,6 +11,7 @@ reinvent."""
 
 import hashlib
 import json
+import logging
 
 from django.db import transaction
 from django.http import Http404
@@ -144,7 +145,7 @@ def apply_transition(
                 raise ValidationError("A required condition for this transition is not met.")
 
         expected = {}
-        if transition.from_state_id is not None:
+        if transition.from_state is not None:
             expected[state_column] = transition.from_state.key
         write = {state_column: transition.to_state.key}
         for action in transition.field_actions:
@@ -185,7 +186,7 @@ def apply_transition(
         # and vice versa).
         payload = {
             "transition": {"key": transition.key, "label": transition.label},
-            "from_state": transition.from_state.key if transition.from_state_id else None,
+            "from_state": transition.from_state.key if transition.from_state is not None else None,
             "to_state": transition.to_state.key,
             "record_id": str(record_id),
         }
@@ -212,4 +213,9 @@ def _enqueue_delivery(delivery_id):
     # notification-bearing transition.
     from .tasks import deliver_workflow_notification
 
-    deliver_workflow_notification.delay(str(delivery_id))
+    try:
+        deliver_workflow_notification.delay(str(delivery_id))
+    except Exception:  # noqa: BLE001 - durable row is recovered by the scheduled publication task
+        logging.getLogger(__name__).exception(
+            "Workflow notification queue publication deferred: %s", delivery_id
+        )

@@ -103,11 +103,17 @@ def crm_reference_definition() -> dict:
         _relationship("opportunity_account", "Account", ids["opportunity"], ids["account"]),
         _relationship("opportunity_contact", "Contact", ids["opportunity"], ids["contact"]),
         _relationship(
-            "opportunity_campaign", "Campaign", ids["opportunity"], ids["campaign"], deletion_policy="set_null"
+            "opportunity_campaign",
+            "Campaign",
+            ids["opportunity"],
+            ids["campaign"],
+            deletion_policy="set_null",
         ),
         _relationship(
-            "opportunity_line_item_opportunity", "Opportunity",
-            ids["opportunity_line_item"], ids["opportunity"],
+            "opportunity_line_item_opportunity",
+            "Opportunity",
+            ids["opportunity_line_item"],
+            ids["opportunity"],
         ),
         _relationship("activity_contact", "Contact", ids["activity"], ids["contact"]),
         _relationship("activity_opportunity", "Opportunity", ids["activity"], ids["opportunity"]),

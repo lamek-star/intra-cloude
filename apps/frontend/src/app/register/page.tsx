@@ -93,7 +93,7 @@ function RegisterPageInner() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 8 characters"
+              placeholder="At least 12 characters"
             />
           </div>
 
@@ -104,7 +104,7 @@ function RegisterPageInner() {
 
         <p className="mt-5 text-center text-sm text-slate-500">
           Already have an account?{" "}
-          <Link href={loginHref} className="text-brand-600 hover:text-brand-500">
+          <Link href={loginHref} className="text-brand-600 underline underline-offset-4 hover:text-brand-500">
             Sign in
           </Link>
         </p>

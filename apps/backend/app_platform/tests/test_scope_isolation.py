@@ -24,7 +24,6 @@ from rest_framework.test import APIClient
 
 from accounts.models import User
 from app_platform import instances, provisioning, templates
-from app_platform.models import ModelDefinition
 from app_platform.runtime_plan import plan_runtime
 from app_platform.tests.test_foundation import project_for
 from app_platform.tests.test_org_unit_reference_field import org_unit_reference_sample

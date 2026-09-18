@@ -27,7 +27,9 @@ class NormalizationTests(APITestCase):
         self.assertEqual(services.normalize_part_number("15690-65010"), "1569065010")
         self.assertEqual(services.normalize_part_number("1569065010"), "1569065010")
         self.assertEqual(services.normalize_part_number("15690 65010"), "1569065010")
-        self.assertEqual(services.normalize_part_number("15690-65010"), services.normalize_part_number("15690 65010"))
+        self.assertEqual(
+            services.normalize_part_number("15690-65010"), services.normalize_part_number("15690 65010")
+        )
 
     def test_part_number_display_format_is_preserved_separately(self):
         part = OEMPart.objects.create(manufacturer="Toyota", part_number="TEST-00001")
@@ -44,13 +46,13 @@ class ImportRowTests(APITestCase):
     for coverage against the real seeded sample)."""
 
     def _row(self, **overrides):
-        defaults = dict(
-            part_number="TEST-00001", description="Test Part One",
-            manufacturer="Toyota", diagram_code="TESTDIAG1", provider="test-provider",
-            provider_diagram_id="TESTDIAG1", callout="00001",
-            source_image_url="https://example.com/TESTDIAG1.png",
-            x=536, y=672, width=66, height=20,
-        )
+        defaults = {
+            "part_number": "TEST-00001", "description": "Test Part One",
+            "manufacturer": "Toyota", "diagram_code": "TESTDIAG1", "provider": "test-provider",
+            "provider_diagram_id": "TESTDIAG1", "callout": "00001",
+            "source_image_url": "https://example.com/TESTDIAG1.png",
+            "x": 536, "y": 672, "width": 66, "height": 20,
+        }
         defaults.update(overrides)
         return services.ImportRow(**defaults)
 
@@ -204,11 +206,11 @@ class ImportEndpointTests(APITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
 
     def _payload(self, **overrides):
-        defaults = dict(
-            part_number="TEST-99001", description="Test Import Part", manufacturer="Toyota",
-            diagram_code="TESTDIAG9", provider="test-provider", provider_diagram_id="TESTDIAG9",
-            callout="99001", applicability="Production 2020-01-current",
-        )
+        defaults = {
+            "part_number": "TEST-99001", "description": "Test Import Part", "manufacturer": "Toyota",
+            "diagram_code": "TESTDIAG9", "provider": "test-provider", "provider_diagram_id": "TESTDIAG9",
+            "callout": "99001", "applicability": "Production 2020-01-current",
+        }
         defaults.update(overrides)
         return defaults
 
@@ -228,7 +230,9 @@ class ImportEndpointTests(APITestCase):
         self.assertEqual(OEMPart.objects.get(normalized_part_number="TEST99001").description, "Updated")
 
     def test_import_rejects_a_payload_missing_required_fields(self):
-        response = self.client.post(reverse("oem-part-import"), {"description": "no part number"}, format="json")
+        response = self.client.post(
+            reverse("oem-part-import"), {"description": "no part number"}, format="json"
+        )
         self.assertEqual(response.status_code, 400)
 
     def test_import_never_creates_a_locally_stored_diagram(self):

@@ -130,30 +130,46 @@ def procurement_reference_definition() -> dict:
 
     relationships = [
         _relationship(
-            "requisition_line_requisition", "Purchase Requisition",
-            ids["requisition_line"], ids["purchase_requisition"],
+            "requisition_line_requisition",
+            "Purchase Requisition",
+            ids["requisition_line"],
+            ids["purchase_requisition"],
         ),
         _relationship("purchase_order_vendor", "Vendor", ids["purchase_order"], ids["vendor"]),
         # Nullable: a purchase order can be raised directly, without a
         # prior requisition.
         _relationship(
-            "purchase_order_requisition", "Purchase Requisition",
-            ids["purchase_order"], ids["purchase_requisition"], deletion_policy="set_null",
+            "purchase_order_requisition",
+            "Purchase Requisition",
+            ids["purchase_order"],
+            ids["purchase_requisition"],
+            deletion_policy="set_null",
         ),
         _relationship(
-            "purchase_order_line_purchase_order", "Purchase Order",
-            ids["purchase_order_line"], ids["purchase_order"],
+            "purchase_order_line_purchase_order",
+            "Purchase Order",
+            ids["purchase_order_line"],
+            ids["purchase_order"],
         ),
         _relationship(
-            "purchase_order_line_requisition_line", "Requisition Line",
-            ids["purchase_order_line"], ids["requisition_line"], deletion_policy="set_null",
+            "purchase_order_line_requisition_line",
+            "Requisition Line",
+            ids["purchase_order_line"],
+            ids["requisition_line"],
+            deletion_policy="set_null",
         ),
-        _relationship("goods_receipt_purchase_order", "Purchase Order", ids["goods_receipt"], ids["purchase_order"]),
+        _relationship(
+            "goods_receipt_purchase_order", "Purchase Order", ids["goods_receipt"], ids["purchase_order"]
+        ),
         goods_receipt_line_goods_receipt_rel,
         goods_receipt_line_purchase_order_line_rel,
-        _relationship("vendor_invoice_purchase_order", "Purchase Order", ids["vendor_invoice"], ids["purchase_order"]),
+        _relationship(
+            "vendor_invoice_purchase_order", "Purchase Order", ids["vendor_invoice"], ids["purchase_order"]
+        ),
         _relationship("vendor_invoice_vendor", "Vendor", ids["vendor_invoice"], ids["vendor"]),
-        _relationship("approval_requisition", "Purchase Requisition", ids["approval"], ids["purchase_requisition"]),
+        _relationship(
+            "approval_requisition", "Purchase Requisition", ids["approval"], ids["purchase_requisition"]
+        ),
     ]
 
     return {

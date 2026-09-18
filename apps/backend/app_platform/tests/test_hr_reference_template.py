@@ -147,7 +147,9 @@ class ProvisioningAndWorkflowTests(TransactionTestCase):
 
     def test_full_leave_timesheet_and_payroll_workflow(self):
         department = self._create("department", name="Engineering", code="ENG")
-        position = self._create("position", title="Software Engineer", code="SWE", position_department=department["id"])
+        position = self._create(
+            "position", title="Software Engineer", code="SWE", position_department=department["id"]
+        )
         employee = self._create(
             "employee", first_name="Riley", last_name="Chen", email="riley@example.com",
             employee_position=position["id"],

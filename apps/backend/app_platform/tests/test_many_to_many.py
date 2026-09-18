@@ -403,12 +403,11 @@ class RecordAPITests(TransactionTestCase):
             DBTable.objects.filter(pk=join_table.id).update(name="hacked")
         self.assertIn("Managed runtime catalog requires a schema migration", str(ctx.exception))
 
-    def test_concurrent_addition_of_the_same_new_pair_the_database_constraint_is_the_real_gate(self):
-        """Mirrors test_field_indexing.py's own concurrency proof: the
-        diff in update_record is deliberately racy (see its docstring) --
-        the real UNIQUE(source_id, target_id) constraint on the join
-        table is what actually prevents a duplicate pair from landing
-        when two requests race to add the exact same new association."""
+    def test_concurrent_set_replacement_serializes_without_duplicate_pairs(self):
+        """Both callers set the same desired state; serialization makes both succeed.
+
+        The separate raw-insert test above still proves database uniqueness.
+        """
         item = self._create_item([])
 
         def add_group(_):
@@ -426,6 +425,6 @@ class RecordAPITests(TransactionTestCase):
             responses = list(pool.map(add_group, [None, None]))
 
         statuses = sorted(r.status_code for r in responses)
-        self.assertEqual(statuses, [200, 400])
+        self.assertEqual(statuses, [200, 200])
         detail = self.client.get(f"{self.items_url}{item['id']}/")
         self.assertEqual(detail.data[self.relation_id], [self.group_a])

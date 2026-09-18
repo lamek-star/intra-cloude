@@ -143,7 +143,9 @@ class ProvisioningAndWorkflowTests(TransactionTestCase):
 
     def test_full_enrollment_attendance_and_grading_workflow(self):
         department = self._create("department", name="Mathematics", code="MATH")
-        course = self._create("course", title="Algebra I", code="ALG1", course_department=department["id"], credits=3)
+        course = self._create(
+            "course", title="Algebra I", code="ALG1", course_department=department["id"], credits=3
+        )
         term = self._create("term", name="Fall 2026")
         teacher = self._create("teacher", name="Ms. Rivera")
         class_section = self._create(
@@ -176,12 +178,18 @@ class ProvisioningAndWorkflowTests(TransactionTestCase):
         self.assertEqual(duplicate.status_code, 400, duplicate.data)
 
         enrollment = self.client.get(self._records_url("enrollment")).data["results"][0]
-        self._create("attendance_record", date="2026-09-16", present=True, attendance_enrollment=enrollment["id"])
+        self._create(
+            "attendance_record", date="2026-09-16", present=True, attendance_enrollment=enrollment["id"]
+        )
         grade = self._create("grade", score="92.5", grade_letter="A", grade_enrollment=enrollment["id"])
         self.assertEqual(grade[str(self._field("grade", "grade_letter").id)], "A")
 
         invoice = self._create(
-            "invoice", invoice_number="SCH-0001", amount_due="500.00", status="unpaid", invoice_student=student["id"]
+            "invoice",
+            invoice_number="SCH-0001",
+            amount_due="500.00",
+            status="unpaid",
+            invoice_student=student["id"],
         )
         self.assertEqual(invoice[str(self._field("invoice", "invoice_number").id)], "SCH-0001")
 

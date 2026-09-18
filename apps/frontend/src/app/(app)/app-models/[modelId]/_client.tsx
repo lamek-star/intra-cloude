@@ -38,6 +38,7 @@ import {
   TRow,
 } from "@/components/ui";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { AppModelAccess } from "@/components/AppModelAccess";
 
 const PAGE_SIZE = 25;
 const DATA_TYPES: AppFieldDataType[] = [
@@ -301,6 +302,9 @@ export default function AppModelClient({ modelId }: { modelId: string }) {
           <ErrorBanner message={error} error={errorDetail} />
         </div>
       )}
+
+      {instance && <AppModelAccess organizationId={instance.organization} modelId={modelId}
+        hasUnitField={fields.some((field) => field.data_type === "org_unit_reference")} />}
 
       <div className="mb-3 flex flex-wrap items-center gap-1.5">
         {fields.map((f) => (

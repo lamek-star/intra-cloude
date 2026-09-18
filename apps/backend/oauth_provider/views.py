@@ -70,7 +70,8 @@ class AuthorizeView(APIView):
             )
         if code_challenge_method != "S256" or not code_challenge:
             return _redirect_with_params(
-                redirect_uri, {"error": "invalid_request", "error_description": "PKCE S256 is required.", "state": state}
+                redirect_uri,
+                {"error": "invalid_request", "error_description": "PKCE S256 is required.", "state": state},
             )
         if not requested_scopes or not requested_scopes.issubset(services.SUPPORTED_SCOPES):
             return _redirect_with_params(redirect_uri, {"error": "invalid_scope", "state": state})

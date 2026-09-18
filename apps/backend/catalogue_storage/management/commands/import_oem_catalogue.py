@@ -63,8 +63,10 @@ class Command(BaseCommand):
         parser.add_argument("--provider", required=True, help='e.g. "toyota-epc".')
         parser.add_argument("--manufacturer", required=True, help='e.g. "Toyota".')
         parser.add_argument(
-            "--source-base-url", default="",
-            help="If set (and --license-confirmed is NOT set), recorded as source_image_url = base + image_filename.",
+            "--source-base-url",
+            default="",
+            help="If set (without --license-confirmed), recorded as "
+            "source_image_url = base + image_filename.",
         )
         parser.add_argument(
             "--license-confirmed", action="store_true",
@@ -118,7 +120,9 @@ class Command(BaseCommand):
 
         self._report(result, dry_run=options["dry_run"])
 
-    def _process_row(self, row, line_no, options, license_confirmed, bucket, images_dir, uploaded_diagrams, result):
+    def _process_row(
+        self, row, line_no, options, license_confirmed, bucket, images_dir, uploaded_diagrams, result
+    ):
         part_number = (row.get("part_number") or "").strip()
         if not part_number:
             result.errors.append(f"line {line_no}: empty part_number, skipped")
@@ -126,7 +130,9 @@ class Command(BaseCommand):
         diagram_code = (row.get("diagram_code") or "").strip()
         source_image_url = ""
         if options["source_base_url"] and not license_confirmed:
-            source_image_url = options["source_base_url"].rstrip("/") + "/" + (row.get("image_filename") or "").strip()
+            source_image_url = (
+                options["source_base_url"].rstrip("/") + "/" + (row.get("image_filename") or "").strip()
+            )
 
         import_row(
             ImportRow(
@@ -160,7 +166,9 @@ class Command(BaseCommand):
         local_file = _LocalFile(image_path)
         try:
             with open(image_path, "rb") as fh:
-                checksum_bytes(fh.read())  # validated/computed for real, even though upload_file recomputes its own.
+                checksum_bytes(
+                    fh.read()
+                )  # validated/computed for real, even though upload_file recomputes its own.
             file_obj = upload_file(
                 bucket=bucket, folder=None, uploaded_file=local_file,
                 display_filename=image_filename, creator=bucket.created_by,

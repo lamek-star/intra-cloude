@@ -127,7 +127,7 @@ function LoginPageInner() {
 
         <p className="mt-5 text-center text-sm text-slate-500">
           Don&apos;t have an account?{" "}
-          <Link href={registerHref} className="text-brand-600 hover:text-brand-500">
+          <Link href={registerHref} className="text-brand-600 underline underline-offset-4 hover:text-brand-500">
             Create one
           </Link>
         </p>

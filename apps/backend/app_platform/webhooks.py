@@ -29,6 +29,9 @@ mature webhook systems use, and it sidesteps a real risk this codebase
 is otherwise careful about: a slow, broken, or malicious receiver
 logging or mishandling a payload that happens to carry business data."""
 
+import logging
+from functools import partial
+
 from django.db import transaction
 
 from .models import RuntimeProvision, WebhookDelivery
@@ -37,6 +40,50 @@ EVENT_RECORD_CREATE = "app_instance.record.create"
 EVENT_RECORD_UPDATE = "app_instance.record.update"
 EVENT_RECORD_DELETE = "app_instance.record.delete"
 EVENT_WORKFLOW_TRANSITION = "app_instance.workflow.transition"
+logger = logging.getLogger(__name__)
+
+
+def subscribers(receipt, event_type):
+    from environments.models import EnvironmentWebhook
+
+    if receipt is None or receipt.database is None or receipt.database.environment_id is None:
+        return []
+    return [
+        webhook
+        for webhook in EnvironmentWebhook.objects.filter(
+            environment_id=receipt.database.environment_id, enabled=True
+        )
+        if not webhook.event_types or event_type in webhook.event_types
+    ]
+
+
+def publish_delivery(receipt, event_type, payload, webhook_id, *, identity=None):
+    from environments.models import EnvironmentWebhook
+
+    # A deleted, disabled, or rebound subscription must not receive an old event.
+    webhook = EnvironmentWebhook.objects.filter(
+        pk=webhook_id, environment_id=receipt.database.environment_id, enabled=True
+    ).first()
+    if webhook is None:
+        return
+    defaults = {
+        "webhook": webhook,
+        "instance": receipt.instance,
+        "event_type": event_type,
+        "payload": payload,
+    }
+    if identity is None:
+        delivery = WebhookDelivery.objects.create(**defaults)
+    else:
+        delivery, _ = WebhookDelivery.objects.get_or_create(pk=identity, defaults=defaults)
+    transaction.on_commit(partial(enqueue_safely, delivery.id))
+
+
+def enqueue_safely(delivery_id):
+    try:
+        _enqueue(delivery_id)
+    except Exception:  # noqa: BLE001 - durable pending delivery is retried by the recovery task
+        logger.exception("Webhook queue publication deferred for delivery %s", delivery_id)
 
 
 def dispatch_event(receipt: RuntimeProvision | None, instance, event_type: str, payload: dict) -> None:
@@ -51,20 +98,8 @@ def dispatch_event(receipt: RuntimeProvision | None, instance, event_type: str, 
     completed runtime, or one whose database was never bound to any
     Environment -- both mean "no possible subscribers," not an error, so
     this is a silent no-op rather than a raise."""
-    if receipt is None or receipt.database_id is None or receipt.database.environment_id is None:
-        return
-    from environments.models import EnvironmentWebhook
-
-    webhooks = EnvironmentWebhook.objects.filter(
-        environment_id=receipt.database.environment_id, enabled=True
-    )
-    for webhook in webhooks:
-        if webhook.event_types and event_type not in webhook.event_types:
-            continue
-        delivery = WebhookDelivery.objects.create(
-            webhook=webhook, instance=instance, event_type=event_type, payload=payload
-        )
-        transaction.on_commit(lambda delivery_id=delivery.id: _enqueue(delivery_id))
+    for webhook in subscribers(receipt, event_type):
+        publish_delivery(receipt, event_type, payload, webhook.pk)
 
 
 def _enqueue(delivery_id):

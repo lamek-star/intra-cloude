@@ -7,7 +7,6 @@ resource. Exercised entirely through the real record CRUD API and the
 real grant/revoke endpoints, as different real users, not by calling
 service functions directly."""
 
-import uuid
 
 from django.core.management import call_command
 from django.db import connections
@@ -85,7 +84,9 @@ class UnitScopeTestBase(TransactionTestCase):
     def _grant(self, unit_id, level, **overrides):
         payload = {"user_id": str(self.member.id), "unit_id": str(unit_id), "level": level}
         payload.update(overrides)
-        return self.owner_client.post(f"/api/v1/app-models/{self.task.id}/unit-grants/", payload, format="json")
+        return self.owner_client.post(
+            f"/api/v1/app-models/{self.task.id}/unit-grants/", payload, format="json"
+        )
 
     def _records_url(self):
         return f"/api/v1/app-models/{self.task.id}/records/"

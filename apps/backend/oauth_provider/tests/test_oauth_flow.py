@@ -23,10 +23,10 @@ REDIRECT_URI = "http://localhost:3000/auth/callback"
 
 
 def make_client(**overrides):
-    defaults = dict(
-        name="Test Client", redirect_uris=[REDIRECT_URI],
-        post_logout_redirect_uris=[], allowed_origins=[],
-    )
+    defaults = {
+        "name": "Test Client", "redirect_uris": [REDIRECT_URI],
+        "post_logout_redirect_uris": [], "allowed_origins": [],
+    }
     defaults.update(overrides)
     client, secret = services.create_client(**defaults)
     return client, secret
@@ -39,7 +39,8 @@ class AuthorizationCodeFlowTests(APITestCase):
         # that call it several times must start from a clean counter
         # exactly like accounts/tests/test_auth.py's own RegisterTests.
         cache.clear()
-        SeedPermissionsCommand().handle()  # organizations.services.create_organization needs Role rows to exist.
+        # Organization creation requires the permission catalog.
+        SeedPermissionsCommand().handle()
         self.user = User.objects.create_user(email="rider@example.com", password="x", first_name="Rider")
         self.client_app, self.client_secret = make_client()
 
