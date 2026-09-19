@@ -35,6 +35,7 @@ urlpatterns = [
     path("app-fields/<uuid:object_id>/indexed/", views.FieldIndexedView.as_view()),
     path("app-instances/<uuid:object_id>/relationships/", views.RelationshipList.as_view()),
     path("app-instances/<uuid:object_id>/quantity-ledgers/", views.QuantityLedgerList.as_view()),
+    path("app-instances/<uuid:object_id>/transactions/", record_views.TransactionView.as_view()),
     path("app-relationships/<uuid:object_id>/", views.RelationshipDetail.as_view()),
     path("app-models/<uuid:object_id>/workflows/", views.WorkflowList.as_view()),
     path("app-workflows/<uuid:object_id>/", views.WorkflowDetail.as_view()),

@@ -31,7 +31,7 @@ from databases.values import RowValueError
 from org_units.models import OrganizationalUnit
 from permissions.services import has_permission
 
-from . import operation_journal, unit_scope
+from . import operation_journal, quantity_ledger, unit_scope
 from .access import RESOURCE_TYPE_APP_MODEL
 from .models import FieldDefinition, ModelDefinition, RuntimeProvision
 from .runtime_plan import physical_name
@@ -536,6 +536,10 @@ def create_record(actor, model: ModelDefinition, data: dict, *, idempotency_key=
     receipt, table, granted_units = resolve_scoped(
         actor, model, "database.write", action="app_instance.record.create"
     )
+    balance_model = quantity_ledger.balance_model_for_movement(model)
+    if balance_model is not None:
+        # A movement on a ledger-bound model changes that ledger's balance.
+        resolve_scoped(actor, balance_model, "database.write", action="app_instance.record.create")
     if granted_units is not None:
         _check_new_value_in_unit_scope(data, model, granted_units)
     field_map = _field_map(receipt, model)

@@ -251,10 +251,85 @@ class SnapshotRelationship(RelationshipInput):
     id = serializers.UUIDField(default=uuid.uuid4)
 
 
+class LedgerDimensionDeclaration(StrictSerializer):
+    balance_relationship = serializers.UUIDField()
+    movement_relationship = serializers.UUIDField()
+
+
+class QuantityLedgerDeclaration(StrictSerializer):
+    """A template's optional declaration that two of its own models form a
+    quantity ledger (ADR-0016), applied automatically the moment an instance
+    of this template version is provisioned -- while both tables are still
+    empty, which is the only time a binding is ever allowed. Ids reference
+    other elements of this same definition, like a constraint's members."""
+
+    balance_field = serializers.UUIDField()
+    movement_field = serializers.UUIDField()
+    # A ledger's balance is keyed by a composite UNIQUE constraint over its
+    # dimensions, and a constraint needs at least two members (above).
+    dimensions = serializers.ListField(child=LedgerDimensionDeclaration(), min_length=2, max_length=8)  # type: ignore[assignment]
+    allow_negative = serializers.BooleanField(default=False)  # type: ignore[assignment]
+
+
+def _validate_ledger_declaration(ledger, models, relations_by_id):
+    """Definition-time mirror of quantity_ledger.bind()'s own checks, so a
+    declaration that would fail at provisioning time is rejected when the
+    template is saved instead."""
+    fields_by_id = {field["id"]: (model, field) for model in models for field in model["fields"]}
+    balance = fields_by_id.get(ledger["balance_field"])
+    movement = fields_by_id.get(ledger["movement_field"])
+    if balance is None or movement is None:
+        raise serializers.ValidationError("A ledger's fields must belong to this definition.")
+    (balance_model, balance_field), (movement_model, movement_field) = balance, movement
+    if balance_model["id"] == movement_model["id"]:
+        raise serializers.ValidationError(
+            "A ledger's balance and movement fields must be on different models."
+        )
+    for field in (balance_field, movement_field):
+        if field["data_type"] != "integer" or not field["required"]:
+            raise serializers.ValidationError("A ledger's fields must be required integer fields.")
+    if balance_field.get("default_value") != 0:
+        raise serializers.ValidationError("A ledger's balance field must default to 0.")
+    balance_ids, movement_ids = [], []
+    for pair in ledger["dimensions"]:
+        balance_rel = relations_by_id.get(pair["balance_relationship"])
+        movement_rel = relations_by_id.get(pair["movement_relationship"])
+        if (
+            balance_rel is None
+            or movement_rel is None
+            or balance_rel["kind"] != "many_to_one"
+            or movement_rel["kind"] != "many_to_one"
+            or balance_rel["source_model"] != balance_model["id"]
+            or movement_rel["source_model"] != movement_model["id"]
+            or balance_rel["target_model"] != movement_rel["target_model"]
+        ):
+            raise serializers.ValidationError(
+                "Each ledger dimension must pair many-to-one relationships owned by the balance and "
+                "movement models that target the same model."
+            )
+        balance_ids.append(balance_rel["id"])
+        movement_ids.append(movement_rel["id"])
+    if len(set(balance_ids)) != len(balance_ids) or len(set(movement_ids)) != len(movement_ids):
+        raise serializers.ValidationError("A relationship cannot be repeated in a ledger.")
+    if not any(
+        not constraint["field_ids"] and set(constraint["relationship_ids"]) == set(balance_ids)
+        for constraint in balance_model.get("constraints", [])
+    ):
+        raise serializers.ValidationError(
+            "A ledger's balance model needs a composite UNIQUE constraint over exactly its dimension "
+            "relationships and no scalar fields."
+        )
+
+
 class DefinitionInput(StrictSerializer):
     schema_version = serializers.ChoiceField(choices=[1])
     models = serializers.ListField(child=SnapshotModel(), max_length=100)
     relationships = serializers.ListField(child=SnapshotRelationship(), max_length=500)
+    # Optional and absent (not defaulted to []) when a template declares none,
+    # so every existing template version's validated shape is unchanged.
+    quantity_ledgers = serializers.ListField(  # type: ignore[assignment]
+        child=QuantityLedgerDeclaration(), max_length=8, required=False
+    )
 
     def validate(self, data):
         seen = set()
@@ -275,9 +350,7 @@ class DefinitionInput(StrictSerializer):
             field_by_id = {field["id"]: field for field in model["fields"]}
             for constraint in model.get("constraints", []):
                 if not set(constraint["field_ids"]).issubset(field_ids):
-                    raise serializers.ValidationError(
-                        "Constraint fields must belong to the same model."
-                    )
+                    raise serializers.ValidationError("Constraint fields must belong to the same model.")
 
             unique(model.get("workflows", []))
             for workflow in model.get("workflows", []):
@@ -338,6 +411,8 @@ class DefinitionInput(StrictSerializer):
                             "Constraint relationships must be a many-to-one relationship "
                             "owned by the same model."
                         )
+        for ledger in data.get("quantity_ledgers", []):
+            _validate_ledger_declaration(ledger, data["models"], relations_by_id)
         return data
 
 

@@ -174,7 +174,9 @@ class ProvisioningAndWorkflowTests(TransactionTestCase):
 
         # One inventory row per (part, warehouse); a second row for the
         # same pair is genuinely rejected by the real composite constraint.
-        self._create("inventory", part=part["id"], warehouse=warehouse_a["id"], quantity_on_hand=10)
+        # The template declares a quantity ledger (ADR-0016): a balance starts at
+        # zero and only changes through Stock Movements, never by a direct write.
+        self._create("inventory", part=part["id"], warehouse=warehouse_a["id"], quantity_on_hand=0)
         duplicate = self.client.post(
             self._records_url("inventory"),
             {
@@ -184,7 +186,20 @@ class ProvisioningAndWorkflowTests(TransactionTestCase):
             format="json",
         )
         self.assertEqual(duplicate.status_code, 400, duplicate.data)
-        self._create("inventory", part=part["id"], warehouse=warehouse_b["id"], quantity_on_hand=5)
+        self._create("inventory", part=part["id"], warehouse=warehouse_b["id"], quantity_on_hand=0)
+        for warehouse, quantity in ((warehouse_a, 10), (warehouse_b, 5)):
+            self._create(
+                "stock_movement",
+                stock_movement_part=part["id"],
+                stock_movement_warehouse=warehouse["id"],
+                quantity_delta=quantity,
+                movement_type="receive",
+            )
+        on_hand = self._field("inventory", "quantity_on_hand").id
+        balances = sorted(
+            row[str(on_hand)] for row in self.client.get(self._records_url("inventory")).data["results"]
+        )
+        self.assertEqual(balances, [5, 10])
 
         supplier = self._create("supplier", name="Acme Parts Co")
         purchase_order = self._create("purchase_order", supplier=supplier["id"], status="draft")

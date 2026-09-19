@@ -38,7 +38,7 @@ Old phase/test counts describe their historical checkpoints, not this HEAD.
 
 | Priority | Area | State / evidence |
 |---|---|---|
-| P0 | Inventory consistency | PARTIAL, foundation fixed: ADR-0016's operation journal (record-level idempotency, `FOR UPDATE` locking, durable at-least-once webhook/audit projection) is committed (`9f2bf16`). The generic quantity ledger is implemented and VERIFIED 2026-09-19 (`app_platform/quantity_ledger.py`, migration `0020`; 39 tests against real PostgreSQL incl. concurrency and raw-SQL bypass; hardening found and fixed movement mutability, a forgeable bypass flag, unguarded balance dimensions, NULL dimensions, and unguarded TRUNCATE — see ADR-0016 "Implementation status"). Still open: reference templates (Spare Parts, Inventory & Sales) are not yet bound to the ledger, there is no multi-leg sale/transfer business operation, and a ledger-bound runtime has not been through the destructive backup/restore drill. |
+| P0 | Inventory consistency | VERIFIED at the backend, UI not yet built (2026-09-19): the operation journal (`9f2bf16`), the generic quantity ledger (`4f32dce`) and atomic multi-record operations. The Spare Parts template now *declares* its ledger and provisioning binds it with no API call; `POST app-instances/<id>/transactions/` commits a sale (order + line + movement + invoice) or a purchase receipt as one tenant transaction, rolls everything back on any failure, replays idempotently, and requires write authority over both the movement and the balance model. 67 tests over real PostgreSQL incl. real concurrent sales; see ADR-0016 "Implementation status". Still open: no receive/sell screens in the frontend (the API is proven, the UI is not), and the destructive backup/restore drill of a ledger-bound runtime has not been run. |
 | P0 | Full business recovery | PARTIAL: database/object/configuration backup primitives exist; complete disposable business recovery drill still required |
 | P0 | Offline business journey | UNVERIFIED at current HEAD; will use an isolated network without changing host connectivity |
 | P0 | Windows installer | EXTERNALLY BLOCKED: disposable-VM scripts exist; ISO/elevated interactive lifecycle evidence absent |
@@ -93,6 +93,16 @@ becomes the ledger checkpoint commit (logs under
   This is the fresh count; earlier counts in this file describe earlier trees.
 - `ledger-mypy.log` — mypy clean over `app_platform` (82 files); `ruff check`
   and `ruff format --check` clean; `makemigrations --check` reports no drift.
+
+Atomic receive/sell checkpoint (same day, logs in the same folder):
+
+- `transactions-first-run.log` … `transactions-fourth-run.log` — the new
+  `test_transactions.py` iterated to green; the failures along the way were test-payload
+  mistakes (required fields must be sent explicitly, inventory relationship keys), plus one
+  contract correction: reusing an idempotency key for a different request is a 409, the
+  journal's existing conflict contract, not a 400.
+- `transactions-full-pytest.log` — full backend suite from `/app`: **954 passed, 0 failed**
+  (12m58s). `transactions-mypy.log`, `ruff check`, and `makemigrations --check` clean.
 
 ## Active work
 

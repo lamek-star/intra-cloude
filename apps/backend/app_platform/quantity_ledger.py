@@ -26,7 +26,7 @@ from databases.identifiers import validate_identifier
 
 from . import instances, schema_evolution
 from .access import require_manage
-from .definitions import StrictSerializer
+from .definitions import StrictSerializer, validate_definition
 from .models import (
     AppInstance,
     FieldDefinition,
@@ -127,82 +127,143 @@ def bind(actor, instance: AppInstance, data) -> QuantityLedgerBinding:
             raise serializers.ValidationError(
                 "Provision this instance's runtime before binding a quantity ledger."
             )
-        schema_evolution.require_addition(actor, instance)
-        schema_evolution.mark_addition_transaction()
+        return _bind_locked(actor, instance, receipt, values)
 
-        balance_model = _model(instance, values["balance_model_id"], "balance_model_id")
-        movement_model = _model(instance, values["movement_model_id"], "movement_model_id")
-        if balance_model.id == movement_model.id:
-            raise serializers.ValidationError("balance_model_id and movement_model_id must differ.")
-        balance_field = _integer_field(balance_model, values["balance_field_id"], "balance_field_id")
-        if balance_field.default_value != 0:
-            raise serializers.ValidationError(
-                {"balance_field_id": "A ledger-backed balance field must default to 0."}
-            )
-        movement_field = _integer_field(movement_model, values["movement_field_id"], "movement_field_id")
 
-        dimensions = []
-        for item in values["dimensions"]:
-            balance_relationship = _dimension_relationship(
-                balance_model, item["balance_relationship_id"], "dimensions"
-            )
-            movement_relationship = _dimension_relationship(
-                movement_model, item["movement_relationship_id"], "dimensions"
-            )
-            if balance_relationship.target_model_id != movement_relationship.target_model_id:
-                raise serializers.ValidationError(
-                    {"dimensions": "Each pair must target the same model on both sides."}
-                )
-            dimensions.append((balance_relationship, movement_relationship))
-        if len({r.id for r, _ in dimensions}) != len(dimensions) or len({r.id for _, r in dimensions}) != len(
-            dimensions
-        ):
-            raise serializers.ValidationError({"dimensions": "A relationship cannot be repeated."})
+def balance_model_for_movement(model: ModelDefinition) -> ModelDefinition | None:
+    """The balance model a movement model's inserts change, if it is bound.
+    Creating such a movement changes that balance, so the actor also needs
+    write authority over the balance model (ADR-0016: "authority over
+    affected balance and movement models") -- checked by records.create_record."""
+    binding = (
+        QuantityLedgerBinding.objects.filter(movement_model=model).select_related("balance_model").first()
+    )
+    return binding.balance_model if binding else None
 
-        constraint = _matching_constraint(balance_model, [r.id for r, _ in dimensions])
 
-        if QuantityLedgerBinding.objects.filter(
-            balance_model=balance_model, balance_field=balance_field
-        ).exists():
-            raise serializers.ValidationError(
-                {"balance_field_id": "This field is already bound to a quantity ledger."}
-            )
-        if QuantityLedgerBinding.objects.filter(
-            movement_model=movement_model, movement_field=movement_field
-        ).exists():
-            raise serializers.ValidationError(
-                {"movement_field_id": "This field is already bound to a quantity ledger."}
-            )
-
-        balance_table = schema_evolution._table_for(receipt, balance_model)
-        movement_table = schema_evolution._table_for(receipt, movement_model)
-        if schema_evolution._table_has_rows(balance_table) or schema_evolution._table_has_rows(
-            movement_table
-        ):
-            raise serializers.ValidationError(
-                "Both models must still be empty -- existing business data is never silently "
-                "reconciled into a new quantity ledger."
-            )
-
-        binding = QuantityLedgerBinding.objects.create(
-            instance=instance,
-            balance_model=balance_model,
-            balance_field=balance_field,
-            unique_constraint=constraint,
-            movement_model=movement_model,
-            movement_field=movement_field,
-            allow_negative=values["allow_negative"],
-            created_by=actor,
+def bind_declared(actor, instance: AppInstance, receipt: RuntimeProvision) -> list[QuantityLedgerBinding]:
+    """Applies the `quantity_ledgers` its template version declared (if any),
+    called by provisioning.execute inside its own transaction right after the
+    physical runtime is built -- the one moment both tables are guaranteed
+    empty. The declaration references the template's own definition ids;
+    they are mapped to this instance's rows through `source_definition_id`.
+    A declaration that no longer resolves fails provisioning loudly rather
+    than leaving an instance whose stock silently has no ledger. A later
+    template version that adds a declaration is NOT applied to an already-
+    provisioned instance (its tables may hold data): use `bind()` explicitly."""
+    version = instance.source_version
+    if version is None:
+        return []
+    declared = validate_definition(version.definition).get("quantity_ledgers", [])
+    if not declared:
+        return []
+    relationships = {
+        str(r.source_definition_id): r
+        for r in RelationshipDefinition.objects.filter(instance=instance, source_definition_id__isnull=False)
+    }
+    bindings = []
+    for item in declared:
+        balance_field = FieldDefinition.objects.get(
+            model__instance=instance, source_definition_id=item["balance_field"]
         )
-        QuantityLedgerDimension.objects.bulk_create(
-            QuantityLedgerDimension(
-                binding=binding, balance_relationship=balance_rel, movement_relationship=movement_rel
-            )
-            for balance_rel, movement_rel in dimensions
+        movement_field = FieldDefinition.objects.get(
+            model__instance=instance, source_definition_id=item["movement_field"]
         )
-        with transaction.atomic(using="tenant"):
-            _install(receipt, binding)
-        instances.event(actor, instance, "quantity_ledger.bind", binding.id)
+        values = {
+            "balance_model_id": balance_field.model_id,
+            "balance_field_id": balance_field.id,
+            "movement_model_id": movement_field.model_id,
+            "movement_field_id": movement_field.id,
+            "dimensions": [
+                {
+                    "balance_relationship_id": relationships[pair["balance_relationship"]].id,
+                    "movement_relationship_id": relationships[pair["movement_relationship"]].id,
+                }
+                for pair in item["dimensions"]
+            ],
+            "allow_negative": item["allow_negative"],
+        }
+        bindings.append(_bind_locked(actor, instance, receipt, values))
+    return bindings
+
+
+def _bind_locked(actor, instance: AppInstance, receipt: RuntimeProvision, values) -> QuantityLedgerBinding:
+    """The validated core of bind(); the caller holds the instance lock and a
+    ready receipt inside an open transaction."""
+    schema_evolution.require_addition(actor, instance)
+    schema_evolution.mark_addition_transaction()
+
+    balance_model = _model(instance, values["balance_model_id"], "balance_model_id")
+    movement_model = _model(instance, values["movement_model_id"], "movement_model_id")
+    if balance_model.id == movement_model.id:
+        raise serializers.ValidationError("balance_model_id and movement_model_id must differ.")
+    balance_field = _integer_field(balance_model, values["balance_field_id"], "balance_field_id")
+    if balance_field.default_value != 0:
+        raise serializers.ValidationError(
+            {"balance_field_id": "A ledger-backed balance field must default to 0."}
+        )
+    movement_field = _integer_field(movement_model, values["movement_field_id"], "movement_field_id")
+
+    dimensions = []
+    for item in values["dimensions"]:
+        balance_relationship = _dimension_relationship(
+            balance_model, item["balance_relationship_id"], "dimensions"
+        )
+        movement_relationship = _dimension_relationship(
+            movement_model, item["movement_relationship_id"], "dimensions"
+        )
+        if balance_relationship.target_model_id != movement_relationship.target_model_id:
+            raise serializers.ValidationError(
+                {"dimensions": "Each pair must target the same model on both sides."}
+            )
+        dimensions.append((balance_relationship, movement_relationship))
+    if len({r.id for r, _ in dimensions}) != len(dimensions) or len({r.id for _, r in dimensions}) != len(
+        dimensions
+    ):
+        raise serializers.ValidationError({"dimensions": "A relationship cannot be repeated."})
+
+    constraint = _matching_constraint(balance_model, [r.id for r, _ in dimensions])
+
+    if QuantityLedgerBinding.objects.filter(
+        balance_model=balance_model, balance_field=balance_field
+    ).exists():
+        raise serializers.ValidationError(
+            {"balance_field_id": "This field is already bound to a quantity ledger."}
+        )
+    if QuantityLedgerBinding.objects.filter(
+        movement_model=movement_model, movement_field=movement_field
+    ).exists():
+        raise serializers.ValidationError(
+            {"movement_field_id": "This field is already bound to a quantity ledger."}
+        )
+
+    balance_table = schema_evolution._table_for(receipt, balance_model)
+    movement_table = schema_evolution._table_for(receipt, movement_model)
+    if schema_evolution._table_has_rows(balance_table) or schema_evolution._table_has_rows(movement_table):
+        raise serializers.ValidationError(
+            "Both models must still be empty -- existing business data is never silently "
+            "reconciled into a new quantity ledger."
+        )
+
+    binding = QuantityLedgerBinding.objects.create(
+        instance=instance,
+        balance_model=balance_model,
+        balance_field=balance_field,
+        unique_constraint=constraint,
+        movement_model=movement_model,
+        movement_field=movement_field,
+        allow_negative=values["allow_negative"],
+        created_by=actor,
+    )
+    QuantityLedgerDimension.objects.bulk_create(
+        QuantityLedgerDimension(
+            binding=binding, balance_relationship=balance_rel, movement_relationship=movement_rel
+        )
+        for balance_rel, movement_rel in dimensions
+    )
+    with transaction.atomic(using="tenant"):
+        _install(receipt, binding)
+    instances.event(actor, instance, "quantity_ledger.bind", binding.id)
     return binding
 
 

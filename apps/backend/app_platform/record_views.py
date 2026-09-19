@@ -6,9 +6,9 @@ from rest_framework.response import Response
 
 from databases import rows as row_ops
 
-from . import records
+from . import records, transactions
 from .access import environment_scope_denied, get_owned
-from .models import ModelDefinition
+from .models import AppInstance, ModelDefinition
 from .views import FoundationView
 
 _RESERVED_QUERY_PARAMS = {"limit", "offset", "ordering", "search"}
@@ -57,7 +57,9 @@ class RecordListCreateView(FoundationView):
             return Response(status=403)
         try:
             row = records.create_record(
-                request.user, model, request.data,
+                request.user,
+                model,
+                request.data,
                 idempotency_key=request.headers.get("Idempotency-Key"),
             )
         except records.RecordAccessDenied:
@@ -114,3 +116,22 @@ class RecordDetailView(FoundationView):
         except row_ops.RowNotFound as exc:
             raise Http404 from exc
         return Response(status=204)
+
+
+class TransactionView(FoundationView):
+    """Several record operations committed as one unit (transactions.py).
+    Human session only: no `service_account_methods`, so an external bearer-
+    token client keeps using ordinary single-record CRUD. Authorization is
+    per operation, inside transactions.run -> records.*."""
+
+    def post(self, request, object_id):
+        instance = get_owned(AppInstance, object_id, request.user, "organization")
+        try:
+            results = transactions.run(
+                request.user, instance, request.data, idempotency_key=request.headers.get("Idempotency-Key")
+            )
+        except transactions.TransactionDenied as exc:
+            return Response({"detail": str(exc), "operation": exc.index}, status=403)
+        except transactions.TransactionError as exc:
+            return Response({"detail": str(exc), "operation": exc.index}, status=400)
+        return Response({"results": results}, status=201)

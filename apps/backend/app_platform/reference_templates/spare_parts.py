@@ -18,9 +18,11 @@ Deliberately excluded, per docs/SPARE_PARTS_INTEGRATION_READINESS.md:
   are plain decimals the caller computes and writes; the platform has no
   formula/computed-column concept.
 - No enum/status type -- `status` fields stay free text.
-- No cross-request atomicity -- e.g. a stock receipt updating Inventory is
-  left as separate record-CRUD calls; no declarative multi-record action
-  concept exists yet.
+- Stock atomicity (ADR-0016, Local Edition): a Stock Movement now
+  atomically maintains its Inventory balance through the template's
+  declared `quantity_ledgers` entry, and a multi-record business operation
+  (a sale: order + lines + movements + invoice) commits or rolls back as
+  one unit through `app_platform/transactions.py`.
 """
 
 import uuid
@@ -92,22 +94,26 @@ def spare_parts_reference_definition() -> dict:
         ],
     )
 
+    on_hand_id, on_hand_field = _field(
+        "quantity_on_hand", "Quantity on Hand", "integer", required=True, default_value=0
+    )
     inventory = _model(
         inventory_id,
         "inventory",
         "Inventory",
         [
-            _field("quantity_on_hand", "Quantity on Hand", "integer", required=True, default_value=0),
+            (on_hand_id, on_hand_field),
             _field("quantity_reserved", "Quantity Reserved", "integer", default_value=0),
         ],
     )
 
+    delta_id, delta_field = _field("quantity_delta", "Quantity Delta", "integer", required=True)
     stock_movement = _model(
         stock_movement_id,
         "stock_movement",
         "Stock Movement",
         [
-            _field("quantity_delta", "Quantity Delta", "integer", required=True),
+            (delta_id, delta_field),
             _field("movement_type", "Movement Type", "text", required=True),
             _field("reference", "Reference", "text"),
             _field("occurred_at", "Occurred At", "datetime"),
@@ -207,6 +213,11 @@ def spare_parts_reference_definition() -> dict:
         }
     ]
 
+    movement_part_rel = _relationship("stock_movement_part", "Part", stock_movement_id, part_id)
+    movement_warehouse_rel = _relationship(
+        "stock_movement_warehouse", "Warehouse", stock_movement_id, warehouse_id
+    )
+
     # Relationship keys are unique per INSTANCE, not per owning model
     # (RelationshipDefinition's own `(instance, key)` constraint) -- several
     # models here reference the same target (Part, Warehouse, Sales Order),
@@ -218,13 +229,11 @@ def spare_parts_reference_definition() -> dict:
         # READINESS.md's own suggestion). Nullable/set_null -- a part
         # number that superseded something being deleted should not be
         # blocked, just orphaned.
-        _relationship(
-            "supersedes", "Supersedes", part_number_id, part_number_id, deletion_policy="set_null"
-        ),
+        _relationship("supersedes", "Supersedes", part_number_id, part_number_id, deletion_policy="set_null"),
         inventory_part_rel,
         inventory_warehouse_rel,
-        _relationship("stock_movement_part", "Part", stock_movement_id, part_id),
-        _relationship("stock_movement_warehouse", "Warehouse", stock_movement_id, warehouse_id),
+        movement_part_rel,
+        movement_warehouse_rel,
         _relationship("supplier", "Supplier", purchase_order_id, supplier_id),
         _relationship("purchase_order", "Purchase Order", purchase_order_line_id, purchase_order_id),
         _relationship("purchase_order_line_part", "Part", purchase_order_line_id, part_id),
@@ -255,4 +264,26 @@ def spare_parts_reference_definition() -> dict:
             invoice,
         ],
         "relationships": relationships,
+        # Stock is authoritative in the database, not in application code
+        # (ADR-0016): every Stock Movement atomically maintains its
+        # (Part, Warehouse) Inventory balance, a sale that would take stock
+        # below zero is rejected, and neither balances nor movements can be
+        # edited around the ledger. Bound automatically when an instance of
+        # this template is provisioned.
+        "quantity_ledgers": [
+            {
+                "balance_field": on_hand_id,
+                "movement_field": delta_id,
+                "dimensions": [
+                    {
+                        "balance_relationship": inventory_part_rel["id"],
+                        "movement_relationship": movement_part_rel["id"],
+                    },
+                    {
+                        "balance_relationship": inventory_warehouse_rel["id"],
+                        "movement_relationship": movement_warehouse_rel["id"],
+                    },
+                ],
+            }
+        ],
     }

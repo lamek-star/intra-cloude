@@ -97,3 +97,55 @@ organization isolation. The hardening tests were written first and failed
 `ledger-hardening-reproduction.log` → `ledger-hardening-corrected.log`.
 Still qualifying: transfers, and paired backup/restore of a ledger-bound
 runtime (the destructive restore drill).
+
+
+## Implementation status — atomic receive/sell (2026-09-19)
+
+**Template-declared ledger.** A template definition may carry an optional
+`quantity_ledgers` list (validated by `definitions.py` when the template is
+saved: required integer fields, balance defaults to 0, at least two dimension
+pairs targeting the same models, and the balance model's exact composite
+`UNIQUE` constraint). `provisioning.execute` calls `quantity_ledger.
+bind_declared` inside its own control transaction right after the physical
+build, while both tables are empty; a crash before that transaction commits
+leaves only an unpublished marked schema that the retry's `reconcile` drops,
+triggers included. The customer therefore never calls a ledger API: installing
+"Spare Parts — Inventory & Sales" yields a runtime whose stock is ledger-
+enforced. Template versions published before this change declare nothing and
+provision exactly as before (tested). A later version that adds a declaration
+is **not** applied to an already-provisioned instance — its tables may hold
+data — so upgrading such an instance uses the explicit `bind()` on empty tables
+only.
+
+**Atomic multi-record operations.** `POST /api/v1/app-instances/<id>/
+transactions/` (`app_platform/transactions.py`) runs up to 100 ordered `create`
+/`update` operations inside one `transaction.atomic(using="tenant")`. Each goes
+through `records.create_record`/`update_record`, so per-model `database.write`,
+unit scope, validation, ledger triggers and the journal apply per step, and the
+journal's audit/webhook projection (`transaction.on_commit`) fires only if the
+whole transaction commits. Operations may name a created record (`ref`) and
+later operations reference its id with `{"$ref": "name"}` (forward and unknown
+references are rejected). A whole-request `Idempotency-Key` derives a stable
+per-operation key: replay returns the same records without inserting again; the
+same key with a different request is a 409. Failures return the failing
+operation's index (400, or 403 for missing authority) and roll back every
+earlier step. Human sessions only; external bearer-token clients keep
+single-record CRUD. A receive is one movement (optionally plus a purchase-order
+status update); a sale is order + lines + movement(s) + invoice. Line totals
+and order totals remain plain caller-supplied decimals (the platform has no
+computed columns) — only inventory arithmetic is authoritative, and it lives in
+the ledger.
+
+**Authority over both models.** Creating a movement on a ledger-bound model now
+also requires `database.write` over the bound balance model
+(`records.create_record`), per the ADR's "authority over affected balance and
+movement models"; write on the movement model alone is denied.
+
+**Evidence.** `app_platform/tests/test_transactions.py`: receive 100 → sell 5 →
+95 with a complete order/line/invoice; exact zero; insufficient stock leaves no
+order, line or invoice; a failed step undoes an earlier update; unknown,
+forward and duplicate references; empty/oversized requests; another instance's
+model id; idempotent replay and key-conflict; five real concurrent sales of 20
+against 50 stock (exactly two succeed, no orphan documents, `reconcile()`
+clean); five authorization cases including denial midway through a sale; and
+definition-time validation of bad declarations.

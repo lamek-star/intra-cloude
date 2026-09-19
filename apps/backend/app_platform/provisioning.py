@@ -7,7 +7,7 @@ from rest_framework.exceptions import APIException, ValidationError
 from audit import services as audit
 from audit.models import AuditEvent
 
-from . import runtime_build
+from . import quantity_ledger, runtime_build
 from .access import check, require_manage
 from .models import AppInstance, RuntimeProvision
 from .runtime_plan import plan_runtime
@@ -83,6 +83,11 @@ def execute(instance_id, actor):
             receipt.completed_at = timezone.now()
             receipt.last_error = ""
             receipt.save(update_fields=["database", "bindings", "completed_at", "last_error"])
+            # A template's declared quantity ledger is bound here, inside the same
+            # control transaction and before the ready event: both tables are still
+            # empty, and a crash before this block commits leaves only an unpublished
+            # marked schema that the retry's reconcile() drops -- triggers included.
+            quantity_ledger.bind_declared(actor, instance, receipt)
             event(actor, receipt, "ready", database_id=str(database.id))
         return receipt
     except Exception as exc:
