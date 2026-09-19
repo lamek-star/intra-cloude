@@ -14,18 +14,21 @@ existing bearer-token mechanism (`applications`) for the spare-parts
 backend to reach this app's endpoints — no new auth mechanism.
 """
 
-import re
 import uuid
 
 from django.db import models
+
+from databases.normalization import normalize_search_key
 
 
 def normalize_part_number(value: str) -> str:
     """Strip spaces/dashes, uppercase — the exact rule the spare-parts
     application already uses (domain/models.ts normalizeNumber), kept in
     lockstep on purpose so `15690-65010`, `1569065010`, and
-    `15690 65010` are always the same search key on both sides."""
-    return re.sub(r"[\s-]", "", value).upper()
+    `15690 65010` are always the same search key on both sides. The rule
+    itself lives in `databases.normalization`, shared with the App Platform's
+    own Part Number search, so there is exactly one algorithm."""
+    return normalize_search_key(value)
 
 
 class OEMPart(models.Model):

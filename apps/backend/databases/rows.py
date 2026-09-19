@@ -12,6 +12,7 @@ from django.db import connections
 from psycopg import sql
 
 from .models import DBColumn, DBTable
+from .normalization import SEPARATOR_CLASS, normalize_search_key
 from .values import RowValueError, validate_and_convert
 
 DEFAULT_LIMIT = 50
@@ -58,7 +59,14 @@ def _table_sql(table: DBTable) -> sql.Composable:
     )
 
 
-def _build_where(table: DBTable, *, filters: dict, search: str | None) -> tuple[sql.Composable, list]:
+def _like_escape(value: str) -> str:
+    """Make `%`, `_` and the escape character literal in a LIKE/ILIKE pattern."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _build_where(
+    table: DBTable, *, filters: dict, search: str | None, normalized_search: bool = False
+) -> tuple[sql.Composable, list]:
     column_names = set(_column_names(table))
     clauses: list[sql.Composable] = []
     params: list = []
@@ -87,9 +95,23 @@ def _build_where(table: DBTable, *, filters: dict, search: str | None) -> tuple[
     if search:
         text_columns = _text_column_names(table)
         if text_columns:
-            or_clauses = [sql.SQL("{} ILIKE %s").format(sql.Identifier(c)) for c in text_columns]
+            or_clauses = [sql.SQL("{} ILIKE %s ESCAPE '\\'").format(sql.Identifier(c)) for c in text_columns]
+            params.extend([f"%{_like_escape(search)}%"] * len(text_columns))
+            # Opt-in: also match with whitespace/hyphens removed and case folded on both
+            # sides, so `044650K290` finds `04465-0K290` (databases/normalization.py). A
+            # query made only of separators has no key and adds no clause -- otherwise
+            # it would match every row.
+            key = normalize_search_key(search) if normalized_search else ""
+            if key:
+                pattern = f"%{_like_escape(key)}%"
+                for column in text_columns:
+                    or_clauses.append(
+                        sql.SQL("upper(regexp_replace({}, %s, '', 'g')) LIKE %s ESCAPE '\\'").format(
+                            sql.Identifier(column)
+                        )
+                    )
+                    params.extend([SEPARATOR_CLASS, pattern])
             clauses.append(sql.SQL("(") + sql.SQL(" OR ").join(or_clauses) + sql.SQL(")"))
-            params.extend([f"%{search}%"] * len(text_columns))
 
     if not clauses:
         return sql.SQL(""), []
@@ -104,12 +126,15 @@ def list_rows(
     ordering: str | None = None,
     filters: dict | None = None,
     search: str | None = None,
+    normalized_search: bool = False,
 ) -> dict:
     limit = max(1, min(limit, MAX_LIMIT))
     offset = max(0, offset)
     column_names = _column_names(table)
 
-    where_sql, where_params = _build_where(table, filters=filters or {}, search=search)
+    where_sql, where_params = _build_where(
+        table, filters=filters or {}, search=search, normalized_search=normalized_search
+    )
 
     order_sql: sql.Composable
     if ordering:

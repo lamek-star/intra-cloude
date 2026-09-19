@@ -113,6 +113,14 @@ Atomic receive/sell checkpoint (same day, logs in the same folder):
   Per-application status and the gaps it exposed (no Library or Organization Management template,
   "Inventory & Sales" is the same template as Spare Parts, no gallery UI yet, nothing yet QUALIFIED):
   `docs/LOCAL_EDITION_APPLICATIONS.md`.
+- `part-number-search-reproduction.log` → `part-number-search-final.log` — normalized part-number search on the
+  application's own Part Number records: 19 tests (variants, partial, display value preserved, ambiguity,
+  wildcards, access, tenant isolation, 10,001-row scale check at ~76-134 ms), `part-number-search-regression.log`
+  178 passed over `databases`, `catalogue_storage`, records, many-to-many and the Spare Parts template.
+  `catalog-scope.log` — catalog scope decisions (new DEFERRED status, never installable even in preview;
+  HR does not advertise payroll): 23 passed. Corrected product scope is in `LOCAL_EDITION_APPLICATIONS.md`
+  and `ENTERPRISE_ROADMAP.md`: Library and Organization Management DEFERRED, no separate Inventory & Sales,
+  application count from repository truth.
 - `transactions-full-pytest.log` — full backend suite from `/app`: **954 passed, 0 failed**
   (12m58s). `transactions-mypy.log`, `ruff check`, and `makemigrations --check` clean.
 

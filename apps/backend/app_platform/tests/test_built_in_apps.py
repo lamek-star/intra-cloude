@@ -90,12 +90,42 @@ class GalleryVisibilityTests(SimpleTestCase):
         ):
             self.assertEqual([a["key"] for a in built_in_apps.listing()], ["spare_parts"])
 
-    def test_the_preview_flag_lists_everything_with_its_honest_label(self):
+    def test_the_preview_flag_lists_previews_with_their_honest_label_but_never_deferred_apps(self):
         with override_settings(SHOW_UNQUALIFIED_BUILT_IN_APPS=True):
             shown = {a["key"]: a for a in built_in_apps.listing()}
-        self.assertEqual(set(shown), set(CATALOG))
+        self.assertEqual(set(shown), {k for k, a in CATALOG.items() if a.status != Status.DEFERRED})
         self.assertEqual(shown["spare_parts"]["status_label"], "Pilot preview")
         self.assertEqual(shown["hr"]["status_label"], "Experimental")
+        for key in ("crm", "procurement", "assets", "projects", "documents", "warehouses"):
+            self.assertEqual(CATALOG[key].status, Status.DEFERRED)
+            self.assertNotIn(key, shown)
+
+    def test_visibility_of_every_status_with_and_without_the_preview_flag(self):
+        expected = {  # (status, preview flag) -> shown to a customer?
+            (Status.QUALIFIED, False): True,
+            (Status.QUALIFIED, True): True,
+            (Status.PARTIALLY_QUALIFIED, False): False,
+            (Status.PARTIALLY_QUALIFIED, True): True,
+            (Status.EXPERIMENTAL, False): False,
+            (Status.EXPERIMENTAL, True): True,
+            (Status.DEFERRED, False): False,
+            (Status.DEFERRED, True): False,
+        }
+        for (status, flag), shown in expected.items():
+            app = BuiltInApp(
+                key="spare_parts", label="x", summary="s", highlights=("h",), status=status, evidence=("e",)
+            )
+            with self.subTest(status=status.value, preview=flag):
+                with (
+                    override_settings(SHOW_UNQUALIFIED_BUILT_IN_APPS=flag),
+                    patch.dict(CATALOG, {"spare_parts": app}),
+                ):
+                    self.assertEqual("spare_parts" in {a["key"] for a in built_in_apps.listing()}, shown)
+
+    def test_hr_does_not_advertise_payroll(self):
+        hr = CATALOG["hr"]
+        self.assertNotIn("payroll", (hr.summary + " ".join(hr.highlights)).lower())
+        self.assertIn("not a payroll feature", " ".join(hr.evidence))
 
 
 class InstallTests(TransactionTestCase):
@@ -175,6 +205,25 @@ class InstallTests(TransactionTestCase):
         self.assertFalse(AppInstance.objects.filter(organization=self.org).exists())
 
     @override_settings(SHOW_UNQUALIFIED_BUILT_IN_APPS=True)
+    def test_a_deferred_application_cannot_be_installed_even_in_preview_mode(self):
+        url = f"/api/v1/projects/{self.project.id}/built-in-apps/crm/install/"
+        self.assertEqual(self.client.post(url, {}, format="json").status_code, 404)
+        self.assertFalse(AppInstance.objects.filter(organization=self.org).exists())
+
+    @override_settings(SHOW_UNQUALIFIED_BUILT_IN_APPS=False)
+    def test_a_qualified_application_installs_with_no_preview_flag(self):
+        promoted = BuiltInApp(
+            key="spare_parts",
+            label="Spare Parts",
+            summary="s",
+            highlights=("h",),
+            status=Status.QUALIFIED,
+            evidence=("proof",),
+        )
+        with patch.dict(CATALOG, {"spare_parts": promoted}):
+            self.assertEqual(self.client.post(self.url, {}, format="json").status_code, 201)
+
+    @override_settings(SHOW_UNQUALIFIED_BUILT_IN_APPS=True)
     def test_an_unknown_application_is_not_found(self):
         url = f"/api/v1/projects/{self.project.id}/built-in-apps/nope/install/"
         self.assertEqual(self.client.post(url, {}, format="json").status_code, 404)
@@ -212,7 +261,10 @@ class InstallTests(TransactionTestCase):
         self.assertIn(APIClient().get("/api/v1/built-in-apps/").status_code, (401, 403))
 
     @override_settings(SHOW_UNQUALIFIED_BUILT_IN_APPS=True)
-    def test_the_gallery_endpoint_lists_the_catalog_for_a_signed_in_user(self):
+    def test_the_gallery_endpoint_lists_the_non_deferred_catalog_for_a_signed_in_user(self):
         response = self.client.get("/api/v1/built-in-apps/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual({a["key"] for a in response.data["results"]}, set(CATALOG))
+        self.assertEqual(
+            {a["key"] for a in response.data["results"]},
+            {k for k, a in CATALOG.items() if a.status != Status.DEFERRED},
+        )

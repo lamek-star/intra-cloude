@@ -1,63 +1,94 @@
-# Local Edition — built-in applications
+# Local Edition v1.0 — applications
 
-Status of this document: written 2026-09-19 from the code and test evidence in the
-repository. Status words follow the Local Edition scale: **IMPLEMENTED**, **VERIFIED**,
-**QUALIFIED** (all required end-to-end qualification executed), **PARTIALLY QUALIFIED**,
-**EXPERIMENTAL**, **DEFERRED**, **EXTERNALLY BLOCKED**.
+Written from repository evidence; last reconciled 2026-09-19. **Repository truth wins over the
+early conceptual gallery: Local Edition v1.0 does not have eight production applications.** It has
+one flagship application in pilot preview, two experimental ones, and nothing yet at QUALIFIED.
+
+Status scale: **QUALIFIED** (required end-to-end qualification executed) · **PARTIALLY QUALIFIED** ·
+**DEMO / EXPERIMENTAL** · **NOT READY** · **DEFERRED**. Column values are `yes` / `no` / `partial`, and
+`partial` always says what is missing.
+
+## Scope decisions (2026-09-19)
+
+| Item | Decision |
+|---|---|
+| Library Management | **DEFERRED — POST-v1.0.** No such template exists and none will be built during this mission. Removed from any v1.0 gallery, onboarding promise or investor claim. Lives in `ENTERPRISE_ROADMAP.md`. |
+| Organization Management | **DEFERRED — POST-v1.0.** No such template exists. The generic organizational-unit infrastructure is preserved and is *not* a customer-facing Organization Management application. |
+| Separate generic "Inventory & Sales" | **Not separate in v1.0.** One implementation exists: the registry template titled "Spare Parts — Inventory & Sales". It is the flagship and is described as **Spare Parts / Inventory & Sales**. A generalized template is a post-v1.0 decision based on pilot and customer demand. It must not be described as two templates. |
+| HR payroll | The HR template holds one plain `Payroll Record` table (pay-period dates, gross/net amounts, status, unique per employee and period). No calculation, tax or workflow. It is kept (removing it would regress the template's own tests) but is **not a payroll feature**, is not advertised, and HR itself is not offered to customers. |
 
 ## How a customer gets an application
 
-`app_platform/built_in_apps.py` is the catalog. `GET /api/v1/built-in-apps/` lists what
-this deployment may offer, and `POST /api/v1/projects/<id>/built-in-apps/<key>/install/`
-publishes (once per organization), installs and provisions an application in one call, through
-the ordinary services — every capability check (`app_template.manage/publish`,
-`app_instance.manage`, `database.schema.manage`) is unchanged. There is no JSON to edit and
-no API to call by hand once a UI sits on top of it (the gallery screen is **not built yet**).
+`app_platform/built_in_apps.py` is the catalog. `GET /api/v1/built-in-apps/` lists what this
+deployment may offer; `POST /api/v1/projects/<id>/built-in-apps/<key>/install/` publishes (once per
+organization), installs and provisions in one call through the ordinary services, so every
+capability check is unchanged.
 
-**Release status drives visibility.** Only `QUALIFIED` applications are offered to customers.
-`PARTIALLY_QUALIFIED` and `EXPERIMENTAL` ones appear, labelled ("Pilot preview",
-"Experimental"), only when `SHOW_UNQUALIFIED_BUILT_IN_APPS=1`, for development, demos and the
-supervised pilot. **Today no application is QUALIFIED, so a default deployment offers none.**
-That is the honest state, not a bug; the flag exists so the pilot can use Spare Parts as a
-labelled preview.
+Release status drives visibility (tested for every status with and without the flag):
 
-**Stable ids.** The reference builders draw random UUIDs on every call. Template upgrades
-diff an installed instance against a newer version by those ids, so `stabilize_ids` rewrites
-every id deterministically from its path (app key, model key, field key …) and remaps every
-reference. A newer release therefore keeps the ids of everything that already existed
-(tested), which is what makes a preserved-customization upgrade possible at all.
+| Status | Production (default) | With `SHOW_UNQUALIFIED_BUILT_IN_APPS=1` (pilot/development) |
+|---|---|---|
+| QUALIFIED | offered and installable | offered and installable |
+| PARTIALLY QUALIFIED | hidden | offered, labelled "Pilot preview" |
+| DEMO / EXPERIMENTAL | hidden | offered, labelled "Experimental" |
+| DEFERRED | hidden, not installable | hidden, **not installable** — the flag is not a way around the v1.0 scope |
 
-## Status matrix (evidence-based)
+**A default deployment currently offers no applications**, because none has reached QUALIFIED. That is
+the honest state. The preview flag exists so the supervised pilot can use the flagship as a labelled
+preview; it never changes an application's recorded status.
 
-| Application (what the mandate calls it) | In the code | Status | Evidence and what is missing |
-|---|---|---|---|
-| **Spare Parts** (flagship) — parts, part numbers, vehicles, warehouses, inventory, stock movements, suppliers, purchase orders, customers, sales orders, invoices | `spare_parts` | **PARTIALLY QUALIFIED** | VERIFIED: atomic receive/sell and transfers, stock ledger, concurrency, rollback, idempotent replay, authorization (ADR-0016; 68 tests); backup → destroy → restore of a full instance, byte-identical files, live triggers (`RECOVERY_DRILL.md`, 47/47). MISSING for QUALIFIED: receive/sell/sales-document **screens** and a browser journey, restart persistence through the UI, template upgrade of an installed instance, normalized part-number search **on the application's own Part Number records** (see finding 3), product-image and document UX. |
-| **Inventory & Sales** | *the same template* as Spare Parts | — | The registry has one template, titled "Spare Parts — Inventory & Sales". A separate generic retail template (Product/Supplier/Warehouse/Customer without part numbers or vehicles) **does not exist**. Creating one is a product decision, not qualification work. |
-| **Employee Management** | `hr` — Department, Position, Employee, Leave Type, Leave Request, Timesheet, Payroll Record, Performance Review, Onboarding Task | **EXPERIMENTAL** | Provisions and passes its template tests. Note it already contains payroll records and reviews, wider than the requested "employees, departments, attendance, leave". No end-to-end qualification. |
-| **School Management** | `school` — Student, Guardian, Teacher, Department, Course, Term, Class Section, Enrollment, Attendance Record, Grade, Invoice | **EXPERIMENTAL** | Provisions and passes its template tests. No end-to-end qualification. |
-| **Library Management** (books, authors, copies, members, loans, reservations) | — | **MISSING** | No such template. The closest, `documents` ("Document Library"), is a document library with review, not lending. |
-| **Organization Management** | — | **MISSING** | No such template. `projects`, `assets` and `documents` cover fragments (projects/tasks, assets, documents) but nothing combining departments, correspondence and tasks. |
-| **Business Files** | not a template | **IMPLEMENTED** as platform file storage (buckets, upload/download, record attachments, quarantine) | Attachments and file authorization have tests; the recovery drill proved files survive restore byte-for-byte. Not qualified as a customer-facing "Company Files" experience (folder structure, screens). |
-| **Blank Application** | the App Builder (`/app-templates`) | **IMPLEMENTED**, browser journey run in the prior session (`apps/frontend/e2e/app-platform.spec.ts`, 2/2) | Offline App Builder publish/install/provision/create/search/retain. Not re-run at this HEAD; persistence-through-restart and restore of a builder-made app are not separately qualified. |
-| CRM, Procurement, Assets, Projects, Documents, Warehouses | `crm`, `procurement`, `assets`, `projects`, `documents`, `warehouses` | **EXPERIMENTAL / DEFERRED for v1.0** | Reference applications from earlier phases; outside the Local Edition v1.0 scope. Never shown to customers. |
+Definitions get **deterministic ids** (`stabilize_ids`): the reference builders draw random UUIDs on every
+call and template upgrades diff by id, so a random id per build would make every upgrade look like "all
+removed, all added". A newer release keeps the ids of everything that already existed (tested).
 
-## Findings that change the plan
+## Application matrix (evidence-based)
 
-1. **Two of the eight applications in the mandate's gallery do not exist** (Library, Organization
-   Management) and "Inventory & Sales" is not separate from Spare Parts. The gallery can only
-   honestly offer what exists.
-2. **Nothing is QUALIFIED yet**, because qualification requires the normal-UI journey, and the
-   receive/sell screens do not exist. The fastest path to a qualified flagship is: gallery + install
-   screen, receive/sell/sales-document screens, one Playwright journey, then flip
-   `spare_parts` to QUALIFIED with those logs listed under `evidence`.
-3. **Normalized part-number search exists, but not where the shop needs it.** The separate
-   `catalogue_storage` app has `normalize_part_number` and an exact-match `OEMPart` search
-   (an OEM catalogue), but the Spare Parts application's own `part_number.number` field is plain
-   text under the platform's generic search, so "OF 1001" will not find "OF-1001". Wiring it in
-   must stay generic (a normalized-search option on a text field), not a spare-parts special case
-   in core. P1 for the flagship.
+The nine reference templates that exist in the repository, plus the App Builder path. Nothing here
+is claimed beyond its evidence.
 
-## Not covered here
+| Application | EXISTS | INSTALLS | UI AVAILABLE | PRIMARY WORKFLOW TESTED | BACKUP / RESTORE TESTED | OFFLINE TESTED | STATUS |
+|---|---|---|---|---|---|---|---|
+| **Spare Parts / Inventory & Sales** — parts, part numbers, vehicles, warehouses, inventory, stock movements, suppliers, purchase orders, customers, sales orders, invoices | yes | yes — one call, ledger bound automatically | **partial** — generic record screens only; gallery/install, receive, sell and sales-document screens **not built yet** | **partial** — the whole workflow through the API (receive, sell, transfer, atomic rollback, concurrency, idempotency, permissions; 68 + 19 tests, real PostgreSQL); **no browser journey yet** | **yes at the data plane** — destroy → fresh init → restore from off-stack files, 47/47 (`operations/RECOVERY_DRILL.md`); not on the Windows appliance | **partial** — static scan clean (fonts self-hosted, no remote scripts); no browser run of this app | **PARTIALLY QUALIFIED** |
+| **Employee Management** (`hr`) | yes | yes (template provisions; tested) | partial — generic record screens | partial — template API test (leave, timesheet, payroll record) | no | no | **DEMO / EXPERIMENTAL** (contains a plain Payroll Record table; not advertised) |
+| **School Management** (`school`) | yes | yes (template provisions; tested) | partial — generic record screens | partial — template API test | no | no | **DEMO / EXPERIMENTAL** |
+| **Blank Application** (the App Builder, `/app-templates`) | yes | yes | yes | partial — browser journey run in the prior session (`e2e/app-platform.spec.ts`, 2/2: offline publish, install, provision, create, search, retain); not re-run at this HEAD | no | partial — that same spec ran on the isolated network | **PARTIALLY QUALIFIED** |
+| CRM (`crm`) | yes | yes | partial | partial | no | no | **DEFERRED** |
+| Procurement (`procurement`) | yes | yes | partial | partial | no | no | **DEFERRED** |
+| Assets (`assets`) | yes | yes | partial | partial | no | no | **DEFERRED** |
+| Projects (`projects`) | yes | yes | partial | partial | no | no | **DEFERRED** |
+| Documents (`documents`) | yes | yes | partial | partial | no | no | **DEFERRED** |
+| Warehouses (`warehouses`) | yes | yes | partial | partial | no | no | **DEFERRED** |
+| Library Management | **no** | — | — | — | — | — | **DEFERRED — POST-v1.0** |
+| Organization Management | **no** | — | — | — | — | — | **DEFERRED — POST-v1.0** |
+| Business Files (platform file storage, not a template) | yes | — | partial — storage pages exist; no "Company Files" experience | partial — upload/download/attachment authorization tested | yes — files byte-identical after restore (drill) | no | **PARTIALLY QUALIFIED** as a platform capability |
 
-Per-template main-workflow tests, permission matrices, restart, upgrade and backup/restore
-qualification for the experimental applications have not been run and are not claimed.
+## Part-number search (flagship requirement) — DONE at the backend
+
+Searching the Spare Parts application's own Part Number records is normalized: `04465-0K290`,
+`044650K290`, `04465 0K290`, `04465-0k290` and `  04465  0K290 ` all find the same record, partial numbers
+match however they are written, and the stored/displayed value is never changed. There is **one**
+normalization rule (`databases/normalization.py`: remove whitespace incl. NBSP and hyphens, uppercase),
+used by both the Python side and the SQL `regexp_replace`, and `catalogue_storage.normalize_part_number` now
+delegates to it — no second algorithm. Only the App Platform's record search opts in (`normalized_search`);
+the data explorer is unchanged. `LIKE` wildcards in a query are now literal (`%` matches only `%`).
+
+Evidence: `app_platform/tests/test_part_number_search.py` (19 tests: rule, every variant, partial match,
+display value preserved, leads back to its Part, ambiguity, wildcards, pagination counts, access denial,
+read-only grant, cross-organization isolation by search and by id) and the 178-test regression over
+`databases`, `catalogue_storage`, records, many-to-many and the Spare Parts template.
+**Scale:** normalized search over 10,001 part numbers takes ~76–134 ms in the test stack. It is evaluated
+per row with no index (a b-tree cannot serve a contains-match on a transformed value); add an expression
+index only if measurement at the customer's size ever says so.
+
+Known limit, stated plainly: two stored numbers that normalize to the same key (`04465-0K290` and
+`044650K290`) can both exist, because uniqueness is on the raw text. Search returns **both** and never
+merges them silently. Preventing such variant duplicates is a data-integrity follow-up (P2), not part of
+search.
+
+## What has to happen for the flagship to reach QUALIFIED
+
+1. Gallery, install, and Spare Parts business screens in the browser (products, part numbers, part search,
+   suppliers, customers, warehouses, inventory; receive and sell through the atomic endpoint; sales document).
+2. One Playwright journey through the normal UI against the real backend (no mocked transactions).
+3. Restart persistence, template upgrade of an installed instance, and offline run of that journey.
+4. Then — and only then — flip `spare_parts` to QUALIFIED in the catalog with those logs listed under `evidence`.

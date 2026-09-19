@@ -9,8 +9,10 @@ production gallery shows.
 
 Release status is real, not marketing. A built-in application appears to
 customers only when its status is QUALIFIED; PARTIALLY_QUALIFIED and EXPERIMENTAL
-entries exist for development and demos and are shown, clearly labelled, only when
-`SHOW_UNQUALIFIED_BUILT_IN_APPS` is on. Flip an entry to QUALIFIED only with the
+entries exist for development, demos and the supervised pilot and are shown, clearly
+labelled, only when `SHOW_UNQUALIFIED_BUILT_IN_APPS` is on. DEFERRED entries (real
+reference templates outside the Local Edition v1.0 scope) are never offered and never
+installable through this catalog, flag or not. Flip an entry to QUALIFIED only with the
 evidence the Local Edition qualification requires (main workflow through the
 normal UI, relationships, constraints, permissions, restart, template upgrade,
 backup and restore of it), and record where that evidence lives in `evidence`.
@@ -51,12 +53,14 @@ class Status(StrEnum):
     QUALIFIED = "qualified"
     PARTIALLY_QUALIFIED = "partially_qualified"
     EXPERIMENTAL = "experimental"
+    DEFERRED = "deferred"
 
 
 STATUS_LABELS = {
     Status.QUALIFIED: "Ready for use",
     Status.PARTIALLY_QUALIFIED: "Pilot preview",
     Status.EXPERIMENTAL: "Experimental",
+    Status.DEFERRED: "Not offered in v1.0",
 }
 
 
@@ -100,12 +104,17 @@ CATALOG: dict[str, BuiltInApp] = {
             key="hr",
             label="Employee Management",
             summary=(
-                "Employees, positions and departments, leave, timesheets, payroll records, reviews and "
-                "onboarding tasks."
+                "Employees, positions and departments, leave requests, timesheets, performance "
+                "reviews and onboarding tasks."
             ),
-            highlights=("Employees", "Leave", "Timesheets", "Payroll records", "Reviews"),
+            highlights=("Employees", "Departments and positions", "Leave", "Timesheets"),
             status=Status.EXPERIMENTAL,
-            evidence=("Provisions and passes its template tests; no end-to-end qualification has been run.",),
+            evidence=(
+                "Provisions and passes its template tests; no end-to-end qualification has been run.",
+                "The template also holds a plain Payroll Record table (pay-period dates, gross and net "
+                "amounts, status). It has no calculation, tax or workflow, is not a payroll feature, and "
+                "is not offered or advertised for Local Edition v1.0.",
+            ),
         ),
         BuiltInApp(
             key="school",
@@ -123,8 +132,8 @@ CATALOG: dict[str, BuiltInApp] = {
             label="Customer Pipeline",
             summary=("Accounts, contacts, leads, campaigns, opportunities, activities and notes."),
             highlights=("Accounts", "Leads", "Opportunities", "Activities"),
-            status=Status.EXPERIMENTAL,
-            evidence=("Reference application; not part of the Local Edition v1.0 scope.",),
+            status=Status.DEFERRED,
+            evidence=("Reference application from an earlier phase; outside the Local Edition v1.0 scope.",),
         ),
         BuiltInApp(
             key="procurement",
@@ -133,32 +142,32 @@ CATALOG: dict[str, BuiltInApp] = {
                 "Vendors, purchase requisitions and orders, goods receipts, vendor invoices and approvals."
             ),
             highlights=("Vendors", "Requisitions", "Goods receipts", "Approvals"),
-            status=Status.EXPERIMENTAL,
-            evidence=("Reference application; not part of the Local Edition v1.0 scope.",),
+            status=Status.DEFERRED,
+            evidence=("Reference application from an earlier phase; outside the Local Edition v1.0 scope.",),
         ),
         BuiltInApp(
             key="assets",
             label="Asset Register",
             summary=("Assets by category and location, assignments, maintenance, depreciation and disposal."),
             highlights=("Assets", "Assignments", "Maintenance", "Depreciation"),
-            status=Status.EXPERIMENTAL,
-            evidence=("Reference application; not part of the Local Edition v1.0 scope.",),
+            status=Status.DEFERRED,
+            evidence=("Reference application from an earlier phase; outside the Local Edition v1.0 scope.",),
         ),
         BuiltInApp(
             key="projects",
             label="Projects",
             summary=("Clients, projects, milestones, tasks, time entries and risks."),
             highlights=("Projects", "Tasks", "Time entries", "Risks"),
-            status=Status.EXPERIMENTAL,
-            evidence=("Reference application; not part of the Local Edition v1.0 scope.",),
+            status=Status.DEFERRED,
+            evidence=("Reference application from an earlier phase; outside the Local Edition v1.0 scope.",),
         ),
         BuiltInApp(
             key="documents",
             label="Document Library",
             summary=("Document categories and folders, documents with versions, tags and reviews."),
             highlights=("Documents", "Versions", "Reviews"),
-            status=Status.EXPERIMENTAL,
-            evidence=("Reference application; not part of the Local Edition v1.0 scope.",),
+            status=Status.DEFERRED,
+            evidence=("Reference application from an earlier phase; outside the Local Edition v1.0 scope.",),
         ),
         BuiltInApp(
             key="warehouses",
@@ -167,8 +176,8 @@ CATALOG: dict[str, BuiltInApp] = {
                 "Warehouses, zones and bin locations, items, stock levels, shipments and transfer orders."
             ),
             highlights=("Bins", "Stock levels", "Shipments", "Transfers"),
-            status=Status.EXPERIMENTAL,
-            evidence=("Reference application; not part of the Local Edition v1.0 scope.",),
+            status=Status.DEFERRED,
+            evidence=("Reference application from an earlier phase; outside the Local Edition v1.0 scope.",),
         ),
     )
 }
@@ -223,7 +232,11 @@ def definition_for(key: str) -> dict:
 
 
 def _shown_to_customers(app: BuiltInApp) -> bool:
-    return app.status == Status.QUALIFIED or settings.SHOW_UNQUALIFIED_BUILT_IN_APPS
+    if app.status == Status.QUALIFIED:
+        return True
+    if app.status == Status.DEFERRED:
+        return False  # outside v1.0: the preview flag must not be a way around that
+    return settings.SHOW_UNQUALIFIED_BUILT_IN_APPS
 
 
 def visible_apps() -> list[BuiltInApp]:

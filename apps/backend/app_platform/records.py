@@ -470,7 +470,7 @@ def list_records(actor, model: ModelDefinition, *, limit, offset, ordering, filt
     result = _run(
         lambda: row_ops.list_rows(
             table=table, limit=limit, offset=offset, ordering=physical_ordering,
-            filters=physical_filters, search=search,
+            filters=physical_filters, search=search, normalized_search=True,
         )
     )
     m2m = _m2m_mappings(field_map)
