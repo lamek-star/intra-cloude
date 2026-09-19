@@ -135,6 +135,9 @@ Atomic receive/sell checkpoint (same day, logs in the same folder):
   8 of 9 passed in one run; the ninth (`tenant-isolation`) hit the deliberate login/registration rate limit
   (10/minute, "Request was throttled") because nine specs register users back-to-back — an infrastructure artifact, not a
   defect — and passed on its own straight after (`playwright-tenant-isolation-rerun.log`).
+- **Restart persistence** — every disposable service restarted with volumes kept: readyz OK, PostgreSQL state re-verified 24/24
+  (`flagship-db-verification-after-restart.log`), and the flagship journey passed again on the restarted stack
+  (`flagship-e2e-after-restart.log`).
 - Normalization vectors (`tests/fixtures/part-number-normalization.json`, 19): Python, PostgreSQL and JavaScript agree, and the
   separate spare-parts reference app's `normalizeNumber` agrees on 19/19. Review and decisions:
   `docs/implementation/SPAREPARTS_DEMO_REVIEW.md`.
