@@ -1,4 +1,4 @@
-"""One part-number normalization rule, proven identical in every place it runs.
+r"""One part-number normalization rule, proven identical in every place it runs.
 
 The rule (databases/normalization.py): uppercase; remove whitespace -- exactly JavaScript's
 `\s` -- and the ASCII hyphen-minus; keep everything else. The browser mirrors it (for ranking

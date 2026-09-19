@@ -121,6 +121,23 @@ Atomic receive/sell checkpoint (same day, logs in the same folder):
   HR does not advertise payroll): 23 passed. Corrected product scope is in `LOCAL_EDITION_APPLICATIONS.md`
   and `ENTERPRISE_ROADMAP.md`: Library and Organization Management DEFERRED, no separate Inventory & Sales,
   application count from repository truth.
+- **Flagship browser journey** — `flagship-e2e-run1.log` … `run6.log`: it failed, honestly, on four things before passing
+  (an ambiguous badge locator; an ambiguous combobox locator; a **real defect** — the UI sent `Date.toISOString()` and the
+  platform's datetime contract refused every receive and sale, invisible to mocked unit tests; a Stock-page locator that also
+  matched the movement row). Runs 5 and 6 **passed** (27 s, 20 s) from fresh users. `flagship-db-verification.log`:
+  24/24 independent PostgreSQL checks for both runs (balance 95 held by the ledger, exactly two movements +100/−5, exactly
+  one order/line/invoice so the refused oversell left nothing, ledger reconciles, triggers installed, document stored).
+- **Full backend suite on HEAD `620e3db`** — `full-suite-620e3db.log`: **1021 passed, 0 failed** (12m06s; 4 warnings — 3
+  pre-existing real-Celery notes and one docstring escape in a new test, fixed afterwards). This replaces the historical 954
+  at `943fde1` as the current-HEAD figure.
+- **Frontend at the same tree**: vitest 68 passed (6 files), `tsc --noEmit` exit 0, `eslint` exit 0; Docker image build ran
+  `next build` — compiled successfully, all 12 new routes present. **All Playwright specs** (`playwright-all-620e3db.log`):
+  8 of 9 passed in one run; the ninth (`tenant-isolation`) hit the deliberate login/registration rate limit
+  (10/minute, "Request was throttled") because nine specs register users back-to-back — an infrastructure artifact, not a
+  defect — and passed on its own straight after (`playwright-tenant-isolation-rerun.log`).
+- Normalization vectors (`tests/fixtures/part-number-normalization.json`, 19): Python, PostgreSQL and JavaScript agree, and the
+  separate spare-parts reference app's `normalizeNumber` agrees on 19/19. Review and decisions:
+  `docs/implementation/SPAREPARTS_DEMO_REVIEW.md`.
 - `transactions-full-pytest.log` — full backend suite from `/app`: **954 passed, 0 failed**
   (12m58s). `transactions-mypy.log`, `ruff check`, and `makemigrations --check` clean.
 

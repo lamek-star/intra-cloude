@@ -48,7 +48,7 @@ is claimed beyond its evidence.
 
 | Application | EXISTS | INSTALLS | UI AVAILABLE | PRIMARY WORKFLOW TESTED | BACKUP / RESTORE TESTED | OFFLINE TESTED | STATUS |
 |---|---|---|---|---|---|---|---|
-| **Spare Parts / Inventory & Sales** — parts, part numbers, vehicles, warehouses, inventory, stock movements, suppliers, purchase orders, customers, sales orders, invoices | yes | yes — one call, ledger bound automatically | **partial** — generic record screens only; gallery/install, receive, sell and sales-document screens **not built yet** | **partial** — the whole workflow through the API (receive, sell, transfer, atomic rollback, concurrency, idempotency, permissions; 68 + 19 tests, real PostgreSQL); **no browser journey yet** | **yes at the data plane** — destroy → fresh init → restore from off-stack files, 47/47 (`operations/RECOVERY_DRILL.md`); not on the Windows appliance | **partial** — static scan clean (fonts self-hosted, no remote scripts); no browser run of this app | **PARTIALLY QUALIFIED** |
+| **Spare Parts / Inventory & Sales** — parts, part numbers, vehicles, warehouses, inventory, stock movements, suppliers, purchase orders, customers, sales orders, invoices | yes | yes — through the customer gallery in one action (previews are labelled and need an acknowledgement); ledger bound automatically | **yes for the flagship path** — gallery/install, overview, products (+ detail: numbers, stock, movements, files), part-number search, suppliers, customers, warehouses, stock, receive stock, new sale, sales list and sales document. Not built: transfers and adjustments, cross references, vehicle compatibility, purchase-order lifecycle, quotations, returns, reports, the reference catalogue/EPC views | **yes, in the browser, against the real stack** — `e2e/spare-parts-flagship.spec.ts`, 2 consecutive passes from fresh users: install, supplier, warehouse, product, part number, normalized search by two written forms, receive 100, stock 100, customer, sell 5, stock 95, sales document, +100/−5 movements, attach + reload + download a document, an oversell of 96 refused with plain words (stock stays 95, no movement/order left behind). Verified independently in PostgreSQL (`scripts/qualification/verify_flagship_state.py`, 24/24). Also API-level: 68 ledger/transaction tests | **yes at the data plane** — destroy → fresh init → restore from off-stack files, 47/47 (`operations/RECOVERY_DRILL.md`), on an API-built instance; **not yet repeated on a UI-built instance or on the Windows appliance** | **yes for the flagship journey** — the browser run aborts every non-local request and made 0; static scan clean. Not yet: an offline run after a restart | **PARTIALLY QUALIFIED** — remaining gates: restart persistence of an installed instance, template upgrade of an installed instance, restore of a UI-built instance, a restricted-cashier journey through the UI, and scale/accessibility checks |
 | **Employee Management** (`hr`) | yes | yes (template provisions; tested) | partial — generic record screens | partial — template API test (leave, timesheet, payroll record) | no | no | **DEMO / EXPERIMENTAL** (contains a plain Payroll Record table; not advertised) |
 | **School Management** (`school`) | yes | yes (template provisions; tested) | partial — generic record screens | partial — template API test | no | no | **DEMO / EXPERIMENTAL** |
 | **Blank Application** (the App Builder, `/app-templates`) | yes | yes | yes | partial — browser journey run in the prior session (`e2e/app-platform.spec.ts`, 2/2: offline publish, install, provision, create, search, retain); not re-run at this HEAD | no | partial — that same spec ran on the isolated network | **PARTIALLY QUALIFIED** |
@@ -62,14 +62,15 @@ is claimed beyond its evidence.
 | Organization Management | **no** | — | — | — | — | — | **DEFERRED — POST-v1.0** |
 | Business Files (platform file storage, not a template) | yes | — | partial — storage pages exist; no "Company Files" experience | partial — upload/download/attachment authorization tested | yes — files byte-identical after restore (drill) | no | **PARTIALLY QUALIFIED** as a platform capability |
 
-## Part-number search (flagship requirement) — DONE at the backend
+## Part-number search (flagship requirement) — DONE: backend, UI and browser journey
 
 Searching the Spare Parts application's own Part Number records is normalized: `04465-0K290`,
 `044650K290`, `04465 0K290`, `04465-0k290` and `  04465  0K290 ` all find the same record, partial numbers
 match however they are written, and the stored/displayed value is never changed. There is **one**
-normalization rule (`databases/normalization.py`: remove whitespace incl. NBSP and hyphens, uppercase),
-used by both the Python side and the SQL `regexp_replace`, and `catalogue_storage.normalize_part_number` now
-delegates to it — no second algorithm. Only the App Platform's record search opts in (`normalized_search`);
+normalization rule (`databases/normalization.py`: uppercase; remove exactly JavaScript's `\s` set and the ASCII
+hyphen), used by the Python side and the SQL `regexp_replace`; `catalogue_storage.normalize_part_number` delegates
+to it, and the separate spare-parts reference app's `normalizeNumber` agrees on all 19 shared vectors
+(`tests/fixtures/part-number-normalization.json`, run against Python, PostgreSQL and JavaScript) — no second algorithm. Only the App Platform's record search opts in (`normalized_search`);
 the data explorer is unchanged. `LIKE` wildcards in a query are now literal (`%` matches only `%`).
 
 Evidence: `app_platform/tests/test_part_number_search.py` (19 tests: rule, every variant, partial match,
@@ -85,10 +86,20 @@ Known limit, stated plainly: two stored numbers that normalize to the same key (
 merges them silently. Preventing such variant duplicates is a data-integrity follow-up (P2), not part of
 search.
 
+## Journey findings (2026-09-19)
+
+Running the flagship through the real browser and backend found one real defect that no earlier test could:
+the UI stamped movements with `Date.toISOString()` (`…T13:35:00.646Z`), which the platform's datetime contract
+refuses (naive UTC, whole seconds — `databases/formats.py`, shared with the CSV importer). Every receive and sale
+was rejected (safely: nothing committed). The unit tests mocked HTTP and no backend test had ever sent
+`occurred_at`. Fixed in the UI (contract form sent, naive timestamps displayed as UTC); the contract itself is
+unchanged and is now pinned by backend tests for both the accepted and the refused form. **P2 for API
+consumers:** the datetime contract is stricter than ISO 8601 (no `Z`, no fractional seconds); it should be stated
+in the external API documentation.
+
 ## What has to happen for the flagship to reach QUALIFIED
 
-1. Gallery, install, and Spare Parts business screens in the browser (products, part numbers, part search,
-   suppliers, customers, warehouses, inventory; receive and sell through the atomic endpoint; sales document).
-2. One Playwright journey through the normal UI against the real backend (no mocked transactions).
+1. ~~Gallery, install, and Spare Parts business screens in the browser~~ — done (see above).
+2. ~~One Playwright journey through the normal UI against the real backend~~ — done (2 passes).
 3. Restart persistence, template upgrade of an installed instance, and offline run of that journey.
 4. Then — and only then — flip `spare_parts` to QUALIFIED in the catalog with those logs listed under `evidence`.
