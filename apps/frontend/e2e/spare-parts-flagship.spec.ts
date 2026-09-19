@@ -103,7 +103,7 @@ test("Spare Parts flagship: install, search, receive 100, sell 5, sales document
   await expect(numberDialog).toBeHidden();
 
   // --- normalized search: a different written form finds the same part, original preserved ---
-  const headerSearch = page.getByLabel("Search part numbers").first();
+  const headerSearch = page.getByLabel("Find a part number");
   await headerSearch.fill("044650K290");
   await headerSearch.press("Enter");
   await expect(page).toHaveURL(/part-numbers\?q=044650K290/);

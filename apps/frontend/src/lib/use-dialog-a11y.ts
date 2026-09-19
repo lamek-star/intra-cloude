@@ -1,5 +1,9 @@
 import { useEffect, useRef } from "react";
 
+// Where focus should land when a dialog opens: an explicit marker, else the first form control (so the user
+// can start typing, and pressing Enter cannot hit the Close button), else the first focusable element.
+const INITIAL_FOCUS =
+  '[data-autofocus], input:not([disabled]):not([type="hidden"]):not([type="checkbox"]), select:not([disabled]), textarea:not([disabled])';
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /** Shared dialog accessibility behavior (Unit 8): Escape-to-close, a
@@ -23,8 +27,8 @@ export function useDialogA11y(open: boolean, onClose: () => void, panelRef: Reac
     if (!open) return;
     previouslyFocused.current = document.activeElement as HTMLElement | null;
     const panel = panelRef.current;
-    const firstFocusable = panel?.querySelector<HTMLElement>(FOCUSABLE);
-    (firstFocusable ?? panel)?.focus();
+    const initial = panel?.querySelector<HTMLElement>(INITIAL_FOCUS) ?? panel?.querySelector<HTMLElement>(FOCUSABLE);
+    (initial ?? panel)?.focus();
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {

@@ -177,6 +177,7 @@ export default function RecordSection({
       <form
         className="mb-4 flex max-w-md gap-2"
         role="search"
+        aria-label={`Search ${title.toLowerCase()}`}
         onSubmit={(e) => {
           e.preventDefault();
           setOffset(0);

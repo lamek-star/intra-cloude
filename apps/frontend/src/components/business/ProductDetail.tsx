@@ -48,7 +48,25 @@ export default function ProductDetail({ partId }: { partId: string }) {
         {name}
       </h2>
 
-      <div role="tablist" aria-label="Product sections" className="mb-5 flex flex-wrap gap-1 border-b border-slate-200">
+      <div
+        role="tablist"
+        aria-label="Product sections"
+        className="mb-5 flex flex-wrap gap-1 border-b border-slate-200"
+        onKeyDown={(e) => {
+          // ARIA tabs pattern: arrows move (and wrap), Home/End jump; only the selected tab is a Tab stop.
+          const index = TABS.indexOf(tab);
+          const target =
+            e.key === "ArrowRight" ? TABS[(index + 1) % TABS.length]
+            : e.key === "ArrowLeft" ? TABS[(index + TABS.length - 1) % TABS.length]
+            : e.key === "Home" ? TABS[0]
+            : e.key === "End" ? TABS[TABS.length - 1]
+            : null;
+          if (!target) return;
+          e.preventDefault();
+          setTab(target);
+          document.getElementById(`${tabsId}-${target}`)?.focus();
+        }}
+      >
         {TABS.map((t) => (
           <button
             key={t}
@@ -56,6 +74,7 @@ export default function ProductDetail({ partId }: { partId: string }) {
             id={`${tabsId}-${t}`}
             aria-selected={tab === t}
             aria-controls={`${tabsId}-panel`}
+            tabIndex={tab === t ? 0 : -1}
             onClick={() => setTab(t)}
             className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
               tab === t ? "border-brand-600 text-brand-700" : "border-transparent text-slate-600 hover:text-slate-900"

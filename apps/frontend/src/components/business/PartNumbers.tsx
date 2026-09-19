@@ -91,6 +91,7 @@ function PartNumbersInner() {
 
       <form
         role="search"
+        aria-label="Part number list search"
         className="mb-4 flex max-w-lg gap-2"
         onSubmit={(e) => {
           e.preventDefault();

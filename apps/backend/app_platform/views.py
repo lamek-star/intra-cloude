@@ -223,6 +223,25 @@ class ModelList(FoundationView):
         )
 
 
+class InstanceSchema(FoundationView):
+    """An instance's whole schema -- every model with its fields, and every relationship -- in ONE
+    read-only request and a constant number of queries. A client that needs the schema (the customer
+    screens resolve model/field/relationship ids from it) would otherwise issue 2 + N list requests,
+    N being the number of models. Same access as the list endpoints it summarizes."""
+
+    service_account_methods = frozenset({"GET"})
+
+    def get(self, request, object_id):
+        obj = get_owned(AppInstance, object_id, request.user, "organization")
+        read_instance(request.user, obj)
+        models = []
+        for model in obj.models.all().prefetch_related("fields"):
+            fields = FieldSerializer(model.fields.all(), many=True).data
+            models.append({**ModelSerializer(model).data, "fields": fields})
+        relationships = RelationshipSerializer(obj.relationships.all(), many=True).data
+        return Response({"models": models, "relationships": relationships})
+
+
 class FieldList(FoundationView):
     service_account_methods = frozenset({"GET"})
 

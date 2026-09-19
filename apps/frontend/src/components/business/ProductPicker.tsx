@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { cellText, getRecord, listRecords, type BusinessRow } from "@/lib/business";
 import { Button } from "@/components/ui";
 import { useBusiness } from "./BusinessApp";
@@ -27,6 +27,20 @@ export default function ProductPicker({
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
   const [searching, setSearching] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const changeRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  // Where keyboard focus goes once the value changes: onto "Change" after a pick, back into the field
+  // after clearing -- so a keyboard user is never left on an element that has just disappeared.
+  const focusAfter = useRef<"change" | "input" | null>(null);
+
+  useEffect(() => {
+    if (focusAfter.current === "change" && value) changeRef.current?.focus();
+    if (focusAfter.current === "input" && !value) inputRef.current?.focus();
+    focusAfter.current = null;
+  }, [value]);
+
+  const optionElements = () => Array.from(listRef.current?.querySelectorAll<HTMLElement>('[role="option"]') ?? []);
 
   useEffect(() => {
     const q = query.trim();
@@ -78,11 +92,13 @@ export default function ProductPicker({
         <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
           <span className="font-medium text-slate-900">{value.name}</span>
           <Button
+            ref={changeRef}
             type="button"
             size="sm"
             variant="ghost"
             aria-label={`Change ${label.toLowerCase()}`}
             onClick={() => {
+              focusAfter.current = "input";
               onChange(null);
               setQuery("");
               setSuggestions(null);
@@ -102,6 +118,7 @@ export default function ProductPicker({
         {label}
       </label>
       <input
+        ref={inputRef}
         id={inputId}
         type="search"
         autoComplete="off"
@@ -112,10 +129,39 @@ export default function ProductPicker({
         value={query}
         placeholder="Type a product name or part number"
         onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={(e) => {
+          // ArrowDown moves into the suggestions (the combobox pattern); Tab also reaches them.
+          if (e.key === "ArrowDown") {
+            const first = optionElements()[0];
+            if (first) {
+              e.preventDefault();
+              first.focus();
+            }
+          }
+        }}
         className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20"
       />
-      <div id={listId} role="listbox" aria-label={`${label} matches`} className="mt-1">
-        {searching && <p className="px-1 py-1 text-xs text-slate-400">Searching…</p>}
+      <div
+        ref={listRef}
+        id={listId}
+        role="listbox"
+        aria-label={`${label} matches`}
+        className="mt-1"
+        onKeyDown={(e) => {
+          const options = optionElements();
+          const at = options.indexOf(document.activeElement as HTMLElement);
+          if (at < 0) return;
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            options[Math.min(at + 1, options.length - 1)]?.focus();
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            if (at === 0) inputRef.current?.focus();
+            else options[at - 1]?.focus();
+          }
+        }}
+      >
+        {searching && <p className="px-1 py-1 text-xs text-slate-500">Searching…</p>}
         {shown && shown.length === 0 && !searching && (
           <p className="px-1 py-1 text-xs text-slate-500">No product or part number matches “{query.trim()}”.</p>
         )}
@@ -125,7 +171,10 @@ export default function ProductPicker({
             type="button"
             role="option"
             aria-selected="false"
-            onClick={() => onChange({ id: s.id, name: s.name, row: s.row })}
+            onClick={() => {
+              focusAfter.current = "change";
+              onChange({ id: s.id, name: s.name, row: s.row });
+            }}
             className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-100 focus-visible:bg-slate-100 focus-visible:outline-none"
           >
             {s.name}

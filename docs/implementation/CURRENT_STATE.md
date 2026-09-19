@@ -138,6 +138,16 @@ Atomic receive/sell checkpoint (same day, logs in the same folder):
 - **Restart persistence** — every disposable service restarted with volumes kept: readyz OK, PostgreSQL state re-verified 24/24
   (`flagship-db-verification-after-restart.log`), and the flagship journey passed again on the restarted stack
   (`flagship-e2e-after-restart.log`).
+- **Accessibility gate** — `a11y-run1.log` … `a11y-run5.log`, `e2e/spare-parts-accessibility.spec.ts`: axe (WCAG 2.0/2.1 A+AA and best-practice)
+  over 22 screens and states (gallery, install dialog, home, products, add dialog, every product tab, part search with and
+  without a match, stock, lists, receive and sell empty and with validation errors, sales list, sales document) plus 5
+  keyboard-only paths. First scan: 1 serious rule on every screen (**color-contrast** on breadcrumbs/group labels), an invalid
+  `<dl>` (`definition-list`, `dlitem`), unnamed duplicate `search` landmarks; keyboard: a dialog opened with focus on
+  **Close** (Enter dismissed it), tabs without the ARIA arrow-key pattern, product suggestions unreachable with ArrowDown.
+  All fixed (shared `PageHeader`/`Modal`/`Button` included). Final: **27/27, 0 axe findings**. A run also surfaced **H**: every
+  full page load issued 2 + N schema requests and exhausted the per-user rate limit (300/min, `Too Many Requests` in the log);
+  fixed at the cause with `GET /app-instances/<id>/schema/` (1 request, constant queries, same access as the list endpoints;
+  5 tests) — the throttle was NOT loosened. Flagship journey re-passed afterwards (`flagship-e2e-after-a11y.log`).
 - Normalization vectors (`tests/fixtures/part-number-normalization.json`, 19): Python, PostgreSQL and JavaScript agree, and the
   separate spare-parts reference app's `normalizeNumber` agrees on 19/19. Review and decisions:
   `docs/implementation/SPAREPARTS_DEMO_REVIEW.md`.

@@ -12,6 +12,7 @@ urlpatterns = [
     path("projects/<uuid:project_id>/app-instances/", views.InstanceList.as_view()),
     path("app-instances/<uuid:object_id>/", views.InstanceDetail.as_view()),
     path("app-instances/<uuid:object_id>/models/", views.ModelList.as_view()),
+    path("app-instances/<uuid:object_id>/schema/", views.InstanceSchema.as_view()),
     path("app-models/<uuid:object_id>/", views.DefinitionDetail.as_view()),
     path("app-models/<uuid:object_id>/fields/", views.FieldList.as_view()),
     path("app-models/<uuid:object_id>/constraints/", views.ConstraintList.as_view()),

@@ -69,16 +69,18 @@ export default function Overview() {
         {!counts ? (
           <PageLoading />
         ) : (
-          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {COUNTS.map((c) => (
-              <Link key={c.key} href={`${base}${c.href}`} className="block">
-                <Card className="transition-colors hover:border-brand-400/40 hover:bg-slate-50">
-                  <dt className="text-xs text-slate-500">{c.label}</dt>
-                  <dd className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">{counts[c.key] ?? "—"}</dd>
-                </Card>
-              </Link>
+              <li key={c.key}>
+                <Link href={`${base}${c.href}`} className="block">
+                  <Card className="transition-colors hover:border-brand-400/40 hover:bg-slate-50">
+                    <span className="block text-xs text-slate-500">{c.label}</span>
+                    <span className="mt-1 block text-2xl font-semibold tabular-nums text-slate-900">{counts[c.key] ?? "—"}</span>
+                  </Card>
+                </Link>
+              </li>
             ))}
-          </dl>
+          </ul>
         )}
       </section>
     </div>

@@ -123,7 +123,7 @@ export default function BusinessApp({ instanceId, children }: { instanceId: stri
   return (
     <BusinessContext.Provider value={{ schema, instance }}>
       <div>
-        <nav aria-label="Breadcrumb" className="mb-1 text-xs text-slate-400">
+        <nav aria-label="Breadcrumb" className="mb-1 text-xs text-slate-500">
           <Link href={galleryHref} className="hover:text-slate-600">
             Applications
           </Link>
@@ -131,6 +131,7 @@ export default function BusinessApp({ instanceId, children }: { instanceId: stri
         <h1 className="text-xl font-semibold tracking-tight text-slate-900">{instance.label}</h1>
         <form
           role="search"
+          aria-label="Part number lookup"
           className="mt-4 flex max-w-lg gap-2"
           onSubmit={(e) => {
             e.preventDefault();
@@ -139,7 +140,7 @@ export default function BusinessApp({ instanceId, children }: { instanceId: stri
           }}
         >
           <label htmlFor="global-part-search" className="sr-only">
-            Search part numbers
+            Find a part number
           </label>
           <Input
             id="global-part-search"
@@ -156,7 +157,7 @@ export default function BusinessApp({ instanceId, children }: { instanceId: stri
           {NAV_GROUPS.map((group) => (
             <div key={group.label || "root"} className="flex items-center gap-1">
               {group.label && (
-                <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{group.label}</span>
+                <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{group.label}</span>
               )}
               {group.items.map((item) => {
                 const href = `${base}${item.href}`;

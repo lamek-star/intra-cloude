@@ -15,7 +15,6 @@ import {
   type AppModelDefinition,
   type AppRecordsPage,
   type AppRelationshipDefinition,
-  type Paginated,
 } from "@/lib/api";
 
 export type BusinessRow = Record<string, unknown>;
@@ -51,19 +50,17 @@ export function makeSchema(
   return { instanceId, modelId, id };
 }
 
+/** The whole schema arrives in ONE request (`GET /app-instances/<id>/schema/`). It used to take 2 + N
+ * list requests per page load (N = number of models), which exhausted the per-user rate limit after
+ * about twenty full page loads. */
 export async function loadSchema(instanceId: string): Promise<BusinessSchema> {
-  const [models, relationships] = await Promise.all([
-    api.get<Paginated<AppModelDefinition>>(`/app-instances/${instanceId}/models/?limit=100`),
-    api.get<Paginated<AppRelationshipDefinition>>(`/app-instances/${instanceId}/relationships/?limit=100`),
-  ]);
-  const pages = await Promise.all(
-    models.results.map((m) => api.get<Paginated<AppFieldDefinition>>(`/app-models/${m.id}/fields/?limit=100`)),
-  );
+  const schema = await api.get<{
+    models: (AppModelDefinition & { fields: AppFieldDefinition[] })[];
+    relationships: AppRelationshipDefinition[];
+  }>(`/app-instances/${instanceId}/schema/`);
   const fieldsByModelId: Record<string, AppFieldDefinition[]> = {};
-  models.results.forEach((m, i) => {
-    fieldsByModelId[m.id] = pages[i].results;
-  });
-  return makeSchema(instanceId, models.results, fieldsByModelId, relationships.results);
+  for (const model of schema.models) fieldsByModelId[model.id] = model.fields;
+  return makeSchema(instanceId, schema.models, fieldsByModelId, schema.relationships);
 }
 
 // --- records (all filtering, searching and paging is done by the server) ---------------------

@@ -141,3 +141,28 @@ describe("Modal focus stability", () => {
     expect(second).toHaveBeenCalledTimes(1);
   });
 });
+
+// Accessibility: a dialog must open with focus on the first FORM FIELD, not on the Close button --
+// otherwise a keyboard user who presses Enter straight after opening it dismisses it.
+describe("Modal initial focus", () => {
+  it("focuses the first form field, not the Close button", () => {
+    render(
+      <Modal open onClose={() => {}} title="Add supplier">
+        <label htmlFor="n">Name</label>
+        <input id="n" />
+        <button>Save</button>
+      </Modal>,
+    );
+    expect(screen.getByLabelText("Name")).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Close" })).not.toHaveFocus();
+  });
+
+  it("falls back to the first focusable control when the dialog has no form field", () => {
+    render(
+      <Modal open onClose={() => {}} title="Done">
+        <a href="/x">Open</a>
+      </Modal>,
+    );
+    expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
+  });
+});

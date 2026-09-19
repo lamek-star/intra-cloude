@@ -122,7 +122,7 @@ export default function SalesDocument({ orderId }: { orderId: string }) {
         </header>
 
         <div className="py-4 text-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Bill to</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Bill to</p>
           <p className="mt-1 font-medium text-slate-900">{doc.customer || "—"}</p>
         </div>
 
