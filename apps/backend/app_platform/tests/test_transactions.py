@@ -493,3 +493,31 @@ class OlderTemplateVersionTests(TransactionBase):
         warehouse = self._create("warehouse", name="Main", code="MAIN")
         self._create("inventory", part=part["id"], warehouse=warehouse["id"], quantity_on_hand=10)
         self.assertEqual(self._balance(), 10)
+
+
+class MovementTimestampContractTests(TransactionBase):
+    """The browser stamps each movement with `occurred_at`. The platform's datetime contract
+    (databases/formats.py, shared with the CSV importer) is naive `YYYY-MM-DDTHH:MM:SS`; the
+    browser's own `Date.toISOString()` form (`...T13:35:00.646Z`) is refused. The refusal is safe --
+    nothing is committed -- but it means a client must send the documented form. Found by the
+    real-stack browser journey; the API had never been exercised with `occurred_at`."""
+
+    def _receive_at(self, stamp):
+        operation = self._movement_op(100, "receive")
+        operation["data"][self._definition_id("stock_movement", "occurred_at")] = stamp
+        return self._post([operation])
+
+    def test_the_documented_timestamp_form_is_accepted_and_returned_unchanged(self):
+        response = self._receive_at("2026-09-19T13:35:00")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(self._balance(), 100)
+        movement = self._records("stock_movement")[0]
+        stored = str(movement[self._definition_id("stock_movement", "occurred_at")]).replace(" ", "T")
+        self.assertTrue(stored.startswith("2026-09-19T13:35:00"), stored)
+
+    def test_an_iso_timestamp_with_milliseconds_and_a_zone_is_refused_and_commits_nothing(self):
+        response = self._receive_at("2026-09-19T13:35:00.646Z")
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("ISO datetime", response.data["detail"])
+        self.assertEqual(self._records("stock_movement"), [])
+        self.assertIsNone(self._balance())

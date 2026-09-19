@@ -119,7 +119,7 @@ describe("receive stock", () => {
         "R:stock_movement_warehouse": "w1",
         "F:stock_movement.quantity_delta": 100,
         "F:stock_movement.movement_type": "receive",
-        "F:stock_movement.occurred_at": "2026-09-19T10:30:00.000Z",
+        "F:stock_movement.occurred_at": "2026-09-19T10:30:00",
       },
     });
   });

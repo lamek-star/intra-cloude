@@ -182,18 +182,20 @@ export function MovementHistory({ partId }: { partId?: string }) {
 
 export default function InventoryPage() {
   return (
-    <section aria-labelledby="stock-title" className="space-y-8">
-      <div>
+    <div className="space-y-8">
+      <section aria-labelledby="stock-title">
         <h2 id="stock-title" className="text-base font-semibold text-slate-900">
           Stock
         </h2>
         <p className="mb-4 text-sm text-slate-500">What you have, and where. Only receiving, selling and moving stock changes it.</p>
         <StockTable />
-      </div>
-      <div>
-        <h2 className="mb-3 text-base font-semibold text-slate-900">Recent stock movements</h2>
+      </section>
+      <section aria-labelledby="movements-title">
+        <h2 id="movements-title" className="mb-3 text-base font-semibold text-slate-900">
+          Recent stock movements
+        </h2>
         <MovementHistory />
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }

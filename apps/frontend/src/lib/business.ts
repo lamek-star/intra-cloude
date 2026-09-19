@@ -168,6 +168,13 @@ export function parseQuantity(input: string): number | null {
   return value >= 1 ? value : null;
 }
 
+/** A timestamp in the form the platform's datetime contract accepts: naive UTC, whole seconds,
+ * `YYYY-MM-DDTHH:MM:SS` (databases/formats.py, shared with the CSV importer). `Date.toISOString()`
+ * -- with milliseconds and a `Z` -- is refused by the API, so it must not be sent as-is. */
+export function platformTimestamp(now: Date = new Date()): string {
+  return now.toISOString().slice(0, 19);
+}
+
 export function todayIso(now: Date = new Date()): string {
   return now.toISOString().slice(0, 10);
 }
@@ -250,7 +257,7 @@ export function buildReceiveOperations(schema: BusinessSchema, input: ReceiveInp
       quantity_delta: input.quantity,
       movement_type: "receive",
       reference: input.reference?.trim() || undefined,
-      occurred_at: now.toISOString(),
+      occurred_at: platformTimestamp(now),
     }),
   );
   return operations;
@@ -292,7 +299,7 @@ export function buildSaleOperations(schema: BusinessSchema, input: SaleInput): O
         quantity_delta: -line.quantity,
         movement_type: "sale",
         reference: input.invoiceNumber,
-        occurred_at: now.toISOString(),
+        occurred_at: platformTimestamp(now),
       }),
     );
   }

@@ -1,9 +1,15 @@
 // Small, dependency-free display helpers for the business screens.
 
-/** "19 Sep 2026, 10:30" for an ISO timestamp; the original text if it can't be parsed. */
+/** The platform stores and returns naive UTC timestamps (`2026-09-19T13:35:00`); JavaScript would
+ * read a zone-less string as LOCAL time and show the wrong hour, so mark it as UTC first. */
+function asUtc(value: string): string {
+  return /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(value) ? `${value.replace(" ", "T")}Z` : value;
+}
+
+/** "19 Sep 2026, 10:30" for a platform timestamp; the original text if it can't be parsed. */
 export function formatDateTime(value: unknown): string {
   if (typeof value !== "string" || !value) return "";
-  const date = new Date(value);
+  const date = new Date(asUtc(value));
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
