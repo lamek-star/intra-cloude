@@ -29,15 +29,16 @@ export default function Overview() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all(
-      COUNTS.map(async (c) => [c.key, (await listRecords(schema, c.key, { limit: 1 })).count] as const),
-    )
-      .then((pairs) => {
-        if (!cancelled) setCounts(Object.fromEntries(pairs));
-      })
-      .catch(() => {
-        if (!cancelled) setCounts({});
+    // Each count stands alone: a model this person may not read (403) leaves only its own tile empty,
+    // instead of blanking every number on the page.
+    Promise.allSettled(COUNTS.map((c) => listRecords(schema, c.key, { limit: 1 }))).then((results) => {
+      if (cancelled) return;
+      const next: Record<string, number> = {};
+      results.forEach((result, index) => {
+        if (result.status === "fulfilled") next[COUNTS[index].key] = result.value.count;
       });
+      setCounts(next);
+    });
     return () => {
       cancelled = true;
     };
@@ -75,7 +76,13 @@ export default function Overview() {
                 <Link href={`${base}${c.href}`} className="block">
                   <Card className="transition-colors hover:border-brand-400/40 hover:bg-slate-50">
                     <span className="block text-xs text-slate-500">{c.label}</span>
-                    <span className="mt-1 block text-2xl font-semibold tabular-nums text-slate-900">{counts[c.key] ?? "—"}</span>
+                    <span className="mt-1 block text-2xl font-semibold tabular-nums text-slate-900">
+                      {counts[c.key] ?? (
+                        <>
+                          —<span className="sr-only"> not available</span>
+                        </>
+                      )}
+                    </span>
                   </Card>
                 </Link>
               </li>

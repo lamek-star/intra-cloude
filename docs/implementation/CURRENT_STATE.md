@@ -148,6 +148,13 @@ Atomic receive/sell checkpoint (same day, logs in the same folder):
   full page load issued 2 + N schema requests and exhausted the per-user rate limit (300/min, `Too Many Requests` in the log);
   fixed at the cause with `GET /app-instances/<id>/schema/` (1 request, constant queries, same access as the list endpoints;
   5 tests) — the throttle was NOT loosened. Flagship journey re-passed afterwards (`flagship-e2e-after-a11y.log`).
+- **Restricted-cashier gate** -- `cashier-run1.log` ... `cashier-run5.log`, `e2e/spare-parts-cashier.spec.ts`: 13/13 after
+  fixes. Found: **UI defect** (a refused model blanked every count on the application home; fixed per count, unit
+  test) and a **P1 authorization limit** (a cashier who may sell can also post stock-raising movements; model-level
+  grants cannot express movement direction; pinned by a test, documented with exact grants in
+  `docs/LOCAL_EDITION_APPLICATIONS.md`, NOT changed because it is an authorization design decision). Everything else
+  asked for is refused by the server and audited: ungranted models/counts/records, files, install, org/permission
+  management, ledger and balance tampering.
 - Normalization vectors (`tests/fixtures/part-number-normalization.json`, 19): Python, PostgreSQL and JavaScript agree, and the
   separate spare-parts reference app's `normalizeNumber` agrees on 19/19. Review and decisions:
   `docs/implementation/SPAREPARTS_DEMO_REVIEW.md`.

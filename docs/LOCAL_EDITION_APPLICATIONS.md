@@ -97,9 +97,62 @@ unchanged and is now pinned by backend tests for both the accepted and the refus
 consumers:** the datetime contract is stricter than ISO 8601 (no `Z`, no fractional seconds); it should be stated
 in the external API documentation.
 
+## Roles and the cashier limit (2026-09-19)
+
+The restricted-cashier journey (`apps/frontend/e2e/spare-parts-cashier.spec.ts`, 13 tests, against the real
+stack; log `cashier-run5.log`) creates a second real user, adds them to the organization through the "Add member"
+dialog, and gives them **only these grants** through the sharing system (no role at all):
+
+| Resource | Level | Why |
+| --- | --- | --- |
+| `app_instance` (the Spare Parts application) | read | open the application and read its structure |
+| `app_model` `part`, `part_number`, `warehouse`, `customer` | read | find a product, pick a customer and warehouse |
+| `app_model` `sales_order`, `sales_order_line`, `invoice`, `stock_movement`, `inventory` | write | record a sale (all five are written by one sale) |
+
+Not granted: `supplier`, `purchase_order`, `purchase_order_line`, `vehicle` (no access of any kind); write on
+`part`, `part_number`, `warehouse`, `customer`; no bucket access; no schema, sharing, membership, audit or backup
+right. Proven **by the server**, in the browser and by direct API calls:
+
+- Works: login, product and part-number search, stock view, a sale through the normal screens (on-hand 95 -> 93,
+  read back from the owner's session), the sales document.
+- Refused (403, no count/results/name in the body): every list or record read on an ungranted model, including a
+  real supplier id substituted directly; create/update/delete on a read-only model (and the UI's "Add product"
+  dialog shows the server's refusal and creates nothing); model creation, share creation and revocation, member
+  add, role assignment, workspace/project creation, audit read, and template installation.
+- Ledger: the cashier cannot edit or delete a movement, cannot overwrite an inventory balance, and cannot forge an
+  inventory row for a new warehouse -- the database refuses all three even though the cashier holds write access.
+- Files: the product's attachment list contains **no filename** for the cashier and its download is refused
+  (bucket access is required); the Files tab shows nothing. Verified against a real attached file.
+- Home page: the counts a cashier may read are shown and a refused one shows a dash ("not available") -- a defect
+  found by this journey (one refused model blanked every count) and fixed, with a unit test.
+- Revoking one grant takes effect on the cashier's very next sale: refused, "Nothing was changed", no half-made
+  order. Every refused attempt is a `denied` audit event against the cashier; the receive below is audited too.
+- The application's structure (model, field and relationship names, e.g. that a Supplier model exists) is visible to
+  anyone who can open the application; records, counts, files and totals are not.
+
+### KNOWN LIMIT -- the cashier gate is not fully passed (P1, decision needed)
+
+Grants are **per model**, and ADR-0016 defines authority over a stock movement as authority over the movement
+model *and* its balance model. A sale and a receive both write exactly those two models, so **a cashier who may
+sell can also post a positive `receive` movement (verified: HTTP 201, on-hand 93 -> 94) or a negative movement
+that is not a sale.** The ledger keeps the books consistent and the action is audited against the cashier, but the
+server cannot say "may sell, may not receive/adjust". Other consequences of model-level authority, stated so
+nobody assumes more than exists:
+
+- no field-level rules: a cashier who can read `part` also sees its cost field;
+- no "own sales only": write on `sales_order` shows every user's orders, invoices and totals.
+
+This is pinned by the test named `KNOWN LIMIT (pinned)`; it must be inverted deliberately when fixed. It is **not**
+fixed here: it is an authorization design question (CLAUDE.md, "When Uncertain") and any answer changes the
+template/ledger definition of installed instances. Recommended conservative direction for an ADR: let a ledger
+binding optionally name an *authority model* per movement direction (for Spare Parts: stock-increasing movements
+require write on `purchase_order`; non-sale decreases require an explicit adjustment grant), default-deny, with a
+migration for existing instances. Until then the honest statement is: **a restricted cashier is restricted in what
+data they can read and which records they can change, but not in the direction of stock movements.**
+
 ## What has to happen for the flagship to reach QUALIFIED
 
 1. ~~Gallery, install, and Spare Parts business screens in the browser~~ — done (see above).
 2. ~~One Playwright journey through the normal UI against the real backend~~ — done (2 passes).
-3. Restart persistence, template upgrade of an installed instance, and offline run of that journey.
+3. Restart persistence, accessibility, restricted cashier (**one open P1: movement-direction authority**), scale, template upgrade of an installed instance, destructive restore, and offline run of that journey.
 4. Then — and only then — flip `spare_parts` to QUALIFIED in the catalog with those logs listed under `evidence`.

@@ -23,6 +23,7 @@ export type FlagshipBusiness = {
   orgId: string;
   orgName: string;
   projectUrl: string;
+  workspaceId: string;
   appHome: string;
   instanceId: string;
   salesDocumentUrl: string;
@@ -42,6 +43,8 @@ export async function buildFlagshipBusiness(
   await page.getByLabel("Name", { exact: true }).fill("Company");
   await page.getByRole("dialog").getByRole("button", { name: "Create", exact: true }).click();
   await page.getByRole("link", { name: /Company/ }).click();
+  await expect(page).toHaveURL(/\/workspaces\/[0-9a-f-]{36}$/);
+  const workspaceId = new URL(page.url()).pathname.split("/workspaces/")[1];
   await page.getByRole("button", { name: "New project" }).first().click();
   await page.getByLabel("Name", { exact: true }).fill("Shop");
   await page.getByRole("dialog").getByRole("button", { name: "Create", exact: true }).click();
@@ -123,6 +126,7 @@ export async function buildFlagshipBusiness(
     orgId,
     orgName,
     projectUrl,
+    workspaceId,
     appHome,
     instanceId,
     salesDocumentUrl,

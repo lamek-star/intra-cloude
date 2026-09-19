@@ -5,6 +5,7 @@ import { makeSchema } from "./business";
 
 const FIELDS: Record<string, string[]> = {
   part: ["name", "list_price"],
+  part_number: ["number", "source"],
   inventory: ["quantity_on_hand"],
   stock_movement: ["quantity_delta", "movement_type", "reference", "occurred_at"],
   purchase_order: ["status", "order_date", "total_amount"],
