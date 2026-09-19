@@ -37,6 +37,7 @@ urlpatterns = [
     path("app-instances/<uuid:object_id>/quantity-ledgers/", views.QuantityLedgerList.as_view()),
     path("app-instances/<uuid:object_id>/transactions/", record_views.TransactionView.as_view()),
     path("built-in-apps/", built_in_views.BuiltInAppList.as_view()),
+    path("app-instances/<uuid:object_id>/built-in/retry/", built_in_views.BuiltInAppRetry.as_view()),
     path(
         "projects/<uuid:project_id>/built-in-apps/<str:key>/install/",
         built_in_views.BuiltInAppInstall.as_view(),

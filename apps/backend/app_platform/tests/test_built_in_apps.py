@@ -21,6 +21,7 @@ from app_platform.reference_templates import REGISTRY
 from app_platform.tests.test_foundation import project_for
 from organizations.models import Membership
 from organizations.services import create_organization
+from workspaces.models import Project
 
 
 class CatalogTests(SimpleTestCase):
@@ -268,3 +269,132 @@ class InstallTests(TransactionTestCase):
             {a["key"] for a in response.data["results"]},
             {k for k, a in CATALOG.items() if a.status != Status.DEFERRED},
         )
+
+
+class InstalledStateTests(TransactionTestCase):
+    """The gallery must know, per project: is it installed, which instance, and is its
+    runtime ready, pending or failed -- and a failed setup must be safely retryable."""
+
+    databases = {"default", "tenant"}
+
+    def setUp(self):
+        call_command("seed_permissions", verbosity=0)
+        self.owner = User.objects.create_user(email="state-owner@example.com")
+        self.org = create_organization(name="State Org", created_by=self.owner)
+        self.project = project_for(self.owner, self.org)
+        self.other_project = Project.objects.create(
+            workspace=self.project.workspace, name="Second Project", created_by=self.owner
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.owner)
+        self.install_url = f"/api/v1/projects/{self.project.id}/built-in-apps/spare_parts/install/"
+
+    def tearDown(self):
+        with connections["tenant"].cursor() as cursor:
+            for receipt in RuntimeProvision.objects.all():
+                cursor.execute(
+                    sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(
+                        sql.Identifier(receipt.plan["schema_name"])
+                    )
+                )
+        super().tearDown()
+
+    def _entry(self, project=None):
+        response = self.client.get("/api/v1/built-in-apps/", {"project": str((project or self.project).id)})
+        self.assertEqual(response.status_code, 200, response.data)
+        return next(a for a in response.data["results"] if a["key"] == "spare_parts")
+
+    @override_settings(SHOW_UNQUALIFIED_BUILT_IN_APPS=True)
+    def test_the_listing_reports_not_installed_then_installed_and_ready(self):
+        self.assertEqual(self._entry()["installed"], [])
+        created = self.client.post(self.install_url, {"label": "Main Shop"}, format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        installed = self._entry()["installed"]
+        self.assertEqual(
+            installed, [{"id": str(created.data["id"]), "label": "Main Shop", "runtime": "ready"}]
+        )
+
+    @override_settings(SHOW_UNQUALIFIED_BUILT_IN_APPS=True)
+    def test_installed_is_per_project(self):
+        self.client.post(self.install_url, {}, format="json")
+        self.assertEqual(len(self._entry()["installed"]), 1)
+        self.assertEqual(self._entry(self.other_project)["installed"], [])
+
+    @override_settings(SHOW_UNQUALIFIED_BUILT_IN_APPS=True)
+    def test_the_listing_without_a_project_carries_no_installed_state(self):
+        response = self.client.get("/api/v1/built-in-apps/")
+        self.assertTrue(all(a["installed"] == [] for a in response.data["results"]))
+
+    @override_settings(SHOW_UNQUALIFIED_BUILT_IN_APPS=True)
+    def test_a_project_the_caller_is_not_a_member_of_is_not_found(self):
+        outsider = User.objects.create_user(email="state-outsider@example.com")
+        create_organization(name="Elsewhere", created_by=outsider)
+        client = APIClient()
+        client.force_authenticate(outsider)
+        response = client.get("/api/v1/built-in-apps/", {"project": str(self.project.id)})
+        self.assertEqual(response.status_code, 404)
+
+    @override_settings(SHOW_UNQUALIFIED_BUILT_IN_APPS=True)
+    def test_a_malformed_project_id_is_a_clean_400(self):
+        self.assertEqual(self.client.get("/api/v1/built-in-apps/", {"project": "nope"}).status_code, 400)
+
+    @override_settings(SHOW_UNQUALIFIED_BUILT_IN_APPS=True)
+    def test_a_member_who_cannot_read_instances_sees_none_listed(self):
+        self.client.post(self.install_url, {}, format="json")
+        member = User.objects.create_user(email="state-member@example.com")
+        Membership.objects.create(user=member, organization=self.org, status=Membership.Status.ACTIVE)
+        client = APIClient()
+        client.force_authenticate(member)
+        response = client.get("/api/v1/built-in-apps/", {"project": str(self.project.id)})
+        entry = next(a for a in response.data["results"] if a["key"] == "spare_parts")
+        self.assertEqual(entry["installed"], [])
+
+    @override_settings(SHOW_UNQUALIFIED_BUILT_IN_APPS=True)
+    def test_a_failed_setup_is_reported_and_can_be_retried_to_ready(self):
+        with patch("app_platform.built_in_apps.provisioning.execute", side_effect=RuntimeError("boom")):
+            failed = self.client.post(self.install_url, {"label": "Half Shop"}, format="json")
+        self.assertEqual(failed.status_code, 500)
+        [entry] = self._entry()["installed"]
+        self.assertEqual(entry["label"], "Half Shop")
+        self.assertNotEqual(entry["runtime"], "ready")
+
+        retry = self.client.post(f"/api/v1/app-instances/{entry['id']}/built-in/retry/", {}, format="json")
+        self.assertEqual(retry.status_code, 200, retry.data)
+        self.assertEqual(
+            self._entry()["installed"], [{"id": entry["id"], "label": "Half Shop", "runtime": "ready"}]
+        )
+        self.assertEqual(AppInstance.objects.filter(organization=self.org).count(), 1)  # no second instance
+
+    @override_settings(SHOW_UNQUALIFIED_BUILT_IN_APPS=True)
+    def test_retrying_an_already_ready_application_is_a_harmless_no_op(self):
+        created = self.client.post(self.install_url, {}, format="json")
+        again = self.client.post(
+            f"/api/v1/app-instances/{created.data['id']}/built-in/retry/", {}, format="json"
+        )
+        self.assertEqual(again.status_code, 200, again.data)
+        self.assertEqual(QuantityLedgerBinding.objects.filter(instance_id=created.data["id"]).count(), 1)
+
+    @override_settings(SHOW_UNQUALIFIED_BUILT_IN_APPS=True)
+    def test_retry_is_refused_for_an_instance_that_is_not_a_built_in_application(self):
+        from app_platform import instances, templates
+        from app_platform.tests.test_foundation import sample
+
+        template = templates.create_template(self.owner, self.org, {"label": "Hand made", "draft": sample()})
+        version = templates.publish_template(self.owner, template)
+        manual = instances.install(
+            self.owner, self.project, {"label": "Manual", "template_version": str(version.id)}
+        )
+        response = self.client.post(f"/api/v1/app-instances/{manual.id}/built-in/retry/", {}, format="json")
+        self.assertEqual(response.status_code, 404)
+
+    @override_settings(SHOW_UNQUALIFIED_BUILT_IN_APPS=True)
+    def test_retry_by_another_organizations_user_is_not_found(self):
+        created = self.client.post(self.install_url, {}, format="json")
+        outsider = User.objects.create_user(email="retry-outsider@example.com")
+        create_organization(name="Retry Elsewhere", created_by=outsider)
+        client = APIClient()
+        client.force_authenticate(outsider)
+        response = client.post(
+            f"/api/v1/app-instances/{created.data['id']}/built-in/retry/", {}, format="json"
+        )
+        self.assertEqual(response.status_code, 404)

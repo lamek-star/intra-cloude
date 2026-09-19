@@ -37,7 +37,7 @@ from rest_framework.exceptions import APIException, NotFound
 
 from . import instances, provisioning, templates
 from .definitions import validate_definition
-from .models import AppInstance, AppTemplate
+from .models import AppInstance, AppTemplate, RuntimeProvision
 from .reference_templates import REGISTRY
 from .runtime_plan import plan_runtime
 
@@ -243,8 +243,52 @@ def visible_apps() -> list[BuiltInApp]:
     return [app for app in CATALOG.values() if _shown_to_customers(app)]
 
 
-def listing() -> list[dict]:
-    """What the application gallery shows: only what this deployment may offer."""
+def built_in_key(instance: AppInstance) -> str | None:
+    """The catalog key an instance was installed from, or None for a hand-made app."""
+    description = instance.source_version.template.description
+    if not description.startswith(BUILT_IN_MARKER):
+        return None
+    return description.split("\n", 1)[0][len(BUILT_IN_MARKER) :]
+
+
+def runtime_state(receipt: RuntimeProvision | None) -> str:
+    """ready / failed / pending / not_provisioned -- what the gallery shows for an installed app."""
+    if receipt is None:
+        return "not_provisioned"
+    if receipt.completed_at:
+        return "ready"
+    return "failed" if receipt.last_error else "pending"
+
+
+def _installed_by_key(instances_qs) -> dict[str, list[dict]]:
+    rows = list(
+        instances_qs.filter(
+            archived=False, source_version__template__description__startswith=BUILT_IN_MARKER
+        ).select_related("source_version__template")
+    )
+    receipts = {r.instance_id: r for r in RuntimeProvision.objects.filter(instance__in=rows)}
+    installed: dict[str, list[dict]] = {}
+    for instance in rows:
+        key = built_in_key(instance)
+        if key is None:
+            continue
+        installed.setdefault(key, []).append(
+            {
+                "id": str(instance.id),
+                "label": instance.label,
+                "runtime": runtime_state(receipts.get(instance.id)),
+            }
+        )
+    return installed
+
+
+def listing(readable_instances=None) -> list[dict]:
+    """What the application gallery shows: only what this deployment may offer.
+
+    `readable_instances` is a queryset of the instances the caller may already read
+    (authorization is the view's job); when given, each entry also reports which of
+    them were installed from it and whether their runtime is ready."""
+    installed = _installed_by_key(readable_instances) if readable_instances is not None else {}
     return [
         {
             "key": app.key,
@@ -254,6 +298,7 @@ def listing() -> list[dict]:
             "status": app.status.value,
             "status_label": STATUS_LABELS[app.status],
             "evidence": list(app.evidence),
+            "installed": installed.get(app.key, []),
         }
         for app in visible_apps()
     ]
@@ -303,6 +348,27 @@ def install(actor, project, key: str, label: str | None = None) -> AppInstance:
             version = templates.publish_template(actor, template)
         instance = instances.install(actor, project, {"label": label, "template_version": str(version.id)})
 
+    try:
+        plan = plan_runtime(actor, instance)
+        provisioning.reserve(actor, instance, plan["fingerprint"])
+        provisioning.execute(instance.id, actor)
+    except APIException:
+        raise
+    except Exception as exc:  # noqa: BLE001 - never leak an infrastructure traceback to the customer
+        raise InstallFailed() from exc
+    return instance
+
+
+def retry_provisioning(actor, instance: AppInstance) -> AppInstance:
+    """Finish preparing a built-in application whose setup did not complete.
+
+    Safe to repeat: it is the same plan -> reserve -> execute sequence `install()` runs,
+    each step of which is idempotent (a completed runtime is returned as-is, an
+    unfinished one is reconciled and rebuilt). It never creates a second instance.
+    Only instances installed from this catalog qualify; a hand-made app is 'not found'."""
+    key = built_in_key(instance)
+    if key is None or key not in CATALOG:
+        raise NotFound("No such application.")
     try:
         plan = plan_runtime(actor, instance)
         provisioning.reserve(actor, instance, plan["fingerprint"])
