@@ -25,6 +25,7 @@ import {
   ErrorBanner,
   Input,
   Label,
+  LinkButton,
   Modal,
   PageHeader,
   PageLoading,
@@ -104,6 +105,11 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
             : []),
           { label: project.name },
         ]}
+        actions={
+          <LinkButton href={`/projects/${projectId}/apps`} variant="primary">
+            Applications
+          </LinkButton>
+        }
       />
 
       <div className="mb-8">

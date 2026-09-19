@@ -10,6 +10,14 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
  * rather than three copies of this logic. */
 export function useDialogA11y(open: boolean, onClose: () => void, panelRef: React.RefObject<HTMLElement | null>) {
   const previouslyFocused = useRef<HTMLElement | null>(null);
+  // The latest onClose, read at key-press time. It must NOT be an effect dependency: a parent
+  // that re-renders (e.g. on every keystroke in a form whose state it owns) passes a new function
+  // each time, and re-running this effect would move focus to the first control on every render
+  // -- typing a space would then "press" the Close button.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -21,7 +29,7 @@ export function useDialogA11y(open: boolean, onClose: () => void, panelRef: Reac
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== "Tab" || !panel) return;
@@ -42,5 +50,5 @@ export function useDialogA11y(open: boolean, onClose: () => void, panelRef: Reac
       document.removeEventListener("keydown", onKeyDown, true);
       previouslyFocused.current?.focus?.();
     };
-  }, [open, onClose, panelRef]);
+  }, [open, panelRef]);
 }

@@ -108,3 +108,36 @@ describe("Modal", () => {
     await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 });
+
+// Regression: a parent that owns the form state re-renders on every keystroke and hands Modal a
+// new onClose each time. That must not move focus (typing a space then pressed the Close button
+// and dismissed the dialog).
+describe("Modal focus stability", () => {
+  it("keeps focus in the field being typed in when the parent re-renders with a new onClose", async () => {
+    function Parent() {
+      const [name, setName] = useState("");
+      return (
+        <Modal open onClose={() => setName("closed")} title="Name it">
+          <input aria-label="Name" value={name} onChange={(e) => setName(e.target.value)} />
+        </Modal>
+      );
+    }
+    const user = userEvent.setup();
+    render(<Parent />);
+    const input = screen.getByLabelText("Name");
+    await user.click(input);
+    await user.type(input, "My Shop");
+    expect(input).toHaveValue("My Shop");
+    expect(input).toHaveFocus();
+  });
+
+  it("still closes on Escape using the latest onClose", async () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const { rerender } = render(<Modal open onClose={first} title="T"><button>ok</button></Modal>);
+    rerender(<Modal open onClose={second} title="T"><button>ok</button></Modal>);
+    await userEvent.setup().keyboard("{Escape}");
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+});

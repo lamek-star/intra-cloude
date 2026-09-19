@@ -99,6 +99,8 @@ type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   body?: unknown;
   isFormData?: boolean;
+  /** Extra request headers -- e.g. `Idempotency-Key` on a business operation. */
+  headers?: Record<string, string>;
 };
 
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
@@ -109,7 +111,7 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     await ensureCsrfCookie();
   }
 
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...opts.headers };
   let body: BodyInit | undefined;
 
   if (opts.body !== undefined) {
@@ -160,6 +162,10 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: "POST", body }),
+  /** POST with an `Idempotency-Key`: replaying the same key and body returns the first result
+   * instead of repeating the operation (see the backend's operation journal). */
+  postIdempotent: <T>(path: string, body: unknown, idempotencyKey: string) =>
+    request<T>(path, { method: "POST", body, headers: { "Idempotency-Key": idempotencyKey } }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: "PATCH", body }),
   del: <T = void>(path: string, body?: unknown) => request<T>(path, { method: "DELETE", body }),
   postForm: <T>(path: string, form: FormData) =>
