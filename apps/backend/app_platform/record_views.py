@@ -104,6 +104,13 @@ class RecordDetailView(FoundationView):
             records.delete_record(request.user, model, record_id)
         except records.RecordAccessDenied:
             return Response(status=403)
+        except records.RecordValueError as exc:
+            # Was already reachable pre-existing (e.g. another table's
+            # RESTRICT foreign key blocking this delete) with no handler
+            # here, unlike get/patch/post above -- a real 500 leak this
+            # feature's own delete-guard trigger (quantity_ledger.py) made
+            # newly certain to hit, not newly introduced by it.
+            return Response({"detail": str(exc)}, status=400)
         except row_ops.RowNotFound as exc:
             raise Http404 from exc
         return Response(status=204)

@@ -18,7 +18,7 @@ from permissions.models import ResourceGrant
 from permissions.services import has_permission
 from workspaces.views import get_member_project
 
-from . import instances, templates, unit_scope, workflows
+from . import instances, quantity_ledger, templates, unit_scope, workflows
 from .access import check, get_owned
 from .models import (
     AppInstance,
@@ -38,6 +38,7 @@ from .serializers import (
     FieldSerializer,
     InstanceSerializer,
     ModelSerializer,
+    QuantityLedgerBindingSerializer,
     RelationshipSerializer,
     StateSerializer,
     TemplateSerializer,
@@ -268,6 +269,25 @@ class RelationshipList(FoundationView):
         obj = get_owned(AppInstance, object_id, request.user, "organization")
         return Response(
             RelationshipSerializer(instances.add_relationship(request.user, obj, request.data)).data,
+            status=201,
+        )
+
+
+class QuantityLedgerList(FoundationView):
+    # Schema-mutating (installs a real tenant trigger) -- human-only,
+    # matching ConstraintList/RelationshipList above; no unbind endpoint
+    # exists yet, see QuantityLedgerBinding's own docstring.
+    service_account_methods = frozenset({"GET"})
+
+    def get(self, request, object_id):
+        obj = get_owned(AppInstance, object_id, request.user, "organization")
+        read_instance(request.user, obj)
+        return self.page(request, obj.quantity_ledgers.all(), QuantityLedgerBindingSerializer)
+
+    def post(self, request, object_id):
+        obj = get_owned(AppInstance, object_id, request.user, "organization")
+        return Response(
+            QuantityLedgerBindingSerializer(quantity_ledger.bind(request.user, obj, request.data)).data,
             status=201,
         )
 

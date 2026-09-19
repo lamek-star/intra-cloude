@@ -28,7 +28,7 @@ Architecture is unchanged: Next.js and Django behind Caddy, separate control
 and tenant PostgreSQL, MinIO files, Valkey and Celery; Docker Compose inside
 the Windows WSL2 appliance with the existing Control Center. Tenant records
 remain in managed tenant schemas. There are 20 bounded local Django apps.
-App Platform's initial migration series ends at `0018_webhookdelivery`.
+App Platform's migration series currently ends at `0020_quantity_ledger` (`0019` added the durable webhook delivery schedule).
 
 The former content of this file is preserved in
 [UI professionalization history](UI_PROFESSIONALIZATION_HISTORY.md).
@@ -38,7 +38,7 @@ Old phase/test counts describe their historical checkpoints, not this HEAD.
 
 | Priority | Area | State / evidence |
 |---|---|---|
-| P0 | Inventory consistency | PARTIAL, foundation fixed: ADR-0016's operation journal (record-level idempotency, `FOR UPDATE` locking, durable at-least-once webhook/audit projection) is implemented and passing; the ADR's own second half — an opt-in generic quantity ledger with DB-trigger-enforced atomic balance/movement effects — is not yet built. No atomic receive/sell business operation exists; reference templates are unchanged beyond formatting. |
+| P0 | Inventory consistency | PARTIAL, foundation fixed: ADR-0016's operation journal (record-level idempotency, `FOR UPDATE` locking, durable at-least-once webhook/audit projection) is committed (`9f2bf16`). The generic quantity ledger is implemented and VERIFIED 2026-09-19 (`app_platform/quantity_ledger.py`, migration `0020`; 39 tests against real PostgreSQL incl. concurrency and raw-SQL bypass; hardening found and fixed movement mutability, a forgeable bypass flag, unguarded balance dimensions, NULL dimensions, and unguarded TRUNCATE — see ADR-0016 "Implementation status"). Still open: reference templates (Spare Parts, Inventory & Sales) are not yet bound to the ledger, there is no multi-leg sale/transfer business operation, and a ledger-bound runtime has not been through the destructive backup/restore drill. |
 | P0 | Full business recovery | PARTIAL: database/object/configuration backup primitives exist; complete disposable business recovery drill still required |
 | P0 | Offline business journey | UNVERIFIED at current HEAD; will use an isolated network without changing host connectivity |
 | P0 | Windows installer | EXTERNALLY BLOCKED: disposable-VM scripts exist; ISO/elevated interactive lifecycle evidence absent |
@@ -57,7 +57,7 @@ recovery. Full recovery requires a quiesced, matched control/tenant/object
 backup and protected configuration/secrets. No distributed atomicity is
 claimed by the existing independent backup commands.
 
-## 2026-09-18 session: P1 fixes verified, not yet committed
+## 2026-09-18 session: P1 fixes verified (committed as `9f2bf16`)
 
 The five P1 rows marked FIXED above were implemented and verified against the
 disposable qualification harness (`scripts/qualification/compose.yaml`,
@@ -74,14 +74,25 @@ the fix, per this repository's own standing methodology — see the table
 evidence above and the raw logs under
 `C:/Users/Hp/.codex/tmp/intraforge-local-20260918/`.
 
-As of this checkpoint, that work is present in the working tree
-(`app_platform/operation_journal.py`, `delivery_transport.py`,
-`outbound_http.py`, migration `0019`, `exports/budgets.py`,
-`AppModelAccess.tsx`, `app-platform.spec.ts`, ADR-0016, plus ~30 touched
-files, mostly `ruff format` reflow) but **not committed**. It has not been
-re-verified after this checkpoint's own review; before committing, rerun at
-minimum the app_platform/databases/exports test files listed above against
-a live stack, since the working tree may have changed since the logged run.
+That work was committed locally as `9f2bf16` (ADR-0016 journal, SSRF address
+binding, unit-scoped attachments). The earlier caveat about re-verification is
+superseded by the 2026-09-19 run below.
+
+## 2026-09-19 session: quantity ledger qualified
+
+Run against the disposable qualification stack from the working tree that
+becomes the ledger checkpoint commit (logs under
+`C:/Users/Hp/.codex/tmp/intraforge-local-20260918/`):
+
+- `ledger-hardening-reproduction.log` — 12 of 39 ledger tests failing against
+  the first implementation (movement edit/delete, TRUNCATE, forgeable bypass
+  flag, balance dimension repointing, NULL dimensions, missing `reconcile`).
+- `ledger-final-tests.log` — 39 passed after the fixes.
+- `ledger-full-pytest.log` — full backend suite from `/app`: **925 passed,
+  0 failed** (11m55s; 3 `AlwaysEagerIgnored` warnings from real-Celery tests).
+  This is the fresh count; earlier counts in this file describe earlier trees.
+- `ledger-mypy.log` — mypy clean over `app_platform` (82 files); `ruff check`
+  and `ruff format --check` clean; `makemigrations --check` reports no drift.
 
 ## Active work
 

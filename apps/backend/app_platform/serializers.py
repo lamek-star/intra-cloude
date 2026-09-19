@@ -8,6 +8,8 @@ from .models import (
     ConstraintDefinition,
     FieldDefinition,
     ModelDefinition,
+    QuantityLedgerBinding,
+    QuantityLedgerDimension,
     RelationshipDefinition,
     UnitScopedGrant,
     WorkflowDefinition,
@@ -68,6 +70,32 @@ class ModelSerializer(serializers.ModelSerializer):
     class Meta:
         model = ModelDefinition
         fields = ["id", "instance", "key", "label", "position", "source_definition_id"]
+        read_only_fields = fields
+
+
+class QuantityLedgerDimensionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = QuantityLedgerDimension
+        fields = ["id", "balance_relationship", "movement_relationship"]
+        read_only_fields = fields
+
+
+class QuantityLedgerBindingSerializer(serializers.ModelSerializer):
+    dimensions = QuantityLedgerDimensionSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = QuantityLedgerBinding
+        fields = [
+            "id",
+            "instance",
+            "balance_model",
+            "balance_field",
+            "movement_model",
+            "movement_field",
+            "allow_negative",
+            "dimensions",
+            "created_at",
+        ]
         read_only_fields = fields
 
 

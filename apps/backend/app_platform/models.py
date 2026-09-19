@@ -588,3 +588,90 @@ class AppInstanceUpgrade(models.Model):
 
     def __str__(self):
         return f"{self.instance_id}: v{self.from_version.number} -> v{self.to_version.number}"
+
+
+class QuantityLedgerBinding(models.Model):
+    """ADR-0016's closing half: an opt-in, administrator-validated binding
+    between an append-only movement model's field and the balance model's
+    field its inserts must atomically maintain, over a shared set of
+    relationship "dimensions" (e.g. Part, Warehouse) -- `operation_journal.py`
+    covers durable audit/webhook evidence for a mutation that already
+    committed; this covers making the mutation itself atomic (and
+    concurrency-safe, and rejecting an insufficient balance) in the first
+    place, enforced by a real Postgres trigger installed by
+    `quantity_ledger.bind()`, not application code -- so it holds even for
+    a direct SQL insert that never goes through `records.py`.
+
+    `unique_constraint` must already exist on `balance_model` and cover
+    exactly this binding's dimension relationships and no scalar fields --
+    it is the physical `ON CONFLICT` target the installed trigger upserts
+    against; never a second, parallel uniqueness mechanism alongside
+    `ConstraintDefinition`. `movement_field`/`balance_field` must both be
+    `FieldDefinition.DataType.INTEGER` and required -- this is a generic
+    *integer* ledger (ADR-0016's own words), not a general formula/
+    computed-column concept. `quantity_ledger.bind()` only allows binding
+    while both tables are still empty: existing business data is never
+    silently reconciled or rewritten. There is deliberately no unbind in
+    this pass -- see ADR-0016 and docs/implementation/CURRENT_STATE.md for
+    that and the other documented limits (no multi-leg transfer-in-one-
+    transaction endpoint yet; a bound balance row can never be deleted
+    directly, only reach zero through a reversing movement)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    instance = models.ForeignKey(AppInstance, on_delete=models.CASCADE, related_name="quantity_ledgers")
+    balance_model = models.ForeignKey(ModelDefinition, on_delete=models.PROTECT, related_name="+")
+    balance_field = models.ForeignKey(FieldDefinition, on_delete=models.PROTECT, related_name="+")
+    unique_constraint = models.ForeignKey(ConstraintDefinition, on_delete=models.PROTECT, related_name="+")
+    movement_model = models.ForeignKey(ModelDefinition, on_delete=models.PROTECT, related_name="+")
+    movement_field = models.ForeignKey(FieldDefinition, on_delete=models.PROTECT, related_name="+")
+    allow_negative = models.BooleanField(default=False)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["balance_model", "balance_field"], name="app_ledger_balance_unique"
+            ),
+            models.UniqueConstraint(
+                fields=["movement_model", "movement_field"], name="app_ledger_movement_unique"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.movement_model_id} -> {self.balance_model_id}"
+
+
+class QuantityLedgerDimension(models.Model):
+    """One (balance relationship, movement relationship) pair identifying
+    the same real-world dimension on both sides of a QuantityLedgerBinding.
+    Both must be many_to_one relationships whose own `target_model`
+    matches, and whose `source_model` is the binding's `balance_model`/
+    `movement_model` respectively -- validated in `quantity_ledger.bind()`,
+    not by a DB constraint spanning definitions this way, the same
+    discipline `ConstraintDefinition`'s own docstring already documents
+    for its cross-table membership rules."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    binding = models.ForeignKey(QuantityLedgerBinding, on_delete=models.CASCADE, related_name="dimensions")
+    balance_relationship = models.ForeignKey(
+        RelationshipDefinition, on_delete=models.PROTECT, related_name="+"
+    )
+    movement_relationship = models.ForeignKey(
+        RelationshipDefinition, on_delete=models.PROTECT, related_name="+"
+    )
+
+    class Meta:
+        ordering = ["id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["binding", "balance_relationship"], name="app_ledger_dim_balance_unique"
+            ),
+            models.UniqueConstraint(
+                fields=["binding", "movement_relationship"], name="app_ledger_dim_movement_unique"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.binding_id}: {self.balance_relationship_id} <- {self.movement_relationship_id}"

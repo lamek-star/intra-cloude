@@ -54,3 +54,46 @@ requests; concurrent receipts/sales; transfers; direct CRUD/import bypasses;
 cross-tenant and revoked grants; process termination before/after tenant
 commit; broker outage; audit-projection recovery; paired backup/restore.
 No feature described here is marked qualified merely by this decision.
+
+## Implementation status — quantity ledger (2026-09-19)
+
+Implemented in `app_platform/quantity_ledger.py` (models `QuantityLedgerBinding`
+/`QuantityLedgerDimension`, migration `0020_quantity_ledger`, endpoint
+`app-instances/<id>/quantity-ledgers/`). `bind()` requires a provisioned
+runtime, both models still empty, integer required fields, a balance field
+defaulting to 0, at least two dimensions (a composite constraint needs two
+members) and an existing composite `UNIQUE` constraint over exactly the
+dimension relationships — the `ON CONFLICT` target of the installed upsert.
+It installs, in the tenant schema, in one transaction:
+
+| Trigger | Guarantee |
+|---|---|
+| AFTER INSERT on movements | Upserts the balance row in the same transaction; a raised error rolls back both. Rejects a NULL dimension (NULLs never conflict on `UNIQUE`, so they would create orphan balance rows) and, unless `allow_negative`, a resulting negative balance. |
+| BEFORE UPDATE/DELETE on movements | Movements are append-only: quantity and dimension columns cannot change and a movement cannot be deleted; correct with a reversing movement. Other columns (a note, a reference) stay editable. |
+| BEFORE INSERT/UPDATE/DELETE on balances | Balance and dimension columns cannot be edited, a balance row cannot be deleted, and a direct insert must start at 0 — unless issued from inside the movement trigger. The bypass requires the transaction-local flag **and** `pg_trigger_depth() > 1`, so a session that merely calls `set_config` is still rejected. |
+| BEFORE TRUNCATE on both | `TRUNCATE` fires no row trigger, so it is guarded separately. |
+
+`quantity_ledger.reconcile(binding)` independently compares every stored
+balance with the sum of its movements and returns any discrepancy.
+
+**Residual limits (documented, not hidden).** A database role able to alter
+triggers (`ALTER TABLE … DISABLE TRIGGER`, `CREATE TRIGGER`, ownership) can
+defeat any trigger. The opt-in least-privilege tenant role
+(`provision_tenant_role`, THREAT_MODEL TB3) is the mitigation, and
+`reconcile()` detects drift. Row deletion of a referenced Item/Warehouse whose
+FK policy is CASCADE onto a guarded table fails closed (400) rather than
+silently removing ledger rows. There is no unbind. There is no multi-leg
+transfer endpoint yet, and inventory arithmetic exists only in the ledger.
+
+**Evidence.** `app_platform/tests/test_quantity_ledger.py` — 39 tests against
+real PostgreSQL: receive/sell, exact zero, insufficient stock, wrong
+product/warehouse/foreign-organization ids, rollback after an induced failure,
+idempotent replay, concurrent receives and sells (real threads), raw-SQL
+bypass attempts (update, delete, truncate, dimension repointing, forged flag,
+NULL dimension), movement immutability through both the API and raw SQL,
+reconciliation including detected drift, binding contract, and cross-
+organization isolation. The hardening tests were written first and failed
+(12 of 39) against the initial implementation before the fixes; see
+`ledger-hardening-reproduction.log` → `ledger-hardening-corrected.log`.
+Still qualifying: transfers, and paired backup/restore of a ledger-bound
+runtime (the destructive restore drill).

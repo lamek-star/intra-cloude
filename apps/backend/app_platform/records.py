@@ -406,6 +406,14 @@ def _run(fn):
         # __cause__, not by string-matching a message.
         if isinstance(exc.__cause__, psycopg_errors.UniqueViolation):
             raise RecordValueError("a record with this value already exists") from exc
+        if isinstance(exc.__cause__, psycopg_errors.CheckViolation):
+            # A quantity_ledger.py-installed trigger's own RAISE EXCEPTION
+            # (insufficient balance, or a direct write to a ledger-guarded
+            # column/row) -- surfaced verbatim rather than the generic
+            # "referenced record does not exist" below, which would be
+            # actively misleading here.
+            message = exc.__cause__.diag.message_primary or str(exc.__cause__)
+            raise RecordValueError(message) from exc
         raise RecordValueError("referenced record does not exist") from exc
     except DjangoDatabaseError as exc:
         raise RecordValueError("invalid record data") from exc
