@@ -1,0 +1,381 @@
+"""Business recovery drill -- seed, snapshot and verify (run via `manage.py shell`).
+
+    DRILL_MODE=seed      build a realistic Spare Parts business through the real
+                         services/API, then write the expected-state snapshot
+    DRILL_MODE=verify    measure the (restored) system the same way, compare it
+                         with the snapshot, then probe that the ledger triggers,
+                         permissions, files and login still work
+
+Only ever run against the disposable qualification stack (see run-drill.sh).
+The same `snapshot()` measures before and after, so "restored" means measured
+equal -- not "the restore command exited 0".
+"""
+
+import base64
+import hashlib
+import io
+import json
+import os
+import sys
+
+from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
+from django.db import connections
+from django.urls import reverse
+from psycopg import sql
+from rest_framework.test import APIClient
+
+from app_platform import instances, provisioning, quantity_ledger, templates
+from app_platform.models import AppInstance, ModelDefinition, QuantityLedgerBinding
+from app_platform.reference_templates.spare_parts import spare_parts_reference_definition
+from app_platform.runtime_plan import plan_runtime
+from app_platform.tests.test_foundation import project_for
+from audit.models import AuditEvent
+from organizations.models import Membership, Organization
+from organizations.services import create_organization
+from sharing.models import ShareGrant
+
+User = get_user_model()
+STATE_FILE = os.environ.get("DRILL_STATE", "/backups/drill/expected.json")
+OWNER = ("drill-owner@example.com", "Drill-Owner-Pass-2026!")
+CASHIER = ("drill-cashier@example.com", "Drill-Cashier-Pass-2026!")
+# A valid 1x1 PNG plus deterministic padding, so the object-storage backup
+# carries a real, non-trivial, checksum-able file.
+PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+)
+IMAGE_BYTES = PNG + hashlib.sha256(b"drill-image").digest() * 4096  # ~128 KB
+DOC_BYTES = b"INVOICE INV-DRILL-1\nOil Filter x5 @ 15.00 = 75.00\n" * 200
+
+
+def api(user=None):
+    client = APIClient()
+    client.defaults["HTTP_X_FORWARDED_PROTO"] = "https"  # prod settings redirect plain http
+    if user is not None:
+        client.force_authenticate(user)
+    return client
+
+
+class Shop:
+    """Thin helper over the Spare Parts runtime, keyed by template model/field keys."""
+
+    def __init__(self, instance, client):
+        self.instance, self.client = instance, client
+        self.models = {m.key: m for m in instance.models.all()}
+
+    def did(self, model_key, key):
+        model = self.models[model_key]
+        field = model.fields.filter(key=key).first()
+        return str(field.id if field is not None else model.outgoing.get(key=key).id)
+
+    def payload(self, model_key, **values):
+        return {self.did(model_key, k): v for k, v in values.items()}
+
+    def create(self, model_key, client=None, **values):
+        r = (client or self.client).post(
+            f"/api/v1/app-models/{self.models[model_key].id}/records/",
+            self.payload(model_key, **values),
+            format="json",
+        )
+        assert r.status_code == 201, (model_key, r.status_code, r.data)
+        return r.data
+
+    def rows(self, model_key, client=None):
+        r = (client or self.client).get(f"/api/v1/app-models/{self.models[model_key].id}/records/?limit=100")
+        assert r.status_code == 200, (model_key, r.status_code, r.data)
+        return r.data["results"]
+
+    def op(self, op, model_key, ref=None, **values):
+        item = {"op": op, "model": str(self.models[model_key].id), "data": self.payload(model_key, **values)}
+        if ref:
+            item["ref"] = ref
+        return item
+
+    def transact(self, operations, key=None, client=None):
+        extra = {"HTTP_IDEMPOTENCY_KEY": key} if key else {}
+        return (client or self.client).post(
+            f"/api/v1/app-instances/{self.instance.id}/transactions/",
+            {"operations": operations},
+            format="json",
+            **extra,
+        )
+
+    def movement(self, part, warehouse, delta, kind):
+        return self.op(
+            "create",
+            "stock_movement",
+            stock_movement_part=part,
+            stock_movement_warehouse=warehouse,
+            quantity_delta=delta,
+            movement_type=kind,
+        )
+
+
+def seed():
+    call_command("seed_permissions", verbosity=0)
+    owner = User.objects.create_user(email=OWNER[0], password=OWNER[1])
+    cashier = User.objects.create_user(email=CASHIER[0], password=CASHIER[1])
+    org = create_organization(name="Recovery Drill Shop", created_by=owner)
+    Membership.objects.create(user=cashier, organization=org, status=Membership.Status.ACTIVE)
+    project = project_for(owner, org)
+    template = templates.create_template(
+        owner, org, {"label": "Spare Parts", "draft": spare_parts_reference_definition()}
+    )
+    version = templates.publish_template(owner, template)
+    instance = instances.install(owner, project, {"label": "Spare Parts", "template_version": str(version.id)})
+    plan = plan_runtime(owner, instance)
+    provisioning.reserve(owner, instance, plan["fingerprint"])
+    provisioning.execute(instance.id, owner)
+
+    client = api(owner)
+    shop = Shop(instance, client)
+    oil = shop.create("part", name="Oil Filter", unit_of_measure="each", list_price="15.00")
+    pad = shop.create("part", name="Brake Pad Set", unit_of_measure="set", list_price="48.00")
+    shop.create("part_number", number="OF-1001", source="OEM", part_number_part=oil["id"])
+    shop.create("part_number", number="BP-2002", source="Aftermarket", part_number_part=pad["id"])
+    main = shop.create("warehouse", name="Main Warehouse", code="MAIN")
+    floor = shop.create("warehouse", name="Shop Floor", code="FLOOR")
+    supplier = shop.create("supplier", name="Demo Supplier A")
+    customer = shop.create("customer", name="Demo Retail Customer")
+
+    # Zero-start balance rows are allowed; only movements change them afterwards.
+    for part in (oil, pad):
+        for warehouse in (main, floor):
+            shop.create("inventory", part=part["id"], warehouse=warehouse["id"], quantity_on_hand=0)
+    po = shop.create("purchase_order", supplier=supplier["id"], status="draft")
+
+    r = shop.transact(
+        [
+            {
+                "op": "update",
+                "model": str(shop.models["purchase_order"].id),
+                "record": po["id"],
+                "data": shop.payload("purchase_order", status="received"),
+            },
+            shop.movement(oil["id"], main["id"], 100, "receive"),
+            shop.movement(pad["id"], main["id"], 30, "receive"),
+        ],
+        key="drill-receive-1",
+    )
+    assert r.status_code == 201, r.data
+    # A two-leg transfer commits both legs or neither.
+    r = shop.transact(
+        [
+            shop.movement(oil["id"], main["id"], -20, "transfer_out"),
+            shop.movement(oil["id"], floor["id"], 20, "transfer_in"),
+        ],
+        key="drill-transfer-1",
+    )
+    assert r.status_code == 201, r.data
+    r = shop.transact(
+        [
+            shop.op("create", "sales_order", ref="order", customer=customer["id"], status="confirmed"),
+            shop.op(
+                "create",
+                "sales_order_line",
+                sales_order_line_sales_order={"$ref": "order"},
+                sales_order_line_part=oil["id"],
+                quantity=5,
+                unit_price="15.00",
+                line_total="75.00",
+            ),
+            shop.movement(oil["id"], main["id"], -5, "sale"),
+            shop.op(
+                "create",
+                "invoice",
+                invoice_number="INV-DRILL-1",
+                invoice_sales_order={"$ref": "order"},
+                amount_due="75.00",
+                status="unpaid",
+            ),
+        ],
+        key="drill-sale-1",
+    )
+    assert r.status_code == 201, r.data
+
+    # Files: a product image attached to the part, and a stored invoice document.
+    bucket = client.post(reverse("bucket-list-create", args=[project.id]), {"name": "Business Files"})
+    assert bucket.status_code == 201, bucket.data
+    file_ids = {}
+    for name, content, ctype in (("oil-filter.png", IMAGE_BYTES, "image/png"), ("INV-DRILL-1.txt", DOC_BYTES, "text/plain")):
+        up = client.post(
+            reverse("file-list-create", args=[bucket.data["id"]]),
+            {"file": SimpleUploadedFile(name, content, content_type=ctype), "display_filename": name},
+            format="multipart",
+        )
+        assert up.status_code == 201, up.data
+        file_ids[name] = up.data["id"]
+    att = client.post(
+        f"/api/v1/app-models/{shop.models['part'].id}/records/{oil['id']}/attachments/",
+        {"file_id": file_ids["oil-filter.png"]},
+        format="json",
+    )
+    assert att.status_code == 201, att.data
+
+    # A restricted cashier: may sell (order/line/invoice/movement + inventory), may NOT touch parts.
+    for model_key in ("sales_order", "sales_order_line", "invoice", "stock_movement", "inventory"):
+        g = client.post(
+            reverse("share-grant-list-create", args=[org.id]),
+            {
+                "resource_type": "app_model",
+                "resource_id": str(shop.models[model_key].id),
+                "principal_type": "user",
+                "user_id": str(cashier.id),
+                "level": "write",
+            },
+            format="json",
+        )
+        assert g.status_code == 201, g.data
+
+    state = snapshot()
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    with open(STATE_FILE, "w") as handle:
+        json.dump(state, handle, indent=2, sort_keys=True)
+    print("SEED OK; expected state written to", STATE_FILE)
+    print(json.dumps(state["summary"], indent=2, sort_keys=True))
+
+
+def _hash(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def snapshot():
+    """Everything the recovery must bring back, measured through the real API/services."""
+    owner = User.objects.get(email=OWNER[0])
+    org = Organization.objects.get(name="Recovery Drill Shop")
+    instance = AppInstance.objects.get(organization=org, label="Spare Parts")
+    client = api(owner)
+    shop = Shop(instance, client)
+    out = {"summary": {}, "tables": {}, "hashes": {}}
+
+    out["org"] = {"id": str(org.id), "name": org.name}
+    out["instance"] = {"id": str(instance.id), "template_version": str(instance.source_version_id)}
+    out["models"] = {m.key: str(m.id) for m in instance.models.all()}
+    for key in sorted(shop.models):
+        rows = sorted(shop.rows(key), key=lambda row: row["id"])
+        out["tables"][key] = [row["id"] for row in rows]
+        out["hashes"][key] = _hash(rows)
+        out["summary"][key] = len(rows)
+
+    binding = QuantityLedgerBinding.objects.get(instance=instance)
+    out["ledger"] = {"binding": str(binding.id), "allow_negative": binding.allow_negative}
+    on_hand = shop.did("inventory", "quantity_on_hand")
+    part_rel, wh_rel = shop.did("inventory", "part"), shop.did("inventory", "warehouse")
+    out["balances"] = {
+        f"{row[part_rel]}|{row[wh_rel]}": row[on_hand] for row in shop.rows("inventory")
+    }
+    out["reconcile"] = quantity_ledger.reconcile(binding)
+    out["audit_events"] = AuditEvent.objects.filter(organization_id=org.id).count()
+    out["share_grants"] = ShareGrant.objects.filter(organization_id=org.id).count()
+    out["memberships"] = sorted(
+        Membership.objects.filter(organization=org).values_list("user__email", flat=True)
+    )
+
+    # Files: bytes read back through the real download path, hashed.
+    files = {}
+    part_model = shop.models["part"]
+    for part_row in shop.rows("part"):
+        listing = client.get(f"/api/v1/app-models/{part_model.id}/records/{part_row['id']}/attachments/")
+        assert listing.status_code == 200, listing.data
+        for attachment in listing.data:
+            download = client.get(
+                f"/api/v1/app-models/{part_model.id}/records/{part_row['id']}/attachments/{attachment['id']}/download/"
+            )
+            body = b"".join(download.streaming_content) if getattr(download, "streaming", False) else download.content
+            files[attachment["filename"]] = {
+                "attachment": str(attachment["id"]),
+                "bytes": len(body),
+                "sha256": hashlib.sha256(body).hexdigest(),
+            }
+    out["files"] = files
+
+    with connections["tenant"].cursor() as cursor:
+        cursor.execute(
+            "SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
+            "JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE NOT t.tgisinternal AND t.tgname LIKE 'trg_ledger_%'"
+        )
+        out["ledger_triggers"] = cursor.fetchone()[0]
+    # Plain JSON types on both sides of every comparison (native UUIDs, Decimals, datetimes -> str).
+    return json.loads(json.dumps(out, default=str, sort_keys=True))
+
+
+def verify():
+    expected = json.load(open(STATE_FILE))
+    actual = snapshot()
+    failures, checks = [], 0
+
+    def check(name, ok, detail=""):
+        nonlocal checks
+        checks += 1
+        print(("PASS  " if ok else "FAIL  ") + name + (f"  -- {detail}" if detail and not ok else ""))
+        if not ok:
+            failures.append(name)
+
+    for key in ("org", "instance", "models", "ledger", "balances", "reconcile", "share_grants", "memberships",
+                "ledger_triggers"):
+        check(f"restored {key} equals the pre-disaster {key}", expected[key] == actual[key],
+              f"expected {expected[key]!r} got {actual[key]!r}")
+    for key in sorted(expected["tables"]):
+        check(f"{key}: same record ids ({len(expected['tables'][key])})", expected["tables"][key] == actual["tables"][key])
+        check(f"{key}: identical record content", expected["hashes"][key] == actual["hashes"][key])
+    check("audit trail preserved", actual["audit_events"] >= expected["audit_events"],
+          f"expected >= {expected['audit_events']} got {actual['audit_events']}")
+    check("every file byte-identical (sha256)", expected["files"] == actual["files"], f"{expected['files']} vs {actual['files']}")
+
+    # Login through the real endpoint, with the pre-disaster password.
+    for email, password in (OWNER, CASHIER):
+        response = api().post("/api/v1/auth/login/", {"email": email, "password": password}, format="json")
+        check(f"login works for {email}", response.status_code == 200, f"status {response.status_code}")
+
+    # Behavior: the triggers, ledger and permissions must be alive, not merely present.
+    owner = User.objects.get(email=OWNER[0])
+    cashier = User.objects.get(email=CASHIER[0])
+    instance = AppInstance.objects.get(organization__name="Recovery Drill Shop", label="Spare Parts")
+    shop = Shop(instance, api(owner))
+    oil = next(r for r in shop.rows("part") if r[shop.did("part", "name")] == "Oil Filter")
+    main = next(r for r in shop.rows("warehouse") if r[shop.did("warehouse", "code")] == "MAIN")
+    over = shop.transact([shop.movement(oil["id"], main["id"], -100000, "sale")])
+    check("overselling is still rejected after restore", over.status_code == 400 and "negative" in str(over.data), str(over.data))
+    inv_row = shop.rows("inventory")[0]
+    edit = shop.client.patch(
+        f"/api/v1/app-models/{shop.models['inventory'].id}/records/{inv_row['id']}/",
+        shop.payload("inventory", quantity_on_hand=999999),
+        format="json",
+    )
+    check("a direct balance edit is still rejected", edit.status_code == 400, str(edit.data))
+    moves = shop.rows("stock_movement")
+    gone = shop.client.delete(f"/api/v1/app-models/{shop.models['stock_movement'].id}/records/{moves[0]['id']}/")
+    check("a movement still cannot be deleted", gone.status_code == 400, str(gone.data))
+    cashier_shop = Shop(instance, api(cashier))
+    denied = cashier_shop.client.post(
+        f"/api/v1/app-models/{shop.models['part'].id}/records/", shop.payload("part", name="Intruder"), format="json"
+    )
+    check("the restricted cashier is still denied on Part", denied.status_code == 403, f"status {denied.status_code}")
+
+    # The restored business keeps operating: a real receive, then a real sale of it.
+    before = sum(actual["balances"].values())
+    ok = shop.transact([shop.movement(oil["id"], main["id"], 7, "receive")], key="post-restore-receive")
+    check("a new receive works on the restored system", ok.status_code == 201, str(ok.data))
+    sale = shop.transact([shop.movement(oil["id"], main["id"], -7, "sale")], key="post-restore-sale")
+    check("a new sale works on the restored system", sale.status_code == 201, str(sale.data))
+    binding = QuantityLedgerBinding.objects.get(instance=instance)
+    check("ledger reconciles after post-restore activity", quantity_ledger.reconcile(binding) == [])
+    check("stock total unchanged by the receive/sale pair", sum(
+        row[shop.did("inventory", "quantity_on_hand")] for row in shop.rows("inventory")
+    ) == before)
+
+    print(f"\n{checks - len(failures)}/{checks} checks passed")
+    if failures:
+        print("FAILED:", *failures, sep="\n  ")
+        sys.exit(1)
+
+
+mode = os.environ.get("DRILL_MODE", "")
+if mode == "seed":
+    seed()
+elif mode == "verify":
+    verify()
+else:
+    raise SystemExit("set DRILL_MODE=seed|verify")

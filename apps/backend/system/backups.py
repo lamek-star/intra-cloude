@@ -516,11 +516,82 @@ def restore_backup(record: BackupRecord) -> BackupRecord:
     return _restore_not_possible(record, f"unsupported backup_type: {record.backup_type!r}")
 
 
+def restore_backup_from_file(backup_type: str, file_path: str) -> str:
+    """Disaster recovery from a backup FILE alone -- returns "" on success,
+    otherwise the reason it failed. Never raises.
+
+    `restore_backup` needs a BackupRecord row, and those rows live in the
+    control database: after a total loss (a fresh install plus backup files
+    from an external drive) there is no record to point it at. This path
+    needs only the file and its type. It cannot record its outcome on a
+    BackupRecord either -- after a control-database restore the tenant and
+    object-storage backups' own records may not exist in the restored
+    database, since they were created after that dump -- so the caller (the
+    `restore_backup_file` command) reports and audits the result instead.
+
+    The file must sit inside `settings.BACKUP_DIR` (copy it there first): the
+    restore reads a file with the platform's own database credentials, so it
+    is not pointed at arbitrary host paths. Configuration restore stays a
+    manual operator procedure, as with `restore_backup`."""
+    if backup_type == BackupRecord.BackupType.CONFIGURATION:
+        return (
+            "configuration restore is a manual operator procedure, not automated by this platform "
+            "-- see docs/operations/BACKUP_RESTORE.md Section 6 step 5"
+        )
+    if backup_type not in (
+        BackupRecord.BackupType.CONTROL_DB,
+        BackupRecord.BackupType.TENANT_DB,
+        BackupRecord.BackupType.OBJECT_STORAGE,
+    ):
+        return f"unsupported backup_type: {backup_type!r}"
+    backup_dir = os.path.realpath(settings.BACKUP_DIR)
+    resolved = os.path.realpath(file_path)
+    if os.path.commonpath([backup_dir, resolved]) != backup_dir:
+        return f"backup file must be inside {settings.BACKUP_DIR} -- copy it there first"
+    if not os.path.isfile(resolved):
+        return f"backup file not found: {file_path}"
+    try:
+        if backup_type == BackupRecord.BackupType.OBJECT_STORAGE:
+            _restore_object_storage_file(resolved, [])
+        else:
+            _pg_restore_file(backup_type, resolved)
+    except Exception as exc:  # noqa: BLE001 - always report, never propagate
+        logger.error("File restore failed for %s (%s): %s", file_path, backup_type, exc)
+        return str(exc)[:2000] or type(exc).__name__
+    return ""
+
+
 def _restore_not_possible(record: BackupRecord, reason: str) -> BackupRecord:
     record.restore_error = reason
     record.restored_at = timezone.now()
     record.save(update_fields=["restored_at", "restore_error"])
     return record
+
+
+def _pg_restore_file(backup_type: str, file_path: str) -> None:
+    """The mechanism shared by a record-driven restore and a file-driven one
+    (`restore_backup_from_file`): `pg_restore --clean --if-exists` of one
+    control-plane/tenant dump into its live target, then a structural
+    validation. Raises on any failure -- the callers decide how to record it.
+    Closes this process's own ORM connection to the target first and
+    terminates every other session against it, so `pg_restore` never blocks
+    on a lock held by a connection that should already be gone."""
+    db = _db_settings(backup_type)
+    target_db_name = db["NAME"]
+    connections[_alias_for(backup_type)].close()
+    _terminate_other_connections(db, target_db_name)
+    with _DecryptedTempFile(file_path) as plain_path:
+        cmd = [
+            "pg_restore",
+            "-h", db["HOST"] or "localhost",
+            "-p", str(db["PORT"] or 5432),
+            "-U", db["USER"],
+            "-d", target_db_name,
+            "--clean", "--if-exists",
+            plain_path,
+        ]
+        _run(cmd, password=db["PASSWORD"], timeout=PG_RESTORE_TIMEOUT_SECONDS)
+    _validate_restored_database(db, target_db_name, backup_type)
 
 
 def _restore_postgres_backup(record: BackupRecord) -> BackupRecord:
@@ -533,25 +604,8 @@ def _restore_postgres_backup(record: BackupRecord) -> BackupRecord:
     first and terminates every other session against it
     (`_terminate_other_connections`) so `pg_restore` never blocks on a
     lock held by a connection that should already be gone."""
-    db = _db_settings(record.backup_type)
-    target_db_name = db["NAME"]
-    alias = _alias_for(record.backup_type)
-
     try:
-        connections[alias].close()
-        _terminate_other_connections(db, target_db_name)
-        with _DecryptedTempFile(record.file_path) as plain_path:
-            cmd = [
-                "pg_restore",
-                "-h", db["HOST"] or "localhost",
-                "-p", str(db["PORT"] or 5432),
-                "-U", db["USER"],
-                "-d", target_db_name,
-                "--clean", "--if-exists",
-                plain_path,
-            ]
-            _run(cmd, password=db["PASSWORD"], timeout=PG_RESTORE_TIMEOUT_SECONDS)
-        _validate_restored_database(db, target_db_name, record.backup_type)
+        _pg_restore_file(record.backup_type, record.file_path)
     except Exception as exc:  # noqa: BLE001 - always record, never propagate
         record.restore_error = str(exc)[:2000]
         logger.error("Restore failed for backup %s (%s): %s", record.id, record.backup_type, exc)
@@ -561,6 +615,40 @@ def _restore_postgres_backup(record: BackupRecord) -> BackupRecord:
     record.restored_at = timezone.now()
     record.save(update_fields=["restored_at", "restore_error"])
     return record
+
+
+def _restore_object_storage_file(file_path: str, restored_keys: list[str]) -> None:
+    """The mechanism shared by a record-driven object-storage restore and a
+    file-driven one: every object in the archive is checksum-verified against
+    the manifest, written back to its real key, and read back. Appends each
+    restored key to `restored_keys` as it goes (so a caller can report how far
+    a failed restore got). Raises on any failure."""
+    client = get_storage_client()
+    with _DecryptedTempFile(file_path) as plain_path, tarfile.open(plain_path, "r") as tar:
+        members = tar.getmembers()
+        manifest_member = next((m for m in members if m.name == "_manifest.json"), None)
+        if manifest_member is None:
+            raise BackupError("archive is missing _manifest.json")
+        manifest_file = tar.extractfile(manifest_member)
+        manifest = json.loads(manifest_file.read()) if manifest_file else {}
+
+        for member in members:
+            if member.name == "_manifest.json":
+                continue
+            fileobj = tar.extractfile(member)
+            if fileobj is None:
+                continue
+            data = fileobj.read()
+            actual = hashlib.sha256(data).hexdigest()
+            expected = manifest.get(member.name)
+            if expected != actual:
+                raise BackupError(f"checksum mismatch for {member.name!r} inside the backup archive")
+
+            client.put_stream(member.name, io.BytesIO(data), "application/octet-stream")
+            restored_keys.append(member.name)
+            reread = client.get_stream(member.name).read()
+            if hashlib.sha256(reread).hexdigest() != actual:
+                raise BackupError(f"restored object {member.name!r} did not read back correctly")
 
 
 def _restore_object_storage_backup(record: BackupRecord) -> BackupRecord:
@@ -573,35 +661,10 @@ def _restore_object_storage_backup(record: BackupRecord) -> BackupRecord:
     delete restore is a materially more destructive operation than
     "bring back what this backup captured" and isn't what an operator
     reaching for a single backup record would expect."""
-    client = get_storage_client()
     restored_keys: list[str] = []
 
     try:
-        with _DecryptedTempFile(record.file_path) as plain_path, tarfile.open(plain_path, "r") as tar:
-            members = tar.getmembers()
-            manifest_member = next((m for m in members if m.name == "_manifest.json"), None)
-            if manifest_member is None:
-                raise BackupError("archive is missing _manifest.json")
-            manifest_file = tar.extractfile(manifest_member)
-            manifest = json.loads(manifest_file.read()) if manifest_file else {}
-
-            for member in members:
-                if member.name == "_manifest.json":
-                    continue
-                fileobj = tar.extractfile(member)
-                if fileobj is None:
-                    continue
-                data = fileobj.read()
-                actual = hashlib.sha256(data).hexdigest()
-                expected = manifest.get(member.name)
-                if expected != actual:
-                    raise BackupError(f"checksum mismatch for {member.name!r} inside the backup archive")
-
-                client.put_stream(member.name, io.BytesIO(data), "application/octet-stream")
-                restored_keys.append(member.name)
-                reread = client.get_stream(member.name).read()
-                if hashlib.sha256(reread).hexdigest() != actual:
-                    raise BackupError(f"restored object {member.name!r} did not read back correctly")
+        _restore_object_storage_file(record.file_path, restored_keys)
     except Exception as exc:  # noqa: BLE001 - always record, never propagate
         record.restore_error = str(exc)[:2000]
         logger.error(

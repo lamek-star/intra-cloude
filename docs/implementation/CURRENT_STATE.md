@@ -38,8 +38,8 @@ Old phase/test counts describe their historical checkpoints, not this HEAD.
 
 | Priority | Area | State / evidence |
 |---|---|---|
-| P0 | Inventory consistency | VERIFIED at the backend, UI not yet built (2026-09-19): the operation journal (`9f2bf16`), the generic quantity ledger (`4f32dce`) and atomic multi-record operations. The Spare Parts template now *declares* its ledger and provisioning binds it with no API call; `POST app-instances/<id>/transactions/` commits a sale (order + line + movement + invoice) or a purchase receipt as one tenant transaction, rolls everything back on any failure, replays idempotently, and requires write authority over both the movement and the balance model. 67 tests over real PostgreSQL incl. real concurrent sales; see ADR-0016 "Implementation status". Still open: no receive/sell screens in the frontend (the API is proven, the UI is not), and the destructive backup/restore drill of a ledger-bound runtime has not been run. |
-| P0 | Full business recovery | PARTIAL: database/object/configuration backup primitives exist; complete disposable business recovery drill still required |
+| P0 | Inventory consistency | VERIFIED at the backend, UI not yet built (2026-09-19): the operation journal (`9f2bf16`), the generic quantity ledger (`4f32dce`) and atomic multi-record operations. The Spare Parts template now *declares* its ledger and provisioning binds it with no API call; `POST app-instances/<id>/transactions/` commits a sale (order + line + movement + invoice) or a purchase receipt as one tenant transaction, rolls everything back on any failure, replays idempotently, and requires write authority over both the movement and the balance model. 68 tests over real PostgreSQL (39 ledger + 29 transaction) incl. real concurrent sales; see ADR-0016 "Implementation status". Still open: no receive/sell screens in the frontend (the API is proven, the UI is not), and the destructive backup/restore drill of a ledger-bound runtime has not been run. |
+| P0 | Full business recovery | VERIFIED at the data plane 2026-09-19 by a destructive drill on the disposable stack (`docs/operations/RECOVERY_DRILL.md`): destroy → fresh init → restore control DB, tenant DB and object storage from encrypted off-stack files → 47/47 measured checks (record ids and content, ledger, byte-identical files, logins, permissions, live triggers). The drill found and fixed a P0: restore needed a `BackupRecord` row that a total loss destroys; `restore_backup_file` now restores from a file alone. NOT yet proven: the Windows/WSL2 appliance path, application containers started against restored data, and a customer-facing restore-from-file (Control Center and `Invoke-IntraCloudRestore.ps1` still take a record id — open P1). |
 | P0 | Offline business journey | UNVERIFIED at current HEAD; will use an isolated network without changing host connectivity |
 | P0 | Windows installer | EXTERNALLY BLOCKED: disposable-VM scripts exist; ISO/elevated interactive lifecycle evidence absent |
 | P1 | Webhook reliability | FIXED 2026-09-18: durable retry schedule (`next_attempt_at`/`exhausted_at`, migration `0019_durable_delivery_schedule`), address-pinned serialized delivery (`app_platform/delivery_transport.py`, `outbound_http.py`), recovery beat task `recover_operation_publication` (every 60s). Reproduced-then-fixed; see `webhook-reproduction.log` → `security-regression.log`, `delivery-recovery-tests.log` (34 passed). |
@@ -101,6 +101,10 @@ Atomic receive/sell checkpoint (same day, logs in the same folder):
   mistakes (required fields must be sent explicitly, inventory relationship keys), plus one
   contract correction: reusing an idempotency key for a different request is a 409, the
   journal's existing conflict contract, not a 400.
+- `restore-file-reproduction.log` → `restore-file-corrected.log` — the total-loss restore gap:
+  10 new tests failing, then 57 passing in the whole `system` suite; `recovery-drill/` holds the
+  drill's own logs (`drill.log`, `seed.log`, `verify.log`, `restore-by-record-reproduction.log`,
+  `offsite.sha256`): one uninterrupted run, 47/47 checks passed.
 - `transactions-full-pytest.log` — full backend suite from `/app`: **954 passed, 0 failed**
   (12m58s). `transactions-mypy.log`, `ruff check`, and `makemigrations --check` clean.
 

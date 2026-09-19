@@ -136,6 +136,25 @@ Windows/WSL2 path (`Invoke-IntraCloudRestore.ps1 -StopStack`, Section
    with timestamp and outcome. **Implemented** — `verified_restorable`,
    `verified_at`, `verification_error`.
 
+## 6a. Total-loss recovery from backup files — VERIFIED (2026-09-19)
+
+`restore_backup <record id>` (Section 7a) needs a `BackupRecord` row, and those
+rows live in the control database. After a total loss (a fresh install plus backup
+files from an external drive) there is no such row. `restore_backup_file` restores
+from the **file and its type alone**:
+
+```
+python manage.py restore_backup_file <file inside BACKUP_DIR> --type control_db|tenant_db|object_storage --yes
+```
+
+Restore `control_db` first, then `tenant_db`, then `object_storage`, with the
+application containers stopped; the file must already sit inside `BACKUP_DIR`.
+Configuration/secrets are never restored by the platform: keep `BACKUP_ENCRYPTION_KEY`,
+`CREDENTIAL_ENCRYPTION_KEY` and `SECRET_KEY` somewhere outside the machine. This path
+was proven by a destructive drill (destroy → fresh init → restore from off-stack files →
+47/47 measured checks), with its limits stated in [RECOVERY_DRILL.md](RECOVERY_DRILL.md).
+The Windows Control Center / `Invoke-IntraCloudRestore.ps1` do **not** yet expose it.
+
 ## 7. Automated Restoration Testing — IMPLEMENTED
 
 `CELERY_BEAT_SCHEDULE` (`config/settings/base.py`) schedules
