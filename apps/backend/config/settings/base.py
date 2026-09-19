@@ -412,6 +412,11 @@ BACKUP_ENCRYPTION_KEY = env("BACKUP_ENCRYPTION_KEY", "")
 FEATURE_EXTERNAL_SHARING_ENABLED = env_bool("FEATURE_EXTERNAL_SHARING_ENABLED", False)
 FEATURE_INTERNET_GATEWAY_ENABLED = env_bool("FEATURE_INTERNET_GATEWAY_ENABLED", False)
 
+# Local Edition: built-in applications appear to customers only once QUALIFIED
+# (app_platform/built_in_apps.py). Turn this on for development, demos and the pilot
+# preview to also list PARTIALLY_QUALIFIED / EXPERIMENTAL ones, clearly labelled.
+SHOW_UNQUALIFIED_BUILT_IN_APPS = env_bool("SHOW_UNQUALIFIED_BUILT_IN_APPS", False)
+
 # --- Logging: structured, request-ID-aware (Section 20) ---
 LOGGING = {
     "version": 1,

@@ -105,6 +105,14 @@ Atomic receive/sell checkpoint (same day, logs in the same folder):
   10 new tests failing, then 57 passing in the whole `system` suite; `recovery-drill/` holds the
   drill's own logs (`drill.log`, `seed.log`, `verify.log`, `restore-by-record-reproduction.log`,
   `offsite.sha256`): one uninterrupted run, 47/47 checks passed.
+- `built-in-apps-first-run.log` / `built-in-apps-final.log` — the built-in application catalog,
+  deterministic ids (the prerequisite for template upgrades), release-status gating and one-click
+  install (`app_platform/built_in_apps.py`, 19 tests; catalog + Spare Parts template tests 28 passed).
+  Ruff and mypy clean over 87 files. Not run this pass: the full backend suite (the session was
+  under memory pressure); the change touches new modules, one route table and one setting.
+  Per-application status and the gaps it exposed (no Library or Organization Management template,
+  "Inventory & Sales" is the same template as Spare Parts, no gallery UI yet, nothing yet QUALIFIED):
+  `docs/LOCAL_EDITION_APPLICATIONS.md`.
 - `transactions-full-pytest.log` — full backend suite from `/app`: **954 passed, 0 failed**
   (12m58s). `transactions-mypy.log`, `ruff check`, and `makemigrations --check` clean.
 
