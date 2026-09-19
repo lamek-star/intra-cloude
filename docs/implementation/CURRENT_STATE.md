@@ -161,6 +161,12 @@ Atomic receive/sell checkpoint (same day, logs in the same folder):
   found and fixed: the Stock page made 36 requests (one name lookup per row) -> `?ids=` batch lookup, 12 requests.
   Observations, not fixed: unindexed relationship columns, unpruned operation journal (~1.1 KB per mutation), a plain
   select for 500+ customers.
+- **Template-upgrade gate** -- `scripts/qualification/template-upgrade/upgrade_drill.py`, 67/67: a browser-built business
+  with real data, a stored file and a restricted cashier is customised locally, upgraded to a newer template version
+  (new field + new model + safe label sync + a conflicting label left alone), and measured equal before/after (records,
+  content, ledger, triggers, file bytes, grants, customisations); the cashier still sells and a receive works after
+  (95 - 2 + 10 = 103), and the browser check passes. Known P2 gap: a newer built-in version reaches an existing
+  organization only by installing the app again.
 - Normalization vectors (`tests/fixtures/part-number-normalization.json`, 19): Python, PostgreSQL and JavaScript agree, and the
   separate spare-parts reference app's `normalizeNumber` agrees on 19/19. Review and decisions:
   `docs/implementation/SPAREPARTS_DEMO_REVIEW.md`.

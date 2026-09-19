@@ -150,9 +150,43 @@ require write on `purchase_order`; non-sale decreases require an explicit adjust
 migration for existing instances. Until then the honest statement is: **a restricted cashier is restricted in what
 data they can read and which records they can change, but not in the direction of stock movements.**
 
+## Template upgrade of an installed instance (2026-09-20)
+
+`scripts/qualification/template-upgrade/upgrade_drill.py` (log `upgrade/upgrade-drill.log`) upgrades a business that
+was **built through the browser** (`e2e/spare-parts-recovery-prep.spec.ts`: supplier, warehouse, product, part number,
+receive 100, customer, sell 5 -> 95, a stored document, a restricted cashier with the 10 documented grants).
+Before upgrading, the customer customises it locally: a new Part field with a value on an existing record, a new
+model, and a local rename of Warehouse. Then a **newer version of the same template** is published (a new Part
+field, a whole new model, Supplier relabelled -- safe -- and Warehouse relabelled -- which conflicts with the local
+rename) and applied through the real upgrade API (the endpoint the instance page's Upgrade section uses).
+Everything is measured before and after with the same function. **67/67 checks passed:**
+
+- identity: same instance, same runtime provisioning receipt (no re-provision, no new tables), permanent install
+  provenance untouched; the preview changed nothing; re-applying the same version is refused; the upgrade is in the history;
+- data: every model has the same record ids and byte-identical content of every pre-existing column; balances,
+  reconcile (drift `[]`) and ledger triggers unchanged; the stored file is byte-identical (sha256); grants and
+  memberships identical; the audit trail preserved and extended;
+- structure: every relationship, constraint and field still exists with the same id; the new field and model exist and
+  really store records; the safe label sync was applied; the conflicting Warehouse rename was **left alone**;
+- customisations: the local field, the local model and the local value survived untouched;
+- afterwards, on the upgraded instance: overselling is still refused, the restricted cashier is still refused on
+  Supplier and on creating a Part, **the cashier can still sell, and a receive works** (stock exactly 95 - 2 + 10 = 103,
+  ledger reconciles).
+
+The same business was then opened **in the browser** with the original passwords
+(`e2e/spare-parts-existing-business.spec.ts`, EXPECT_STOCK=103, 4 movements): owner login, normalized part-number
+search, supplier/warehouse/customer, stock, the sales document, the stored file's bytes, the cashier's login,
+search and refusals -- 2/2 passed -- and a UI sale (cashier) plus a UI receive (owner) on the upgraded instance passed.
+
+**Known gap (P2, not built -- feature freeze):** the mechanism above is complete, but a newer built-in definition only
+reaches an organization's own template as a side effect of installing that built-in application *again*
+(`built_in_apps.install`), which also creates a second instance. There is no "update available" for a built-in
+application and no way to publish just the new version. Until there is, the upgrade path for a customer of a
+future release is: install again, then upgrade the existing instance from its page (or run the two steps for them).
+
 ## What has to happen for the flagship to reach QUALIFIED
 
 1. ~~Gallery, install, and Spare Parts business screens in the browser~~ — done (see above).
 2. ~~One Playwright journey through the normal UI against the real backend~~ — done (2 passes).
-3. Restart persistence, accessibility, restricted cashier (**one open P1: movement-direction authority**), scale, template upgrade of an installed instance, destructive restore, and offline run of that journey.
+3. Restart persistence, accessibility, restricted cashier (**one open P1: movement-direction authority**), scale (done), template upgrade of an installed instance (done; P2 delivery gap), destructive restore, and offline run of that journey.
 4. Then — and only then — flip `spare_parts` to QUALIFIED in the catalog with those logs listed under `evidence`.
