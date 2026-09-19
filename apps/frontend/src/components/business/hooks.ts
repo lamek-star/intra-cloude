@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { cellText, getRecord, listAllRecords, type BusinessRow } from "@/lib/business";
+import { cellText, listAllRecords, listRecordsByIds, type BusinessRow } from "@/lib/business";
 import { useBusiness } from "./BusinessApp";
 
 /** id -> display name for the records a page is showing, fetched on demand and cached. Used to put
@@ -16,18 +16,16 @@ export function useNames(modelKey: string, labelKey: string, ids: (string | null
     const missing = wantedKey ? wantedKey.split("|").filter((id) => !(id in names)) : [];
     if (missing.length === 0) return;
     let cancelled = false;
-    Promise.all(
-      missing.map(async (id): Promise<[string, string]> => {
-        try {
-          const row = await getRecord(schema, modelKey, id);
-          return [id, cellText(schema, modelKey, row, labelKey) || "(unnamed)"];
-        } catch {
-          return [id, "(unavailable)"];
-        }
-      }),
-    ).then((pairs) => {
-      if (!cancelled) setNames((previous) => ({ ...previous, ...Object.fromEntries(pairs) }));
-    });
+    // One request for the whole page (never one per id): this used to be 36 requests for a Stock page.
+    listRecordsByIds(schema, modelKey, missing)
+      .then((rows) => {
+        const found = new Map(rows.map((row) => [String(row.id), cellText(schema, modelKey, row, labelKey) || "(unnamed)"]));
+        return missing.map((id): [string, string] => [id, found.get(id) ?? "(unavailable)"]);
+      })
+      .catch(() => missing.map((id): [string, string] => [id, "(unavailable)"]))
+      .then((pairs) => {
+        if (!cancelled) setNames((previous) => ({ ...previous, ...Object.fromEntries(pairs) }));
+      });
     return () => {
       cancelled = true;
     };

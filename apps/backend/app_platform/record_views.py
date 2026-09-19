@@ -1,6 +1,8 @@
 """Record CRUD over a provisioned app runtime; see records.py for the
 translation/authorization/validation this thin view layer delegates to."""
 
+import uuid
+
 from django.http import Http404
 from rest_framework.response import Response
 
@@ -11,7 +13,10 @@ from .access import environment_scope_denied, get_owned
 from .models import AppInstance, ModelDefinition
 from .views import FoundationView
 
-_RESERVED_QUERY_PARAMS = {"limit", "offset", "ordering", "search"}
+_RESERVED_QUERY_PARAMS = {"limit", "offset", "ordering", "search", "ids"}
+# One request can name at most this many records by id. Screens use it to put names next to the ids in a
+# page of rows (one request instead of one per row), so it only needs to cover a page.
+MAX_IDS = 100
 
 
 def _get_model(request, object_id):
@@ -35,6 +40,17 @@ class RecordListCreateView(FoundationView):
         except ValueError:
             return Response({"detail": "limit/offset must be integers"}, status=400)
         filters = {k: v for k, v in request.query_params.items() if k not in _RESERVED_QUERY_PARAMS}
+        raw_ids = request.query_params.get("ids")
+        if raw_ids is not None:
+            if "id" in filters:
+                return Response({"detail": "use either id or ids, not both"}, status=400)
+            try:
+                ids = [str(uuid.UUID(part.strip())) for part in raw_ids.split(",") if part.strip()]
+            except ValueError:
+                return Response({"detail": "ids must be a comma-separated list of record ids"}, status=400)
+            if len(ids) > MAX_IDS:
+                return Response({"detail": f"at most {MAX_IDS} ids per request"}, status=400)
+            filters["id"] = ids  # an IN-list through the same, permission-checked list path
         try:
             result = records.list_records(
                 request.user,

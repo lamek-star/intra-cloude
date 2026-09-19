@@ -104,6 +104,22 @@ export async function listAllRecords(schema: BusinessSchema, modelKey: string, c
   return rows;
 }
 
+/** The named records of one model in as few requests as possible (`?ids=`, at most 100 per request).
+ * Used to put names next to ids in a page of rows: one request for the page, never one per row. */
+export async function listRecordsByIds(schema: BusinessSchema, modelKey: string, ids: string[]): Promise<BusinessRow[]> {
+  const rows: BusinessRow[] = [];
+  for (let start = 0; start < ids.length; start += IDS_PER_REQUEST) {
+    const chunk = ids.slice(start, start + IDS_PER_REQUEST);
+    const page = await api.get<AppRecordsPage>(
+      `/app-models/${schema.modelId(modelKey)}/records/?ids=${chunk.join(",")}&limit=${IDS_PER_REQUEST}`,
+    );
+    rows.push(...page.results);
+  }
+  return rows;
+}
+
+const IDS_PER_REQUEST = 100; // the server's cap (record_views.MAX_IDS)
+
 export async function getRecord(schema: BusinessSchema, modelKey: string, recordId: string): Promise<BusinessRow> {
   return api.get<BusinessRow>(`/app-models/${schema.modelId(modelKey)}/records/${recordId}/`);
 }

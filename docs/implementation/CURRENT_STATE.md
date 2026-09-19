@@ -155,6 +155,12 @@ Atomic receive/sell checkpoint (same day, logs in the same folder):
   `docs/LOCAL_EDITION_APPLICATIONS.md`, NOT changed because it is an authorization design decision). Everything else
   asked for is refused by the server and audited: ungranted models/counts/records, files, install, org/permission
   management, ledger and balance tampering.
+- **Scale gate** -- `docs/implementation/SCALE_QUALIFICATION.md`: 5,000 products, 10,000 part numbers, 10,000 movements
+  (+2,500 sales, 500 customers) built through the real services (ledger reconciles: drift `[]`); every endpoint under
+  210 ms p95 in-process and through Caddy, receive ~55 ms, sale ~150 ms; constant query counts (no API N+1). Defect
+  found and fixed: the Stock page made 36 requests (one name lookup per row) -> `?ids=` batch lookup, 12 requests.
+  Observations, not fixed: unindexed relationship columns, unpruned operation journal (~1.1 KB per mutation), a plain
+  select for 500+ customers.
 - Normalization vectors (`tests/fixtures/part-number-normalization.json`, 19): Python, PostgreSQL and JavaScript agree, and the
   separate spare-parts reference app's `normalizeNumber` agrees on 19/19. Review and decisions:
   `docs/implementation/SPAREPARTS_DEMO_REVIEW.md`.

@@ -16,12 +16,14 @@ vi.mock("./BusinessApp", async () => {
 import { ApiError } from "@/lib/api";
 import Overview from "./Overview";
 
-beforeEach(() => get.mockReset());
+beforeEach(() => {
+  get.mockReset();
+});
 
 describe("Overview counts", () => {
   it("shows each count the person may read even when another model is refused to them", async () => {
-    get.mockImplementation(async (path?: string) => {
-      if (path?.includes("/app-models/M:supplier/records/")) throw new ApiError(403, { detail: "You do not have permission to perform this action." });
+    get.mockImplementation(async (path: string) => {
+      if (path.includes("/app-models/M:supplier/records/")) throw new ApiError(403, { detail: "You do not have permission to perform this action." });
       return { count: 7, limit: 1, offset: 0, results: [] };
     });
     render(<Overview />);

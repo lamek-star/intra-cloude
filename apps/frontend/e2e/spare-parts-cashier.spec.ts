@@ -1,6 +1,14 @@
-import { test, expect, type APIResponse, type BrowserContext, type Page } from "@playwright/test";
-import { buildFlagshipBusiness, DEMO_PASSWORD, nav, type FlagshipBusiness } from "./flagship-setup";
-import { register, uniqueEmail } from "./helpers";
+import { test, expect, type BrowserContext, type Page } from "@playwright/test";
+import {
+  call,
+  grantCashier,
+  READ_MODELS,
+  registerCashier,
+  type Json,
+  type Model,
+  type Relationship,
+} from "./cashier-setup";
+import { buildFlagshipBusiness, nav, type FlagshipBusiness } from "./flagship-setup";
 
 // Restricted cashier: a real second user, added to the organization through the UI, given ONLY the
 // grants below through the real sharing system, then exercised through the browser and through
@@ -14,35 +22,7 @@ import { register, uniqueEmail } from "./helpers";
 // NOT granted: supplier, purchase_order, purchase_order_line, vehicle (any access); write on part,
 // part_number, warehouse, customer; any schema, sharing, membership, audit or backup right.
 
-const READ_MODELS = ["part", "part_number", "warehouse", "customer"];
-const WRITE_MODELS = ["sales_order", "sales_order_line", "invoice", "stock_movement", "inventory"];
 const NOT_GRANTED = ["supplier", "purchase_order", "purchase_order_line", "vehicle"];
-
-type Json = Record<string, unknown>;
-type Field = { id: string; key: string };
-type Model = { id: string; key: string; fields: Field[] };
-type Reply = { status: number; text: string; json: Json | null };
-
-async function call(page: Page, method: string, path: string, data?: unknown): Promise<Reply> {
-  // Django's CSRF discipline for session-cookie writes: prime the cookie, echo it, send an Origin.
-  await page.request.get("/api/v1/auth/csrf/");
-  const cookies = await page.context().cookies();
-  const csrf = cookies.find((c) => c.name === "csrftoken")?.value ?? "";
-  const origin = new URL(page.url() === "about:blank" ? "https://localhost:8444" : page.url()).origin;
-  const res: APIResponse = await page.request.fetch(`/api/v1${path}`, {
-    method,
-    headers: { "X-CSRFToken": csrf, Origin: origin, Referer: `${origin}/` },
-    ...(data === undefined ? {} : { data }),
-  });
-  const text = await res.text();
-  let json: Json | null = null;
-  try {
-    json = JSON.parse(text) as Json;
-  } catch {
-    json = null;
-  }
-  return { status: res.status(), text, json };
-}
 
 let biz: FlagshipBusiness;
 let owner: Page;
@@ -50,7 +30,6 @@ let cashierContext: BrowserContext;
 let cashier: Page;
 let cashierEmail: string;
 let cashierId: string;
-type Relationship = { id: string; key: string; source_model: string };
 let models: Record<string, Model>;
 let relationships: Relationship[];
 let shareIds: Record<string, string>;
@@ -76,52 +55,20 @@ test.describe("Restricted cashier", () => {
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(300_000);
     // The cashier must exist before the owner can add them by email.
-    cashierContext = await browser.newContext();
-    cashier = await cashierContext.newPage();
-    cashierEmail = uniqueEmail("cashier");
-    await register(cashier, cashierEmail, DEMO_PASSWORD);
+    const registered = await registerCashier(browser);
+    cashierContext = registered.context;
+    cashier = registered.page;
+    cashierEmail = registered.email;
 
     const ownerContext = await browser.newContext();
     owner = await ownerContext.newPage();
     biz = await buildFlagshipBusiness(owner, { prefix: "cashier-owner", withFile: true });
 
-    // The owner adds the cashier to the organization through the real "Add member" dialog.
-    await owner.goto(`/orgs/${biz.orgId}`);
-    await owner.getByRole("button", { name: "Add member" }).click();
-    const dialog = owner.getByRole("dialog", { name: "Add member" });
-    await dialog.getByLabel("Email of an existing user").fill(cashierEmail);
-    await dialog.getByRole("button", { name: "Add", exact: true }).click();
-    await expect(dialog).toBeHidden();
-
-    const schema = (await call(owner, "GET", `/app-instances/${biz.instanceId}/schema/`)).json as {
-      models: Model[];
-      relationships: Relationship[];
-    };
-    relationships = schema.relationships;
-    models = Object.fromEntries(schema.models.map((m) => [m.key, m]));
-    const members = JSON.parse((await call(owner, "GET", `/organizations/${biz.orgId}/members/`)).text) as {
-      user: { id: string; email: string };
-    }[];
-    const cashierMember = members.find((m) => m.user.email.toLowerCase() === cashierEmail.toLowerCase());
-    expect(cashierMember, "the cashier appears in the member list").toBeTruthy();
-    const userId = cashierMember!.user.id;
-    cashierId = userId;
-
-    shareIds = {};
-    const grant = async (type: string, resourceId: string, level: string, label: string) => {
-      const res = await call(owner, "POST", `/organizations/${biz.orgId}/shares/`, {
-        resource_type: type,
-        resource_id: resourceId,
-        principal_type: "user",
-        user_id: userId,
-        level,
-      });
-      expect(res.status, `${label}: ${res.text}`).toBe(201);
-      shareIds[label] = String(res.json?.id);
-    };
-    await grant("app_instance", biz.instanceId, "read", "app_instance:read");
-    for (const key of READ_MODELS) await grant("app_model", models[key].id, "read", `${key}:read`);
-    for (const key of WRITE_MODELS) await grant("app_model", models[key].id, "write", `${key}:write`);
+    const access = await grantCashier(owner, biz, cashierEmail);
+    cashierId = access.userId;
+    models = access.models;
+    relationships = access.relationships;
+    shareIds = access.shareIds;
 
     const parts = (await call(owner, "GET", recordsPath("part") + "?limit=5")).json?.results as Json[];
     partId = String(parts[0].id);
