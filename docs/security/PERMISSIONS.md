@@ -128,11 +128,23 @@ Last updated: 2026-08-07
 | `export.manage` | Create and download portable (`.icp`) exports of an organization |
 | `connection.manage` | Create/edit ConnectedDatabase configurations |
 | `sharing.manage` | Create/revoke ShareGrants (internal/external) |
+| `inventory.sell` | Record a sale in an installed application (ADR-0017). Implies no other inventory capability. |
+| `inventory.receive` | Receive stock into a warehouse in an installed application (ADR-0017). Implies no other inventory capability. |
+| `inventory.adjust` | Write arbitrary stock movements through the record API of an installed application (ADR-0017); no adjustment workflow exists in v1.0. |
+| `inventory.transfer` | Move stock between warehouses (ADR-0017); the authority is defined, no transfer workflow exists in v1.0. |
 | `system.admin` | Platform-wide administrative operations (Super Administrator only) |
 | `environment.read` | View an Application's Environments and their non-secret configuration/status |
 | `environment.manage` | Create/update/clone/disable/delete Environments, variables, and webhooks |
 | `environment.secrets.manage` | Create/rotate/delete Environment secrets and issue/revoke environment-scoped credentials |
 | `environment.production.manage` | Required *in addition to* `environment.manage`/`environment.secrets.manage` for any mutating operation on a production-tier Environment (`environments.services.can_manage_environment`) — capability-based, not a role-name check; `is_production_tier` is the field that actually gates this, independent of the `environment_type` display string |
+
+**Business-operation authority (ADR-0017).** The four `inventory.*` capabilities authorize one kind of stock-changing
+operation each -- *may sell is not may receive is not may adjust is not may transfer*. They are granted per installed
+application through the sharing system (share resource type `inventory_operations`, levels `sell`, `receive`,
+`adjust`, `transfer`; the resource id is the AppInstance) or organization-wide through a role
+(`organization-administrator` holds all four). They answer only "may this actor perform this operation?": which
+records an operation may touch is still decided by the per-model grants, and whether an inventory transition is valid
+is still decided by the PostgreSQL quantity ledger.
 
 New permissions are added by extending this table plus a migration/fixture;
 they are never invented inline in view code.

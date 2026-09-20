@@ -388,8 +388,15 @@ changed, go look" notification, not a data feed):
 A `workflow.transition` payload replaces `model`/`record_id` with
 `transition` (`{key, label}`), `from_state`/`to_state`, and `record_id`.
 
-Delivery is at-most-once and retried on failure (5 attempts, exponential
-backoff) by a Celery worker — never inline with the request that
+Delivery is **at-least-once, never exactly-once and never at-most-once**: a
+failed attempt is retried (up to 6 attempts in total, waiting 30 s, 60 s, 120 s,
+240 s and 480 s between them; a delivery whose attempts are all used is marked
+exhausted and is not retried again), and a receiver may accept a request before
+IntraForge can durably record that it did -- for example when the worker dies
+between the receiver's `2xx` and the `delivered` marker -- in which case the same
+event is sent again. Every delivery carries a stable `event_id` (also the
+delivery's identity) in the body: **a receiver must deduplicate on it**. Delivery
+is done by a Celery worker — never inline with the request that
 triggered the event, and never re-checked against the record's later
 state (a payload reflects the moment the event was dispatched, like any
 webhook system). This is **separate** from the older, per-transition
@@ -452,7 +459,7 @@ that assumes any of it:
 - Any declarative, multi-record, atomic "action" or workflow concept.
 - Field-level (as opposed to instance/database-level) permissions.
 - Webhook delivery *history*/redelivery as an API a client can query or
-  trigger (a `WebhookDelivery` row exists internally for at-most-once/
-  retry bookkeeping, but there is no endpoint to list or replay one —
+  trigger (a `WebhookDelivery` row exists internally for
+  retry bookkeeping (delivery is at-least-once), but there is no endpoint to list or replay one —
   see the Webhooks section above for what *is* implemented: real,
   signed, Environment-scoped event delivery).

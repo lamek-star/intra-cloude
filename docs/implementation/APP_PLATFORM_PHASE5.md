@@ -83,8 +83,10 @@ Operational (receipt-row shape, not physical/declarative metadata):
   `idempotency_key` (nullable), `request_fingerprint`, `state_before`/
   `state_after`, `completed_at`, `last_error`, `created_by`.
 - **`WorkflowNotificationDelivery`**: one row per attempt that has a
-  `notify_url`; `delivered_at` is the "send at most once" gate for the
-  Celery task, denormalizing the URL at attempt time so a later edit to
+  `notify_url`; `delivered_at` is the "already delivered" gate for the
+  Celery task (delivery is at-least-once: a crash between the receiver accepting
+  and this marker being saved re-sends, and `event_id` is the receiver's
+  deduplication key), denormalizing the URL at attempt time so a later edit to
   the transition never rewrites delivery history.
 
 ## Scope decisions (stated up front, not silently assumed)

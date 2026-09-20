@@ -88,8 +88,8 @@ for the same transition, neither gates the other). Delivery is `POST`
 with `Content-Type: application/json`, an `X-IntraForge-Event` header,
 and `X-IntraForge-Signature: sha256=<hex>` -- an HMAC-SHA256 of the exact
 raw body bytes, keyed by the webhook's own decrypted signing secret
-(`environments.crypto.decrypt_secret`). Same acks_late/at-most-once/
-host-re-checked-immediately-before-every-attempt discipline as
+(`environments.crypto.decrypt_secret`). Same acks_late/at-least-once (never claimed
+at-most-once)/host-re-checked-immediately-before-every-attempt discipline as
 `deliver_workflow_notification` (Phase 5) and every other Celery task in
 this codebase that does a real outbound HTTP call.
 
@@ -200,7 +200,7 @@ automated suite, reproduced against the live stack.
 
 - **No webhook delivery-history/redelivery API.** `WebhookDelivery` rows
   exist and are queryable internally (via the Django ORM/admin, not a
-  documented endpoint) for at-most-once/retry bookkeeping, but there is
+  documented endpoint) for retry bookkeeping (delivery is at-least-once), but there is
   no `GET`/redeliver endpoint for an integrator to inspect or replay a
   past delivery. Tracked in `EXTERNAL_APP_API_CONTRACT.md`'s own "does
   NOT include" section rather than silently absorbed.
