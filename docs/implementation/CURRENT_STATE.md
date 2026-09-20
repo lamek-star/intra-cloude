@@ -167,6 +167,13 @@ Atomic receive/sell checkpoint (same day, logs in the same folder):
   content, ledger, triggers, file bytes, grants, customisations); the cashier still sells and a receive works after
   (95 - 2 + 10 = 103), and the browser check passes. Known P2 gap: a newer built-in version reaches an existing
   organization only by installing the app again.
+- **Destructive-restore gate** -- `docs/operations/RECOVERY_DRILL.md` (second run): a UI-built business (with a restricted
+  cashier and a stored file) was backed up (encrypted, verified, copied off-stack), the disposable stack and its volumes were
+  destroyed, a clean install was initialised (empty state proven), and control DB, tenant DB and object storage were restored
+  **from the backup files** in 44 s; the whole stack started, the browser checks passed (owner and cashier, original
+  passwords, stock 95, exactly 2 movements, the sales document, file bytes), the measured comparison passed 51/51, and new
+  operations worked (API receive/sale/cashier sale, and a UI sale and receive). The scale dataset in the same database came
+  back identical. Windows restore-from-file is still a separate, externally blocked item.
 - Normalization vectors (`tests/fixtures/part-number-normalization.json`, 19): Python, PostgreSQL and JavaScript agree, and the
   separate spare-parts reference app's `normalizeNumber` agrees on 19/19. Review and decisions:
   `docs/implementation/SPAREPARTS_DEMO_REVIEW.md`.

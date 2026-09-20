@@ -74,6 +74,45 @@ Reproduction → fix: `restore-file-reproduction.log` (10 failed) →
   archive 154 KB; the three restores took ~25 s including copying files in. This is
   not a performance or RTO claim.
 
+## Second run: a business built through the browser, restored into a clean install (2026-09-20)
+
+The first run drilled a business seeded through services. This run drilled the **UI-built flagship**
+(`e2e/spare-parts-recovery-prep.spec.ts`: supplier, warehouse, product, part number, receive 100, customer, sell 5 -> 95,
+a stored document, and a restricted cashier with the 10 documented grants), in the same environment that also held the
+5,000-product scale dataset (`docs/implementation/SCALE_QUALIFICATION.md`). Logs: `restore-ui/` under the private
+qualification log folder (`stage1a.out` ... `stage5.out`, `post-restore-browser.log`, `post-restore-operate.log`).
+
+1. **Snapshot** the business through the real API (`DRILL_MODE=snapshot`): record ids and content hashes of all 13
+   models, balances, reconcile, ledger triggers, grants, memberships, audit count, file SHA-256.
+2. **Backup** control DB, tenant DB, object storage and configuration, encrypted at rest; each restored and validated
+   in an isolated throwaway target; then **copied off the stack** with checksums (control 3.8 MB, tenant 9.8 MB, objects
+   0.8 MB).
+3. **Destroy**: the containers and the four data volumes of the disposable stack were removed. **Proof of the empty
+   state** before restoring: 0 app instances, 0 tenant schemas, none of the business users or organizations (only the two
+   migration-provisioned system accounts and the catalogue-ops organization existed).
+4. **Clean initialize**: empty databases, migrations, permission seed.
+5. **Restore from the backup FILES** (`restore_backup_file`, newest file per type, SHA-256 matched the off-stack copy) --
+   no dependence on the original `BackupRecord`: control DB, tenant DB, object storage, **44 s in total** with the scale
+   dataset in the same databases.
+6. **Start the whole stack** (`up -d`: backend, worker, beat, frontend, proxy): `/healthz` ok, `/readyz` ok for the control
+   database, the tenant database and Valkey.
+7. **Browser check** (`e2e/spare-parts-existing-business.spec.ts`, real logins with the original passwords): the owner finds
+   the normalized part-number search result (`044650K290` -> `04465-0K290` preserved), the supplier, warehouse and customer,
+   **stock 95**, **exactly 2 movements** (+100, -5), the sales document `INV-20260920-WXT2F`, and the stored file with its
+   bytes; the cashier logs in, finds the product, is refused the supplier list and sees no filename -- 2/2.
+8. **Measured comparison** (`drill.py verify`): **51/51 checks** -- org, instance, model and ledger ids; every model's record
+   ids and byte-identical content; balances; reconcile `[]`; ledger triggers; grants (10) and memberships; audit trail;
+   the stored file byte-identical (SHA-256); both logins; overselling still refused; a direct balance edit still refused; a
+   movement still cannot be deleted; the restricted cashier still denied on Part; normalized search still finds the
+   product; the invoice is still linked to its order and line; then **new operations**: a receive, a sale, a **sale by the
+   restricted cashier**, the stock returned to its figure, the ledger reconciles.
+9. **New operations through the browser**: the cashier sold 1 and the owner received 1 through the UI -- passed.
+10. **The scale dataset that shared the database came back identical**: 5,001 balance rows, on hand 630,527 = the sum of
+    10,086 movements, drift `[]` (`scale-after-restore.log`).
+
+Writing the expected-state file was blocked once by a permissions quirk (the seeded drill's file, put back by `docker cp`, is owned by
+root); the UI drill now keeps its expected state under its own path (`/backups/drill-ui/`).
+
 ## Operator procedure (total loss)
 
 Prerequisites the operator must hold **outside** the machine: the backup files
@@ -94,12 +133,13 @@ protected secrets (`BACKUP_ENCRYPTION_KEY`, `CREDENTIAL_ENCRYPTION_KEY`,
   `Invoke-IntraCloudRestore.ps1` and the Control Center still take a `BackupRecord` id;
   there is **no customer-facing restore-from-file yet** (open P1). Until then a total-loss
   recovery is an operator/technician procedure using the commands above.
-- **The application containers were not restarted against the restored data** (the drill
-  ran the code in the runner container). A full-stack bring-up and browser login after
-  restore is still to do.
+- ~~The application containers were not restarted against the restored data.~~ Done in the second run: the
+  whole stack was started on the restored data, health checks passed, and owner and cashier logged in through
+  the browser and worked.
 - **Configuration/secrets are not restored by the product**; the drill reused the same
   private env file, standing in for the operator's separately secured secret record.
 - **No writes were in flight**, and the three backups came from one quiet moment.
   Matched, quiesced backups remain a requirement (`BACKUP_RESTORE.md` §5); nothing here
   claims distributed atomicity.
-- Small dataset; no scale, RPO or RTO figures.
+- The second run restored ~14 MB of dumps (with the 5,000-product dataset present) in 44 s. That is one data point on
+  one machine, not an RTO/RPO claim, and the backups still came from one quiet moment.

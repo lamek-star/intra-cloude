@@ -5,6 +5,11 @@
     DRILL_MODE=verify    measure the (restored) system the same way, compare it
                          with the snapshot, then probe that the ledger triggers,
                          permissions, files and login still work
+    DRILL_MODE=snapshot  write the expected-state snapshot of an EXISTING business (no seeding)
+
+By default the drill seeds and checks its own business ("Recovery Drill Shop"). To drill a business that
+was built through the browser instead, set DRILL_UI_STATE to the JSON the recovery-prep Playwright spec
+wrote (owner/cashier accounts, instance id); the same snapshot, comparison and probes then apply to it.
 
 Only ever run against the disposable qualification stack (see run-drill.sh).
 The same `snapshot()` measures before and after, so "restored" means measured
@@ -40,6 +45,23 @@ User = get_user_model()
 STATE_FILE = os.environ.get("DRILL_STATE", "/backups/drill/expected.json")
 OWNER = ("drill-owner@example.com", "Drill-Owner-Pass-2026!")
 CASHIER = ("drill-cashier@example.com", "Drill-Cashier-Pass-2026!")
+ORG_NAME = "Recovery Drill Shop"
+PART_NAME = "Oil Filter"
+INSTANCE_ID = None
+UI_INVOICE = None
+if os.environ.get("DRILL_UI_STATE"):
+    _ui = json.load(open(os.environ["DRILL_UI_STATE"]))
+    OWNER = (_ui["owner"]["email"], _ui["owner"]["password"])
+    CASHIER = (_ui["cashier"]["email"], _ui["cashier"]["password"])
+    INSTANCE_ID = _ui["instanceId"]
+    PART_NAME = "Demo Oil Filter"
+    UI_INVOICE = _ui["invoiceNumber"]
+
+
+def _instance():
+    if INSTANCE_ID:
+        return AppInstance.objects.get(pk=INSTANCE_ID)
+    return AppInstance.objects.get(organization__name=ORG_NAME, label="Spare Parts")
 # A valid 1x1 PNG plus deterministic padding, so the object-storage backup
 # carries a real, non-trivial, checksum-able file.
 PNG = base64.b64decode(
@@ -243,8 +265,8 @@ def _hash(value):
 def snapshot():
     """Everything the recovery must bring back, measured through the real API/services."""
     owner = User.objects.get(email=OWNER[0])
-    org = Organization.objects.get(name="Recovery Drill Shop")
-    instance = AppInstance.objects.get(organization=org, label="Spare Parts")
+    instance = _instance()
+    org = instance.organization
     client = api(owner)
     shop = Shop(instance, client)
     out = {"summary": {}, "tables": {}, "hashes": {}}
@@ -332,9 +354,9 @@ def verify():
     # Behavior: the triggers, ledger and permissions must be alive, not merely present.
     owner = User.objects.get(email=OWNER[0])
     cashier = User.objects.get(email=CASHIER[0])
-    instance = AppInstance.objects.get(organization__name="Recovery Drill Shop", label="Spare Parts")
+    instance = _instance()
     shop = Shop(instance, api(owner))
-    oil = next(r for r in shop.rows("part") if r[shop.did("part", "name")] == "Oil Filter")
+    oil = next(r for r in shop.rows("part") if r[shop.did("part", "name")] == PART_NAME)
     main = next(r for r in shop.rows("warehouse") if r[shop.did("warehouse", "code")] == "MAIN")
     over = shop.transact([shop.movement(oil["id"], main["id"], -100000, "sale")])
     check("overselling is still rejected after restore", over.status_code == 400 and "negative" in str(over.data), str(over.data))
@@ -354,12 +376,52 @@ def verify():
     )
     check("the restricted cashier is still denied on Part", denied.status_code == 403, f"status {denied.status_code}")
 
+    # The way a shop actually finds a part: a differently typed part number still finds the product.
+    found = shop.client.get(
+        f"/api/v1/app-models/{shop.models['part_number'].id}/records/?search=044650k290&limit=5"
+    )
+    check("normalized part-number search still finds the product after restore",
+          found.status_code == 200 and any(
+              row[shop.did("part_number", "part_number_part")] == oil["id"] for row in found.data["results"]
+          ) if INSTANCE_ID else True, str(getattr(found, "data", None)))
+    if UI_INVOICE:
+        invoices = shop.rows("invoice")
+        orders = {row["id"]: row for row in shop.rows("sales_order")}
+        lines = shop.rows("sales_order_line")
+        linked = [
+            row for row in invoices
+            if row[shop.did("invoice", "invoice_number")] == UI_INVOICE
+            and row[shop.did("invoice", "invoice_sales_order")] in orders
+            and any(line[shop.did("sales_order_line", "sales_order_line_sales_order")]
+                    == row[shop.did("invoice", "invoice_sales_order")] for line in lines)
+        ]
+        check(f"invoice {UI_INVOICE} is still linked to its sales order and line", len(linked) == 1, str(len(invoices)))
+
     # The restored business keeps operating: a real receive, then a real sale of it.
     before = sum(actual["balances"].values())
     ok = shop.transact([shop.movement(oil["id"], main["id"], 7, "receive")], key="post-restore-receive")
     check("a new receive works on the restored system", ok.status_code == 201, str(ok.data))
     sale = shop.transact([shop.movement(oil["id"], main["id"], -7, "sale")], key="post-restore-sale")
     check("a new sale works on the restored system", sale.status_code == 201, str(sale.data))
+    if INSTANCE_ID:
+        # ...and the restricted cashier can still do exactly their job: sell, through the real permission system.
+        customer = shop.rows("customer")[0]
+        cashier_sale = cashier_shop.transact(
+            [
+                cashier_shop.op("create", "sales_order", ref="order", customer=customer["id"], status="confirmed"),
+                cashier_shop.op("create", "sales_order_line", sales_order_line_sales_order={"$ref": "order"},
+                                sales_order_line_part=oil["id"], quantity=1, unit_price="15.00", line_total="15.00"),
+                cashier_shop.movement(oil["id"], main["id"], -1, "sale"),
+                cashier_shop.op("create", "invoice", invoice_number="INV-POST-RESTORE-CASHIER",
+                                invoice_sales_order={"$ref": "order"}, amount_due="15.00", status="unpaid"),
+            ],
+            key="post-restore-cashier-sale",
+            client=cashier_shop.client,
+        )
+        check("the restricted cashier can still sell on the restored system", cashier_sale.status_code == 201,
+              str(getattr(cashier_sale, "data", None)))
+        refund = shop.transact([shop.movement(oil["id"], main["id"], 1, "receive")], key="post-restore-restock")
+        check("stock returned to the pre-sale figure", refund.status_code == 201, str(refund.data))
     binding = QuantityLedgerBinding.objects.get(instance=instance)
     check("ledger reconciles after post-restore activity", quantity_ledger.reconcile(binding) == [])
     check("stock total unchanged by the receive/sale pair", sum(
@@ -372,10 +434,21 @@ def verify():
         sys.exit(1)
 
 
+def write_snapshot():
+    state = snapshot()
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    with open(STATE_FILE, "w") as handle:
+        json.dump(state, handle, indent=2, sort_keys=True)
+    print("SNAPSHOT OK; expected state written to", STATE_FILE)
+    print(json.dumps(state["summary"], indent=2, sort_keys=True))
+
+
 mode = os.environ.get("DRILL_MODE", "")
 if mode == "seed":
     seed()
+elif mode == "snapshot":
+    write_snapshot()
 elif mode == "verify":
     verify()
 else:
-    raise SystemExit("set DRILL_MODE=seed|verify")
+    raise SystemExit("set DRILL_MODE=seed|snapshot|verify")

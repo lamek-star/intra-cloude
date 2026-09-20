@@ -188,5 +188,5 @@ future release is: install again, then upgrade the existing instance from its pa
 
 1. ~~Gallery, install, and Spare Parts business screens in the browser~~ — done (see above).
 2. ~~One Playwright journey through the normal UI against the real backend~~ — done (2 passes).
-3. Restart persistence, accessibility, restricted cashier (**one open P1: movement-direction authority**), scale (done), template upgrade of an installed instance (done; P2 delivery gap), destructive restore, and offline run of that journey.
+3. Restart persistence, accessibility, restricted cashier (**one open P1: movement-direction authority**), scale (done), template upgrade of an installed instance (done; P2 delivery gap), destructive restore (done), and offline run of that journey.
 4. Then — and only then — flip `spare_parts` to QUALIFIED in the catalog with those logs listed under `evidence`.

@@ -6,6 +6,11 @@
 #   QUALIFICATION_ENV_FILE=<private env file> ./run-drill.sh [stage ...]
 #   stages: destroy init seed backup restore verify   (default: the whole drill, in order)
 #
+# To drill a business that was BUILT THROUGH THE BROWSER instead of the seeded one, point DRILL_UI_STATE_HOST at
+# the JSON written by e2e/spare-parts-recovery-prep.spec.ts and use `snapshot` in place of `seed`:
+#   DRILL_UI_STATE_HOST=C:/.../ui-state.json ./run-drill.sh snapshot backup destroy init restore
+# then start the whole stack, run e2e/spare-parts-existing-business.spec.ts, and finish with `verify`.
+#
 # SAFETY: this only ever touches the compose project `intraforge-local-qualification`
 # and its four named volumes. It refuses to remove anything else. It never runs against the
 # primary `intra-cloude` stack, its volumes, or any WSL distribution.
@@ -32,6 +37,17 @@ log() { printf '\n=== %s | %s\n' "$(date -u +%H:%M:%S)" "$*" | tee -a "$LOGDIR/d
 rexec() {
   docker exec -i --env-file "$QUALIFICATION_ENV_FILE" \
     -e DJANGO_SETTINGS_MODULE=config.settings.prod -e BACKUP_DIR=/backups "$RUNNER" "$@"
+}
+
+# The UI-built business is identified by a small JSON file on the host; it is copied into the runner (which is
+# recreated by `init`) right before each stage that needs it.
+ui_env() {
+  UI_ARGS=()
+  if [ -n "${DRILL_UI_STATE_HOST:-}" ]; then
+    docker cp "$DRILL_UI_STATE_HOST" "$RUNNER:/tmp/ui-state.json" >/dev/null
+    # its own expected-state file: never mixed with (or blocked by) the seeded drill's /backups/drill
+    UI_ARGS=(-e DRILL_UI_STATE=/tmp/ui-state.json -e DRILL_STATE=/backups/drill-ui/expected.json)
+  fi
 }
 
 guard_volume() {
@@ -75,6 +91,15 @@ stage_seed() {
   docker exec -i --env-file "$QUALIFICATION_ENV_FILE" -e DJANGO_SETTINGS_MODULE=config.settings.prod \
     -e BACKUP_DIR=/backups -e DRILL_MODE=seed "$RUNNER" python manage.py shell < "$HERE/drill.py" \
     2>&1 | tee "$LOGDIR/seed.log"
+}
+
+stage_snapshot() {
+  log "SNAPSHOT the existing (UI-built) business: expected state measured through the real API"
+  rexec sh -c "mkdir -p /backups/drill-ui"
+  ui_env
+  docker exec -i --env-file "$QUALIFICATION_ENV_FILE" -e DJANGO_SETTINGS_MODULE=config.settings.prod \
+    -e BACKUP_DIR=/backups -e DRILL_MODE=snapshot "${UI_ARGS[@]}" "$RUNNER" python manage.py shell < "$HERE/drill.py" \
+    2>&1 | tee "$LOGDIR/snapshot.log"
 }
 
 stage_backup() {
@@ -121,8 +146,9 @@ stage_restore() {
 
 stage_verify() {
   log "VERIFY the restored business by measurement (drill.py verify)"
+  ui_env
   docker exec -i --env-file "$QUALIFICATION_ENV_FILE" -e DJANGO_SETTINGS_MODULE=config.settings.prod \
-    -e BACKUP_DIR=/backups -e DRILL_MODE=verify "$RUNNER" python manage.py shell < "$HERE/drill.py" \
+    -e BACKUP_DIR=/backups -e DRILL_MODE=verify "${UI_ARGS[@]}" "$RUNNER" python manage.py shell < "$HERE/drill.py" \
     2>&1 | tee "$LOGDIR/verify.log"
 }
 
