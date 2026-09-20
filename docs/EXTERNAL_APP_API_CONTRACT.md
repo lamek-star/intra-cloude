@@ -214,6 +214,17 @@ value is always `list[str]` — the related records' UUIDs — **in both
 directions**, regardless of which model the request is for; the client
 tells the two shapes apart via the relationship's already-exposed `kind`.
 
+### Date and time values
+
+Stricter than ISO 8601, and the same for every writer (the browser, an integration, the CSV importer):
+
+* `date`: `YYYY-MM-DD`.
+* `datetime`: `YYYY-MM-DDTHH:MM:SS` (a space instead of `T` is also accepted) -- **naive UTC, whole seconds**. A trailing
+  `Z`, a UTC offset (`+04:00`) and fractional seconds (`...:00.646`) are **refused with `400`** and nothing is written; a
+  JavaScript `Date.toISOString()` is therefore *not* accepted. Responses return the same naive-UTC form; a client that
+  displays it should treat it as UTC. (Found by the browser journey, pinned by
+  `app_platform/tests/test_transactions.py::MovementTimestampContractTests`.)
+
 List response shape (`AppRecordsPage`, note: this is *not* the same
 envelope as the schema-discovery endpoints above):
 
@@ -243,6 +254,10 @@ automatically (the underlying join table's foreign keys are `ON DELETE
 CASCADE`) — no separate cleanup call is needed or possible.
 
 ### Filtering / sorting / search (all query params on the list endpoint)
+
+- **`ids=<uuid>,<uuid>,...`**: return exactly those records (at most 100 per request; anything else is `400`). It is the
+  ordinary list with an id filter -- same permission check, same tenant, same paging -- and lets a client name a page of
+  rows in one request instead of one request per row. It cannot be combined with `id=`.
 
 - **Filtering**: any query param whose key matches a field or
   many_to_one relationship definition UUID is applied as an
@@ -404,6 +419,15 @@ webhook system). This is **separate** from the older, per-transition
 mechanism is unsigned and Environment-independent, kept exactly as
 shipped and unaffected by this section; a transition with both set
 fires both, independently.
+
+## Stock movements need a business-operation authority (ADR-0017)
+
+On an application with a stock ledger, **writing a stock movement through the record API needs `inventory.adjust`** on the
+application (a `ResourceGrant` on resource type `inventory_operations`, resource id the AppInstance), in addition to
+`database.write` on the movement and balance models. Write access to the tables is no longer enough: *the right to sell
+is not the right to receive or adjust*. A client that only reads stock, or that writes ordinary records (products,
+customers, part numbers), is unaffected. The controlled `operations/sell/` and `operations/receive/` endpoints are for
+human sessions only and are not reachable with a bearer token.
 
 ## Permissions a client should expect to be gated by
 
