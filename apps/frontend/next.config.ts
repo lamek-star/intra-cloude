@@ -8,6 +8,8 @@ const nextConfig: NextConfig = {
   // images come from IntraForge's own authorized download endpoint -- and it has carried critical advisories
   // (GHSA-2xp9-vwfh-vxw4). Turning it off removes the endpoint and the native image library behind it.
   images: { unoptimized: true },
+  // ...and the native image library (sharp + libvips, LGPL) is not shipped in the standalone image at all.
+  outputFileTracingExcludes: { "*": ["node_modules/sharp/**", "node_modules/@img/**"] },
 };
 
 export default nextConfig;
