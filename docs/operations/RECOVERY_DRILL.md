@@ -113,6 +113,23 @@ qualification log folder (`stage1a.out` ... `stage5.out`, `post-restore-browser.
 Writing the expected-state file was blocked once by a permissions quirk (the seeded drill's file, put back by `docker cp`, is owned by
 root); the UI drill now keeps its expected state under its own path (`/backups/drill-ui/`).
 
+## Third run: under business-operation authority (2026-09-20)
+
+Repeated on a fresh UI-built business after ADR-0017 (cashier holds SELL and no write access to the stock tables),
+with the scale dataset in the same database. Logs: `restore-ui2/` under the private qualification log folder.
+
+* Backup: control 4.2 MB, business data 10.6 MB, files 2.0 MB, configuration; all four verified in isolation, copied
+  off the stack.
+* Destroyed; clean install proven empty (0 instances, 0 tenant schemas); restored **from the files in 53 s**; whole stack
+  up, `/readyz` ok.
+* Browser (real logins, original passwords): owner and cashier 2/2. Measured comparison **53/53**, now including:
+  the restricted cashier **can still sell**, **still cannot receive stock**, and **still cannot write a stock movement
+  directly** on the restored system.
+* A UI sale (cashier) and a UI receive (owner) after the restore passed. The scale dataset came back identical again:
+  5,001 balances = the sum of 10,310 movements, drift `[]`.
+* Harness fix: the drill's state directory is prepared as root on every run (a file put back by `docker cp` is owned
+  by root and blocked the next snapshot).
+
 ## Operator procedure (total loss)
 
 Prerequisites the operator must hold **outside** the machine: the backup files

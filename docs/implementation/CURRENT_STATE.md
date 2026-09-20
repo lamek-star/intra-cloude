@@ -3,6 +3,32 @@
 Assessment started 2026-09-18. This is the continuation checkpoint for the
 Local Edition productization mandate, not a new platform roadmap.
 
+## Final state (2026-09-20)
+
+Local Edition v1.0 is closed for qualification and is in **pilot / bug-fixing / release-hardening** mode. The feature
+freeze remains in force.
+
+- **Spare Parts / Inventory & Sales: QUALIFIED** (application scope). Evidence, results on the final code and the nine
+  separate verdicts: [LOCAL_EDITION_V1_FINAL_QUALIFICATION.md](../LOCAL_EDITION_V1_FINAL_QUALIFICATION.md). Open P0: none.
+  Open P1: none.
+- **Final regression on the final code:** backend 1077 passed; Vitest 79 passed; `tsc` 0 errors; ESLint clean; `ruff check`,
+  `mypy` and the migration check clean; production build succeeded; Playwright 55 passed / 0 failed / 5 prepared-data
+  skips (each spec run alone, customer mode).
+- **Authority model (ADR-0017)** closed the movement-direction P1; **Next.js was upgraded** for two critical advisories;
+  webhook delivery is documented as at-least-once; diagnostics can be collected without secrets.
+- **Externally blocked, not claimed:** Windows installer, prerequisite handling, first start, reboot and automatic
+  startup, Control Center, Windows restore-from-file, physical LAN, code signing; HawkScan (no credential).
+- **Verdicts:** functional readiness QUALIFIED WITH DOCUMENTED LIMITATIONS; offline QUALIFIED WITH DOCUMENTED
+  LIMITATIONS; built-in application QUALIFIED WITH DOCUMENTED LIMITATIONS; Windows installer EXTERNALLY BLOCKED;
+  automatic startup EXTERNALLY BLOCKED; backup/disaster recovery QUALIFIED WITH DOCUMENTED LIMITATIONS; small-shop pilot
+  readiness PARTIALLY QUALIFIED; investor demonstration QUALIFIED WITH DOCUMENTED LIMITATIONS; commercial release NOT
+  QUALIFIED.
+- **Next:** run the parallel-run pilot ([LOCAL_EDITION_PILOT.md](../LOCAL_EDITION_PILOT.md)); obtain a disposable Windows
+  machine, a second LAN client and a signing credential; decide MinIO (AGPL-3.0, unpinned); add a third-party notice file.
+
+The sections below are the historical entry checkpoint and the running log of the mission; where they disagree with this
+section, this section wins.
+
 ## Repository truth
 
 - Repository: `C:/Users/Hp/projects/intra-cloude`.
@@ -174,7 +200,8 @@ Atomic receive/sell checkpoint (same day, logs in the same folder):
   passwords, stock 95, exactly 2 movements, the sales document, file bytes), the measured comparison passed 51/51, and new
   operations worked (API receive/sale/cashier sale, and a UI sale and receive). The scale dataset in the same database came
   back identical. Windows restore-from-file is still a separate, externally blocked item.
-- **Flagship decision (2026-09-20): PARTIALLY QUALIFIED.** Journey, accessibility, scale, template upgrade and destructive
+- **Flagship decision (earlier on 2026-09-20; SUPERSEDED -- the P1 below was closed by ADR-0017 and the flagship is now
+  QUALIFIED, see "Final state" at the top): PARTIALLY QUALIFIED.** Journey, accessibility, scale, template upgrade and destructive
   restore passed; the restricted-cashier gate has one open P1 (movement-direction authority -- see
   `docs/LOCAL_EDITION_APPLICATIONS.md`, "Final flagship qualification decision"). Tree at the final commit: backend 1034
   passed, vitest 76 passed, Playwright 49 passed / 0 failed, ruff/mypy/tsc/eslint/migration check clean.
@@ -183,26 +210,3 @@ Atomic receive/sell checkpoint (same day, logs in the same folder):
   `docs/implementation/SPAREPARTS_DEMO_REVIEW.md`.
 - `transactions-full-pytest.log` — full backend suite from `/app`: **954 passed, 0 failed**
   (12m58s). `transactions-mypy.log`, `ruff check`, and `makemigrations --check` clean.
-
-## Active work
-
-1. Reconcile current documentation without rewriting historical evidence.
-2. Run the fresh consolidated baseline on isolated infrastructure.
-3. Reproduce/fix demonstrated correctness and security failures with tests.
-4. Qualify the business journey, recovery, offline operation and demo.
-5. Report functional, investor-demo and commercial statuses separately.
-
-Disposable harness: `scripts/qualification/compose.yaml`, project
-`intraforge-local-qualification`, browser origin `https://localhost:8444`.
-Private credentials and raw logs are outside the repository under
-`C:/Users/Hp/.codex/tmp/intraforge-local-20260918`. The runner mounts current
-source; runtime builds use separate tags. Never destroy primary volumes.
-
-## Current verdicts (entry checkpoint, not final qualification)
-
-- LOCAL EDITION FUNCTIONAL READINESS: NOT READY — inventory consistency and
-  the complete acceptance journey remain unqualified.
-- INVESTOR DEMONSTRATION READINESS: NOT READY — the receive/sell/document/
-  recovery story has not been proven end to end.
-- COMMERCIAL RELEASE QUALIFICATION: EXTERNALLY BLOCKED — Windows lifecycle,
-  signing and second-machine LAN evidence remain open; internal work also remains.

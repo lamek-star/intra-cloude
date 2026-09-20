@@ -510,6 +510,30 @@ Full session narrative, test/lint re-verification, and the disposable
 test organizations left behind: `docs/implementation/RELEASE_READINESS.md`'s
 "Completed 2026-09-08" entry.
 
+## 4d. Outbound connections: address pinning and the trust assumption (2026-09-20)
+
+Review of the DNS-rebinding concern in connector networking. **Both outbound paths validate every resolved address
+and then connect to that exact address; nothing is resolved twice.**
+
+* `databases/connectors.py::_connect` resolves the host once (`assert_host_is_safe`, which rejects a host if **any**
+  resolved address is link-local (which includes the cloud-metadata address), unspecified, reserved or multicast, or
+  -- when `CONNECTED_DATABASE_BLOCK_PRIVATE_NETWORKS` is on -- private/loopback; IPv4-mapped IPv6 is unwrapped first) and passes the validated address to libpq as
+  `hostaddr`, keeping `host` only for TLS name verification and SNI. The check is repeated on every connection, not just
+  at creation. Tests (`databases/tests/test_connector_address_binding.py`): the driver receives the validated address and the
+  original TLS hostname; a mixed safe-and-metadata answer never connects; an IPv4-mapped private address is rejected;
+  an empty resolution never falls back to the driver's own DNS.
+* `app_platform/outbound_http.py::post` (webhook delivery) validates the URL (HTTP(S), no credentials), resolves once with
+  the same guard and connects to that address through a pre-built socket, so `HTTPConnection` never resolves the host
+  again; redirects are never followed and the response body is never read.
+
+**Trust assumption, stated so nobody assumes more.** By default private and loopback addresses are **allowed**
+(`CONNECTED_DATABASE_BLOCK_PRIVATE_NETWORKS` is off): a Local Edition shop legitimately connects to a database on its own
+LAN, and configuring a connector or a webhook is an organization-administrator act (`connection.manage`,
+`environment.manage`), not a customer-staff one. In that posture an administrator can point a connector at another
+machine on the shop's network. That is acceptable for the trusted-administrator Local Edition and **not** acceptable
+for a hosted multi-tenant topology, which must turn the flag on. This section claims address pinning; it does **not**
+claim protection against a malicious administrator on a flat LAN.
+
 ## 5. Non-Goals / Explicitly Out of Scope (for now)
 
 Current review qualification (2026-09-08): the connected-PostgreSQL guard

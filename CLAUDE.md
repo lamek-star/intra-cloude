@@ -20,16 +20,32 @@ context and the original product brief folded into that document; brand
 identity (logo, color tokens, typography, component patterns) lives in
 `DESIGN.md`.
 
-## Local Edition continuation — 2026-09-18
+## Local Edition v1.0 — closed for qualification (2026-09-20)
 
-The active productization target is **IntraForge Local Edition v1.0**, on the
-existing codebase. All ten App Platform phases are implemented; upgrade UI
-and webhooks overview also exist at `43c3bc0`. Fresh qualification is in
-progress and is distinct from Windows/commercial release qualification.
-See [current state](docs/implementation/CURRENT_STATE.md) for the active
-checkpoint. Older status narratives below are historical evidence, not the
-current implementation inventory. Scope is business correctness, offline
-operation, recovery, usability and qualification; no new speculative phase.
+**IntraForge Local Edition v1.0** is qualified as an application and is now in
+**pilot / bug-fixing / release-hardening** mode; the feature freeze stays in force
+(no new phases). The single qualified application is **Spare Parts / Inventory &
+Sales**. Read `docs/LOCAL_EDITION_V1_FINAL_QUALIFICATION.md` for the nine verdicts and
+the evidence, and `docs/implementation/CURRENT_STATE.md` for the checkpoint. Not
+qualified, and never to be claimed without evidence: the Windows installer, automatic
+startup, the Control Center restore-from-file, physical LAN and code signing (all
+externally blocked), and the commercial release.
+
+Rules that came out of the qualification and that later work must keep:
+
+- **Authority belongs to the business operation (ADR-0017).** `inventory.sell`,
+  `.receive`, `.adjust` and `.transfer` are separate, default-deny capabilities; the
+  right to sell is not the right to receive. Stock movements are created by the
+  controlled `operations/sell|receive` endpoints; a movement written through the record
+  API needs `inventory.adjust`. Never add a client-settable way to name an operation.
+- **The PostgreSQL ledger alone decides whether a balance is valid** (ADR-0016). Never
+  do inventory arithmetic in the browser or in a view.
+- **The auth rate limit (10/min) is intentional.** Isolate or space tests; never loosen it.
+- **Webhook delivery is at-least-once**; never document it as at-most-once.
+- **Run the dependency audits (`npm audit --omit=dev --audit-level=high`, `pip-audit`)
+  for every release**: exact pins mean a patched release is never picked up by itself.
+- Windows/LAN/signing/HawkScan results are recorded as blocked, never fabricated.
+
 ## Historical status checkpoints
 
 **App Platform** (`app_platform`) has completed **all ten phases** of its

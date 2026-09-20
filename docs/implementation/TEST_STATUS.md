@@ -1,5 +1,22 @@
 # Test Status
 
+## Final regression on the final code (2026-09-20)
+
+Run sequentially on the disposable stack in customer mode (`SHOW_UNQUALIFIED_BUILT_IN_APPS` off); no run was interrupted.
+
+| Suite | Result |
+| --- | --- |
+| Backend, full pytest | **1077 passed**, 0 failed, 3 warnings, 14 min 15 s |
+| `ruff check` / `mypy` / `makemigrations --check` | clean / clean (123 files) / no changes |
+| Vitest | **79 passed** (10 files) |
+| `tsc --noEmit` / ESLint | 0 errors / clean |
+| Production build (`next build` in the image, Next 16.3.5) | succeeded |
+| Playwright (one file at a time; the authentication limit is never loosened) | **55 passed, 0 failed, 5 skipped** -- `app-platform` 2, `auth` 4, `org-workspace-project` 1, `spare-parts-accessibility` 29, `spare-parts-cashier` 17, `spare-parts-flagship` 1, `tenant-isolation` 1; the 5 skips are the prepared-data specs (`scale-browser-probe`, `spare-parts-existing-business`, `spare-parts-recovery-prep`), run with real data at the scale, upgrade, restart and restore gates |
+| `npm audit --omit=dev --audit-level=high` / `pip-audit` | 0 vulnerabilities / none known |
+
+Script: `scripts/qualification/run-playwright-suite.sh`. Details: [LOCAL_EDITION_V1_FINAL_QUALIFICATION.md](../LOCAL_EDITION_V1_FINAL_QUALIFICATION.md).
+Earlier sections below are historical and describe what was true when each was written.
+
 ## Composite (multi-field) uniqueness (2026-09-11)
 
 Closes the "Inventory (Part × Warehouse)" gap

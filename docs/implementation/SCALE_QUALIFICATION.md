@@ -130,3 +130,27 @@ cannot serve a contains-match on a transformed value, and this is the cost the e
 
 **Not measured:** memory of the browser and of the Python workers during the run (host free memory was only
 sampled at the start of heavy steps: 2.0-2.3 GB, 0.7 GB at the lowest; no run was killed); concurrent users beyond the existing concurrent-sales test.
+
+## Re-measurement under business-operation authority (2026-09-20)
+
+Sell and receive became server-built controlled operations (ADR-0017), so the scale scripts now measure the
+customer-facing operations. Same dataset (it survived two destructive restores; 5,000 products, 10,000 part numbers,
+10,310 movements), same host and method.
+
+| Operation | in-process p50 / p95 (ms) | queries control / tenant | through Caddy p50 / p95 (ms) |
+| --- | ---: | ---: | ---: |
+| Receive (controlled) | 64 / 122 | 32 / 12 | 73 / 84 |
+| Sale, 1 line (controlled) | 205 / 241 | 107 / 42 | 203 / 232 |
+| Sale, 5 lines (controlled) | - | - | 471 / 525 |
+
+* Reads are unchanged (product list 29 ms, stock lookup 21 ms, movement history 22 ms in-process; normalized
+  part-number search 96 ms, p95 192 ms).
+* The authority check runs for every movement and adds about **35%** to a sale (queries 24 -> 32 for a receive, 81 -> 107
+  for a one-line sale). Cost grows roughly **65 ms per extra line**: a typical counter sale (1-5 lines) is 0.2-0.5 s, a
+  50-line sale would be about 3 s. Not material for a small shop; if it ever matters, the per-movement re-check can be
+  replaced by the single check at the start of the operation.
+* Two isolated ~2 s responses (one receive, one movement-history read) appeared in roughly 100 requests through the
+  proxy on separate runs. They do not move p95 and are **unexplained**; they are recorded so a pilot that sees an
+  occasional slow click can compare.
+* The probe tops up stock before measuring sales: repeated measurement sales drained the part and the ledger
+  (correctly) refused the last movement.

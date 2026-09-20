@@ -2,7 +2,9 @@
 
 Written from repository evidence; last reconciled 2026-09-20. **Repository truth wins over the
 early conceptual gallery: Local Edition v1.0 does not have eight production applications.** It has
-one flagship application in pilot preview, two experimental ones, and nothing yet at QUALIFIED.
+**one QUALIFIED application** (Spare Parts / Inventory & Sales -- qualified as an application on the supported
+Docker runtime; the Windows installer and commercial release are qualified separately and are externally
+blocked), two experimental ones, and six deferred reference templates.
 
 Status scale: **QUALIFIED** (required end-to-end qualification executed) · **PARTIALLY QUALIFIED** ·
 **DEMO / EXPERIMENTAL** · **NOT READY** · **DEFERRED**. Column values are `yes` / `no` / `partial`, and
@@ -33,9 +35,10 @@ Release status drives visibility (tested for every status with and without the f
 | DEMO / EXPERIMENTAL | hidden | offered, labelled "Experimental" |
 | DEFERRED | hidden, not installable | hidden, **not installable** — the flag is not a way around the v1.0 scope |
 
-**A default deployment currently offers no applications**, because none has reached QUALIFIED. That is
-the honest state. The preview flag exists so the supervised pilot can use the flagship as a labelled
-preview; it never changes an application's recorded status.
+**A default deployment offers exactly one application, Spare Parts / Inventory & Sales**, because it is the only
+one that has reached QUALIFIED ("Ready for use", no preview acknowledgement; verified in the browser with the flag
+off). The preview flag exists so a supervised pilot or a demonstration can also show the experimental
+applications, clearly labelled; it never changes an application's recorded status and never offers a DEFERRED one.
 
 Definitions get **deterministic ids** (`stabilize_ids`): the reference builders draw random UUIDs on every
 call and template upgrades diff by id, so a random id per build would make every upgrade look like "all
@@ -48,7 +51,7 @@ is claimed beyond its evidence.
 
 | Application | EXISTS | INSTALLS | UI AVAILABLE | PRIMARY WORKFLOW TESTED | BACKUP / RESTORE TESTED | OFFLINE TESTED | STATUS |
 |---|---|---|---|---|---|---|---|
-| **Spare Parts / Inventory & Sales** — parts, part numbers, vehicles, warehouses, inventory, stock movements, suppliers, purchase orders, customers, sales orders, invoices | yes | yes — through the customer gallery in one action (previews are labelled and need an acknowledgement); ledger bound automatically | **yes for the flagship path** — gallery/install, overview, products (+ detail: numbers, stock, movements, files), part-number search, suppliers, customers, warehouses, stock, receive stock, new sale, sales list and sales document. Not built: transfers and adjustments, cross references, vehicle compatibility, purchase-order lifecycle, quotations, returns, reports, the reference catalogue/EPC views | **yes, in the browser, against the real stack** — `e2e/spare-parts-flagship.spec.ts`, 2 consecutive passes from fresh users: install, supplier, warehouse, product, part number, normalized search by two written forms, receive 100, stock 100, customer, sell 5, stock 95, sales document, +100/−5 movements, attach + reload + download a document, an oversell of 96 refused with plain words (stock stays 95, no movement/order left behind). Verified independently in PostgreSQL (`scripts/qualification/verify_flagship_state.py`, 24/24). Also API-level: 68 ledger/transaction tests | **yes at the data plane** — destroy → fresh init → restore from off-stack files, 47/47 (`operations/RECOVERY_DRILL.md`), on an API-built instance; **not yet repeated on a UI-built instance or on the Windows appliance** | **yes for the flagship journey** — the browser run aborts every non-local request and made 0; static scan clean. Not yet: an offline run after a restart | **PARTIALLY QUALIFIED** — **restart persistence is now proven** (every service restarted, volumes kept: state re-verified in PostgreSQL 24/24 and the journey passes again). Remaining gates: template upgrade of an installed instance, restore of a UI-built instance, a restricted-cashier journey through the UI, an accessibility scan of the new screens, and scale measurement (5,000 products / 10,000 part numbers / 10,000 movements) |
+| **Spare Parts / Inventory & Sales** — parts, part numbers, vehicles, warehouses, inventory, stock movements, suppliers, purchase orders, customers, sales orders, invoices | yes | yes — through the customer gallery in one action (no acknowledgement: it is QUALIFIED); ledger bound automatically | **yes for the flagship path** — gallery/install, overview, products (+ detail: numbers, stock, movements, files), part-number search, suppliers, customers, warehouses, stock, receive stock, new sale, sales list and sales document, and the owner's *Business operations* grants. Not built: transfers and adjustments, cross references, vehicle compatibility, purchase-order lifecycle, quotations, returns, reports, the reference catalogue/EPC views | **yes, in the browser, against the real stack** — `e2e/spare-parts-flagship.spec.ts` (install, supplier, warehouse, product, part number, normalized search by two written forms, receive 100, sell 5 → 95, sales document, movements, file upload and download, an oversell refused with nothing left behind), verified independently in PostgreSQL (`scripts/qualification/verify_flagship_state.py`); restricted cashier and receiver (`e2e/spare-parts-cashier.spec.ts`, 17 tests) | **yes, on a UI-built instance, from backup files** — destroy → fresh init → restore, 53/53 plus browser and UI operations (`operations/RECOVERY_DRILL.md`); **not on the Windows appliance** | **yes for the flagship journey** — the browser run aborts every non-local request and made 0 | **QUALIFIED** (application scope only) — see "Final flagship qualification decision" |
 | **Employee Management** (`hr`) | yes | yes (template provisions; tested) | partial — generic record screens | partial — template API test (leave, timesheet, payroll record) | no | no | **DEMO / EXPERIMENTAL** (contains a plain Payroll Record table; not advertised) |
 | **School Management** (`school`) | yes | yes (template provisions; tested) | partial — generic record screens | partial — template API test | no | no | **DEMO / EXPERIMENTAL** |
 | **Blank Application** (the App Builder, `/app-templates`) | yes | yes | yes | partial — browser journey run in the prior session (`e2e/app-platform.spec.ts`, 2/2: offline publish, install, provision, create, search, retain); not re-run at this HEAD | no | partial — that same spec ran on the isolated network | **PARTIALLY QUALIFIED** |
@@ -97,58 +100,58 @@ unchanged and is now pinned by backend tests for both the accepted and the refus
 consumers:** the datetime contract is stricter than ISO 8601 (no `Z`, no fractional seconds); it should be stated
 in the external API documentation.
 
-## Roles and the cashier limit (2026-09-19)
+## Roles and business-operation authority (2026-09-20)
 
-The restricted-cashier journey (`apps/frontend/e2e/spare-parts-cashier.spec.ts`, 13 tests, against the real
-stack; log `cashier-run5.log`) creates a second real user, adds them to the organization through the "Add member"
-dialog, and gives them **only these grants** through the sharing system (no role at all):
+**The right to sell is not the right to receive, adjust or move stock -- and the reverse** ([ADR-0017](architecture/adr/0017-inventory-operation-authority.md)).
+Four default-deny capabilities, each authorizing exactly one operation: `inventory.sell`, `inventory.receive`,
+`inventory.adjust`, `inventory.transfer` (the last two exist so a future workflow has a default-deny home; no
+adjustment or transfer workflow is built). They are granted per installed application through the owner's *Business
+operations* section (share resource type `inventory_operations`) or organization-wide through a role
+(`organization-administrator` holds all four). Existing per-model access still decides which records an operation
+may touch, and the PostgreSQL ledger still alone decides whether a balance is valid.
 
-| Resource | Level | Why |
-| --- | --- | --- |
-| `app_instance` (the Spare Parts application) | read | open the application and read its structure |
-| `app_model` `part`, `part_number`, `warehouse`, `customer` | read | find a product, pick a customer and warehouse |
-| `app_model` `sales_order`, `sales_order_line`, `invoice`, `stock_movement`, `inventory` | write | record a sale (all five are written by one sale) |
+The browser states an **intent** (`POST /operations/sell/`, `/operations/receive/`); the server builds the order,
+lines, stock movements and invoice (or purchase order and movement) and commits them atomically. Creating,
+updating or deleting a stock movement through the record API or the generic transaction endpoint needs
+`inventory.adjust`; no request field, header, query parameter or token can name its own authority.
 
-Not granted: `supplier`, `purchase_order`, `purchase_order_line`, `vehicle` (no access of any kind); write on
-`part`, `part_number`, `warehouse`, `customer`; no bucket access; no schema, sharing, membership, audit or backup
-right. Proven **by the server**, in the browser and by direct API calls:
+**Exact grants used by the qualification** (`e2e/cashier-setup.ts`, no role at all -- these grants are the whole
+authority):
 
-- Works: login, product and part-number search, stock view, a sale through the normal screens (on-hand 95 -> 93,
-  read back from the owner's session), the sales document.
-- Refused (403, no count/results/name in the body): every list or record read on an ungranted model, including a
-  real supplier id substituted directly; create/update/delete on a read-only model (and the UI's "Add product"
-  dialog shows the server's refusal and creates nothing); model creation, share creation and revocation, member
-  add, role assignment, workspace/project creation, audit read, and template installation.
-- Ledger: the cashier cannot edit or delete a movement, cannot overwrite an inventory balance, and cannot forge an
-  inventory row for a new warehouse -- the database refuses all three even though the cashier holds write access.
-- Files: the product's attachment list contains **no filename** for the cashier and its download is refused
-  (bucket access is required); the Files tab shows nothing. Verified against a real attached file.
-- Home page: the counts a cashier may read are shown and a refused one shows a dash ("not available") -- a defect
-  found by this journey (one refused model blanked every count) and fixed, with a unit test.
-- Revoking one grant takes effect on the cashier's very next sale: refused, "Nothing was changed", no half-made
-  order. Every refused attempt is a `denied` audit event against the cashier; the receive below is audited too.
-- The application's structure (model, field and relationship names, e.g. that a Supplier model exists) is visible to
-  anyone who can open the application; records, counts, files and totals are not.
+| | Application | Read (per section) | Write (per section) | Business operation |
+| --- | --- | --- | --- | --- |
+| **Cashier** | read | part, part number, warehouse, customer, inventory, stock movement | sales order, sales order line, invoice | **Sell** |
+| **Receiver** | read | part, part number, warehouse, supplier, inventory, stock movement | purchase order, purchase order line (only when a supplier is recorded) | **Receive** |
+| Combined (test) | read | union | union | Sell **and** Receive, granted deliberately |
 
-### KNOWN LIMIT -- the cashier gate is not fully passed (P1, decision needed)
+Neither holds write access to inventory or stock movements. Everything not listed is refused.
 
-Grants are **per model**, and ADR-0016 defines authority over a stock movement as authority over the movement
-model *and* its balance model. A sale and a receive both write exactly those two models, so **a cashier who may
-sell can also post a positive `receive` movement (verified: HTTP 201, on-hand 93 -> 94) or a negative movement
-that is not a sale.** The ledger keeps the books consistent and the action is audited against the cashier, but the
-server cannot say "may sell, may not receive/adjust". Other consequences of model-level authority, stated so
-nobody assumes more than exists:
+**Proven, by the server, in the browser and through direct API calls** (`spare-parts-cashier.spec.ts` 17/17 on the real
+stack; `test_inventory_operations.py` 32 tests):
 
-- no field-level rules: a cashier who can read `part` also sees its cost field;
-- no "own sales only": write on `sales_order` shows every user's orders, invoices and totals.
+* Authorization matrix: no authority / sell only / receive only / both / administrator / adjust and transfer imply
+  neither sell nor receive -- each allowed or refused exactly as specified.
+* **Revocation is immediate**: after revoking Sell (or Receive) the very next operation is refused, nothing is
+  committed, and the refusal is audited as a `denied` event naming the missing capability.
+* **Direct movement bypass is closed**: with write access to every stock table *and* Sell, a receive, a sale and an
+  adjustment written straight to the record API, and the same movement inside the generic transaction endpoint, are all
+  refused, as is a request that names its own operation; on-hand and the movement count do not change. A mutation test
+  (removing the requirement) is caught by three tests.
+* Cross-organization users get 404; a grant on one application is nothing on another; a member cannot grant themselves
+  authority; share levels are validated per resource type.
+* The ledger still refuses an oversell for an actor with full authority and leaves no order, line, movement or invoice.
+* Module restrictions still apply underneath: a seller without write access to the invoice model cannot sell.
+* A restricted user learns nothing they may not: an ungranted model refuses reads with no count, records or
+  filenames; a product's attachment list shows no filename without bucket access; the home page shows a dash for a
+  count it may not read (a defect found by this journey: one refused model blanked every count).
+* The receiver receives through the UI but cannot sell or write stock directly, sees no sales or customers, and cannot
+  promote themselves; a deliberately combined role (SELL added) can do both and still cannot adjust.
+* The application's structure (section, field and relationship names) is visible to anyone who can open the
+  application; records, counts, files and totals are not.
 
-This is pinned by the test named `KNOWN LIMIT (pinned)`; it must be inverted deliberately when fixed. It is **not**
-fixed here: it is an authorization design question (CLAUDE.md, "When Uncertain") and any answer changes the
-template/ledger definition of installed instances. Recommended conservative direction for an ADR: let a ledger
-binding optionally name an *authority model* per movement direction (for Spare Parts: stock-increasing movements
-require write on `purchase_order`; non-sale decreases require an explicit adjustment grant), default-deny, with a
-migration for existing instances. Until then the honest statement is: **a restricted cashier is restricted in what
-data they can read and which records they can change, but not in the direction of stock movements.**
+**Limits, stated so nobody assumes more:** authority is per application, not per warehouse or organizational unit
+(unit scoping still applies to the records an operation writes); there are no field-level permissions (a cashier who can
+read a product also sees its cost); and no "own sales only" rule (write access to sales orders shows every user's).
 
 ## Template upgrade of an installed instance (2026-09-20)
 
@@ -186,49 +189,25 @@ future release is: install again, then upgrade the existing instance from its pa
 
 ## Final flagship qualification decision (2026-09-20)
 
-**Spare Parts / Inventory & Sales stays PARTIALLY QUALIFIED.** It is not flipped to QUALIFIED because one mandatory
-gate item did not pass. Everything else the mission required has passed with evidence.
+**Spare Parts / Inventory & Sales is QUALIFIED** -- as an application, on the supported Docker runtime. The full evidence, the
+test results on the final code and the nine separate verdicts are in
+[LOCAL_EDITION_V1_FINAL_QUALIFICATION.md](LOCAL_EDITION_V1_FINAL_QUALIFICATION.md).
 
-| Gate | Result | Evidence |
-| --- | --- | --- |
-| Browser journey: install, search (three written forms of one number), receive 100, sell 5 -> 95, sales document, stored file, persistence, an oversell the database refuses | **PASS** (re-run on the restored stack; runs with all non-local requests aborted, so it also proves it needs no internet) | `flagship-final.log`; independent PostgreSQL verification of the state it leaves: all checks passed (`flagship-db-verification-final.log`) |
-| Restart persistence | **PASS** | `flagship-e2e-after-restart.log`, `flagship-db-verification-after-restart.log` |
-| Accessibility | **PASS** | 27/27, 0 axe findings over 22 screens/states + keyboard-only paths (`a11y-run5.log`) |
-| Restricted cashier (server-enforced) | **PARTIAL -- the blocker** | 13/13 tests, but a cashier who may sell can also post a stock-raising movement (below) |
-| Scale (5,000 products, 10,000 part numbers, 10,000 movements) | **PASS** | `docs/implementation/SCALE_QUALIFICATION.md`; every endpoint under 210 ms p95 |
-| Installed-template upgrade | **PASS** (P2 delivery gap) | 67/67 + browser (`upgrade/upgrade-drill.log`) |
-| Destructive restore of a UI-built instance, from backup files | **PASS** | 51/51 + browser + UI operations (`restore-ui/`, `docs/operations/RECOVERY_DRILL.md`) |
+| Gate | Result |
+| --- | --- |
+| Browser journey (with every non-local request blocked; customer mode, flag off) | PASS |
+| Movement-direction authority (the last open P1, ADR-0017) | **CLOSED** -- sell, receive, adjust and transfer are separate capabilities; direct movement bypass refused |
+| Restricted cashier and receiver roles, revocation, a deliberately combined role | PASS (17/17) |
+| Accessibility | PASS (29/29, 0 axe findings) |
+| Scale (5,000 products / 10,000 part numbers / 10,310 movements) | PASS |
+| Template upgrade of an installed instance | PASS (68/68) |
+| Restart persistence (whole stack) | PASS |
+| Destructive restore from backup files | PASS (53/53) |
+| Final regression on the final code | PASS -- backend 1077, Vitest 79, tsc, eslint, production build, Playwright 55 passed / 0 failed / 5 prepared-data skips |
 
-Verification of the tree at the final commit: backend **1034 passed** (`backend-full-final.log`, 12 min 06 s; 3
-warnings, all the existing worker-loss tests using a real Celery `send_task`), `ruff check`, `mypy` (90 files) and the
-migration check clean; frontend vitest **76 passed**, `tsc` and `eslint` clean, the production build succeeds (the images
-were rebuilt from it); Playwright **49 passed, 0 failed** across all spec files run one at a time, and the 5 specs that
-need a prepared business skip themselves without one (they were run separately with real data: recovery prep, existing
-business 3/3 twice, scale probe).
+**What this does not mean.** It does not make the Windows installer, automatic startup, the Control Center, Windows
+restore-from-file, physical LAN, code signing or the commercial release qualified: those are **EXTERNALLY BLOCKED** (no
+disposable Windows machine, no signing credential, no second LAN client) and HawkScan is **NOT EXECUTED -- CREDENTIAL
+BLOCKED**. HR and School remain EXPERIMENTAL; the other six templates remain DEFERRED.
 
-### The exact blocker
-
-The brief required a cashier to be denied "unauthorized inventory administration". Grants are per model, and
-ADR-0016 defines authority over a stock movement as authority over the movement model and its balance model. A sale
-and a receive write exactly those two models, so a cashier holding the sale grants can also record a receive
-(verified: HTTP 201, on-hand 93 -> 94) or a non-sale decrease. The books stay consistent (the ledger enforces the
-sum) and the action is audited against the cashier, but the server cannot separate "may sell" from "may receive or
-adjust". This is pinned by the test named `KNOWN LIMIT (pinned)` and documented above with the exact grants.
-
-**What flips the status:** a decision on movement-direction authority (an ADR; the recommended conservative direction
-is in "Roles and the cashier limit"), its implementation with a migration for already-installed instances, the pinned
-test inverted, and the cashier, upgrade and restore gates re-run. That is an authorization design change and was
-deliberately not guessed at during a feature freeze (CLAUDE.md, "When Uncertain").
-
-### Not blockers, but recorded (none is claimed as working)
-
-- P2 -- a newer built-in version reaches an existing organization only by installing the app again (no "update
-  available"); the upgrade mechanism itself is complete.
-- P2 -- the platform datetime contract (naive UTC, whole seconds) is stricter than ISO 8601 and is not yet stated in
-  the external API documentation.
-- P3 -- no field-level permissions (a cashier who reads Product also sees its cost); no "own sales only".
-- P3 -- unindexed relationship columns, an unpruned operation journal (~1.1 KB per mutation), and a plain select for
-  every customer, all recorded in the scale document.
-- Not part of this decision and still **externally blocked**: Windows installer/reboot/LAN qualification (needs the
-  Windows VM), code signing (needs a certificate), Windows restore-from-file (Control Center still takes a
-  `BackupRecord` id), and **HawkScan -- NOT EXECUTED / CREDENTIAL BLOCKED** (no `HAWK_API_KEY`; nothing was fabricated).
+**Open P0: none. Open P1: none.** P2/P3 findings and the deferred features are listed in the final qualification document.
