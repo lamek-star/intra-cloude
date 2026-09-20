@@ -114,34 +114,27 @@ def stamp():
 
 
 def receive():
-    op = {"op": "create", "model": models["stock_movement"]["id"], "data": {
-        fid("stock_movement", "stock_movement_part"): part["id"], fid("stock_movement", "stock_movement_warehouse"): warehouse,
-        fid("stock_movement", "quantity_delta"): 1, fid("stock_movement", "movement_type"): "receive",
-        fid("stock_movement", "occurred_at"): stamp()}}
-    return call("POST", f"/app-instances/{instance}/transactions/", {"operations": [op]},
+    body = {"part": part["id"], "warehouse": warehouse, "quantity": 1, "occurred_at": stamp()}
+    return call("POST", f"/app-instances/{instance}/operations/receive/", body,
                 {"Idempotency-Key": f"http-receive-{time.time_ns()}"})
 
 
-def sale():
-    ops = [
-        {"op": "create", "ref": "o", "model": models["sales_order"]["id"], "data": {
-            fid("sales_order", "customer"): customer, fid("sales_order", "status"): "confirmed",
-            fid("sales_order", "order_date"): "2026-09-19", fid("sales_order", "total_amount"): "15.50"}},
-        {"op": "create", "model": models["sales_order_line"]["id"], "data": {
-            fid("sales_order_line", "sales_order_line_sales_order"): {"$ref": "o"},
-            fid("sales_order_line", "sales_order_line_part"): part["id"], fid("sales_order_line", "quantity"): 1,
-            fid("sales_order_line", "unit_price"): "15.50", fid("sales_order_line", "line_total"): "15.50"}},
-        {"op": "create", "model": models["stock_movement"]["id"], "data": {
-            fid("stock_movement", "stock_movement_part"): part["id"], fid("stock_movement", "stock_movement_warehouse"): warehouse,
-            fid("stock_movement", "quantity_delta"): -1, fid("stock_movement", "movement_type"): "sale",
-            fid("stock_movement", "occurred_at"): stamp()}},
-        {"op": "create", "model": models["invoice"]["id"], "data": {
-            fid("invoice", "invoice_number"): f"INV-HTTP-{time.time_ns()}", fid("invoice", "invoice_sales_order"): {"$ref": "o"},
-            fid("invoice", "amount_due"): "15.50", fid("invoice", "status"): "unpaid"}},
-    ]
-    return call("POST", f"/app-instances/{instance}/transactions/", {"operations": ops},
+def sale(line_count=1):
+    body = {
+        "customer": customer,
+        "invoice_number": f"INV-HTTP-{time.time_ns()}",
+        "occurred_at": stamp(),
+        "lines": [{"part": part["id"], "warehouse": warehouse, "quantity": 1, "unit_price": "15.50"}] * line_count,
+    }
+    return call("POST", f"/app-instances/{instance}/operations/sell/", body,
                 {"Idempotency-Key": f"http-sale-{time.time_ns()}"})
 
 
-measure("RECEIVE (1 movement)", receive, n=15)
-measure("SALE (order+line+movement+invoice)", sale, n=15)
+measure("RECEIVE (controlled operation)", receive, n=15)
+# Sales consume stock and the ledger (correctly) refuses an oversell, so top the part up before measuring them.
+status_, _payload = call("POST", f"/app-instances/{instance}/operations/receive/",
+                         {"part": part["id"], "warehouse": warehouse, "quantity": 500, "occurred_at": stamp()},
+                         {"Idempotency-Key": f"http-topup-{time.time_ns()}"})
+assert status_ == 201, status_
+measure("SALE (controlled operation, 1 line)", sale, n=15)
+measure("SALE (controlled operation, 5 lines)", lambda: sale(5), n=10)

@@ -95,7 +95,9 @@ stage_seed() {
 
 stage_snapshot() {
   log "SNAPSHOT the existing (UI-built) business: expected state measured through the real API"
-  rexec sh -c "mkdir -p /backups/drill-ui"
+  # A previous run's state file comes back from the off-stack copy owned by root (docker cp), so prepare the
+  # directory as root and make it writable for the application user.
+  docker exec -u root "$RUNNER" sh -c "rm -rf /backups/drill-ui && mkdir -p /backups/drill-ui && chmod 777 /backups/drill-ui"
   ui_env
   docker exec -i --env-file "$QUALIFICATION_ENV_FILE" -e DJANGO_SETTINGS_MODULE=config.settings.prod \
     -e BACKUP_DIR=/backups -e DRILL_MODE=snapshot "${UI_ARGS[@]}" "$RUNNER" python manage.py shell < "$HERE/drill.py" \

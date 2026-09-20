@@ -272,26 +272,21 @@ def measure():
     def receive():
         counter["n"] += 1
         return client.post(
-            f"/api/v1/app-instances/{instance.id}/transactions/",
-            {"operations": [f.op("stock_movement", stock_movement_part=part_id, stock_movement_warehouse=warehouse_id,
-                                 quantity_delta=2, movement_type="receive", reference=f"MEASURE-R-{counter['n']}",
-                                 occurred_at=stamp(0))]},
+            f"/api/v1/app-instances/{instance.id}/operations/receive/",
+            {"part": part_id, "warehouse": warehouse_id, "quantity": 2, "reference": f"MEASURE-R-{counter['n']}",
+             "occurred_at": stamp(0)},
             format="json", HTTP_IDEMPOTENCY_KEY=f"measure-receive-{time.time_ns()}")
 
     def sale():
         counter["n"] += 1
-        ops = [f.op("sales_order", ref="o", customer=customer_id, status="confirmed", order_date="2026-09-19", total_amount="15.50"),
-               f.op("sales_order_line", sales_order_line_sales_order={"$ref": "o"}, sales_order_line_part=part_id,
-                    quantity=1, unit_price="15.50", line_total="15.50"),
-               f.op("stock_movement", stock_movement_part=part_id, stock_movement_warehouse=warehouse_id,
-                    quantity_delta=-1, movement_type="sale", reference=f"MEASURE-S-{counter['n']}", occurred_at=stamp(0)),
-               f.op("invoice", invoice_number=f"INV-MEASURE-{time.time_ns()}", invoice_sales_order={"$ref": "o"},
-                    amount_due="15.50", status="unpaid")]
-        return client.post(f"/api/v1/app-instances/{instance.id}/transactions/", {"operations": ops}, format="json",
-                           HTTP_IDEMPOTENCY_KEY=f"measure-sale-{time.time_ns()}")
+        return client.post(
+            f"/api/v1/app-instances/{instance.id}/operations/sell/",
+            {"customer": customer_id, "invoice_number": f"INV-MEASURE-{time.time_ns()}", "occurred_at": stamp(0),
+             "lines": [{"part": part_id, "warehouse": warehouse_id, "quantity": 1, "unit_price": "15.50"}]},
+            format="json", HTTP_IDEMPOTENCY_KEY=f"measure-sale-{time.time_ns()}")
 
-    timed("RECEIVE (1 movement, atomic transaction)", receive, n=25)
-    timed("SALE (order + line + movement + invoice, atomic)", sale, n=25)
+    timed("RECEIVE (controlled operation: 1 movement, atomic)", receive, n=25)
+    timed("SALE (controlled operation: order + line + movement + invoice, atomic)", sale, n=25)
 
     # Query plans for the statements the screens depend on (captured from the real code path).
     plans = {

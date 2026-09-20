@@ -83,6 +83,19 @@ test.describe("Spare Parts accessibility", () => {
     }],
     ["Sales list", async () => { await page.goto(`${biz.appHome}/sales`); await expect(page.getByRole("link", { name: "Open sale" })).toBeVisible(); }],
     ["Sales document", async () => { await page.goto(biz.salesDocumentUrl); await expect(page.getByRole("heading", { name: /Invoice INV-/ })).toBeVisible(); }],
+    // The owner's page for granting business-operation authority (ADR-0017), and its Share dialog.
+    ["Business operations access", async () => {
+      await page.goto(`/app-instances/${biz.instanceId}`);
+      await expect(page.getByRole("heading", { name: "Business operations" })).toBeVisible();
+    }],
+    ["Business operations: grant dialog", async () => {
+      await page.goto(`/app-instances/${biz.instanceId}`);
+      const section = page.locator("section").filter({ has: page.getByRole("heading", { name: "Business operations" }) });
+      await section.getByRole("button", { name: "Share" }).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByLabel("Access level").locator("option")).toHaveText(["Sell", "Receive"]);
+    }],
   ];
 
   for (const [name, arrive] of screens) {
