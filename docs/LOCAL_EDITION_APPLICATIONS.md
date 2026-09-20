@@ -1,6 +1,6 @@
 # Local Edition v1.0 — applications
 
-Written from repository evidence; last reconciled 2026-09-19. **Repository truth wins over the
+Written from repository evidence; last reconciled 2026-09-20. **Repository truth wins over the
 early conceptual gallery: Local Edition v1.0 does not have eight production applications.** It has
 one flagship application in pilot preview, two experimental ones, and nothing yet at QUALIFIED.
 
@@ -184,9 +184,51 @@ reaches an organization's own template as a side effect of installing that built
 application and no way to publish just the new version. Until there is, the upgrade path for a customer of a
 future release is: install again, then upgrade the existing instance from its page (or run the two steps for them).
 
-## What has to happen for the flagship to reach QUALIFIED
+## Final flagship qualification decision (2026-09-20)
 
-1. ~~Gallery, install, and Spare Parts business screens in the browser~~ — done (see above).
-2. ~~One Playwright journey through the normal UI against the real backend~~ — done (2 passes).
-3. Restart persistence, accessibility, restricted cashier (**one open P1: movement-direction authority**), scale (done), template upgrade of an installed instance (done; P2 delivery gap), destructive restore (done), and offline run of that journey.
-4. Then — and only then — flip `spare_parts` to QUALIFIED in the catalog with those logs listed under `evidence`.
+**Spare Parts / Inventory & Sales stays PARTIALLY QUALIFIED.** It is not flipped to QUALIFIED because one mandatory
+gate item did not pass. Everything else the mission required has passed with evidence.
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| Browser journey: install, search (three written forms of one number), receive 100, sell 5 -> 95, sales document, stored file, persistence, an oversell the database refuses | **PASS** (re-run on the restored stack; runs with all non-local requests aborted, so it also proves it needs no internet) | `flagship-final.log`; independent PostgreSQL verification of the state it leaves: all checks passed (`flagship-db-verification-final.log`) |
+| Restart persistence | **PASS** | `flagship-e2e-after-restart.log`, `flagship-db-verification-after-restart.log` |
+| Accessibility | **PASS** | 27/27, 0 axe findings over 22 screens/states + keyboard-only paths (`a11y-run5.log`) |
+| Restricted cashier (server-enforced) | **PARTIAL -- the blocker** | 13/13 tests, but a cashier who may sell can also post a stock-raising movement (below) |
+| Scale (5,000 products, 10,000 part numbers, 10,000 movements) | **PASS** | `docs/implementation/SCALE_QUALIFICATION.md`; every endpoint under 210 ms p95 |
+| Installed-template upgrade | **PASS** (P2 delivery gap) | 67/67 + browser (`upgrade/upgrade-drill.log`) |
+| Destructive restore of a UI-built instance, from backup files | **PASS** | 51/51 + browser + UI operations (`restore-ui/`, `docs/operations/RECOVERY_DRILL.md`) |
+
+Verification of the tree at the final commit: backend **1034 passed** (`backend-full-final.log`, 12 min 06 s; 3
+warnings, all the existing worker-loss tests using a real Celery `send_task`), `ruff check`, `mypy` (90 files) and the
+migration check clean; frontend vitest **76 passed**, `tsc` and `eslint` clean, the production build succeeds (the images
+were rebuilt from it); Playwright **49 passed, 0 failed** across all spec files run one at a time, and the 5 specs that
+need a prepared business skip themselves without one (they were run separately with real data: recovery prep, existing
+business 3/3 twice, scale probe).
+
+### The exact blocker
+
+The brief required a cashier to be denied "unauthorized inventory administration". Grants are per model, and
+ADR-0016 defines authority over a stock movement as authority over the movement model and its balance model. A sale
+and a receive write exactly those two models, so a cashier holding the sale grants can also record a receive
+(verified: HTTP 201, on-hand 93 -> 94) or a non-sale decrease. The books stay consistent (the ledger enforces the
+sum) and the action is audited against the cashier, but the server cannot separate "may sell" from "may receive or
+adjust". This is pinned by the test named `KNOWN LIMIT (pinned)` and documented above with the exact grants.
+
+**What flips the status:** a decision on movement-direction authority (an ADR; the recommended conservative direction
+is in "Roles and the cashier limit"), its implementation with a migration for already-installed instances, the pinned
+test inverted, and the cashier, upgrade and restore gates re-run. That is an authorization design change and was
+deliberately not guessed at during a feature freeze (CLAUDE.md, "When Uncertain").
+
+### Not blockers, but recorded (none is claimed as working)
+
+- P2 -- a newer built-in version reaches an existing organization only by installing the app again (no "update
+  available"); the upgrade mechanism itself is complete.
+- P2 -- the platform datetime contract (naive UTC, whole seconds) is stricter than ISO 8601 and is not yet stated in
+  the external API documentation.
+- P3 -- no field-level permissions (a cashier who reads Product also sees its cost); no "own sales only".
+- P3 -- unindexed relationship columns, an unpruned operation journal (~1.1 KB per mutation), and a plain select for
+  every customer, all recorded in the scale document.
+- Not part of this decision and still **externally blocked**: Windows installer/reboot/LAN qualification (needs the
+  Windows VM), code signing (needs a certificate), Windows restore-from-file (Control Center still takes a
+  `BackupRecord` id), and **HawkScan -- NOT EXECUTED / CREDENTIAL BLOCKED** (no `HAWK_API_KEY`; nothing was fabricated).

@@ -174,6 +174,10 @@ Atomic receive/sell checkpoint (same day, logs in the same folder):
   passwords, stock 95, exactly 2 movements, the sales document, file bytes), the measured comparison passed 51/51, and new
   operations worked (API receive/sale/cashier sale, and a UI sale and receive). The scale dataset in the same database came
   back identical. Windows restore-from-file is still a separate, externally blocked item.
+- **Flagship decision (2026-09-20): PARTIALLY QUALIFIED.** Journey, accessibility, scale, template upgrade and destructive
+  restore passed; the restricted-cashier gate has one open P1 (movement-direction authority -- see
+  `docs/LOCAL_EDITION_APPLICATIONS.md`, "Final flagship qualification decision"). Tree at the final commit: backend 1034
+  passed, vitest 76 passed, Playwright 49 passed / 0 failed, ruff/mypy/tsc/eslint/migration check clean.
 - Normalization vectors (`tests/fixtures/part-number-normalization.json`, 19): Python, PostgreSQL and JavaScript agree, and the
   separate spare-parts reference app's `normalizeNumber` agrees on 19/19. Review and decisions:
   `docs/implementation/SPAREPARTS_DEMO_REVIEW.md`.
