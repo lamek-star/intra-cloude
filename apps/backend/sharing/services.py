@@ -28,6 +28,7 @@ from django.utils import timezone
 
 from accounts.models import User
 from app_platform.access import RESOURCE_TYPE_APP_INSTANCE, RESOURCE_TYPE_APP_MODEL
+from app_platform.inventory_authority import RESOURCE_TYPE_INVENTORY_OPERATIONS
 from app_platform.models import AppInstance, ModelDefinition
 from audit import services as audit
 from audit.models import AuditEvent
@@ -99,6 +100,15 @@ LEVEL_PERMISSIONS: dict[str, dict[str, list[str]]] = {
         ShareGrant.Level.READ: ["database.read"],
         ShareGrant.Level.WRITE: ["database.read", "database.write"],
     },
+    # ADR-0017: business-operation authority over one installed application's stock. One level = one
+    # operation = one permission; nothing here implies read access to any model (that stays a separate,
+    # module-scoped grant), and no level implies another.
+    RESOURCE_TYPE_INVENTORY_OPERATIONS: {
+        ShareGrant.Level.SELL: ["inventory.sell"],
+        ShareGrant.Level.RECEIVE: ["inventory.receive"],
+        ShareGrant.Level.ADJUST: ["inventory.adjust"],
+        ShareGrant.Level.TRANSFER: ["inventory.transfer"],
+    },
 }
 
 _RESOURCE_ORG_FILTERS = {
@@ -116,6 +126,9 @@ _RESOURCE_ORG_FILTERS = {
     ).exists(),
     RESOURCE_TYPE_APP_MODEL: lambda resource_id, org_id: ModelDefinition.objects.filter(
         id=resource_id, instance__organization_id=org_id
+    ).exists(),
+    RESOURCE_TYPE_INVENTORY_OPERATIONS: lambda resource_id, org_id: AppInstance.objects.filter(
+        id=resource_id, organization_id=org_id
     ).exists(),
 }
 

@@ -17,6 +17,21 @@ PERMISSIONS = {
         "Apply a workflow transition marked as requiring approval, in addition to the ordinary "
         "database.write every record edit already needs"
     ),
+    # Business-operation authority (ADR-0017). Granted per installed application (resource type
+    # `inventory_operations`, resource id = the AppInstance) or organization-wide through a role. Each one
+    # authorizes ONE kind of stock-changing operation and implies none of the others: the right to sell is not
+    # the right to receive, adjust or transfer. All are default-deny.
+    "inventory.sell": "Record a sale (order, lines, stock taken out, invoice) in an installed application",
+    "inventory.receive": (
+        "Receive stock into a warehouse (optionally with a purchase order) in an installed application"
+    ),
+    "inventory.adjust": (
+        "Record arbitrary stock movements directly through the record API of an installed application "
+        "(there is no adjustment workflow in v1.0)"
+    ),
+    "inventory.transfer": (
+        "Move stock between warehouses (authority defined; no transfer workflow exists in v1.0)"
+    ),
     "workspace.manage": "Create Workspaces and Projects within an organization",
     "org_unit.read": (
         "View an organization's structural units (branches, departments, teams, etc.) and their membership"

@@ -8,7 +8,7 @@ from rest_framework.response import Response
 
 from databases import rows as row_ops
 
-from . import records, transactions
+from . import inventory_authority, inventory_operations, records, transactions
 from .access import environment_scope_denied, get_owned
 from .models import AppInstance, ModelDefinition
 from .views import FoundationView
@@ -151,3 +151,40 @@ class TransactionView(FoundationView):
         except transactions.TransactionError as exc:
             return Response({"detail": str(exc), "operation": exc.index}, status=400)
         return Response({"results": results}, status=201)
+
+
+class _InventoryOperationView(FoundationView):
+    """A controlled business operation (ADR-0017): human session only (no `service_account_methods`), an
+    Idempotency-Key is mandatory, and authority is the operation's own capability -- never a request field."""
+
+    def run(self, request, instance):
+        """Performs the operation and returns its results; implemented by the two subclasses."""
+        raise NotImplementedError
+
+    def post(self, request, object_id):
+        instance = get_owned(AppInstance, object_id, request.user, "organization")
+        try:
+            results = self.run(request, instance)
+        except inventory_authority.OperationDenied as exc:
+            return Response({"detail": str(exc)}, status=403)
+        except inventory_operations.OperationUnsupported as exc:
+            return Response({"detail": str(exc)}, status=400)
+        except transactions.TransactionDenied as exc:
+            return Response({"detail": str(exc), "operation": exc.index}, status=403)
+        except transactions.TransactionError as exc:
+            return Response({"detail": str(exc), "operation": exc.index}, status=400)
+        return Response({"results": results}, status=201)
+
+
+class SellView(_InventoryOperationView):
+    def run(self, request, instance):
+        return inventory_operations.sell(
+            request.user, instance, request.data, idempotency_key=request.headers.get("Idempotency-Key")
+        )
+
+
+class ReceiveView(_InventoryOperationView):
+    def run(self, request, instance):
+        return inventory_operations.receive(
+            request.user, instance, request.data, idempotency_key=request.headers.get("Idempotency-Key")
+        )

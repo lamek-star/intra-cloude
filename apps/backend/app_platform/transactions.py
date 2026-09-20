@@ -77,12 +77,23 @@ def _resolve(value, created: dict, index: int):
     return value
 
 
-def run(actor, instance: AppInstance, data, *, idempotency_key: str | None = None) -> list[dict]:
+def run(
+    actor,
+    instance: AppInstance,
+    data,
+    *,
+    idempotency_key: str | None = None,
+    movement_operation: str | None = None,
+) -> list[dict]:
     """Runs every operation in order inside one tenant transaction and
     returns each operation's resulting record. `idempotency_key` covers the
     whole transaction: each create derives its own stable per-operation key
     from it, so replaying the same request returns the same records without
-    inserting (or re-firing the ledger) again."""
+    inserting (or re-firing the ledger) again.
+
+    `movement_operation` is passed ONLY by the server-side business operations (inventory_operations.py) and
+    names the operation that authorizes the stock movements they build; the HTTP transaction endpoint never
+    sets it, so a movement in an ordinary transaction needs `inventory.adjust` (ADR-0017)."""
     values = instances.validated(TransactionInput, data)
     models: dict = {}
     created: dict = {}
@@ -103,7 +114,9 @@ def run(actor, instance: AppInstance, data, *, idempotency_key: str | None = Non
             try:
                 if operation["op"] == "create":
                     key = f"{idempotency_key}:{index}" if idempotency_key else None
-                    row = records.create_record(actor, model, payload, idempotency_key=key)
+                    row = records.create_record(
+                        actor, model, payload, idempotency_key=key, movement_operation=movement_operation
+                    )
                 else:
                     if "record" not in operation:
                         raise TransactionError(index, "an update needs a record")

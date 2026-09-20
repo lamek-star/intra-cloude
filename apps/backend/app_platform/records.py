@@ -31,7 +31,7 @@ from databases.values import RowValueError
 from org_units.models import OrganizationalUnit
 from permissions.services import has_permission
 
-from . import operation_journal, quantity_ledger, unit_scope
+from . import inventory_authority, operation_journal, quantity_ledger, unit_scope
 from .access import RESOURCE_TYPE_APP_MODEL
 from .models import FieldDefinition, ModelDefinition, RuntimeProvision
 from .runtime_plan import physical_name
@@ -532,14 +532,50 @@ def _check_new_value_in_unit_scope(data: dict, model: ModelDefinition, granted_u
         raise RecordAccessDenied("this record's organizational unit is outside your grant")
 
 
-def create_record(actor, model: ModelDefinition, data: dict, *, idempotency_key=None) -> dict:
-    receipt, table, granted_units = resolve_scoped(
-        actor, model, "database.write", action="app_instance.record.create"
-    )
+# The named business operations that may create a stock movement through the controlled server-side path
+# (inventory_operations.py). Never reachable from a request: it is a Python argument, not request data.
+_MOVEMENT_OPERATIONS = frozenset({inventory_authority.SELL, inventory_authority.RECEIVE})
+
+
+def _require_operation(actor, model: ModelDefinition, permission: str, *, action: str) -> None:
+    try:
+        inventory_authority.require(actor, model.instance, permission, action=action)
+    except inventory_authority.OperationDenied as exc:
+        raise RecordAccessDenied(str(exc)) from exc
+
+
+def _authorize_movement_create(
+    actor, model: ModelDefinition, balance_model, movement_operation, *, action: str
+):
+    """A stock movement changes a balance, so who may create one is decided by BUSINESS-OPERATION authority
+    (ADR-0017), not merely by write access to two tables. Through the ordinary record API that authority is
+    `inventory.adjust` -- an arbitrary movement -- in addition to ADR-0016's write access to both models. The
+    controlled sale/receive operations name their own operation, which is then the whole authority for the
+    movement (and its balance): a cashier needs `inventory.sell`, not raw write access to stock tables."""
+    if movement_operation is None:
+        _require_operation(actor, model, inventory_authority.ADJUST, action=action)
+        receipt, table, granted_units = resolve_scoped(actor, model, "database.write", action=action)
+        resolve_scoped(actor, balance_model, "database.write", action=action)
+        return receipt, table, granted_units
+    if movement_operation not in _MOVEMENT_OPERATIONS:
+        raise ValueError(f"not a movement operation: {movement_operation!r}")
+    _require_operation(actor, model, movement_operation, action=action)
+    receipt = _receipt(model)
+    return receipt, _table(receipt, model), None
+
+
+def create_record(
+    actor, model: ModelDefinition, data: dict, *, idempotency_key=None, movement_operation: str | None = None
+) -> dict:
     balance_model = quantity_ledger.balance_model_for_movement(model)
     if balance_model is not None:
-        # A movement on a ledger-bound model changes that ledger's balance.
-        resolve_scoped(actor, balance_model, "database.write", action="app_instance.record.create")
+        receipt, table, granted_units = _authorize_movement_create(
+            actor, model, balance_model, movement_operation, action="app_instance.record.create"
+        )
+    else:
+        receipt, table, granted_units = resolve_scoped(
+            actor, model, "database.write", action="app_instance.record.create"
+        )
     if granted_units is not None:
         _check_new_value_in_unit_scope(data, model, granted_units)
     field_map = _field_map(receipt, model)
@@ -574,7 +610,13 @@ def create_record(actor, model: ModelDefinition, data: dict, *, idempotency_key=
     return _run(_do)
 
 
+def _require_adjust_if_movement(actor, model: ModelDefinition, *, action: str) -> None:
+    if quantity_ledger.balance_model_for_movement(model) is not None:
+        _require_operation(actor, model, inventory_authority.ADJUST, action=action)
+
+
 def update_record(actor, model: ModelDefinition, record_id, data: dict) -> dict:
+    _require_adjust_if_movement(actor, model, action="app_instance.record.update")
     receipt, table, granted_units = resolve_scoped(
         actor, model, "database.write", action="app_instance.record.update"
     )
@@ -625,6 +667,7 @@ def update_record(actor, model: ModelDefinition, record_id, data: dict) -> dict:
 
 
 def delete_record(actor, model: ModelDefinition, record_id) -> None:
+    _require_adjust_if_movement(actor, model, action="app_instance.record.delete")
     receipt, table, granted_units = resolve_scoped(
         actor, model, "database.write", action="app_instance.record.delete"
     )

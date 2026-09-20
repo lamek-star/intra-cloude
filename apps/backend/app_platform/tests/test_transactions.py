@@ -322,6 +322,11 @@ class IdempotencyTests(TransactionBase):
 
 
 class AuthorizationTests(TransactionBase):
+    """The generic transaction endpoint authorizes each operation by its own record rules. A stock MOVEMENT
+    through it is an arbitrary movement, so it needs `inventory.adjust` (ADR-0017) on top of write access to
+    the stock tables (ADR-0016); selling and receiving have their own controlled endpoints
+    (test_inventory_operations.py)."""
+
     def setUp(self):
         super().setUp()
         self.cashier = User.objects.create_user(email="cashier@example.com")
@@ -345,32 +350,56 @@ class AuthorizationTests(TransactionBase):
             )
             self.assertEqual(response.status_code, 201, response.data)
 
+    def _authority(self, level):
+        response = self.client.post(
+            reverse("share-grant-list-create", args=[self.org.id]),
+            {
+                "resource_type": "inventory_operations",
+                "resource_id": str(self.instance.id),
+                "principal_type": "user",
+                "user_id": str(self.cashier.id),
+                "level": level,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+
     def test_a_member_with_no_grants_cannot_run_a_transaction(self):
         response = self._post(self._sale_ops(1), client=self.cashier_client)
         self.assertEqual(response.status_code, 403, response.data)
         self.assertEqual(response.data["operation"], 0)
         self._assert_no_sale_documents()
 
-    def test_missing_write_on_the_movement_model_denies_the_sale_and_undoes_earlier_steps(self):
-        self._grant("sales_order", "sales_order_line", "invoice", "inventory")
+    def test_write_access_to_every_stock_table_is_not_authority_to_move_stock(self):
+        self._grant("sales_order", "sales_order_line", "invoice", "stock_movement", "inventory")
         response = self._post(self._sale_ops(1), client=self.cashier_client)
         self.assertEqual(response.status_code, 403, response.data)
         self.assertEqual(response.data["operation"], 2)  # order and line succeeded first, then rolled back
         self._assert_no_sale_documents()
         self.assertEqual(self._balance(), 50)
 
-    def test_write_on_the_movement_model_alone_is_not_enough_to_change_a_balance(self):
-        self._grant("sales_order", "sales_order_line", "invoice", "stock_movement")
+    def test_sell_authority_does_not_open_the_generic_movement_path(self):
+        self._grant("sales_order", "sales_order_line", "invoice", "stock_movement", "inventory")
+        self._authority("sell")
         response = self._post(self._sale_ops(1), client=self.cashier_client)
         self.assertEqual(response.status_code, 403, response.data)
         self._assert_no_sale_documents()
         self.assertEqual(self._balance(), 50)
 
-    def test_a_member_with_every_needed_grant_can_sell(self):
+    def test_an_adjuster_with_write_access_to_both_ledger_models_may_use_the_generic_path(self):
         self._grant("sales_order", "sales_order_line", "invoice", "stock_movement", "inventory")
+        self._authority("adjust")
         response = self._post(self._sale_ops(1), client=self.cashier_client)
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(self._balance(), 49)
+
+    def test_adjust_still_needs_write_access_to_the_balance_model(self):
+        self._grant("sales_order", "sales_order_line", "invoice", "stock_movement")
+        self._authority("adjust")
+        response = self._post(self._sale_ops(1), client=self.cashier_client)
+        self.assertEqual(response.status_code, 403, response.data)
+        self._assert_no_sale_documents()
+        self.assertEqual(self._balance(), 50)
 
     def test_the_transaction_endpoint_is_not_opted_in_for_bearer_token_clients(self):
         # FoundationView denies any method not listed here to an Application's
