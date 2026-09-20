@@ -56,7 +56,8 @@ export async function buildFlagshipBusiness(
   const card = page.getByRole("article", { name: "Spare Parts" });
   await card.getByRole("button", { name: "Install" }).click();
   const install = page.getByRole("dialog", { name: "Install Spare Parts" });
-  await install.getByRole("checkbox", { name: "I understand this is a preview" }).check();
+  // A QUALIFIED application needs no preview acknowledgement.
+  await expect(install.getByRole("checkbox", { name: "I understand this is a preview" })).toHaveCount(0);
   await install.getByRole("button", { name: "Install", exact: true }).click();
   await expect(install.getByText(/Spare Parts is ready/)).toBeVisible({ timeout: 90_000 });
   await install.getByRole("link", { name: "Open application" }).click();

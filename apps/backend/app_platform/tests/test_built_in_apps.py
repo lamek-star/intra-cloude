@@ -76,6 +76,24 @@ class GalleryVisibilityTests(SimpleTestCase):
         with override_settings(SHOW_UNQUALIFIED_BUILT_IN_APPS=False):
             self.assertTrue(all(a["status"] == "qualified" for a in built_in_apps.listing()))
 
+    def test_the_qualified_flagship_is_the_only_application_customers_are_offered_by_default(self):
+        with override_settings(SHOW_UNQUALIFIED_BUILT_IN_APPS=False):
+            shown = {a["key"]: a for a in built_in_apps.listing()}
+        self.assertEqual(set(shown), {"spare_parts"})
+        self.assertEqual(shown["spare_parts"]["status_label"], "Ready for use")
+        self.assertTrue(
+            shown["spare_parts"]["evidence"], "a QUALIFIED application must say where its evidence lives"
+        )
+
+    def test_every_qualified_application_names_its_evidence(self):
+        for app in CATALOG.values():
+            if app.status == Status.QUALIFIED:
+                self.assertTrue(app.evidence, app.key)
+                self.assertTrue(
+                    any(line.startswith("docs/") or line.startswith("apps/") for line in app.evidence),
+                    app.key,
+                )
+
     def test_a_qualified_application_appears_and_an_unqualified_one_does_not(self):
         promoted = BuiltInApp(
             key="spare_parts",
@@ -95,7 +113,7 @@ class GalleryVisibilityTests(SimpleTestCase):
         with override_settings(SHOW_UNQUALIFIED_BUILT_IN_APPS=True):
             shown = {a["key"]: a for a in built_in_apps.listing()}
         self.assertEqual(set(shown), {k for k, a in CATALOG.items() if a.status != Status.DEFERRED})
-        self.assertEqual(shown["spare_parts"]["status_label"], "Pilot preview")
+        self.assertEqual(shown["spare_parts"]["status_label"], "Ready for use")
         self.assertEqual(shown["hr"]["status_label"], "Experimental")
         for key in ("crm", "procurement", "assets", "projects", "documents", "warehouses"):
             self.assertEqual(CATALOG[key].status, Status.DEFERRED)
@@ -200,8 +218,10 @@ class InstallTests(TransactionTestCase):
         self.assertEqual([v.number for v in template.versions.all()], [1, 2])
 
     def test_an_application_that_is_not_shown_to_customers_cannot_be_installed(self):
+        # HR is EXPERIMENTAL, not QUALIFIED, so it is not offered by default.
+        hr_url = f"/api/v1/projects/{self.project.id}/built-in-apps/hr/install/"
         with override_settings(SHOW_UNQUALIFIED_BUILT_IN_APPS=False):
-            response = self.client.post(self.url, {}, format="json")
+            response = self.client.post(hr_url, {}, format="json")
         self.assertEqual(response.status_code, 404)
         self.assertFalse(AppInstance.objects.filter(organization=self.org).exists())
 

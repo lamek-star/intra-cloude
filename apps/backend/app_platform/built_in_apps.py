@@ -92,12 +92,24 @@ CATALOG: dict[str, BuiltInApp] = {
                 "Purchase orders",
                 "Sales and invoices",
             ),
-            status=Status.PARTIALLY_QUALIFIED,
+            status=Status.QUALIFIED,
             evidence=(
-                "docs/architecture/adr/0016-tenant-operation-journal.md (atomic inventory, verified)",
-                "docs/operations/RECOVERY_DRILL.md (backup and restore, verified at the data plane)",
-                "Not yet qualified: receive/sell screens, browser journey, restart, upgrade of an "
-                "installed app.",
+                "docs/LOCAL_EDITION_APPLICATIONS.md (final qualification decision and the gate table)",
+                "docs/architecture/adr/0016-tenant-operation-journal.md (atomic inventory, the ledger)",
+                "docs/architecture/adr/0017-inventory-operation-authority.md (sell, receive, adjust and "
+                "transfer are separate authorities; no direct stock-movement bypass)",
+                "apps/frontend/e2e/spare-parts-flagship.spec.ts (install, search, receive, sell, sales "
+                "document, files, restart, oversell refusal, with every non-local request blocked)",
+                "apps/frontend/e2e/spare-parts-cashier.spec.ts (restricted cashier and receiver roles, "
+                "enforced by the server)",
+                "apps/frontend/e2e/spare-parts-accessibility.spec.ts (axe over every screen and state, "
+                "keyboard-only paths)",
+                "docs/implementation/SCALE_QUALIFICATION.md (5,000 products, 10,000 part numbers, "
+                "10,000 movements)",
+                "docs/operations/RECOVERY_DRILL.md (upgrade of an installed instance; destructive "
+                "restore from backup files)",
+                "Scope: the application on the supported Docker runtime. Windows installer, automatic "
+                "startup and code signing are qualified separately.",
             ),
         ),
         BuiltInApp(

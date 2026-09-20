@@ -64,15 +64,21 @@ test("Spare Parts flagship: install, search, receive 100, sell 5, sales document
   await page.locator('a[href$="/apps"]').first().click();
   await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+\/apps$/);
   const card = page.getByRole("article", { name: "Spare Parts" });
-  // Honestly labelled, never "ready for use": the status BADGE (exact text) and, separately, the warning.
-  await expect(card.getByText("Pilot preview", { exact: true })).toBeVisible();
-  await expect(card.getByText(/has not completed production qualification/)).toBeVisible();
-  await expect(card.getByText("Ready for use")).toHaveCount(0);
+  // Honestly labelled from the catalog's evidence: the flagship is QUALIFIED, so it is "Ready for use" with no
+  // pilot-preview warning; deferred applications are never offered; and with the production default
+  // (SHOW_UNQUALIFIED_BUILT_IN_APPS off, E2E_CUSTOMER_MODE=1) it is the only application in the gallery.
+  await expect(card.getByText("Ready for use", { exact: true })).toBeVisible();
+  await expect(card.getByText("Pilot preview")).toHaveCount(0);
+  await expect(card.getByText(/has not completed production qualification/)).toHaveCount(0);
   await expect(page.getByRole("article", { name: /Customer Pipeline|Procurement|Asset Register/ })).toHaveCount(0); // deferred apps are not offered
+  if (process.env.E2E_CUSTOMER_MODE === "1") {
+    await expect(page.getByRole("article")).toHaveCount(1);
+    await expect(page.getByRole("article", { name: /Employee Management|School Management/ })).toHaveCount(0);
+  }
   await card.getByRole("button", { name: "Install" }).click();
   const install = page.getByRole("dialog", { name: "Install Spare Parts" });
-  await expect(install.getByRole("button", { name: "Install", exact: true })).toBeDisabled(); // preview needs acknowledging
-  await install.getByRole("checkbox", { name: "I understand this is a preview" }).check();
+  await expect(install.getByRole("checkbox", { name: "I understand this is a preview" })).toHaveCount(0);
+  await expect(install.getByRole("button", { name: "Install", exact: true })).toBeEnabled(); // nothing to acknowledge
   await install.getByRole("button", { name: "Install", exact: true }).click();
   await expect(install.getByText(/Spare Parts is ready/)).toBeVisible({ timeout: 90_000 });
   await install.getByRole("link", { name: "Open application" }).click();
