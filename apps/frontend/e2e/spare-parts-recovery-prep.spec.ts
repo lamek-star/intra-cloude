@@ -11,6 +11,8 @@ import { buildFlagshipBusiness, DEMO_PASSWORD } from "./flagship-setup";
 // grants. The state file path comes from UI_STATE_FILE.
 //
 // Registers two accounts (owner + cashier); the auth endpoints are rate limited to 10/minute on purpose.
+// DEMO_OWNER_EMAIL / DEMO_CASHIER_EMAIL give the accounts readable logins (the offline investor-demo kit);
+// without them the emails are unique and random.
 
 const STATE_FILE = process.env.UI_STATE_FILE;
 
@@ -18,10 +20,14 @@ test("prepare the UI-built flagship business (owner, cashier, 95 on hand, a stor
   test.skip(!STATE_FILE, "set UI_STATE_FILE to record the prepared business");
   test.setTimeout(300_000);
 
-  const cashier = await registerCashier(browser, "prep-cashier");
+  const cashier = await registerCashier(browser, "prep-cashier", process.env.DEMO_CASHIER_EMAIL);
   const ownerContext = await browser.newContext();
   const owner = await ownerContext.newPage();
-  const biz = await buildFlagshipBusiness(owner, { prefix: "prep-owner", withFile: true });
+  const biz = await buildFlagshipBusiness(owner, {
+    prefix: "prep-owner",
+    withFile: true,
+    email: process.env.DEMO_OWNER_EMAIL,
+  });
   const access = await grantCashier(owner, biz, cashier.email);
 
   // The state the later gates must find, restored or upgraded, exactly.

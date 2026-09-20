@@ -59,10 +59,10 @@ export async function call(
 }
 
 /** Registers the cashier's account (one auth call) in its own browser context. */
-export async function registerCashier(browser: Browser, prefix = "cashier") {
+export async function registerCashier(browser: Browser, prefix = "cashier", fixedEmail?: string) {
   const context: BrowserContext = await browser.newContext();
   const page = await context.newPage();
-  const email = uniqueEmail(prefix);
+  const email = fixedEmail ?? uniqueEmail(prefix);
   await register(page, email, DEMO_PASSWORD);
   return { context, page, email };
 }

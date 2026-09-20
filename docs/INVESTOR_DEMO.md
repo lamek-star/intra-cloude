@@ -17,6 +17,57 @@ Everything below is **fictional demo data** in a separate demo organization. Nev
 Shortcut: `e2e/spare-parts-recovery-prep.spec.ts` builds exactly this business (owner, cashier with the right
 permissions, 95 in stock, a stored document) through the real screens and writes the logins to a file.
 
+## The offline demo kit (recommended for a laptop with no internet)
+
+A ready-made folder that installs the whole demo, with the fictional company already set up, on a laptop **with no
+internet**. It is the qualified Docker runtime, **not** the Windows installer (which is not qualified).
+
+**Build it once, online, on the build machine:**
+
+```bash
+scripts/demo-kit/build-demo-kit.sh <output-folder> [rehearsal-port]
+```
+
+It builds the two IntraForge images from the current source, creates the demo business through the real screens inside a
+clean copy of the kit's own stack (its own project, images, volumes and port -- it never touches any other stack), backs
+it up (encrypted, control database + business data + files), exports all six images to one file, generates a fresh `.env`
+with random secrets, and writes `DEMO_LOGINS.txt`, `IMAGES.txt` and a one-page `README.txt`. About 600 MB.
+
+**On the demo laptop (before going offline):** Docker Desktop installed and showing *running* (it is **not** in the kit;
+its installer is a separate download), WSL2 enabled, Chrome or Edge, and enough memory: the demo's containers use about
+**1 GB** when idle (measured), so an 8 GB laptop should be comfortable -- *not tested on a small laptop*. Then:
+
+1. Copy the whole folder (it contains a **hidden** `.env`; the installer stops with a clear message if it is missing).
+2. Run `Install-IntraForgeDemo.ps1` (about 1.5 minutes): loads the images from the file, prepares a clean system, restores
+   the three backup files, starts everything, and prints `https://localhost:8443`. Accept the certificate warning.
+3. `Start-IntraForgeDemo.ps1` / `Stop-IntraForgeDemo.ps1` later (data kept); **`Reset-IntraForgeDemo.ps1`** puts the demo
+   back to the starting state after you have entered things (about 1.5 minutes; it deletes only the demo's own volumes).
+
+**Starting state:** owner `owner@harmoney-demo.example` and cashier `cashier@harmoney-demo.example` (password in
+`DEMO_LOGINS.txt`); Harmoney Auto Parts LLC -- DEMO with Demo Oil Filter (part number `04465-0K290`), Demo Supplier A, Main
+Warehouse, Demo Retail Customer, **95 on hand** (received 100, sold 5), one sales document, one stored data sheet.
+**With the kit, start the script at step 5** (search): steps 1-4 are already done. Then do steps 5-15 live; for step 6/7
+receive and sell a small extra quantity (95 becomes, for example, 115 then 112) and use Reset afterwards.
+
+**What was rehearsed (2026-09-20), on this Windows machine, from a copy of the kit in a different folder, with Windows
+PowerShell 5.1 (what a stock laptop has):** install in 84 s with the images loaded from the kit's file and all three
+backups restored; a browser check as both demo users -- search, stock 95, exactly 2 movements, the sales document, the stored
+file's bytes, the cashier's refusals -- and then a **live sale by the cashier and a live receive by the owner**: 3/3;
+Stop then Start (data kept); Reset in 91 s back to exactly 95 on hand and 2 movements with the same record ids. The
+containers have **no route to the internet** (the demo network is internal-only; only the proxy is published, on loopback),
+so the demo cannot depend on it, and the primary IntraForge stack was untouched throughout.
+
+**What was not proven:** a second, clean computer (the base images -- PostgreSQL, Valkey, MinIO, Caddy -- already existed on
+this machine when loaded, so loading them "from nothing" was not exercised, although the command is the same); a laptop
+without Docker Desktop preinstalled (it cannot be installed offline from this kit); a small-memory laptop; browsers other than
+Chromium; cutting the laptop's own Wi-Fi (the containers cannot reach the internet, but the operating system's network was not
+switched off). Rehearse once on the real laptop before the meeting.
+
+**Handling:** the folder holds secrets (`.env`) and a shared demo password; it is fictional data on one computer. Do not put
+real business data in it, do not send the folder around, and delete it afterwards. It ships MinIO (AGPL-3.0, unpinned
+`latest`) -- fine for a private demonstration, but see [THIRD_PARTY_LICENSES.md](operations/THIRD_PARTY_LICENSES.md) before
+giving it to anyone else.
+
 ## The script
 
 | # | What you do | What to say | What the audience sees |

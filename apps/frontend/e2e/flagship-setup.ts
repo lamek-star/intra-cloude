@@ -33,9 +33,9 @@ export type FlagshipBusiness = {
 
 export async function buildFlagshipBusiness(
   page: Page,
-  opts: { withFile?: boolean; prefix?: string } = {},
+  opts: { withFile?: boolean; prefix?: string; email?: string } = {},
 ): Promise<FlagshipBusiness> {
-  const email = uniqueEmail(opts.prefix ?? "flagship");
+  const email = opts.email ?? uniqueEmail(opts.prefix ?? "flagship");
   await register(page, email, DEMO_PASSWORD);
   const orgName = "Harmoney Auto Parts LLC — DEMO";
   const orgId = await createOrganization(page, orgName);
