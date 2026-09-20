@@ -220,8 +220,8 @@ requests are unexplained ([SCALE_QUALIFICATION.md](implementation/SCALE_QUALIFIC
 * **SBOM:** CycloneDX for the backend image, the frontend image and the frontend source is generated in CI (advisory); it is
   **not** a complete appliance inventory (no WSL rootfs, no installer toolchain) and is not claimed to be.
 * **Licences:** no GPL/AGPL in the shipped application dependencies; LGPL `psycopg`/`clamd`; the frontend image no longer
-  ships LGPL libvips. **Decision needed: MinIO is AGPL-3.0 and is unpinned (`latest`).** A third-party notice file is not yet
-  produced ([THIRD_PARTY_LICENSES.md](operations/THIRD_PARTY_LICENSES.md)). No third-party EPC/catalogue artwork is included.
+  ships LGPL libvips. **Decision needed: MinIO is AGPL-3.0 and is unpinned (`latest`).** A third-party notices document exists (`legal/THIRD_PARTY_NOTICES.md`, 2026-09-06) but predates this mission (it still lists the now-removed `sharp`) and is not yet shipped inside the product or installer
+  ([THIRD_PARTY_LICENSES.md](operations/THIRD_PARTY_LICENSES.md)). No third-party EPC/catalogue artwork is included.
 
 ## 12. The nine verdicts
 
@@ -235,7 +235,7 @@ requests are unexplained ([SCALE_QUALIFICATION.md](implementation/SCALE_QUALIFIC
 | F | **Backup / disaster-recovery qualification** | **QUALIFIED WITH DOCUMENTED LIMITATIONS** | Three destructive restores from backup files on a UI-built business, 53/53, with new operations afterwards. Limits: Docker runtime only; Windows restore-from-file EXTERNALLY BLOCKED; off-machine copy is a manual discipline; no retention pruning; configuration secrets are restored manually; no cross-version restore guarantee. |
 | G | **Real-world small-shop pilot readiness** | **PARTIALLY QUALIFIED** | The application, roles, backup, update, diagnostics and pilot documents are ready and the parallel-run pilot guide exists. But no supported *customer install path* is qualified (the Windows installer is blocked), so a pilot needs a technician-led install on the supported runtime; no pilot has run. |
 | H | **Investor demonstration readiness** | **QUALIFIED WITH DOCUMENTED LIMITATIONS** | A reproducible script over real screens with quotable, measured numbers ([INVESTOR_DEMO.md](INVESTOR_DEMO.md)); runs on the supported runtime. Limits (disclosed in the script): no Windows installer/startup/signing, one qualified application, no pilot yet. |
-| I | **Commercial Local Edition release readiness** | **NOT QUALIFIED** | Blocked components (installer, startup, signing, Windows restore, LAN) plus: MinIO AGPL/pin decision, no third-party notice file, no appliance SBOM, no vulnerability triage process, HawkScan not run, no real-shop pilot. |
+| I | **Commercial Local Edition release readiness** | **NOT QUALIFIED** | Blocked components (installer, startup, signing, Windows restore, LAN) plus: MinIO AGPL/pin decision, third-party notices not refreshed or shipped with the product, no appliance SBOM, no vulnerability triage process, HawkScan not run, no real-shop pilot. |
 
 No verdict is marked QUALIFIED because another passed; D, E and I are not implied by the application qualification.
 
@@ -263,5 +263,5 @@ Windows diagnostics not run through the redactor.
 Move to **pilot, bug fixing and release hardening**: run the parallel-run pilot with a technician-led install
 ([LOCAL_EDITION_PILOT.md](LOCAL_EDITION_PILOT.md)); in parallel obtain what unblocks the Windows verdicts (a snapshot-capable
 Windows VM or a spare PC, a second LAN client, a signing credential) and run the qualification matrix; decide MinIO (comply
-and pin, or replace behind the storage abstraction); add a third-party notice file and pin every image digest. **Do not start
+and pin, or replace behind the storage abstraction); refresh the third-party notices (`docs/legal/THIRD_PARTY_NOTICES.md`) and ship them with the installer, and pin every image digest. **Do not start
 another feature phase** unless a pilot finding is a P0/P1.

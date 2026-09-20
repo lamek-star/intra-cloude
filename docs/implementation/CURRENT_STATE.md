@@ -24,7 +24,7 @@ freeze remains in force.
   readiness PARTIALLY QUALIFIED; investor demonstration QUALIFIED WITH DOCUMENTED LIMITATIONS; commercial release NOT
   QUALIFIED.
 - **Next:** run the parallel-run pilot ([LOCAL_EDITION_PILOT.md](../LOCAL_EDITION_PILOT.md)); obtain a disposable Windows
-  machine, a second LAN client and a signing credential; decide MinIO (AGPL-3.0, unpinned); add a third-party notice file.
+  machine, a second LAN client and a signing credential; decide MinIO (AGPL-3.0, unpinned); refresh and ship the third-party notices.
 
 The sections below are the historical entry checkpoint and the running log of the mission; where they disagree with this
 section, this section wins.

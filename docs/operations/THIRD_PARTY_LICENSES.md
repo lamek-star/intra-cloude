@@ -18,7 +18,7 @@ sets, not from memory.
 
 LGPL used **unmodified as a library** (installed with pip, replaceable by the customer) is compatible with shipping
 the product; the obligations are to include the licence text and notices and not to prevent replacing the library.
-That has to be part of the release notice file (open item).
+That belongs in the release notices (open item: see the list at the end).
 
 ### Node (production dependency tree, 26 packages)
 
@@ -59,7 +59,8 @@ not exist (see [SBOM.md](SBOM.md): the SBOM covers the backend image, the fronte
 ## Open items before a commercial release
 
 1. Counsel review of MinIO (AGPL-3.0) and a decision: comply and pin, or replace behind the storage abstraction.
-2. A `NOTICE`/third-party-licences file shipped with the product (LGPL texts for `psycopg`/`clamd`, CC-BY attribution
-   for `caniuse-lite`, Apache-2.0 notices).
+2. Refresh `legal/THIRD_PARTY_NOTICES.md` (the 2026-09-06 review; it still lists the LGPL `sharp`, which the frontend
+   image no longer ships) and **ship it with the product and the installer** (LGPL texts for `psycopg`/`clamd`, CC-BY
+   attribution for `caniuse-lite`, Apache-2.0 notices, MinIO's AGPL terms).
 3. Pin every infrastructure image to a digest.
 4. A complete appliance inventory (the WSL rootfs and the installer's toolchain).
