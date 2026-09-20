@@ -330,6 +330,22 @@ export default function AppInstanceClient({ instanceId }: { instanceId: string }
         />
       </div>
 
+      {models?.some((m) => m.key === "stock_movement") && (
+        <div className="mt-8">
+          <ShareSection
+            organizationId={instance.organization}
+            resourceType="inventory_operations"
+            resourceId={instance.id}
+            title="Business operations"
+            description="Who may record sales and who may receive stock in this application. Being allowed to sell does not allow receiving, and receiving does not allow selling. This is separate from who can see or edit records, which is set per section."
+            levels={[
+              { value: "sell", label: "Sell", hint: "Record sales: the order, its lines, the stock taken out and the invoice." },
+              { value: "receive", label: "Receive", hint: "Receive stock into a warehouse, optionally with a purchase order." },
+            ]}
+          />
+        </div>
+      )}
+
       <EditInstanceModal
         open={editModalOpen}
         instance={instance}

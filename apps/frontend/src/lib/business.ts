@@ -205,28 +205,16 @@ export function newIdempotencyKey(): string {
   return crypto.randomUUID();
 }
 
-// --- atomic business operations ---------------------------------------------------------------
-
-export type Operation = {
-  op: "create" | "update";
-  model: string;
-  data: Record<string, unknown>;
-  ref?: string;
-  record?: unknown;
-};
+// --- business operations -----------------------------------------------------------------------
+//
+// The browser states an INTENT -- "sell these lines to this customer", "receive this quantity into this
+// warehouse" -- and the server builds the records, checks the caller's business-operation authority
+// (`inventory.sell` / `inventory.receive`, ADR-0017) and commits everything atomically. The browser never
+// assembles stock movements and never states a balance: the database ledger decides the result.
 
 export type TransactionResult = {
   results: { operation: number; model: string; ref: string | null; record: BusinessRow }[];
 };
-
-function create(
-  schema: BusinessSchema,
-  modelKey: string,
-  values: Record<string, unknown>,
-  ref?: string,
-): Operation {
-  return { op: "create", model: schema.modelId(modelKey), data: toPayload(schema, modelKey, values), ...(ref ? { ref } : {}) };
-}
 
 export type ReceiveInput = {
   partId: string;
@@ -239,103 +227,76 @@ export type ReceiveInput = {
   now?: Date;
 };
 
-/** Receiving stock: one Stock Movement (the ledger raises the balance), plus -- when a supplier is
- * chosen -- a received Purchase Order and line, all in one transaction. */
-export function buildReceiveOperations(schema: BusinessSchema, input: ReceiveInput): Operation[] {
-  const now = input.now ?? new Date();
-  const operations: Operation[] = [];
+export type ReceiveIntent = {
+  part: string;
+  warehouse: string;
+  quantity: number;
+  supplier?: string;
+  unit_cost?: string;
+  reference?: string;
+  occurred_at: string;
+};
+
+/** Receiving stock: one stock-in movement, plus -- when a supplier is chosen -- a received purchase order. */
+export function buildReceiveIntent(input: ReceiveInput): ReceiveIntent {
+  const intent: ReceiveIntent = {
+    part: input.partId,
+    warehouse: input.warehouseId,
+    quantity: input.quantity,
+    occurred_at: platformTimestamp(input.now ?? new Date()),
+  };
   if (input.supplierId) {
-    const unit = input.unitCostCents ?? 0;
-    const total = formatMoney(unit * input.quantity);
-    operations.push(
-      create(schema, "purchase_order", {
-        supplier: input.supplierId,
-        status: "received",
-        order_date: todayIso(now),
-        total_amount: total,
-      }, "po"),
-      create(schema, "purchase_order_line", {
-        purchase_order: { $ref: "po" },
-        purchase_order_line_part: input.partId,
-        quantity: input.quantity,
-        unit_cost: formatMoney(unit),
-        line_total: total,
-      }),
-    );
+    intent.supplier = input.supplierId;
+    intent.unit_cost = formatMoney(input.unitCostCents ?? 0);
   }
-  operations.push(
-    create(schema, "stock_movement", {
-      stock_movement_part: input.partId,
-      stock_movement_warehouse: input.warehouseId,
-      quantity_delta: input.quantity,
-      movement_type: "receive",
-      reference: input.reference?.trim() || undefined,
-      occurred_at: platformTimestamp(now),
-    }),
-  );
-  return operations;
+  const reference = input.reference?.trim();
+  if (reference) intent.reference = reference;
+  return intent;
 }
 
 export type SaleLine = { partId: string; warehouseId: string; quantity: number; unitPriceCents: number };
 
 export type SaleInput = { customerId: string; lines: SaleLine[]; invoiceNumber: string; now?: Date };
 
+export type SaleIntent = {
+  customer: string;
+  invoice_number: string;
+  occurred_at: string;
+  lines: { part: string; warehouse: string; quantity: number; unit_price: string }[];
+};
+
 export function saleTotalCents(lines: SaleLine[]): number {
   return lines.reduce((sum, line) => sum + line.unitPriceCents * line.quantity, 0);
 }
 
-/** A sale: Sales Order, one line + one negative Stock Movement per item, and an Invoice, all in one
- * transaction. The movement's `reference` is the invoice number so the document can list them. */
-export function buildSaleOperations(schema: BusinessSchema, input: SaleInput): Operation[] {
-  const now = input.now ?? new Date();
-  const total = formatMoney(saleTotalCents(input.lines));
-  const operations: Operation[] = [
-    create(schema, "sales_order", {
-      customer: input.customerId,
-      status: "confirmed",
-      order_date: todayIso(now),
-      total_amount: total,
-    }, "order"),
-  ];
-  for (const line of input.lines) {
-    operations.push(
-      create(schema, "sales_order_line", {
-        sales_order_line_sales_order: { $ref: "order" },
-        sales_order_line_part: line.partId,
-        quantity: line.quantity,
-        unit_price: formatMoney(line.unitPriceCents),
-        line_total: formatMoney(line.unitPriceCents * line.quantity),
-      }),
-      create(schema, "stock_movement", {
-        stock_movement_part: line.partId,
-        stock_movement_warehouse: line.warehouseId,
-        quantity_delta: -line.quantity,
-        movement_type: "sale",
-        reference: input.invoiceNumber,
-        occurred_at: platformTimestamp(now),
-      }),
-    );
-  }
-  operations.push(
-    create(schema, "invoice", {
-      invoice_number: input.invoiceNumber,
-      invoice_sales_order: { $ref: "order" },
-      invoice_date: todayIso(now),
-      amount_due: total,
-      status: "unpaid",
-    }),
-  );
-  return operations;
+/** A sale: the server records the order, one line and one stock-out movement per item, and the invoice, all
+ * in one transaction. The movement's reference is the invoice number so the document can list them. */
+export function buildSaleIntent(input: SaleInput): SaleIntent {
+  return {
+    customer: input.customerId,
+    invoice_number: input.invoiceNumber,
+    occurred_at: platformTimestamp(input.now ?? new Date()),
+    lines: input.lines.map((line) => ({
+      part: line.partId,
+      warehouse: line.warehouseId,
+      quantity: line.quantity,
+      unit_price: formatMoney(line.unitPriceCents),
+    })),
+  };
 }
 
-export async function postTransaction(
+export async function postSale(schema: BusinessSchema, intent: SaleIntent, idempotencyKey: string): Promise<TransactionResult> {
+  return api.postIdempotent<TransactionResult>(`/app-instances/${schema.instanceId}/operations/sell/`, intent, idempotencyKey);
+}
+
+export async function postReceive(
   schema: BusinessSchema,
-  operations: Operation[],
+  intent: ReceiveIntent,
   idempotencyKey: string,
 ): Promise<TransactionResult> {
   return api.postIdempotent<TransactionResult>(
-    `/app-instances/${schema.instanceId}/transactions/`,
-    { operations },
+    `/app-instances/${schema.instanceId}/operations/receive/`,
+    intent,
     idempotencyKey,
   );
 }

@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { useId, useRef, useState, type FormEvent } from "react";
 import {
-  buildReceiveOperations,
+  buildReceiveIntent,
   cellText,
   explainOperationError,
   listRecords,
   newIdempotencyKey,
   parseMoney,
   parseQuantity,
-  postTransaction,
+  postReceive,
 } from "@/lib/business";
 import { signed } from "@/lib/format";
 import { Button, Card, ErrorBanner, Input, Label, LinkButton, Select } from "@/components/ui";
@@ -68,7 +68,7 @@ export default function ReceiveStock() {
     setFailure(null);
     keyRef.current ??= newIdempotencyKey();
     try {
-      const operations = buildReceiveOperations(schema, {
+      const intent = buildReceiveIntent({
         partId: product.id,
         warehouseId,
         quantity: qty,
@@ -76,7 +76,7 @@ export default function ReceiveStock() {
         unitCostCents: cost,
         reference,
       });
-      const result = await postTransaction(schema, operations, keyRef.current);
+      const result = await postReceive(schema, intent, keyRef.current);
       // The balance is READ BACK from the server: the database ledger decided it.
       const inventory = await listRecords(schema, "inventory", {
         filters: { part: product.id, warehouse: warehouseId },

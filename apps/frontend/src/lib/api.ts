@@ -490,7 +490,7 @@ export type ShareGrant = {
   principal_type: "user" | "team" | "organization";
   user: string | null;
   team: string | null;
-  level: "read" | "write" | "admin";
+  level: "read" | "write" | "admin" | "sell" | "receive" | "adjust" | "transfer";
   expires_at: string | null;
   revoked_at: string | null;
   created_by: string | null;

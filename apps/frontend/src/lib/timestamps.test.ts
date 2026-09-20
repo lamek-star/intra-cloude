@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildReceiveOperations, buildSaleOperations, platformTimestamp } from "./business";
+import { buildReceiveIntent, buildSaleIntent, platformTimestamp } from "./business";
 import { formatDateTime } from "./format";
-import { testSchema } from "./test-schema";
 
 // Found by the real-stack browser journey: the API refuses `Date.toISOString()` ("...T13:35:00.646Z")
 // with "expected an ISO datetime string". The platform's contract (databases/formats.py, shared with
@@ -16,19 +15,17 @@ describe("platformTimestamp (the API's datetime contract)", () => {
     expect(stamp).not.toMatch(/[.Z]/);
   });
 
-  it("is what every movement operation carries as occurred_at", () => {
+  it("is what every stock operation carries as occurred_at", () => {
     const now = new Date("2026-09-19T10:30:00.999Z");
-    const schema = testSchema();
-    const receive = buildReceiveOperations(schema, { partId: "p1", warehouseId: "w1", quantity: 1, now });
-    const sale = buildSaleOperations(schema, {
+    const receive = buildReceiveIntent({ partId: "p1", warehouseId: "w1", quantity: 1, now });
+    const sale = buildSaleIntent({
       customerId: "c1",
       lines: [{ partId: "p1", warehouseId: "w1", quantity: 1, unitPriceCents: 100 }],
       invoiceNumber: "INV-1",
       now,
     });
-    const movements = [...receive, ...sale].filter((o) => o.model === "M:stock_movement");
-    expect(movements).toHaveLength(2);
-    for (const op of movements) expect(op.data["F:stock_movement.occurred_at"]).toBe("2026-09-19T10:30:00");
+    expect(receive.occurred_at).toBe("2026-09-19T10:30:00");
+    expect(sale.occurred_at).toBe("2026-09-19T10:30:00");
   });
 });
 

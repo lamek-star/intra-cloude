@@ -3,8 +3,8 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ApiError, type AppFieldDefinition, type AppModelDefinition, type AppRelationshipDefinition } from "./api";
 import {
-  buildReceiveOperations,
-  buildSaleOperations,
+  buildReceiveIntent,
+  buildSaleIntent,
   explainOperationError,
   formatMoney,
   makeSchema,
@@ -108,63 +108,44 @@ describe("money and quantities", () => {
 });
 
 describe("receive stock", () => {
-  it("without a supplier is one movement carrying the received quantity", () => {
-    const ops = buildReceiveOperations(schema(), { partId: "p1", warehouseId: "w1", quantity: 100, now: NOW });
-    expect(ops).toHaveLength(1);
-    expect(ops[0]).toEqual({
-      op: "create",
-      model: "M:stock_movement",
-      data: {
-        "R:stock_movement_part": "p1",
-        "R:stock_movement_warehouse": "w1",
-        "F:stock_movement.quantity_delta": 100,
-        "F:stock_movement.movement_type": "receive",
-        "F:stock_movement.occurred_at": "2026-09-19T10:30:00",
-      },
-    });
+  it("without a supplier is one intent carrying the received quantity", () => {
+    const intent = buildReceiveIntent({ partId: "p1", warehouseId: "w1", quantity: 100, now: NOW });
+    expect(intent).toEqual({ part: "p1", warehouse: "w1", quantity: 100, occurred_at: "2026-09-19T10:30:00" });
   });
 
-  it("with a supplier also records a received purchase order and line, in one operation list", () => {
-    const ops = buildReceiveOperations(schema(), {
+  it("with a supplier names the supplier and the unit cost in dollars, and trims the reference", () => {
+    const intent = buildReceiveIntent({
       partId: "p1", warehouseId: "w1", quantity: 10, supplierId: "s1", unitCostCents: 250, reference: " GRN-7 ", now: NOW,
     });
-    expect(ops.map((o) => o.model)).toEqual(["M:purchase_order", "M:purchase_order_line", "M:stock_movement"]);
-    expect(ops[0].ref).toBe("po");
-    expect(ops[0].data["F:purchase_order.total_amount"]).toBe("25.00");
-    expect(ops[1].data["R:purchase_order"]).toEqual({ $ref: "po" });
-    expect(ops[1].data["F:purchase_order_line.unit_cost"]).toBe("2.50");
-    expect(ops[2].data["F:stock_movement.reference"]).toBe("GRN-7");
+    expect(intent).toMatchObject({ supplier: "s1", unit_cost: "2.50", reference: "GRN-7", quantity: 10 });
   });
 
-  it("never sends a stock level: the browser only states the movement", () => {
-    const ops = buildReceiveOperations(schema(), { partId: "p1", warehouseId: "w1", quantity: 5, now: NOW });
-    expect(JSON.stringify(ops)).not.toMatch(/quantity_on_hand|inventory/);
+  it("never sends a stock level or a movement: the browser only states the intent", () => {
+    const intent = buildReceiveIntent({ partId: "p1", warehouseId: "w1", quantity: 5, now: NOW });
+    expect(JSON.stringify(intent)).not.toMatch(/quantity_on_hand|inventory|quantity_delta|movement_type/);
   });
 });
 
 describe("sell stock", () => {
   const line = { partId: "p1", warehouseId: "w1", quantity: 5, unitPriceCents: 1500 };
 
-  it("is order, then per item a line and a negative movement, then the invoice", () => {
-    const ops = buildSaleOperations(schema(), { customerId: "c1", lines: [line], invoiceNumber: "INV-1", now: NOW });
-    expect(ops.map((o) => o.model)).toEqual([
-      "M:sales_order", "M:sales_order_line", "M:stock_movement", "M:invoice",
-    ]);
-    expect(ops[0].ref).toBe("order");
-    expect(ops[1].data["R:sales_order_line_sales_order"]).toEqual({ $ref: "order" });
-    expect(ops[2].data["F:stock_movement.quantity_delta"]).toBe(-5);
-    expect(ops[2].data["F:stock_movement.reference"]).toBe("INV-1");
-    expect(ops[3].data["R:invoice_sales_order"]).toEqual({ $ref: "order" });
-    expect(ops[3].data["F:invoice.amount_due"]).toBe("75.00");
+  it("is the customer, the invoice number and one entry per item -- nothing the server should decide", () => {
+    const intent = buildSaleIntent({ customerId: "c1", lines: [line], invoiceNumber: "INV-1", now: NOW });
+    expect(intent).toEqual({
+      customer: "c1",
+      invoice_number: "INV-1",
+      occurred_at: "2026-09-19T10:30:00",
+      lines: [{ part: "p1", warehouse: "w1", quantity: 5, unit_price: "15.00" }],
+    });
+    expect(JSON.stringify(intent)).not.toMatch(/quantity_delta|movement_type|amount_due|total_amount/);
   });
 
   it("handles several items and totals them in cents", () => {
     const lines = [line, { partId: "p2", warehouseId: "w2", quantity: 3, unitPriceCents: 199 }];
     expect(saleTotalCents(lines)).toBe(7500 + 597);
-    const ops = buildSaleOperations(schema(), { customerId: "c1", lines, invoiceNumber: "INV-2", now: NOW });
-    expect(ops).toHaveLength(6);
-    expect(ops[0].data["F:sales_order.total_amount"]).toBe("80.97");
-    expect(ops[4].data["F:stock_movement.quantity_delta"]).toBe(-3);
+    const intent = buildSaleIntent({ customerId: "c1", lines, invoiceNumber: "INV-2", now: NOW });
+    expect(intent.lines).toHaveLength(2);
+    expect(intent.lines[1]).toEqual({ part: "p2", warehouse: "w2", quantity: 3, unit_price: "1.99" });
   });
 });
 

@@ -75,7 +75,7 @@ describe("Receive stock", () => {
     expect(postIdempotent).not.toHaveBeenCalled();
   });
 
-  it("states only a movement, posts it once with an idempotency key, and reads the balance back", async () => {
+  it("states only an intent, posts it once with an idempotency key, and reads the balance back", async () => {
     serveInventory("100");
     postIdempotent.mockResolvedValue({
       results: [{ operation: 0, model: "M:stock_movement", ref: null, record: { id: "m1", "F:stock_movement.quantity_delta": 100 } }],
@@ -87,15 +87,15 @@ describe("Receive stock", () => {
 
     expect(await screen.findByText("Stock received")).toBeInTheDocument();
     const [path, body, key] = postIdempotent.mock.calls[0];
-    expect(path).toBe("/app-instances/i1/transactions/");
+    expect(path).toBe("/app-instances/i1/operations/receive/"); // the controlled operation, never the record API
     expect(key).toMatch(/^[0-9a-f-]{36}$/);
-    expect(body.operations).toHaveLength(1);
-    expect(body.operations[0].data["F:stock_movement.quantity_delta"]).toBe(100);
-    expect(JSON.stringify(body)).not.toMatch(/quantity_on_hand/); // the browser never states a balance
+    expect(body).toMatchObject({ part: "p-oil", warehouse: "w1", quantity: 100 });
+    // the browser states neither a balance nor a stock movement: the server builds the movement and the ledger decides
+    expect(JSON.stringify(body)).not.toMatch(/quantity_on_hand|quantity_delta|movement_type|operations/);
     expect(screen.getByTestId("on-hand-now")).toHaveTextContent("100"); // read back from the server
   });
 
-  it("with a supplier also sends a received purchase order and its line", async () => {
+  it("with a supplier names the supplier and the unit cost (the server records the purchase order)", async () => {
     serveInventory("10");
     postIdempotent.mockResolvedValue({ results: [] });
     const user = userEvent.setup();
@@ -105,8 +105,7 @@ describe("Receive stock", () => {
     await user.type(screen.getByLabelText("Unit cost"), "2.50");
     await user.click(screen.getByRole("button", { name: "Confirm receive" }));
     await screen.findByText("Stock received");
-    const models = postIdempotent.mock.calls[0][1].operations.map((o: { model: string }) => o.model);
-    expect(models).toEqual(["M:purchase_order", "M:purchase_order_line", "M:stock_movement"]);
+    expect(postIdempotent.mock.calls[0][1]).toMatchObject({ supplier: "s1", unit_cost: "2.50", quantity: 10 });
   });
 
   it("on failure shows a plain message, keeps the form, and a retry reuses the same key", async () => {
@@ -160,7 +159,7 @@ describe("Sell stock", () => {
     expect(screen.getByLabelText("Unit price")).toHaveValue("15.00");
   });
 
-  it("posts order, line, movement and invoice together and reads the resulting stock back", async () => {
+  it("posts one sale intent (the server records order, lines, movements and invoice) and reads the stock back", async () => {
     serveInventory("95");
     postIdempotent.mockResolvedValue({ results: [{ operation: 0, model: "M:sales_order", ref: "order", record: { id: "o1" } }] });
     const user = userEvent.setup();
@@ -170,11 +169,11 @@ describe("Sell stock", () => {
     await user.click(screen.getByRole("button", { name: "Confirm sale" }));
 
     expect(await screen.findByText("Sale complete")).toBeInTheDocument();
-    const body = postIdempotent.mock.calls[0][1];
-    expect(body.operations.map((o: { model: string }) => o.model)).toEqual([
-      "M:sales_order", "M:sales_order_line", "M:stock_movement", "M:invoice",
-    ]);
-    expect(body.operations[2].data["F:stock_movement.quantity_delta"]).toBe(-5);
+    const [path, body] = postIdempotent.mock.calls[0];
+    expect(path).toBe("/app-instances/i1/operations/sell/");
+    expect(body).toMatchObject({ customer: "c1", lines: [{ part: "p-oil", warehouse: "w1", quantity: 5, unit_price: "15.00" }] });
+    expect(body.invoice_number).toMatch(/^INV-\d{8}-[0-9A-Z]{5}$/);
+    expect(JSON.stringify(body)).not.toMatch(/quantity_delta|movement_type|operations|quantity_on_hand/);
     expect(screen.getByTestId("on-hand-after-sale")).toHaveTextContent("95");
     expect(screen.getByRole("link", { name: "Open sales document" })).toHaveAttribute("href", "/apps/app1/sales/o1");
   });
@@ -207,8 +206,7 @@ describe("Sell stock", () => {
     await screen.findByText("Sale complete");
     const [first, second] = postIdempotent.mock.calls;
     expect(second[2]).toBe(first[2]);
-    const invoice = (call: unknown[]) =>
-      (call[1] as { operations: { data: Record<string, unknown> }[] }).operations.at(-1)!.data["F:invoice.invoice_number"];
+    const invoice = (call: unknown[]) => (call[1] as { invoice_number: string }).invoice_number;
     expect(invoice(second)).toBe(invoice(first));
     unmount();
 

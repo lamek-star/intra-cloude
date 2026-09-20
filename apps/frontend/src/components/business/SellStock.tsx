@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useId, useRef, useState, type FormEvent } from "react";
 import {
-  buildSaleOperations,
+  buildSaleIntent,
   cellText,
   explainOperationError,
   formatMoney,
@@ -12,7 +12,7 @@ import {
   newInvoiceNumber,
   parseMoney,
   parseQuantity,
-  postTransaction,
+  postSale,
   saleTotalCents,
   type SaleLine,
 } from "@/lib/business";
@@ -102,8 +102,8 @@ export default function SellStock() {
     keyRef.current ??= newIdempotencyKey();
     invoiceRef.current ??= newInvoiceNumber();
     try {
-      const operations = buildSaleOperations(schema, { customerId: customer, lines: valid, invoiceNumber: invoiceRef.current });
-      const result = await postTransaction(schema, operations, keyRef.current);
+      const intent = buildSaleIntent({ customerId: customer, lines: valid, invoiceNumber: invoiceRef.current });
+      const result = await postSale(schema, intent, keyRef.current);
       const order = result.results.find((r) => r.ref === "order");
       if (!order) throw new Error("The sale was recorded but its order could not be found.");
       // Resulting stock is READ BACK from the server (the database ledger decided it).
