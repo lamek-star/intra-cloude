@@ -6,7 +6,8 @@
 # Produces <output-folder> containing everything the demo laptop needs and nothing it does not:
 #   docker-compose.yml, .env (fresh random secrets), infrastructure/proxy/Caddyfile, VERSION,
 #   images/intraforge-demo-images.tar, backups/ (the fictional demo business), the install/start/stop/reset scripts,
-#   README.txt, DEMO_LOGINS.txt, IMAGES.txt (what is inside, with digests).
+#   README.txt, INVESTOR_DEMO_SCRIPT.md, DEMO_LOGINS.txt, IMAGES.txt (what is inside, with digests), SHA256SUMS.txt;
+#   and, next to the folder, one checksummed .zip of all of it (see package-demo-kit.sh).
 #
 # It uses its OWN compose project ("intraforge-demo"), image tags and volumes, and a rehearsal port (default 8453).
 # It never touches any other IntraForge or Docker project: not the primary stack, not the qualification stack.
@@ -25,11 +26,11 @@ DEMO_OWNER_EMAIL="owner@harmoney-demo.example"
 DEMO_CASHIER_EMAIL="cashier@harmoney-demo.example"
 DEMO_PASSWORD="correct-horse-battery-9"   # the password the e2e fixture registers with (e2e/flagship-setup.ts)
 
-echo "== 1/6 build the two IntraForge images (current source)"
+echo "== 1/7 build the two IntraForge images (current source)"
 docker build -q -t intraforge-demo-backend:1.0 "$REPOW/apps/backend" >/dev/null
 docker build -q -t intraforge-demo-frontend:1.0 "$REPOW/apps/frontend" >/dev/null
 
-echo "== 2/6 assemble the kit folder"
+echo "== 2/7 assemble the kit folder"
 mkdir -p "$OUT/infrastructure/proxy" "$OUT/images" "$OUT/backups"
 cp "$HERE/template/"*.yml "$HERE/template/"*.ps1 "$OUT/"
 cp "$REPO/infrastructure/proxy/Caddyfile" "$OUT/infrastructure/proxy/Caddyfile"
@@ -70,7 +71,7 @@ env.write_text("".join(f"{k}={v}\n" for k, v in lines.items()), encoding="utf-8"
 print("generated a fresh .env")
 PY
 
-echo "== 3/6 create the demo business inside a clean copy of the kit's own stack (port $PORT)"
+echo "== 3/7 create the demo business inside a clean copy of the kit's own stack (port $PORT)"
 cd "$OUT"
 export DEMO_HTTPS_PORT="$PORT"
 docker compose down --volumes --remove-orphans >/dev/null 2>&1 || true
@@ -91,7 +92,7 @@ STATE="$OUT/.demo-state.json"
   DEMO_OWNER_EMAIL="$DEMO_OWNER_EMAIL" DEMO_CASHIER_EMAIL="$DEMO_CASHIER_EMAIL" \
   npx playwright test e2e/spare-parts-recovery-prep.spec.ts 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E "passed|failed|Error" )
 
-echo "== 4/6 back the demo business up (control database, business data, files) and copy the files out"
+echo "== 4/7 back the demo business up (control database, business data, files) and copy the files out"
 rm -f "$OUT/backups/"*
 for type in control_db tenant_db object_storage; do
   docker compose exec -T backend python manage.py run_backup "$type" >/dev/null
@@ -100,7 +101,7 @@ CID="$(docker compose ps -q backend)"
 docker cp "$CID:/backups/." "$OUTW/backups/" >/dev/null
 ls "$OUT/backups" | sed 's/^/   /'
 
-echo "== 5/6 export the images (no internet needed to load them)"
+echo "== 5/7 export the images (no internet needed to load them)"
 docker save -o "$OUTW/images/intraforge-demo-images.tar" \
   intraforge-demo-backend:1.0 intraforge-demo-frontend:1.0 postgres:18 valkey/valkey:9-alpine minio/minio:latest caddy:2-alpine
 {
@@ -112,7 +113,7 @@ docker save -o "$OUTW/images/intraforge-demo-images.tar" \
   echo "Note: minio/minio:latest is NOT pinned (docs/operations/THIRD_PARTY_LICENSES.md); MinIO is AGPL-3.0."
 } > "$OUT/IMAGES.txt"
 
-echo "== 6/6 write the logins and the one-page guide, then clean up the build-time stack"
+echo "== 6/7 write the logins, then clean up the build-time stack"
 {
   echo "IntraForge demo logins (fictional data only; demo computer only)"
   echo
@@ -125,10 +126,10 @@ echo "== 6/6 write the logins and the one-page guide, then clean up the build-ti
   echo "supplier Demo Supplier A, warehouse Main Warehouse, customer Demo Retail Customer; 95 on hand"
   echo "(received 100, sold 5); one sales document; one stored data sheet."
 } > "$OUT/DEMO_LOGINS.txt"
-cp "$HERE/template/README.txt" "$OUT/README.txt"
 rm -f "$STATE"
 docker compose down --volumes --remove-orphans >/dev/null
 docker rmi -f intraforge-demo-backend:1.0 intraforge-demo-frontend:1.0 >/dev/null 2>&1 || true
-echo
-echo "Kit ready: $OUT"
-du -sh "$OUT" | cut -f1 | sed 's/^/size: /'
+
+echo "== 7/7 finalise: guides, image self-check, checksums, transfer package"
+"$HERE/package-demo-kit.sh" "$OUT"
+du -sh "$OUT" | cut -f1 | sed 's/^/kit folder size: /'

@@ -19,29 +19,44 @@ permissions, 95 in stock, a stored document) through the real screens and writes
 
 ## The offline demo kit (recommended for a laptop with no internet)
 
-A ready-made folder that installs the whole demo, with the fictional company already set up, on a laptop **with no
-internet**. It is the qualified Docker runtime, **not** the Windows installer (which is not qualified).
+A ready-made folder (and one `.zip` of it) that installs the whole demo, with the fictional company already set up, on a
+laptop **with no internet**. It is the qualified Docker runtime, **not** the Windows installer (which is not qualified).
 
-**Build it once, online, on the build machine:**
+**Build it once, online, on the build machine** (Docker Desktop running):
 
 ```bash
-scripts/demo-kit/build-demo-kit.sh <output-folder> [rehearsal-port]
+scripts/demo-kit/build-demo-kit.sh <output-folder>        # builds everything, ends by running the packaging step
+scripts/demo-kit/package-demo-kit.sh <output-folder>      # alone, in seconds: refresh scripts/guides, checksums, zip
 ```
 
-It builds the two IntraForge images from the current source, creates the demo business through the real screens inside a
-clean copy of the kit's own stack (its own project, images, volumes and port -- it never touches any other stack), backs
-it up (encrypted, control database + business data + files), exports all six images to one file, generates a fresh `.env`
-with random secrets, and writes `DEMO_LOGINS.txt`, `IMAGES.txt` and a one-page `README.txt`. About 600 MB.
+The build makes the two IntraForge images from the current source, creates the demo business through the real screens
+inside a clean copy of the kit's own stack (its own project, images, volumes and port -- it never touches any other
+stack), backs it up (encrypted: control database, business data, files), exports all six images to one file, and
+generates a fresh `.env` with random secrets. The packaging step then proves that every image the compose file names is
+inside the image file, writes `SHA256SUMS.txt`, and produces `IntraForge-Demo-Kit-<version>.zip` (+ `.sha256`) beside
+the folder. The folder is about **600 MB** (the zip about 590 MB: the images are already compressed).
+
+**What is in the kit:** `Install-`, `Start-`, `Stop-`, `Reset-` and `Uninstall-IntraForgeDemo.ps1`; `docker-compose.yml`
+and the proxy configuration; `images/` (the six images); `backups/` (the three encrypted backup files); `.env`;
+`SHA256SUMS.txt`; `README.txt` (one page for the person at the laptop); `DEMO_LOGINS.txt`; `IMAGES.txt` (what is inside,
+with digests); `INVESTOR_DEMO_SCRIPT.md` (this document).
 
 **On the demo laptop (before going offline):** Docker Desktop installed and showing *running* (it is **not** in the kit;
-its installer is a separate download), WSL2 enabled, Chrome or Edge, and enough memory: the demo's containers use about
-**1 GB** when idle (measured), so an 8 GB laptop should be comfortable -- *not tested on a small laptop*. Then:
+its installer is a separate download), WSL2 enabled, Chrome or Edge, about 3 GB of free disk. The demo's containers use
+about **1 GB** of memory when idle (measured: 994 MiB), so an 8 GB laptop should be comfortable -- *not tested on a small
+laptop*. Then:
 
-1. Copy the whole folder (it contains a **hidden** `.env`; the installer stops with a clear message if it is missing).
-2. Run `Install-IntraForgeDemo.ps1` (about 1.5 minutes): loads the images from the file, prepares a clean system, restores
-   the three backup files, starts everything, and prints `https://localhost:8443`. Accept the certificate warning.
+1. Unpack the `.zip` (or copy the whole folder). Optionally compare `Get-FileHash` of the zip with the `.sha256` file.
+   The folder contains a file named `.env`; its name starts with a dot, so some copy tools and zip programs skip it (on
+   Windows it is an ordinary visible file). If it is missing, the installer stops with a clear message.
+2. Run `Install-IntraForgeDemo.ps1` (about 1.5 minutes). It checks Docker, memory, disk and the port, verifies every
+   file against `SHA256SUMS.txt` (a damaged or incomplete copy stops here, before anything is installed), loads the images,
+   prepares a clean system, restores the three backup files, starts everything, and prints `https://localhost:8443`.
+   Accept the certificate warning. If the port is taken it says so and suggests `-Port 8453`.
 3. `Start-IntraForgeDemo.ps1` / `Stop-IntraForgeDemo.ps1` later (data kept); **`Reset-IntraForgeDemo.ps1`** puts the demo
-   back to the starting state after you have entered things (about 1.5 minutes; it deletes only the demo's own volumes).
+   back to the starting state after you have entered things (about 1.5 minutes; it deletes only the demo's own volumes);
+   **`Uninstall-IntraForgeDemo.ps1`** removes the demo (containers, data, network; with `-RemoveImages` also the images no
+   other program uses). Running Install on an already-installed demo refuses and points to Start/Reset/Uninstall.
 
 **Starting state:** owner `owner@harmoney-demo.example` and cashier `cashier@harmoney-demo.example` (password in
 `DEMO_LOGINS.txt`); Harmoney Auto Parts LLC -- DEMO with Demo Oil Filter (part number `04465-0K290`), Demo Supplier A, Main
@@ -49,24 +64,41 @@ Warehouse, Demo Retail Customer, **95 on hand** (received 100, sold 5), one sale
 **With the kit, start the script at step 5** (search): steps 1-4 are already done. Then do steps 5-15 live; for step 6/7
 receive and sell a small extra quantity (95 becomes, for example, 115 then 112) and use Reset afterwards.
 
-**What was rehearsed (2026-09-20), on this Windows machine, from a copy of the kit in a different folder, with Windows
-PowerShell 5.1 (what a stock laptop has):** install in 84 s with the images loaded from the kit's file and all three
-backups restored; a browser check as both demo users -- search, stock 95, exactly 2 movements, the sales document, the stored
-file's bytes, the cashier's refusals -- and then a **live sale by the cashier and a live receive by the owner**: 3/3;
-Stop then Start (data kept); Reset in 91 s back to exactly 95 on hand and 2 movements with the same record ids. The
-containers have **no route to the internet** (the demo network is internal-only; only the proxy is published, on loopback),
-so the demo cannot depend on it, and the primary IntraForge stack was untouched throughout.
+**What was rehearsed (2026-09-20), on this Windows machine, always from a fresh unpack of the `.zip` into a different
+folder, always with Windows PowerShell 5.1 (what a stock laptop has), on port 8453:**
+
+- install in 95 s, `8 files verified`, images loaded from the kit's file, all three backups restored; a browser check as
+  both demo users -- search, stock 95, exactly 2 movements, the sales document, the stored file's bytes, the cashier's
+  refusals -- 2/2; then Stop and Start (data kept) and a **live sale by the cashier and a live receive by the owner**: 3/3;
+  Reset in 94 s back to exactly 95 on hand and 2 movements (2/2); Uninstall left no demo container, volume or network and
+  the primary IntraForge stack (9 containers) untouched, the shared images kept;
+- **refusals** (each stops before anything is installed): port already in use (8443 is held by the primary stack here),
+  a single flipped byte in a backup file (checksum mismatch), Install on an already-installed demo, and a simulated
+  "Docker is not running" for Install, Start and Uninstall (a friendly message, not a raw error);
+- the package's checksum matched, and every image the compose file names is inside the image file;
+- the containers have **no route to the internet** (the demo network is internal-only; only the proxy is published, on
+  loopback), so the demo cannot depend on it -- measured in the first rehearsal of the kit, not repeated in the last one.
+
+**What the rehearsal found and fixed:** the scripts' readiness and "is Docker running" probes could abort under Windows
+PowerShell 5.1 -- it turns any error text from a redirected native command into a terminating error, even for an expected
+"not ready yet" -- which would have broken the install on a slow laptop; the probes now run in a helper that judges by exit
+code only. The guide also said the `.env` file was "hidden" (it is not, on Windows) and pointed to a demo script that was not
+in the kit; both are corrected.
+
+**Kit and builder:** the kit in use was built by `build-demo-kit.sh` and then re-finalised by `package-demo-kit.sh` after the fixes described above; the builder's last step (calling the packaging script) was syntax-checked but a complete rebuild from scratch has not been re-run since that change.
 
 **What was not proven:** a second, clean computer (the base images -- PostgreSQL, Valkey, MinIO, Caddy -- already existed on
-this machine when loaded, so loading them "from nothing" was not exercised, although the command is the same); a laptop
-without Docker Desktop preinstalled (it cannot be installed offline from this kit); a small-memory laptop; browsers other than
-Chromium; cutting the laptop's own Wi-Fi (the containers cannot reach the internet, but the operating system's network was not
-switched off). Rehearse once on the real laptop before the meeting.
+this machine when loaded, so loading them "from nothing" was not exercised, although the command is the same and the image
+file was checked to contain all six); the default port **8443** end to end (the primary stack owns it here, so every
+rehearsal used 8453; the `.env` allows both origins); a laptop without Docker Desktop preinstalled (it cannot be installed
+offline from this kit); a small-memory laptop; browsers other than Chromium; cutting the laptop's own Wi-Fi (the containers
+cannot reach the internet, but the operating system's network was not switched off). Rehearse once on the real laptop
+before the meeting.
 
 **Handling:** the folder holds secrets (`.env`) and a shared demo password; it is fictional data on one computer. Do not put
-real business data in it, do not send the folder around, and delete it afterwards. It ships MinIO (AGPL-3.0, unpinned
-`latest`) -- fine for a private demonstration, but see [THIRD_PARTY_LICENSES.md](operations/THIRD_PARTY_LICENSES.md) before
-giving it to anyone else.
+real business data in it, do not send the folder around, and delete it afterwards (`Uninstall-IntraForgeDemo.ps1` first).
+It ships MinIO (AGPL-3.0, unpinned `latest`) -- fine for a private demonstration, but see
+[THIRD_PARTY_LICENSES.md](operations/THIRD_PARTY_LICENSES.md) before giving it to anyone else.
 
 ## The script
 

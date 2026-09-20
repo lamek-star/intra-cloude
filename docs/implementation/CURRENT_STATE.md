@@ -23,6 +23,10 @@ freeze remains in force.
   automatic startup EXTERNALLY BLOCKED; backup/disaster recovery QUALIFIED WITH DOCUMENTED LIMITATIONS; small-shop pilot
   readiness PARTIALLY QUALIFIED; investor demonstration QUALIFIED WITH DOCUMENTED LIMITATIONS; commercial release NOT
   QUALIFIED.
+- **Offline investor-demo kit** (`scripts/demo-kit/`, described in [INVESTOR_DEMO.md](../INVESTOR_DEMO.md)): a checksummed folder/zip
+  that installs the demo on a laptop with Docker Desktop and no internet. Rehearsed on the build machine from a fresh unpack of
+  its zip (install, browser check, Stop/Start, Reset, Uninstall, refusals); not yet run on a second computer or on port 8443.
+  It is the Docker runtime, not the Windows installer.
 - **Next:** run the parallel-run pilot ([LOCAL_EDITION_PILOT.md](../LOCAL_EDITION_PILOT.md)); obtain a disposable Windows
   machine, a second LAN client and a signing credential; decide MinIO (AGPL-3.0, unpinned); refresh and ship the third-party notices.
 
