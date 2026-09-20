@@ -2,6 +2,7 @@ import { test, expect, type BrowserContext, type Page } from "@playwright/test";
 import {
   call,
   grantCashier,
+  grantReceiver,
   READ_MODELS,
   registerCashier,
   type Json,
@@ -10,17 +11,14 @@ import {
 } from "./cashier-setup";
 import { buildFlagshipBusiness, nav, type FlagshipBusiness } from "./flagship-setup";
 
-// Restricted cashier: a real second user, added to the organization through the UI, given ONLY the
-// grants below through the real sharing system, then exercised through the browser and through
-// direct API calls. Everything the cashier must not do is refused by the SERVER; the UI is only ever
-// a convenience. No role is assigned -- these grants are the cashier's whole authority.
+// Restricted users under BUSINESS-OPERATION AUTHORITY (ADR-0017): a real cashier and a real receiver, each a second
+// user added through the UI and given ONLY the sharing grants listed in cashier-setup.ts (no role at all), then
+// exercised through the browser and through direct API calls. Everything they must not do is refused by the SERVER.
 //
-//   app_instance  READ   the application itself (open it, read its schema -- labels, no data)
-//   app_model     READ   part, part_number, warehouse, customer   (find a product, pick a customer/warehouse)
-//   app_model     WRITE  sales_order, sales_order_line, invoice, stock_movement, inventory   (record a sale)
+//   the right to SELL is not the right to RECEIVE, ADJUST or make arbitrary stock movements -- and the reverse.
 //
-// NOT granted: supplier, purchase_order, purchase_order_line, vehicle (any access); write on part,
-// part_number, warehouse, customer; any schema, sharing, membership, audit or backup right.
+// The cashier holds no write access to the stock tables at all: selling is the server's controlled operation,
+// authorized by `inventory.sell`, not a stock movement assembled by the caller.
 
 const NOT_GRANTED = ["supplier", "purchase_order", "purchase_order_line", "vehicle"];
 
@@ -29,7 +27,11 @@ let owner: Page;
 let cashierContext: BrowserContext;
 let cashier: Page;
 let cashierEmail: string;
+let receiverEmail: string;
 let cashierId: string;
+let receiverContext: BrowserContext;
+let receiver: Page;
+let receiverAccess: Awaited<ReturnType<typeof grantReceiver>>;
 let models: Record<string, Model>;
 let relationships: Relationship[];
 let shareIds: Record<string, string>;
@@ -64,11 +66,17 @@ test.describe("Restricted cashier", () => {
     owner = await ownerContext.newPage();
     biz = await buildFlagshipBusiness(owner, { prefix: "cashier-owner", withFile: true });
 
+    const receiverRegistered = await registerCashier(browser, "receiver");
+    receiverContext = receiverRegistered.context;
+    receiver = receiverRegistered.page;
+    receiverEmail = receiverRegistered.email;
+
     const access = await grantCashier(owner, biz, cashierEmail);
     cashierId = access.userId;
     models = access.models;
     relationships = access.relationships;
     shareIds = access.shareIds;
+    receiverAccess = await grantReceiver(owner, biz, receiverEmail);
 
     const parts = (await call(owner, "GET", recordsPath("part") + "?limit=5")).json?.results as Json[];
     partId = String(parts[0].id);
@@ -78,6 +86,7 @@ test.describe("Restricted cashier", () => {
 
   test.afterAll(async () => {
     await cashierContext?.close();
+    await receiverContext?.close();
     await owner?.context().close();
   });
 
@@ -275,14 +284,28 @@ test.describe("Restricted cashier", () => {
     expect((await call(cashier, "GET", recordsPath("supplier") + "?limit=1")).status).toBe(403);
   });
 
-  test("KNOWN LIMIT (pinned): grants are per model, so a cashier who may sell may also post stock movements", async () => {
-    // ADR-0016: authority over a movement is authority over the movement model AND its balance model.
-    // A sale and a receive both write those two models, so the server cannot tell "may sell" from
-    // "may receive/adjust". This test PINS that behaviour so it can never change unnoticed: the day a
-    // movement-type authority exists, this test must be inverted deliberately. See
-    // docs/LOCAL_EDITION_APPLICATIONS.md ("Roles and the cashier limit").
+  test("the cashier cannot receive stock, adjust it, or write a stock movement by any route", async () => {
     const before = await onHand(owner);
-    const receive = await call(cashier, "POST", `/app-instances/${biz.instanceId}/transactions/`, {
+    const movements = (await call(owner, "GET", recordsPath("stock_movement") + "?limit=100")).json?.count;
+
+    // 1. the controlled receive operation
+    const receive = await call(cashier, "POST", `/app-instances/${biz.instanceId}/operations/receive/`, {
+      part: partId, warehouse: warehouseId, quantity: 1, occurred_at: new Date().toISOString().slice(0, 19),
+    });
+    expect(receive.status, receive.text).toBe(403);
+    // 2. a stock movement straight through the record API (a positive receive, a negative sale, an adjustment)
+    for (const [delta, kind] of [[1, "receive"], [-1, "sale"], [5, "adjustment"]] as const) {
+      const direct = await call(cashier, "POST", recordsPath("stock_movement"), {
+        [fieldId("stock_movement", "stock_movement_part")]: partId,
+        [fieldId("stock_movement", "stock_movement_warehouse")]: warehouseId,
+        [fieldId("stock_movement", "quantity_delta")]: delta,
+        [fieldId("stock_movement", "movement_type")]: kind,
+        [fieldId("stock_movement", "occurred_at")]: "2026-09-19T10:00:00",
+      });
+      expect(direct.status, `${kind}: ${direct.text}`).toBe(403);
+    }
+    // 3. the generic atomic-transaction endpoint
+    const generic = await call(cashier, "POST", `/app-instances/${biz.instanceId}/transactions/`, {
       operations: [
         {
           op: "create",
@@ -297,30 +320,128 @@ test.describe("Restricted cashier", () => {
         },
       ],
     });
-    expect(receive.status, receive.text).toBe(201);
-    expect(await onHand(owner)).toBe(before + 1);
-    // The movement is still attributable: the audit trail names the cashier as the actor of the create...
+    expect(generic.status, generic.text).toBe(403);
+    // 4. a request cannot name its own authority
+    const forged = await call(cashier, "POST", recordsPath("stock_movement") + "?movement_operation=inventory.sell", {
+      movement_operation: "inventory.sell",
+    });
+    expect(forged.status).toBe(403);
+
+    expect(await onHand(owner)).toBe(before); // nothing moved
+    expect((await call(owner, "GET", recordsPath("stock_movement") + "?limit=100")).json?.count).toBe(movements);
+
+    // Every refusal is in the audit trail against the cashier, naming the authority that was missing.
     const audit = JSON.parse((await call(owner, "GET", `/organizations/${biz.orgId}/audit/?limit=100`)).text) as {
-      results: { action: string; actor: string; result: string; resource_id: string }[];
+      results: { action: string; actor: string; result: string; context?: { required?: string } }[];
     };
     const byCashier = audit.results.filter((event) => event.actor === cashierId);
     expect(
       byCashier.some(
         (event) =>
-          event.action === "app_instance.record.create" &&
-          event.result === "success" &&
-          event.resource_id === models.stock_movement.id,
+          event.action === "inventory.receive" && event.result === "denied" && event.context?.required === "inventory.receive",
       ),
-      "the receive is audited against the cashier",
+      "the refused receive is audited against the cashier",
     ).toBe(true);
-    // ...and every attempt the server refused is in the same trail as a denied event.
     expect(byCashier.filter((event) => event.result === "denied").length).toBeGreaterThan(5);
   });
 
-  test("revoking a grant takes effect on the cashier's very next action", async () => {
+  test("the cashier's sale is audited, and a sale by the cashier is the only stock change they can make", async () => {
+    const audit = JSON.parse((await call(owner, "GET", `/organizations/${biz.orgId}/audit/?limit=100`)).text) as {
+      results: { action: string; actor: string; result: string }[];
+    };
+    expect(audit.results.some((e) => e.actor === cashierId && e.action === "inventory.sell" && e.result === "success")).toBe(true);
+  });
+
+  test("the receiver can receive through the UI but can neither sell nor write stock directly", async () => {
+    const before = await onHand(owner);
+    await receiver.goto(`${biz.appHome}/receive`);
+    await receiver.getByRole("combobox", { name: "Product", exact: true }).fill("04465-0K290");
+    await receiver.getByRole("option", { name: /Demo Oil Filter/ }).click();
+    await receiver.getByLabel("Warehouse").selectOption({ label: "Main Warehouse" });
+    await receiver.getByLabel("Quantity").fill("4");
+    await receiver.getByRole("button", { name: "Confirm receive" }).click();
+    await expect(receiver.getByTestId("on-hand-now")).toHaveText(String(before + 4));
+
+    // ...but the same person may not sell: the operation, and the generic ways of writing a sale's stock, are refused.
+    const orders = (await call(owner, "GET", recordsPath("sales_order") + "?limit=1")).json?.count;
+    const sale = await call(receiver, "POST", `/app-instances/${biz.instanceId}/operations/sell/`, {
+      customer: String(((await call(owner, "GET", recordsPath("customer") + "?limit=1")).json?.results as Json[])[0].id),
+      invoice_number: "INV-RECEIVER-1",
+      occurred_at: new Date().toISOString().slice(0, 19),
+      lines: [{ part: partId, warehouse: warehouseId, quantity: 1, unit_price: "15.00" }],
+    });
+    expect(sale.status, sale.text).toBe(403);
+    const direct = await call(receiver, "POST", recordsPath("stock_movement"), {
+      [fieldId("stock_movement", "stock_movement_part")]: partId,
+      [fieldId("stock_movement", "stock_movement_warehouse")]: warehouseId,
+      [fieldId("stock_movement", "quantity_delta")]: -1,
+      [fieldId("stock_movement", "movement_type")]: "sale",
+      [fieldId("stock_movement", "occurred_at")]: "2026-09-19T10:00:00",
+    });
+    expect(direct.status).toBe(403);
+    expect(await onHand(owner)).toBe(before + 4);
+    expect((await call(owner, "GET", recordsPath("sales_order") + "?limit=1")).json?.count).toBe(orders);
+    // and, like the cashier, no supplier-independent administration
+    expect((await call(receiver, "POST", recordsPath("part"), { [fieldId("part", "name")]: "Injected" })).status).toBe(403);
+  });
+
+  test("the receiver is refused what the receiver role never had: customers' sales, files, administration", async () => {
+    expect((await call(receiver, "GET", recordsPath("sales_order") + "?limit=1")).status).toBe(403);
+    expect((await call(receiver, "GET", recordsPath("customer") + "?limit=1")).status).toBe(403);
+    expect((await call(receiver, "GET", `${recordsPath("part", partId)}attachments/`)).text).not.toContain("datasheet");
+    expect((await call(receiver, "GET", `/organizations/${biz.orgId}/audit/`)).status).toBe(403);
+    expect(
+      (await call(receiver, "POST", `/organizations/${biz.orgId}/shares/`, {
+        resource_type: "inventory_operations", resource_id: biz.instanceId, principal_type: "user",
+        user_id: receiverAccess.userId, level: "sell",
+      })).status,
+    ).toBe(403); // a receiver cannot promote themselves to a seller
+  });
+
+  test("a deliberately combined role can do both: granting the receiver SELL adds selling and nothing else", async () => {
+    for (const key of ["sales_order", "sales_order_line", "invoice"]) {
+      const res = await call(owner, "POST", `/organizations/${biz.orgId}/shares/`, {
+        resource_type: "app_model", resource_id: models[key].id, principal_type: "user", user_id: receiverAccess.userId,
+        level: "write",
+      });
+      expect(res.status, res.text).toBe(201);
+    }
+    const customerRead = await call(owner, "POST", `/organizations/${biz.orgId}/shares/`, {
+      resource_type: "app_model", resource_id: models.customer.id, principal_type: "user", user_id: receiverAccess.userId,
+      level: "read",
+    });
+    expect(customerRead.status, customerRead.text).toBe(201);
+    const sellGrant = await call(owner, "POST", `/organizations/${biz.orgId}/shares/`, {
+      resource_type: "inventory_operations", resource_id: biz.instanceId, principal_type: "user",
+      user_id: receiverAccess.userId, level: "sell",
+    });
+    expect(sellGrant.status, sellGrant.text).toBe(201);
+
+    const before = await onHand(owner);
+    const customer = String(((await call(owner, "GET", recordsPath("customer") + "?limit=1")).json?.results as Json[])[0].id);
+    const sale = await call(receiver, "POST", `/app-instances/${biz.instanceId}/operations/sell/`, {
+      customer,
+      invoice_number: "INV-COMBINED-1",
+      occurred_at: new Date().toISOString().slice(0, 19),
+      lines: [{ part: partId, warehouse: warehouseId, quantity: 1, unit_price: "15.00" }],
+    }, { "Idempotency-Key": "combined-role-sale-1" });
+    expect(sale.status, sale.text).toBe(201);
+    expect(await onHand(owner)).toBe(before - 1);
+    // ...and it still cannot administer: SELL added selling, not adjusting.
+    const direct = await call(receiver, "POST", recordsPath("stock_movement"), {
+      [fieldId("stock_movement", "stock_movement_part")]: partId,
+      [fieldId("stock_movement", "stock_movement_warehouse")]: warehouseId,
+      [fieldId("stock_movement", "quantity_delta")]: 9,
+      [fieldId("stock_movement", "movement_type")]: "adjustment",
+      [fieldId("stock_movement", "occurred_at")]: "2026-09-19T10:00:00",
+    });
+    expect(direct.status).toBe(403);
+  });
+
+  test("revoking SELL takes effect on the cashier's very next action (the model grants alone do not sell)", async () => {
     const before = await onHand(owner);
     const ordersBefore = (await call(owner, "GET", recordsPath("sales_order") + "?limit=1")).json?.count;
-    const revoke = await call(owner, "DELETE", `/shares/${shareIds["stock_movement:write"]}/`);
+    const revoke = await call(owner, "DELETE", `/shares/${shareIds["inventory_operations:sell"]}/`);
     expect(revoke.status).toBe(204);
 
     await cashier.goto(`${biz.appHome}/sales/new`);

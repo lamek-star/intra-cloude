@@ -22,6 +22,7 @@ import io
 import json
 import os
 import sys
+from datetime import datetime, timezone
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -235,20 +236,22 @@ def seed():
     )
     assert att.status_code == 201, att.data
 
-    # A restricted cashier: may sell (order/line/invoice/movement + inventory), may NOT touch parts.
-    for model_key in ("sales_order", "sales_order_line", "invoice", "stock_movement", "inventory"):
+    # A restricted cashier (ADR-0017): reads what a sale needs, writes only the sales documents, and holds the
+    # SELL business-operation authority -- no write access to the stock tables, no receive, no adjust.
+    def share(resource_type, resource_id, level):
         g = client.post(
             reverse("share-grant-list-create", args=[org.id]),
-            {
-                "resource_type": "app_model",
-                "resource_id": str(shop.models[model_key].id),
-                "principal_type": "user",
-                "user_id": str(cashier.id),
-                "level": "write",
-            },
+            {"resource_type": resource_type, "resource_id": str(resource_id), "principal_type": "user",
+             "user_id": str(cashier.id), "level": level},
             format="json",
         )
         assert g.status_code == 201, g.data
+
+    for model_key in ("part", "part_number", "warehouse", "customer", "inventory", "stock_movement"):
+        share("app_model", shop.models[model_key].id, "read")
+    for model_key in ("sales_order", "sales_order_line", "invoice"):
+        share("app_model", shop.models[model_key].id, "write")
+    share("inventory_operations", instance.id, "sell")
 
     state = snapshot()
     os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
@@ -403,25 +406,32 @@ def verify():
     check("a new receive works on the restored system", ok.status_code == 201, str(ok.data))
     sale = shop.transact([shop.movement(oil["id"], main["id"], -7, "sale")], key="post-restore-sale")
     check("a new sale works on the restored system", sale.status_code == 201, str(sale.data))
-    if INSTANCE_ID:
-        # ...and the restricted cashier can still do exactly their job: sell, through the real permission system.
-        customer = shop.rows("customer")[0]
-        cashier_sale = cashier_shop.transact(
-            [
-                cashier_shop.op("create", "sales_order", ref="order", customer=customer["id"], status="confirmed"),
-                cashier_shop.op("create", "sales_order_line", sales_order_line_sales_order={"$ref": "order"},
-                                sales_order_line_part=oil["id"], quantity=1, unit_price="15.00", line_total="15.00"),
-                cashier_shop.movement(oil["id"], main["id"], -1, "sale"),
-                cashier_shop.op("create", "invoice", invoice_number="INV-POST-RESTORE-CASHIER",
-                                invoice_sales_order={"$ref": "order"}, amount_due="15.00", status="unpaid"),
-            ],
-            key="post-restore-cashier-sale",
-            client=cashier_shop.client,
-        )
-        check("the restricted cashier can still sell on the restored system", cashier_sale.status_code == 201,
-              str(getattr(cashier_sale, "data", None)))
-        refund = shop.transact([shop.movement(oil["id"], main["id"], 1, "receive")], key="post-restore-restock")
-        check("stock returned to the pre-sale figure", refund.status_code == 201, str(refund.data))
+    # ...and the restricted cashier can still do exactly their job: sell, through the controlled operation and the
+    # real permission system -- and still cannot receive, adjust or write a movement by hand.
+    customer = shop.rows("customer")[0]
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    cashier_sale = cashier_shop.client.post(
+        f"/api/v1/app-instances/{instance.id}/operations/sell/",
+        {"customer": str(customer["id"]), "invoice_number": "INV-POST-RESTORE-CASHIER", "occurred_at": stamp,
+         "lines": [{"part": str(oil["id"]), "warehouse": str(main["id"]), "quantity": 1, "unit_price": "15.00"}]},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="post-restore-cashier-sale",
+    )
+    check("the restricted cashier can still sell on the restored system", cashier_sale.status_code == 201,
+          str(getattr(cashier_sale, "data", None)))
+    cashier_receive = cashier_shop.client.post(
+        f"/api/v1/app-instances/{instance.id}/operations/receive/",
+        {"part": str(oil["id"]), "warehouse": str(main["id"]), "quantity": 1, "occurred_at": stamp},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="post-restore-cashier-receive",
+    )
+    check("the restricted cashier still cannot receive stock", cashier_receive.status_code == 403,
+          f"status {cashier_receive.status_code}")
+    direct = cashier_shop.transact([shop.movement(oil["id"], main["id"], 5, "receive")], client=cashier_shop.client)
+    check("the restricted cashier still cannot write a stock movement directly", direct.status_code == 403,
+          f"status {direct.status_code}")
+    refund = shop.transact([shop.movement(oil["id"], main["id"], 1, "receive")], key="post-restore-restock")
+    check("stock returned to the pre-sale figure", refund.status_code == 201, str(refund.data))
     binding = QuantityLedgerBinding.objects.get(instance=instance)
     check("ledger reconciles after post-restore activity", quantity_ledger.reconcile(binding) == [])
     check("stock total unchanged by the receive/sale pair", sum(

@@ -19,6 +19,7 @@ import json
 import os
 import sys
 import uuid
+from datetime import datetime, timezone
 
 from django.contrib.auth import get_user_model
 from django.db import connections
@@ -250,18 +251,22 @@ denied_part = cashier_client.post(f"/api/v1/app-models/{model_map()['part'].id}/
                                   payload("part", name="Intruder"), format="json")
 check("the restricted cashier is still denied creating a Part", denied_part.status_code == 403)
 customer = rows(client, "customer")[0]
-sale = transact(cashier_client, [
-    op("sales_order", ref="o", customer=customer["id"], status="confirmed"),
-    op("sales_order_line", sales_order_line_sales_order={"$ref": "o"}, sales_order_line_part=oil["id"], quantity=2,
-       unit_price="15.00", line_total="30.00"),
-    op("stock_movement", stock_movement_part=oil["id"], stock_movement_warehouse=main["id"], quantity_delta=-2,
-       movement_type="sale"),
-    op("invoice", invoice_number="INV-POST-UPGRADE", invoice_sales_order={"$ref": "o"}, amount_due="30.00",
-       status="unpaid")], "upg-cashier-sale")
+stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+sale = cashier_client.post(
+    f"/api/v1/app-instances/{instance.id}/operations/sell/",
+    {"customer": str(customer["id"]), "invoice_number": "INV-POST-UPGRADE", "occurred_at": stamp,
+     "lines": [{"part": str(oil["id"]), "warehouse": str(main["id"]), "quantity": 2, "unit_price": "15.00"}]},
+    format="json", HTTP_IDEMPOTENCY_KEY="upg-cashier-sale")
 check("the restricted cashier can still sell on the upgraded instance", sale.status_code == 201, str(sale.data))
 receive = transact(client, [op("stock_movement", stock_movement_part=oil["id"], stock_movement_warehouse=main["id"],
                                quantity_delta=10, movement_type="receive")], "upg-receive")
 check("a new receive works after the upgrade", receive.status_code == 201, str(receive.data))
+cashier_receive = cashier_client.post(
+    f"/api/v1/app-instances/{instance.id}/operations/receive/",
+    {"part": str(oil["id"]), "warehouse": str(main["id"]), "quantity": 1, "occurred_at": stamp},
+    format="json", HTTP_IDEMPOTENCY_KEY="upg-cashier-receive")
+check("the restricted cashier still cannot receive after the upgrade", cashier_receive.status_code == 403,
+      f"status {cashier_receive.status_code}")
 now = sum(r[field_id("inventory", "quantity_on_hand")] for r in rows(client, "inventory"))
 check(f"stock is exactly {before_stock} - 2 sold + 10 received = {before_stock + 8}", now == before_stock + 8, str(now))
 check("ledger reconciles after post-upgrade activity",
