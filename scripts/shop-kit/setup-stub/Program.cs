@@ -1,9 +1,11 @@
 // IntraForge Setup -- a self-extracting installer stub (C# 5, .NET Framework 4.x: present on every Windows 10/11 PC).
 //
-// The finished IntraForge-Setup.exe is:   [this stub][kit .zip][32-byte SHA-256 of the zip][8-byte zip length][8-byte magic]
-// Double-click it and it: checks its own contents, unpacks the kit, makes sure Docker Desktop is there (offering the Docker
-// installer if it sits next to this file), runs the kit's installer and opens IntraForge. It asks for administrator rights
-// only for the Docker Desktop installer, never for itself. It downloads nothing.
+// The finished IntraForge-Setup.exe is:
+//   [this stub][kit .zip][Docker Desktop installer, optional][SHA-256 kit][SHA-256 docker][kit length][docker length][magic]
+// (88-byte trailer; a docker length of 0 means "no Docker installer inside": Setup then looks for one next to itself).
+// Double-click it and it: checks its own contents, unpacks the kit, makes sure Docker Desktop is there (running the Docker
+// installer it carries, after checking that installer is signed by Docker Inc), runs the kit's installer and opens
+// IntraForge. It asks for administrator rights only for the Docker Desktop installer, never for itself. It downloads nothing.
 //
 // Options (all optional):  /dir=C:\IntraForge   /port=8443   /data=C:\IntraForgeData   /quiet (no questions)   /extractonly
 using System;
@@ -16,7 +18,8 @@ using System.Text;
 
 static class Program
 {
-    const string Magic = "IFSFX001";
+    const string Magic = "IFSFX002";
+    const int TrailerSize = 88;
 
     // A read-only, seekable window onto part of a file, so the zip can be read in place without copying 600 MB.
     sealed class SubStream : Stream
@@ -94,39 +97,33 @@ static class Program
         Say("IntraForge Local Edition - Setup");
         Say("Installs IntraForge on this PC. It needs no internet.");
 
-        // ---- 1. read and verify our own payload -------------------------------------------------------------------
-        long payloadLength; byte[] expectedHash = new byte[32]; long payloadStart;
+        // ---- 1. read and verify our own payloads ------------------------------------------------------------------
+        long kitLength, dockerLength, kitStart, dockerStart; byte[] kitHash = new byte[32]; byte[] dockerHash = new byte[32];
         using (FileStream f = new FileStream(self, FileMode.Open, FileAccess.Read, FileShare.Read))
         {
-            if (f.Length < 48) throw new InvalidOperationException("This setup file has no IntraForge package inside (it looks incomplete). Copy it again.");
-            byte[] tail = new byte[48];
-            f.Position = f.Length - 48; f.Read(tail, 0, 48);
-            if (Encoding.ASCII.GetString(tail, 40, 8) != Magic)
+            if (f.Length < TrailerSize) throw new InvalidOperationException("This setup file has no IntraForge package inside (it looks incomplete). Copy it again.");
+            byte[] tail = new byte[TrailerSize];
+            f.Position = f.Length - TrailerSize; f.Read(tail, 0, TrailerSize);
+            if (Encoding.ASCII.GetString(tail, 80, 8) != Magic)
                 throw new InvalidOperationException("This setup file is damaged or incomplete (the end of the file is missing). Copy it again from the original.");
-            Array.Copy(tail, 0, expectedHash, 0, 32);
-            payloadLength = BitConverter.ToInt64(tail, 32);
-            payloadStart = f.Length - 48 - payloadLength;
-            if (payloadLength <= 0 || payloadStart < 0) throw new InvalidOperationException("This setup file is damaged (bad package size). Copy it again.");
+            Array.Copy(tail, 0, kitHash, 0, 32);
+            Array.Copy(tail, 32, dockerHash, 0, 32);
+            kitLength = BitConverter.ToInt64(tail, 64);
+            dockerLength = BitConverter.ToInt64(tail, 72);
+            dockerStart = f.Length - TrailerSize - dockerLength;
+            kitStart = dockerStart - kitLength;
+            if (kitLength <= 0 || dockerLength < 0 || kitStart < 0) throw new InvalidOperationException("This setup file is damaged (bad package size). Copy it again.");
 
             Heading("Checking that this file is complete and undamaged");
-            using (SHA256 sha = SHA256.Create())
+            VerifyRegion(f, kitStart, kitLength, kitHash);
+            Good("The IntraForge package is complete (" + (kitLength / (1024 * 1024)) + " MB, checksum matches).");
+            if (dockerLength > 0)
             {
-                f.Position = payloadStart;
-                byte[] buffer = new byte[1 << 20]; long left = payloadLength;
-                while (left > 0)
-                {
-                    int n = f.Read(buffer, 0, (int)Math.Min(buffer.Length, left));
-                    if (n <= 0) throw new InvalidOperationException("This setup file is shorter than it should be. Copy it again.");
-                    sha.TransformBlock(buffer, 0, n, null, 0); left -= n;
-                }
-                sha.TransformFinalBlock(new byte[0], 0, 0);
-                byte[] actual = sha.Hash;
-                for (int i = 0; i < 32; i++)
-                    if (actual[i] != expectedHash[i]) throw new InvalidOperationException("This setup file does not match its checksum: it was damaged while copying. Copy it again from the original.");
+                VerifyRegion(f, dockerStart, dockerLength, dockerHash);
+                Good("The Docker Desktop installer inside is complete (" + (dockerLength / (1024 * 1024)) + " MB, checksum matches).");
             }
-            Good("The package is complete (" + (payloadLength / (1024 * 1024)) + " MB, checksum matches).");
         }
-        string payloadId = BitConverter.ToString(expectedHash).Replace("-", "").ToLowerInvariant();
+        string payloadId = BitConverter.ToString(kitHash).Replace("-", "").ToLowerInvariant();
 
         // ---- 2. where to install ----------------------------------------------------------------------------------
         string dir = Arg(args, "dir") ?? @"C:\IntraForge";
@@ -161,7 +158,7 @@ static class Program
             Directory.CreateDirectory(dir);
             string root = Path.GetFullPath(dir).TrimEnd('\\') + "\\";
             using (FileStream f = new FileStream(self, FileMode.Open, FileAccess.Read, FileShare.Read))
-            using (SubStream sub = new SubStream(f, payloadStart, payloadLength))
+            using (SubStream sub = new SubStream(f, kitStart, kitLength))
             using (ZipArchive zip = new ZipArchive(sub, ZipArchiveMode.Read))
             {
                 foreach (ZipArchiveEntry entry in zip.Entries)
@@ -188,8 +185,10 @@ static class Program
         if (DockerInstalled()) Good("Docker Desktop is installed.");
         else
         {
-            string installer = FindDockerInstaller(setupDir);
             Warn("Docker Desktop is not installed on this PC. IntraForge needs it (it runs IntraForge's parts).");
+            string installer = null; bool temporary = false;
+            if (dockerLength > 0) { installer = ExtractDocker(self, dockerStart, dockerLength); temporary = true; }
+            else installer = FindDockerInstaller(setupDir);
             if (installer == null)
             {
                 Say("The Docker Desktop installer was not found next to this Setup file.");
@@ -197,15 +196,29 @@ static class Program
                 Say("PC with internet), then run this Setup again. Nothing else needs to be redone.");
                 return 2;
             }
-            Say("Found the Docker Desktop installer: " + installer);
-            if (!quiet)
+            try
             {
-                Console.Write("Press Enter to run it now (it will ask for administrator permission; keep 'Use WSL 2' ticked)... ");
-                Console.ReadLine();
+                if (!IsSignedByDocker(installer))
+                    throw new InvalidOperationException("The Docker Desktop installer is not signed by Docker Inc, so it will NOT be run. Copy this Setup file again from the original.");
+                Good("The Docker Desktop installer is signed by Docker Inc.");
+                if (Environment.GetEnvironmentVariable("INTRAFORGE_SETUP_TEST_DOCKER_DRYRUN") == "1")
+                {
+                    Good("(test) Docker installer extracted and verified; not run.");
+                    return 0;
+                }
+                if (!quiet)
+                {
+                    Console.Write("Press Enter to install Docker Desktop now (it will ask for administrator permission; keep 'Use WSL 2' ticked)... ");
+                    Console.ReadLine();
+                }
+                ProcessStartInfo psi = new ProcessStartInfo(installer);
+                psi.UseShellExecute = true; psi.Verb = "runas";
+                using (Process p = Process.Start(psi)) { p.WaitForExit(); }
             }
-            ProcessStartInfo psi = new ProcessStartInfo(installer);
-            psi.UseShellExecute = true; psi.Verb = "runas";
-            using (Process p = Process.Start(psi)) { p.WaitForExit(); }
+            finally
+            {
+                if (temporary) { try { File.Delete(installer); } catch (Exception) { } }
+            }
             if (!DockerInstalled())
             {
                 Warn("Docker Desktop does not seem to be installed yet. Finish its installer (restart Windows if it asks), then run this Setup again.");
@@ -231,6 +244,59 @@ static class Program
             Warn("The IntraForge installer stopped (see the message above). If Docker was only just installed and asked for a restart, restart Windows and run this Setup again.");
         }
         return rc;
+    }
+
+    static void VerifyRegion(FileStream f, long start, long length, byte[] expected)
+    {
+        using (SHA256 sha = SHA256.Create())
+        {
+            f.Position = start;
+            byte[] buffer = new byte[1 << 20]; long left = length;
+            while (left > 0)
+            {
+                int n = f.Read(buffer, 0, (int)Math.Min(buffer.Length, left));
+                if (n <= 0) throw new InvalidOperationException("This setup file is shorter than it should be. Copy it again.");
+                sha.TransformBlock(buffer, 0, n, null, 0); left -= n;
+            }
+            sha.TransformFinalBlock(new byte[0], 0, 0);
+            byte[] actual = sha.Hash;
+            for (int i = 0; i < 32; i++)
+                if (actual[i] != expected[i]) throw new InvalidOperationException("This setup file does not match its checksum: it was damaged while copying. Copy it again from the original.");
+        }
+    }
+
+    // Copies the embedded Docker Desktop installer into a temporary folder (deleted again after it has run).
+    static string ExtractDocker(string self, long start, long length)
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "IntraForge-Setup");
+        Directory.CreateDirectory(folder);
+        string target = Path.Combine(folder, "Docker Desktop Installer.exe");
+        Say("Preparing the Docker Desktop installer (" + (length / (1024 * 1024)) + " MB)...");
+        using (FileStream f = new FileStream(self, FileMode.Open, FileAccess.Read, FileShare.Read))
+        using (FileStream o = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            f.Position = start;
+            byte[] buffer = new byte[1 << 20]; long left = length;
+            while (left > 0)
+            {
+                int n = f.Read(buffer, 0, (int)Math.Min(buffer.Length, left));
+                if (n <= 0) throw new InvalidOperationException("This setup file is shorter than it should be. Copy it again.");
+                o.Write(buffer, 0, n); left -= n;
+            }
+        }
+        return target;
+    }
+
+    // Only a Docker installer with a valid Authenticode signature from Docker Inc is ever run.
+    static bool IsSignedByDocker(string file)
+    {
+        string ps = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), @"System32\WindowsPowerShell\v1.0\powershell.exe");
+        string command = "$s = Get-AuthenticodeSignature -LiteralPath '" + file.Replace("'", "''") + "'; " +
+            "if ($s.Status -eq 'Valid' -and $s.SignerCertificate.Subject -match 'O=Docker Inc') { exit 0 } else { exit 1 }";
+        ProcessStartInfo psi = new ProcessStartInfo(ps, "-NoProfile -ExecutionPolicy Bypass -Command \"" + command.Replace("\"", "\\\"") + "\"");
+        psi.UseShellExecute = false; psi.CreateNoWindow = true;
+        psi.EnvironmentVariables.Remove("PSModulePath");
+        using (Process p = Process.Start(psi)) { p.WaitForExit(); return p.ExitCode == 0; }
     }
 
     static int RunPowerShell(string dir, string script, string extra)

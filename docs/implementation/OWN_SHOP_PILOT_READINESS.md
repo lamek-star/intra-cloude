@@ -62,6 +62,20 @@ child PowerShell 5.1 made `Get-FileHash` disappear (the stub now clears it). **N
 (running it needs a UAC prompt and Docker is already installed here), resuming after a restart requested by that installer, and
 SmartScreen behaviour on a clean PC.
 
+### The single-file build (Docker Desktop inside)
+
+On the owner's request `build-setup-exe.sh <kit.zip> <out.exe> "Docker Desktop Installer.exe"` embeds the Docker Desktop installer
+too, giving **one 1.2 GB file** (`IntraForge-Setup-Complete.exe`). Setup verifies both parts' SHA-256 before doing anything;
+extracts the Docker installer to a temporary folder only if Docker Desktop is missing; **refuses to run it unless it carries a
+valid Authenticode signature from Docker Inc**; and deletes it afterwards. Docker Desktop's licence does not allow
+redistribution: this file is **for the owner's own PCs only** and must never be shared (the two-file "full install" folder has the
+same restriction). Tested on the development PC: damage in the Docker part and in the kit part are each refused before
+anything is unpacked; with Docker "missing" (test hook, dry run) the embedded installer was extracted, its Docker Inc signature
+verified, not run, and the temporary file removed; an embedded non-Docker-signed executable was refused and removed; a full
+install from the single file (83 s), a second run that changes nothing, a backup and a clean uninstall. **Not tested:** actually
+running Docker's installer (UAC, and Docker is already installed here), resuming after its restart request, SmartScreen on a
+clean PC.
+
 ## The pilot kit (built from current HEAD)
 
 Built by `scripts/shop-kit/build-shop-kit.sh` (refuses an uncommitted application tree). The final artifact's version,

@@ -68,3 +68,7 @@ not exist (see [SBOM.md](SBOM.md): the SBOM covers the backend image, the fronte
 ## Pilot kit pin (2026-09-21)
 
 The own-shop pilot kit pins MinIO to `minio/minio:RELEASE.2025-09-07T16-13-09Z` (the exact release the qualification ran on; recorded with its image id in the kit's `OFFLINE_MANIFEST`). This is for the owner's own internal pilot only. The AGPL-3.0 distribution decision (comply and pin, or replace behind the storage abstraction) remains **open** and blocks any commercial distribution.
+
+## Docker Desktop in the pilot installers (2026-09-21)
+
+The owner's one-folder and single-file pilot installers carry Docker Desktop 4.92.0 (Docker Inc signature verified). Docker Desktop is under Docker's own subscription terms (free for a small business) and is **not redistributable**: those installers are for the owner's own PCs and must not be shared, published or given to a customer. A commercial installer must instead require the customer to obtain Docker Desktop themselves (or use a different runtime); that decision is open with the MinIO one.

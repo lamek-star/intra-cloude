@@ -24,7 +24,8 @@ You have the **IntraForge-Full-Install** folder: `IntraForge-Setup.exe`, `prereq
 5. **Copy `C:\IntraForgeData\keys\intraforge-keys.env` to a USB drive** and keep it safe (a different drive from your
    backups). Without it a backup cannot be read if the PC is lost.
 
-Running `IntraForge-Setup.exe` again on an installed PC changes nothing; it only starts and opens IntraForge. (Advanced: the
+There is also a **single-file** build, `IntraForge-Setup-Complete.exe`, with the Docker Desktop installer inside (same steps; for your
+own PCs only, do not share it). Running `IntraForge-Setup.exe` again on an installed PC changes nothing; it only starts and opens IntraForge. (Advanced: the
 kit folder / zip with `Install-IntraForgeShop.ps1` does the same job by hand.)
 
 ## 2. Start and open IntraForge
