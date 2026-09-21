@@ -18,8 +18,9 @@ Documented limitations (each is real; none is hidden):
    *fully stopped* Docker Desktop (ready in 6 s and 30 s). The first restart on the shop PC is therefore the real test; the
    checklist makes it the first thing to do, with a status file as evidence.
 2. **Docker Desktop is a prerequisite that is not in the kit** (its licence does not allow redistribution); it must be
-   downloaded once on any connected PC and carried over. The Docker Desktop offline install was not exercised here (it is
-   already installed on the development PC).
+   downloaded once on any connected PC and carried over (the one-folder "full install" carries the official, signature-checked
+   installer for the owner's own PC). The Docker Desktop install path was not exercised here (it is already installed on the
+   development PC).
 3. **Start-up is at Windows sign-in, not at the login screen.** The PC must be signed in (auto sign-in if unattended).
 4. **The kit was never installed on a second computer**; every rehearsal was on the development PC (port 8453; the default
    port 8443 is used by the development stack here).
@@ -42,6 +43,24 @@ Documented limitations (each is real; none is hidden):
 Conclusion: putting that path on a real shop PC as its first-ever execution, with start-up and reboot handling still to be
 written and no way to test them here, would be less safe than reusing the runtime that **is** qualified. So the pilot kit
 reuses the Docker runtime that the application qualification, the disaster-recovery drill and the offline demo kit used.
+
+## The one-file installer (added after the first readiness record)
+
+`IntraForge-Setup.exe` (`scripts/shop-kit/setup-stub`, `build-setup-exe.sh`, `package-full-install.sh`) wraps the kit zip in a
+self-extracting stub compiled with the C# compiler that ships with Windows (.NET Framework 4.x, nothing to install on the
+shop PC). Double-clicked, it verifies its own SHA-256, unpacks the kit to `C:\IntraForge`, checks for Docker Desktop
+(offering `prerequisites\Docker Desktop Installer.exe` with a UAC prompt if it is missing), runs the kit installer and opens
+IntraForge; run again on an installed PC it only starts and opens IntraForge. It is **unsigned** (SmartScreen: "Unknown
+publisher"). The "full install" folder also carries the official Docker Desktop installer (version and Docker Inc signature
+recorded in its `CHECKSUMS.txt`); that file is for the owner's own PC and must not be redistributed.
+
+Tested on the development PC: a damaged copy and a truncated copy are refused before anything is unpacked; Docker missing and no
+installer next to Setup gives a clear message (test hook); a full install from the single exe (64 s, healthy, start-up entry,
+tasks, shortcuts); running it again changes nothing (`.env` identical); uninstall leaves nothing. Found and fixed while testing: the
+`/data=` option was passed with PowerShell quoting that `-File` does not understand, and a PowerShell-7 module path inherited by the
+child PowerShell 5.1 made `Get-FileHash` disappear (the stub now clears it). **Not tested:** the Docker Desktop installer path
+(running it needs a UAC prompt and Docker is already installed here), resuming after a restart requested by that installer, and
+SmartScreen behaviour on a clean PC.
 
 ## The pilot kit (built from current HEAD)
 

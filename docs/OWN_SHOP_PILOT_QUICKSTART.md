@@ -9,22 +9,23 @@ that has never been run on a real Windows PC and is not used here.
 
 ## 1. Install (about 15 minutes, once)
 
-**Prepare (needs internet once, on any PC):**
+You have the **IntraForge-Full-Install** folder: `IntraForge-Setup.exe`, `prerequisites\Docker Desktop Installer.exe` and a
+`READ ME FIRST.txt`. No internet is needed on the shop PC.
 
-1. Download **Docker Desktop for Windows** (`Docker Desktop Installer.exe`) from docker.com and copy it to the shop PC on a
-   USB drive. (It is free for a small shop. It is not part of the kit because its licence does not allow that.)
-2. On the shop PC: run the Docker installer (leave "Use WSL 2" ticked), restart Windows if it asks, open Docker Desktop
-   once and accept its terms until it says **Engine running**. (Optionally tick *Settings > General > Start Docker Desktop
-   when you sign in*; it is not required, because IntraForge's own sign-in entry starts Docker Desktop.)
-
-**Install IntraForge (no internet needed):**
-
-3. Copy the kit folder to the shop PC (for example `C:\IntraForge`) and keep it there.
-4. Right-click **`Install-IntraForgeShop.ps1`** > **Run with PowerShell**. (If Windows blocks it, open PowerShell in the folder
-   and run `powershell -ExecutionPolicy Bypass -File .\Install-IntraForgeShop.ps1`.) It checks the PC, verifies every file,
-   creates the shop's own secret keys, starts IntraForge and sets up automatic start, a daily backup and shortcuts.
+1. **Copy the whole folder** to the shop PC (for example on a USB drive).
+2. **Double-click `IntraForge-Setup.exe`.** Windows may say "Windows protected your PC / Unknown publisher" (it is not
+   code-signed): **More info > Run anyway**. Press Enter when Setup asks.
+3. If **Docker Desktop** is not on the PC, Setup offers to run its installer (allow the administrator permission, keep "Use
+   WSL 2" ticked). If Docker asks to restart Windows, restart, open Docker Desktop once until it says **Engine running**, then
+   double-click `IntraForge-Setup.exe` again: it carries on. (Docker Desktop is free for a small shop; it is not inside
+   Setup because its licence does not allow that.)
+4. Setup installs IntraForge (about 2 minutes: it checks the PC, verifies every file, creates the shop's own secret keys,
+   sets up automatic start, a daily backup and shortcuts) and opens it in the browser.
 5. **Copy `C:\IntraForgeData\keys\intraforge-keys.env` to a USB drive** and keep it safe (a different drive from your
    backups). Without it a backup cannot be read if the PC is lost.
+
+Running `IntraForge-Setup.exe` again on an installed PC changes nothing; it only starts and opens IntraForge. (Advanced: the
+kit folder / zip with `Install-IntraForgeShop.ps1` does the same job by hand.)
 
 ## 2. Start and open IntraForge
 
