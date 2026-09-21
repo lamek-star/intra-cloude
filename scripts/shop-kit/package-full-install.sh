@@ -23,7 +23,7 @@ if [ -n "$DOCKER" ]; then cp "$DOCKER" "$OUT/prerequisites/Docker Desktop Instal
   ( cd "$OUT" && sha256sum --binary IntraForge-Setup.exe )
   if [ -f "$OUT/prerequisites/Docker Desktop Installer.exe" ]; then
     ( cd "$OUT" && sha256sum --binary "prerequisites/Docker Desktop Installer.exe" )
-    powershell.exe -NoProfile -Command "\$f='$(cygpath -w "$OUT/prerequisites/Docker Desktop Installer.exe")'; \$s=Get-AuthenticodeSignature \$f; 'Docker installer: version ' + (Get-Item \$f).VersionInfo.ProductVersion + ', signature ' + \$s.Status + ', signed by ' + (\$s.SignerCertificate.Subject -split ',')[0]" | tr -d '\r'
+    env -u PSModulePath powershell.exe -NoProfile -Command "\$f='$(cygpath -w "$OUT/prerequisites/Docker Desktop Installer.exe")'; \$s=Get-AuthenticodeSignature \$f; 'Docker installer: version ' + (Get-Item \$f).VersionInfo.ProductVersion + ', signature ' + \$s.Status + ', signed by ' + (\$s.SignerCertificate.Subject -split ',')[0]" | tr -d '\r'
   fi
   echo
   echo "IntraForge-Setup.exe contains the shop kit zip below; its own first check is this checksum."
