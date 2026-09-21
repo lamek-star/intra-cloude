@@ -11,6 +11,9 @@
 
 .PARAMETER CopyTo
     Also copy the newest backup set to this folder (for example E:\IntraForge-backups).
+.PARAMETER ChooseFolder
+    Ask (a folder window) where to copy the newest backup set, for example the USB drive. Used by the
+    "IntraForge Backup to USB" shortcut.
 .PARAMETER Prune
     Delete the OLDEST backup files of each type, keeping the newest -KeepNewest. Never removes the newest set.
 .PARAMETER KeepNewest
@@ -22,12 +25,19 @@
     Wait for Enter at the end (used by the desktop shortcut so the window does not vanish).
 #>
 [CmdletBinding()]
-param([string]$CopyTo, [switch]$Prune, [int]$KeepNewest = 30, [switch]$Verify, [switch]$Pause)
+param([string]$CopyTo, [switch]$ChooseFolder, [switch]$Prune, [int]$KeepNewest = 30, [switch]$Verify, [switch]$Pause)
 
 Set-Location $PSScriptRoot
 . (Join-Path $PSScriptRoot 'IntraForgeShop.Common.ps1')
 $exitCode = 0
 $started = Get-Date
+if ($ChooseFolder) {
+    Add-Type -AssemblyName System.Windows.Forms
+    $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+    $dialog.Description = 'Choose the USB drive or folder where the newest IntraForge backup should be copied'
+    if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $CopyTo = Join-Path $dialog.SelectedPath 'IntraForge-backups' }
+    else { Write-Host 'No folder chosen: the backup will stay on this PC only.' -ForegroundColor Yellow }
+}
 $backupDir = Join-Path (Get-DataDir) 'backups'
 try {
     New-Item -ItemType Directory -Force -Path $backupDir | Out-Null

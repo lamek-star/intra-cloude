@@ -27,6 +27,7 @@ freeze remains in force.
   that installs the demo on a laptop with Docker Desktop and no internet. Rehearsed on the build machine from a fresh unpack of
   its zip (install, browser check, Stop/Start, Reset, Uninstall, refusals); not yet run on a second computer or on port 8443.
   It is the Docker runtime, not the Windows installer.
+- **Own-shop pilot kit** (`scripts/shop-kit/`, [OWN_SHOP_PILOT_READINESS.md](OWN_SHOP_PILOT_READINESS.md)): offline install of the Docker runtime on one Windows PC with start-at-sign-in, daily backup + weekly test-restore, restore and total-loss rebuild. Rehearsed on the build machine only; a real Windows restart and a second PC are untested. Verdict: READY WITH DOCUMENTED LIMITATIONS (own-shop parallel-run pilot); the Windows MSI route stays EXTERNALLY BLOCKED.
 - **Next:** run the parallel-run pilot ([LOCAL_EDITION_PILOT.md](../LOCAL_EDITION_PILOT.md)); obtain a disposable Windows
   machine, a second LAN client and a signing credential; decide MinIO (AGPL-3.0, unpinned); refresh and ship the third-party notices.
 

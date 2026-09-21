@@ -28,7 +28,7 @@ Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' 
 Unregister-ScheduledTask -TaskName 'IntraForge daily backup' -Confirm:$false -ErrorAction SilentlyContinue
 Unregister-ScheduledTask -TaskName 'IntraForge weekly backup check' -Confirm:$false -ErrorAction SilentlyContinue
 foreach ($folder in @([Environment]::GetFolderPath('Desktop'), (Join-Path ([Environment]::GetFolderPath('Programs')) 'IntraForge'))) {
-    foreach ($name in 'Open IntraForge', 'IntraForge Backup Now', 'IntraForge Status') { Remove-Item -Path (Join-Path $folder "$name.lnk") -ErrorAction SilentlyContinue }
+    foreach ($name in 'Open IntraForge', 'IntraForge Backup Now', 'IntraForge Backup to USB', 'IntraForge Status') { Remove-Item -Path (Join-Path $folder "$name.lnk") -ErrorAction SilentlyContinue }
 }
 Remove-Item -Path (Join-Path ([Environment]::GetFolderPath('Programs')) 'IntraForge') -ErrorAction SilentlyContinue
 if (Test-Quiet { docker info }) {

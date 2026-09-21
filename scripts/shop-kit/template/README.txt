@@ -15,7 +15,8 @@ BEFORE YOU START (once; needs internet only for Docker Desktop, on any PC)
   2. Docker Desktop for Windows. It is NOT in this kit. On any connected PC download "Docker Desktop Installer.exe" from
      docker.com, copy it to this PC, run it (accept "Use WSL 2"), restart Windows if it asks, then open Docker Desktop
      once and accept its terms until it says "Engine running".
-     In Docker Desktop > Settings > General: tick "Start Docker Desktop when you sign in to your computer".
+     (Optional: Docker Desktop > Settings > General > "Start Docker Desktop when you sign in". Not required: IntraForge's own
+     sign-in entry starts Docker Desktop by itself.)
      (Version this kit was tested with: see OFFLINE_MANIFEST.txt.)
   3. Copy this whole folder to the PC, for example C:\IntraForge (or unpack the .zip there). Keep it there.
 

@@ -7,6 +7,40 @@ depends on it. The pilot is a controlled experiment, not a go-live.
 the record of truth. IntraForge runs **in parallel**. Do not replace the shop's only records with IntraForge until
 the acceptance checklist below has been met. The pilot ends with a decision, not with a cutover by default.
 
+## Own-shop pilot (the owner's own spare-parts shop) -- kit and checklist
+
+For the first real use the pilot runs on **one shop PC, offline**, installed from the **pilot kit** (not the Windows installer):
+[OWN_SHOP_PILOT_QUICKSTART.md](OWN_SHOP_PILOT_QUICKSTART.md) says how, the issue/outlier/reconciliation log is
+[pilot/PILOT_LOG.md](pilot/PILOT_LOG.md), and the evidence and limits are in
+[implementation/OWN_SHOP_PILOT_READINESS.md](implementation/OWN_SHOP_PILOT_READINESS.md). Severity in that log is **P0-P3**
+(P0 data loss / security / cannot operate; P1 a main shop workflow is broken; P2 significant inconvenience or slowness;
+P3 polish); fix **P0/P1 before IntraForge becomes the shop's only record**. Real data only: the shop starts empty.
+
+**Before the pilot**
+- [ ] Kit and Docker Desktop installer carried to the shop PC; kit checksum matched
+- [ ] Backup location chosen (a USB drive kept away from the PC) and the keys file `intraforge-keys.env` copied to a USB drive
+- [ ] Existing shop records preserved and still being kept (they remain the record of truth)
+- [ ] Administrator created; shop company created; **Spare Parts installed**
+- [ ] Users and permissions configured (cashier: sell only; receiver: receive only; owner: the rest)
+- [ ] **First restart of Windows done:** signed in, waited 2 minutes, IntraForge came up by itself, data still there; "IntraForge Status" saved
+- [ ] Initial stock plan prepared (which products first, counted shelf quantities)
+
+**Day 1**
+- [ ] Initial stock entered as one *Receive* per product, reference OPENING (never by editing a balance)
+- [ ] Physical quantities compared with IntraForge stock, differences resolved
+- [ ] Test receive; test sale; sales document found and checked; a file added and downloaded
+- [ ] Backup completed (result file says success) and copied to the USB drive
+
+**Daily**
+- [ ] Important transactions compared with the existing records; stock discrepancies written in the log
+- [ ] Last backup is less than a day old (Status); copied to USB (daily for a busy shop, at least weekly)
+- [ ] Every issue and every slow moment recorded (date, who, what, expected, actual, severity, status file)
+
+**Weekly**
+- [ ] The Sunday restore test passed (`backup.log` shows "verified restorable" for all three kinds); if not, treat it as P1
+- [ ] Restore confidence: once in the first weeks, rehearse the rebuild path on a spare PC (quickstart section 8)
+- [ ] Performance and outliers reviewed; discrepancies reviewed; open P0/P1 issues reviewed with the project team
+
 ## What has been qualified, and what has not
 
 | Qualified (evidence in this repository) | Not qualified -- do not rely on it during the pilot |

@@ -64,3 +64,7 @@ not exist (see [SBOM.md](SBOM.md): the SBOM covers the backend image, the fronte
    attribution for `caniuse-lite`, Apache-2.0 notices, MinIO's AGPL terms).
 3. Pin every infrastructure image to a digest.
 4. A complete appliance inventory (the WSL rootfs and the installer's toolchain).
+
+## Pilot kit pin (2026-09-21)
+
+The own-shop pilot kit pins MinIO to `minio/minio:RELEASE.2025-09-07T16-13-09Z` (the exact release the qualification ran on; recorded with its image id in the kit's `OFFLINE_MANIFEST`). This is for the owner's own internal pilot only. The AGPL-3.0 distribution decision (comply and pin, or replace behind the storage abstraction) remains **open** and blocks any commercial distribution.

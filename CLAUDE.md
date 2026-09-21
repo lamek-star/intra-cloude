@@ -31,6 +31,8 @@ qualified, and never to be claimed without evidence: the Windows installer, auto
 startup, the Control Center restore-from-file, physical LAN and code signing (all
 externally blocked), and the commercial release.
 
+**Own-shop pilot (2026-09-21):** the owner is piloting Local Edition in their own shop from the Docker-runtime kit in `scripts/shop-kit/` (see `docs/OWN_SHOP_PILOT_QUICKSTART.md`, `docs/implementation/OWN_SHOP_PILOT_READINESS.md`); the Windows MSI was found to install only the Control Center and to have no start-at-boot mechanism, and stays unqualified. Do not claim a real Windows restart was tested until the shop PC's status file says so.
+
 Rules that came out of the qualification and that later work must keep:
 
 - **Authority belongs to the business operation (ADR-0017).** `inventory.sell`,

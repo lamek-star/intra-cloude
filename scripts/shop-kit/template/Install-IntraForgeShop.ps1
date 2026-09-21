@@ -196,6 +196,7 @@ try {
         foreach ($item in @(
             @{ Name = 'Open IntraForge';        Script = 'Start-IntraForgeShop.ps1';   Extra = '' },
             @{ Name = 'IntraForge Backup Now';  Script = 'Backup-IntraForgeShop.ps1';  Extra = '-Pause' },
+            @{ Name = 'IntraForge Backup to USB'; Script = 'Backup-IntraForgeShop.ps1'; Extra = '-ChooseFolder -Pause' },
             @{ Name = 'IntraForge Status';      Script = 'Status-IntraForgeShop.ps1';  Extra = '-Pause' })) {
             $lnk = $shell.CreateShortcut((Join-Path $folder "$($item.Name).lnk"))
             $lnk.TargetPath = $powershell
@@ -204,7 +205,7 @@ try {
             $lnk.Save()
         }
     }
-    Write-Host 'Shortcuts created on the Desktop and in the Start menu: Open IntraForge, IntraForge Backup Now, IntraForge Status.'
+    Write-Host 'Shortcuts created on the Desktop and in the Start menu: Open IntraForge, IntraForge Backup Now, IntraForge Backup to USB, IntraForge Status.'
 }
 catch { Write-Host "Could not create shortcuts ($($_.Exception.Message)); use the .ps1 files in this folder instead." -ForegroundColor Yellow }
 

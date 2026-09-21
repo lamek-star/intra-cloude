@@ -55,7 +55,7 @@ $dockerAuto = $null
 foreach ($f in "$env:APPDATA\Docker\settings-store.json", "$env:APPDATA\Docker\settings.json") {
     if (Test-Path $f) { try { $j = Get-Content $f -Raw | ConvertFrom-Json; foreach ($k in 'AutoStart', 'autoStart') { if ($null -ne $j.$k) { $dockerAuto = $j.$k } } } catch { } }
 }
-Line "Docker Desktop starts at sign-in: $(if ($null -eq $dockerAuto) { 'unknown' } elseif ($dockerAuto) { 'yes' } else { 'NO - tick Docker Desktop > Settings > General > Start Docker Desktop when you sign in' })"
+Line "Docker Desktop's own start-at-sign-in setting: $(if ($null -eq $dockerAuto) { 'unknown' } elseif ($dockerAuto) { 'on' } else { 'off (fine: IntraForge''s own sign-in entry starts Docker Desktop; turning it on only makes Docker start a few seconds earlier)' })"
 
 $logDir = Join-Path (Get-DataDir) 'logs'
 try {

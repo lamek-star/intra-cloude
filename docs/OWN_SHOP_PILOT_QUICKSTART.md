@@ -14,8 +14,8 @@ that has never been run on a real Windows PC and is not used here.
 1. Download **Docker Desktop for Windows** (`Docker Desktop Installer.exe`) from docker.com and copy it to the shop PC on a
    USB drive. (It is free for a small shop. It is not part of the kit because its licence does not allow that.)
 2. On the shop PC: run the Docker installer (leave "Use WSL 2" ticked), restart Windows if it asks, open Docker Desktop
-   once and accept its terms until it says **Engine running**. Then *Settings > General* and tick **Start Docker Desktop
-   when you sign in to your computer**.
+   once and accept its terms until it says **Engine running**. (Optionally tick *Settings > General > Start Docker Desktop
+   when you sign in*; it is not required, because IntraForge's own sign-in entry starts Docker Desktop.)
 
 **Install IntraForge (no internet needed):**
 
@@ -70,15 +70,16 @@ Never type a stock number directly: stock is a **ledger** and only changes throu
   restored. The window shows the result; the folder also holds `LATEST-BACKUP.txt` (when, what) or `BACKUP-FAILED.txt`.
 - **Where:** `C:\IntraForgeData\backups`. Files are named `control_db_*`, `tenant_db_*`, `object_storage_*` with the date and
   time, and are encrypted.
-- **Every week (or every day for a busy shop):** copy the newest three files to a USB drive or another disk. Easiest: run
-  `Backup-IntraForgeShop.ps1 -CopyTo E:\IntraForge-backups` (E: = the USB drive). **A backup only on the shop PC's disk is not
-  a backup.**
+- **Every week (or every day for a busy shop):** plug in a USB drive (or use another disk) and double-click
+  **IntraForge Backup to USB**: it takes a fresh backup and asks where to copy it. **A backup only on the shop PC's disk is
+  not a backup.** (By hand: copy the newest three files from `C:\IntraForgeDataackups`.)
 - **Kept:** the newest 30 of each kind stay on the PC; older ones are removed automatically.
 - **Check:** **IntraForge Status** shows the age of the last complete backup and warns if it is more than a day old.
 
 ## 7. Restart the PC
 
-Restart Windows, sign in, wait 1-2 minutes. **Open IntraForge**: your data is still there. If it is not there after 5 minutes,
+Restart Windows, sign in, wait 1-2 minutes (Docker Desktop and IntraForge start by themselves; measured about 30 seconds
+from a fully stopped Docker Desktop on the development PC). **Open IntraForge**: your data is still there. If it is not there after 5 minutes,
 see section 9. **The first time you do this, run "IntraForge Status" after the restart and keep the result** -- this is the
 test the project team has not been able to run on a real Windows PC.
 
@@ -108,5 +109,5 @@ backup files, then:
 ## What is not covered (tell the staff)
 
 No transfers between warehouses, returns, quotations, reports, or tax/accounting compliance; no access from other computers;
-no edit/adjust screen for stock. Windows automatic start relies on Docker Desktop starting at sign-in: **the PC must be
-signed in** (set Windows to sign in automatically if the PC should come up unattended).
+no edit/adjust screen for stock. IntraForge starts when you **sign in to Windows** (its sign-in entry starts Docker Desktop first), not at the
+login screen: sign in, or set Windows to sign in automatically if the PC should come up unattended.
