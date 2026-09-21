@@ -1,0 +1,83 @@
+# IntraForge Local Edition -- own-shop pilot runtime. Its own project, images, volumes and port.
+#
+# Every image is already on the machine (loaded from images/*.tar by Install-IntraForgeShop.ps1); nothing is pulled.
+# All containers sit on an internal-only network (they have no route to the internet); only the proxy is published, and
+# only on the loopback address, so IntraForge is reachable from this computer alone.
+#
+# Persistent business data lives in Docker volumes (databases, files); every backup is written to a normal Windows
+# folder (SHOP_DATA_DIR\backups) so it can be seen, copied to a USB drive and restored. Both settings come from .env.
+name: intraforge-shop
+
+x-backend: &backend
+  image: intraforge-shop-backend:@TAG@
+  pull_policy: never
+  restart: unless-stopped
+  env_file: .env
+  networks: [isolated]
+  volumes:
+    - ${SHOP_DATA_DIR:-C:/IntraForgeData}/backups:/backups
+    - ./VERSION:/VERSION:ro
+
+services:
+  postgres-control:
+    image: postgres:18
+    pull_policy: never
+    restart: unless-stopped
+    env_file: .env
+    networks: [isolated]
+    volumes: [control:/var/lib/postgresql]
+  postgres-tenant:
+    image: postgres:18
+    pull_policy: never
+    restart: unless-stopped
+    env_file: .env
+    networks: [isolated]
+    volumes: [tenant:/var/lib/postgresql]
+  valkey:
+    image: valkey/valkey:9-alpine
+    pull_policy: never
+    restart: unless-stopped
+    networks: [isolated]
+  object-storage:
+    image: minio/minio:@MINIO_TAG@
+    pull_policy: never
+    restart: unless-stopped
+    command: server /data
+    env_file: .env
+    networks: [isolated]
+    volumes: [objects:/data]
+  backend:
+    <<: *backend
+  worker:
+    <<: *backend
+    command: celery -A config worker -l info --concurrency=2
+  beat:
+    <<: *backend
+    command: celery -A config beat -l info --schedule=/tmp/celerybeat-schedule
+  frontend:
+    image: intraforge-shop-frontend:@TAG@
+    pull_policy: never
+    restart: unless-stopped
+    networks: [isolated]
+  proxy:
+    image: caddy:2-alpine
+    pull_policy: never
+    restart: unless-stopped
+    ports: ["127.0.0.1:${SHOP_HTTPS_PORT:-8443}:443"]
+    environment:
+      PROXY_TLS_HOSTNAMES: "localhost 127.0.0.1"
+    volumes:
+      - ./infrastructure/proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - certificates:/data
+    networks: [isolated, edge]
+
+networks:
+  isolated:
+    internal: true
+  edge: {}
+
+volumes:
+  control: {}
+  tenant: {}
+  objects: {}
+  certificates: {}
