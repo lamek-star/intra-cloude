@@ -129,6 +129,16 @@ the installer came out of it (both fixed in commit `19b9c9c`, rebuilt and re-tes
    (usual folders, uninstall registry entries, next to `docker.exe`), and the kit installer's message when it cannot start Docker is
    an instruction, not a contradiction.
 
+3. **Per-user Docker Desktop and a stale PATH (found in the Hyper-V VM, 2026-09-24).** Docker's installer offers a *per-user*
+   install (no administrator; files under `%LOCALAPPDATA%\Programs\DockerDesktop`; `docker.exe` added to the **user** PATH only) and
+   makes it the default. That is the likely cause of defect 2 above (Program Files was the only place looked in). It also means a
+   process started **before** the install -- the running Setup window and the PowerShell it launches -- does not see the new
+   `docker.exe`, because Windows gives a process its environment at start. The kit's scripts now rebuild PATH from the machine and
+   user registry values and put Docker's `resources\bin` first (`Initialize-DockerPath`); Setup hands its child PowerShell the
+   current PATH (commit `8335298`). Tested here by giving a fresh PowerShell 5.1 a PATH with no Docker folder: `docker` resolves and
+   `docker info` works after the helper loads. **Not** tested: the same after a real per-user Docker install (Docker is installed
+   all-users on the development PC).
+
 Still unknown, to be recorded by the next clean-PC test ([../pilot/TEST_ON_ANOTHER_PC.md](../pilot/TEST_ON_ANOTHER_PC.md)):
 whether Docker Desktop's own installer needs the internet (WSL component) on a PC that has never had WSL, and everything after
 "Engine running" on a machine other than the development PC.
