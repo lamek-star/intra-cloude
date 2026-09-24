@@ -36,7 +36,7 @@ Documented limitations (each is real; none is hidden):
 | Stale artifact | `installer/release/dist/0.1.0-dev/IntraForge-Setup.msi`: built 2026-08-28 from commit `0dacad9` **with uncommitted changes**, before all qualification work. **Not usable as a pilot installer.** |
 | Prerequisite gating | Not wired into the MSI (documented gap since Phase 19); `Test-Prerequisites.ps1` exists and is not run by the installer. |
 | Reboot handling | No install-state persistence or resume-after-reboot mechanism. |
-| **Automatic start at Windows boot** | **Does not exist anywhere in the repository** (no scheduled task, Run key or service). Only Docker `restart:` policies, which are not a Windows start-up mechanism (and do not bring containers back -- see below). |
+| **Automatic start at Windows boot** | **Does not exist anywhere in the repository** (no scheduled task, Run key or service). Only Docker `restart:` policies, which are not a Windows start-up mechanism (they do nothing if Docker Desktop itself is not running; see the finding below). |
 | Restore | The Control Center's restore-from-file is not qualified (Windows blocked). |
 | Never executed | No successful MSI install-to-uninstall cycle on a real elevated Windows has ever been run (the development session cannot elevate). |
 
@@ -107,10 +107,31 @@ Mechanism (no elevation needed, tested): an `HKCU\...\Run` entry runs `Start-Int
 Docker Desktop if it is not running, runs `docker compose up`, waits for the health check, and takes a backup if the last
 complete one is more than 20 hours old (the PC may have been off at the scheduled time). Result is logged in `shop.log`.
 
-**Finding:** after `docker desktop stop` the development stack's containers -- all with `restart: unless-stopped` -- did **not**
-come back by themselves. Docker's restart policies alone are therefore not a reliable start-up mechanism on this platform;
-the explicit `compose up` at sign-in is what makes the shop come back. (The development stack was then restarted by hand; no data
-was touched.)
+**Finding (refined 2026-09-24):** after a deliberate `docker desktop stop` the development stack's containers -- all with
+`restart: unless-stopped` -- did **not** come back by themselves. After a **real Windows restart** of the development PC (09:44 on
+2026-09-24) Docker Desktop did **not** start by itself (it has no auto-start setting there), and once it was started the same
+containers came back on their own. So restart policies are enough only when Docker Desktop is already running and the stop was not
+deliberate; the sign-in entry that starts Docker Desktop and runs `compose up` is what makes the shop reliably come back in every case.
+
+## First test on a second PC (2026-09-24) -- what it found
+
+The owner ran the single-file installer on another PC. **Result: it did not get as far as running IntraForge**, and two defects in
+the installer came out of it (both fixed in commit `19b9c9c`, rebuilt and re-tested on the development PC):
+
+1. **Virtualization was off in that PC's BIOS.** Docker Desktop started and showed "Virtualization support not detected / Engine
+   stopped". Neither Setup nor the kit installer checked for it, so the install would have waited for an engine that could never
+   start. Setup now opens with a plain "Checking this PC" report and stops immediately (exit 4) with step-by-step BIOS
+   instructions when virtualization is off or the PC is a virtual machine without nested virtualization; the kit installer has the
+   same verdict and, if the engine never answers, names the likely cause. `IntraForge-Setup-Complete.exe /check` reports without installing.
+2. **Docker detection disagreed between Setup and the kit installer.** Setup accepted any `docker.exe` on the PATH as "Docker
+   Desktop is installed"; the kit installer looked only for `Docker Desktop.exe` in two fixed folders and stopped with "Docker Desktop
+   is not installed on this computer". Both now use the same rule: installed if the engine answers or `Docker Desktop.exe` is found
+   (usual folders, uninstall registry entries, next to `docker.exe`), and the kit installer's message when it cannot start Docker is
+   an instruction, not a contradiction.
+
+Still unknown, to be recorded by the next clean-PC test ([../pilot/TEST_ON_ANOTHER_PC.md](../pilot/TEST_ON_ANOTHER_PC.md)):
+whether Docker Desktop's own installer needs the internet (WSL component) on a PC that has never had WSL, and everything after
+"Engine running" on a machine other than the development PC.
 
 ## Where the shop's data lives
 
