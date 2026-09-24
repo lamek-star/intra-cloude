@@ -122,6 +122,26 @@ function Start-DockerIfNeeded([int]$TimeoutSeconds = 240) {
     throw "Docker Desktop did not become ready within $TimeoutSeconds seconds. Open Docker Desktop, wait until it says 'Engine running', then run this again.$hint"
 }
 
+# A program installed while this window was already open (Docker Desktop, installed by Setup a minute ago) is not on THIS process's
+# PATH: Windows gives a process its environment when it starts. Rebuild PATH from the registry, and make sure Docker's own folder is
+# on it (a per-user Docker Desktop installs under %LOCALAPPDATA%\Programs\DockerDesktop and adds itself to the user PATH only).
+function Initialize-DockerPath {
+    $parts = @()
+    foreach ($scope in 'Machine', 'User', 'Process') {
+        $value = [Environment]::GetEnvironmentVariable('Path', $scope)
+        if ($value) { $parts += $value.Split(';') }
+    }
+    $exe = Find-DockerDesktop
+    if ($exe) {
+        $bin = Join-Path (Split-Path $exe -Parent) 'resources\bin'
+        if (Test-Path $bin) { $parts = @($bin) + $parts }
+    }
+    $seen = @{}; $merged = @()
+    foreach ($part in $parts) { $key = $part.TrimEnd('\').ToLowerInvariant(); if ($part -and -not $seen.ContainsKey($key)) { $seen[$key] = $true; $merged += $part } }
+    $env:Path = $merged -join ';'
+}
+Initialize-DockerPath
+
 function Wait-ShopReady([int]$Tries = 60) {
     for ($i = 0; $i -lt $Tries; $i++) {
         if (Test-Quiet { docker compose exec -T backend python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/readyz', timeout=5).status == 200 else 1)" }) { return $true }

@@ -306,6 +306,14 @@ static class Program
         using (Process p = Process.Start(psi)) { p.WaitForExit(); return p.ExitCode == 0; }
     }
 
+    static string FreshPath()
+    {
+        string machine = Environment.GetEnvironmentVariable("Path", EnvironmentVariableTarget.Machine) ?? "";
+        string user = Environment.GetEnvironmentVariable("Path", EnvironmentVariableTarget.User) ?? "";
+        string process = Environment.GetEnvironmentVariable("Path") ?? "";
+        return process + ";" + machine + ";" + user;
+    }
+
     static int RunPowerShell(string dir, string script, string extra)
     {
         string ps = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), @"System32\WindowsPowerShell\v1.0\powershell.exe");
@@ -314,6 +322,8 @@ static class Program
         psi.UseShellExecute = false; psi.WorkingDirectory = dir;
         // If Setup was started from another PowerShell (e.g. PowerShell 7), its module path would break Windows PowerShell 5.1.
         psi.EnvironmentVariables.Remove("PSModulePath");
+        // Docker Desktop may have been installed by this very Setup run: give the child the CURRENT machine + user PATH.
+        psi.EnvironmentVariables["Path"] = FreshPath();
         using (Process p = Process.Start(psi)) { p.WaitForExit(); return p.ExitCode; }
     }
 
