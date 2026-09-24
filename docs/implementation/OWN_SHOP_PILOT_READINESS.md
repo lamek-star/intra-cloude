@@ -171,14 +171,17 @@ access log, so the duration cannot be recovered. This adds to the known occasion
 not identified**. During the pilot use **IntraForge Status** immediately after any slow moment and log it
 ([pilot/PILOT_LOG.md](../pilot/PILOT_LOG.md)).
 
-## The Windows qualification VM
+## The Windows qualification VM (corrected 2026-09-24)
 
-The VM named `IntraForge-Win11Pro` does **not** exist on this machine. The only VM is the VirtualBox machine `intraVM`
-(Windows 11 64-bit, 4 GB, 2 CPUs, EFI, NAT, no snapshots): its disk holds **2 MB** (Windows was never installed; only an
-unattended-install answer file was prepared), there is no Windows ISO on the machine, nested virtualization is off, and Hyper-V
-management is denied to the session. It is not suitable, and it was not used or modified. To run the reboot test the owner
-would have to provide a Windows 11 ISO (or a spare PC) and allow a VM with nested virtualization; the shop PC itself is the
-practical first test.
+The earlier statement that `IntraForge-Win11Pro` does not exist was **wrong**: it is a **Hyper-V** VM (files under
+`Documents\New folder\VMs\`, ISO `Win11_25H2_x64.iso`), which an unelevated session cannot see (`Get-VM` is denied and VirtualBox
+lists only the empty `intraVM`). On 2026-09-24 it was running a signed-in, unactivated Windows 11 Pro desktop. It was **not** used for
+a test, because (1) its connection window is elevated, so Windows (UIPI) blocks a normal session from sending it input, and (2) the
+session has no Hyper-V rights (no Guest Services file copy, checkpoints or PowerShell Direct). Nothing was changed in it.
+`scripts/shop-kit/vm-test/Prepare-VmTest.ps1` (run in an administrator PowerShell) does the Hyper-V side: report, checkpoint,
+nested virtualization (Docker Desktop cannot run in a VM without it), copying the installer in, cutting/restoring the network,
+collecting logs, reverting. **That script has not been run; it is syntax-checked and refuses to run without administrator rights.**
+Whether nested virtualization is on for this VM is unknown.
 
 ## Open issues
 
