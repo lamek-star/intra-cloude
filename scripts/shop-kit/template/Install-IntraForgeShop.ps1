@@ -48,6 +48,9 @@ $os = Get-CimInstance Win32_OperatingSystem
 $build = [int]$os.BuildNumber
 if ($build -lt 19045) { throw "Windows build $build is too old. IntraForge needs Windows 10 22H2 (build 19045) or Windows 11." }
 if (-not [Environment]::Is64BitOperatingSystem) { throw 'IntraForge needs a 64-bit Windows.' }
+$virt = Get-VirtualizationVerdict
+if ($virt.Level -eq 'block') { throw $virt.Message }
+if ($virt.Level -eq 'warn') { Write-Host $virt.Message -ForegroundColor Yellow }
 $ramGb = [math]::Round($os.TotalVisibleMemorySize / 1MB, 1)
 if ($ramGb -lt 8) { Write-Host "This PC has $ramGb GB of memory. IntraForge was qualified with 8 GB or more; it may be slow." -ForegroundColor Yellow }
 if (-not (Get-Command docker -ErrorAction SilentlyContinue) -and -not (Find-DockerDesktop)) {

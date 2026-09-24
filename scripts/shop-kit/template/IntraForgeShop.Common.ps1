@@ -53,17 +53,62 @@ function Write-ShopLog([string]$Message, [string]$File = 'shop.log') {
 }
 
 function Find-DockerDesktop {
-    foreach ($candidate in @("$env:ProgramFiles\Docker\Docker\Docker Desktop.exe", "${env:ProgramFiles(x86)}\Docker\Docker\Docker Desktop.exe")) {
+    foreach ($candidate in @("$env:ProgramFiles\Docker\Docker\Docker Desktop.exe", "${env:ProgramFiles(x86)}\Docker\Docker\Docker Desktop.exe", "$env:LOCALAPPDATA\Programs\DockerDesktop\Docker Desktop.exe")) {
         if (Test-Path $candidate) { return $candidate }
     }
+    foreach ($hive in 'HKLM:', 'HKCU:') {
+        $key = "$hive\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+        if (-not (Test-Path $key)) { continue }
+        foreach ($sub in Get-ChildItem $key -ErrorAction SilentlyContinue) {
+            $props = Get-ItemProperty $sub.PSPath -ErrorAction SilentlyContinue
+            if ($props -and $props.DisplayName -eq 'Docker Desktop' -and $props.InstallLocation) {
+                $exe = Join-Path $props.InstallLocation 'Docker Desktop.exe'
+                if (Test-Path $exe) { return $exe }
+            }
+        }
+    }
+    $cli = Get-Command docker.exe -ErrorAction SilentlyContinue      # ...\Docker\resources\bin\docker.exe
+    if ($cli) {
+        $exe = Join-Path (Split-Path (Split-Path (Split-Path $cli.Source -Parent) -Parent) -Parent) 'Docker Desktop.exe'
+        if (Test-Path $exe) { return $exe }
+    }
     return $null
+}
+
+# Can this PC run Docker Desktop at all? Level is 'ok', 'warn' or 'block'; Message is plain language.
+function Get-VirtualizationVerdict {
+    $cs = Get-CimInstance Win32_ComputerSystem
+    $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+    $hypervisor = [bool]$cs.HypervisorPresent
+    $firmware = $cpu.VirtualizationFirmwareEnabled
+    $isVm = ("$($cs.Model) $($cs.Manufacturer)") -match 'Virtual|VMware|QEMU|KVM'
+    if ($env:INTRAFORGE_SETUP_TEST_FAKE_NO_VIRT -eq '1') { $hypervisor = $false; $firmware = $false; $isVm = $false }   # test hook
+    if ($hypervisor) { return @{ Level = 'ok'; Message = 'Virtualization is available.' } }
+    if ($firmware -eq $true) { return @{ Level = 'ok'; Message = 'Virtualization is switched on in the BIOS (Docker Desktop''s installer will switch on the Windows parts it needs and may ask for one restart).' } }
+    if ($isVm) {
+        return @{ Level = 'block'; Message = "This PC is itself a virtual machine and does not offer virtualization to programs inside it, so Docker Desktop (and IntraForge) cannot start.`nFix: use a physical PC, or turn on 'nested virtualization' for this virtual machine in its host, then run this again." }
+    }
+    if ($firmware -eq $false) {
+        return @{ Level = 'block'; Message = @"
+Virtualization is switched OFF in this PC's BIOS/UEFI, so Docker Desktop (and IntraForge) cannot run.
+How to fix it (about 5 minutes):
+  1. Restart the PC and open its BIOS/UEFI setup: press Del, F2, F10, F12 or Esc while it starts (it depends on the make).
+  2. Find 'Intel Virtualization Technology' / 'VT-x' (or, on AMD, 'SVM Mode') and set it to Enabled.
+  3. Save and exit, let Windows start, then run this again.
+To check in Windows: Task Manager > Performance > CPU > 'Virtualization: Enabled'.
+If there is no such setting, this PC cannot run IntraForge: use another PC.
+"@ }
+    }
+    return @{ Level = 'warn'; Message = 'Could not tell whether virtualization is on. If Docker Desktop later says "Virtualization support not detected", switch it on in the BIOS (Task Manager > Performance > CPU shows its state).' }
 }
 
 # Makes sure Docker's engine answers, starting Docker Desktop if it is installed but not running.
 function Start-DockerIfNeeded([int]$TimeoutSeconds = 240) {
     if (Test-Quiet { docker info }) { return }
     $exe = Find-DockerDesktop
-    if (-not $exe) { throw 'Docker Desktop is not installed on this computer. Install it first (see the README), then run this again.' }
+    if (-not $exe) {
+        throw 'Docker''s engine is not answering and Docker Desktop could not be found to start it. If Docker Desktop is installed, open it from the Start menu and wait until it says "Engine running", then run this again. If it is not installed, install it first (README.txt).'
+    }
     Write-Host 'Starting Docker Desktop (this can take a minute or two)...'
     Start-Process -FilePath $exe | Out-Null
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
@@ -71,7 +116,10 @@ function Start-DockerIfNeeded([int]$TimeoutSeconds = 240) {
         if (Test-Quiet { docker info }) { return }
         Start-Sleep -Seconds 5
     }
-    throw "Docker Desktop did not become ready within $TimeoutSeconds seconds. Open Docker Desktop, wait until it says it is running, then run this again."
+    $virt = Get-VirtualizationVerdict
+    $hint = ''
+    if ($virt.Level -eq 'block') { $hint = "`n`nMost likely cause:`n" + $virt.Message }
+    throw "Docker Desktop did not become ready within $TimeoutSeconds seconds. Open Docker Desktop, wait until it says 'Engine running', then run this again.$hint"
 }
 
 function Wait-ShopReady([int]$Tries = 60) {
