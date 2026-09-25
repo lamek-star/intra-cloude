@@ -13,17 +13,14 @@ Not the Windows MSI route: that path is **EXTERNALLY BLOCKED / not used** (see "
 
 Documented limitations (each is real; none is hidden):
 
-1. **A real Windows restart was not tested.** No disposable Windows VM exists (below) and rebooting the developer's own PC
-   was not an option. The sign-in start-up was tested by running the exact registered command against a *warm* and a
-   *fully stopped* Docker Desktop (ready in 6 s and 30 s). The first restart on the shop PC is therefore the real test; the
-   checklist makes it the first thing to do, with a status file as evidence.
-2. **Docker Desktop is a prerequisite that is not in the kit** (its licence does not allow redistribution); it must be
-   downloaded once on any connected PC and carried over (the one-folder "full install" carries the official, signature-checked
-   installer for the owner's own PC). The Docker Desktop install path was not exercised here (it is already installed on the
-   development PC).
+1. **A restart of a real, physical PC was not tested.** The complete flow (clean Windows, restart, install, restart again) was tested in
+   a clean Windows 11 Hyper-V virtual machine with the network disconnected (below); the development PC itself was restarted once by
+   chance (2026-09-24) and behaved as described under "Automatic start". A physical shop PC is still the test that is missing.
+2. **Docker Desktop's licence does not allow passing the installer on**; the single file (which contains it) is for the owner's own PCs
+   only. Its silent install, the WSL package and the Windows features were exercised in the VM, not on a physical PC.
 3. **Start-up is at Windows sign-in, not at the login screen.** The PC must be signed in (auto sign-in if unattended).
-4. **The kit was never installed on a second computer**; every rehearsal was on the development PC (port 8453; the default
-   port 8443 is used by the development stack here).
+4. **The kit has been installed on a second machine only as a virtual machine** (clean Windows 11, 4 GB, nested virtualization);
+   port 8443 was used there. A physical second PC has not run it.
 5. **Single PC only**; no LAN access (not qualified), no unattended off-site backup (the copy to USB is a human step, made easy).
 6. **The first-ever user registration after a fresh install exceeded 5 s once** (see "Performance"); cause unknown.
 
@@ -181,17 +178,59 @@ access log, so the duration cannot be recovered. This adds to the known occasion
 not identified**. During the pilot use **IntraForge Status** immediately after any slow moment and log it
 ([pilot/PILOT_LOG.md](../pilot/PILOT_LOG.md)).
 
-## The Windows qualification VM (corrected 2026-09-24)
+## Clean-Windows test in the Hyper-V VM (2026-09-25)
 
-The earlier statement that `IntraForge-Win11Pro` does not exist was **wrong**: it is a **Hyper-V** VM (files under
-`Documents\New folder\VMs\`, ISO `Win11_25H2_x64.iso`), which an unelevated session cannot see (`Get-VM` is denied and VirtualBox
-lists only the empty `intraVM`). On 2026-09-24 it was running a signed-in, unactivated Windows 11 Pro desktop. It was **not** used for
-a test, because (1) its connection window is elevated, so Windows (UIPI) blocks a normal session from sending it input, and (2) the
-session has no Hyper-V rights (no Guest Services file copy, checkpoints or PowerShell Direct). Nothing was changed in it.
-`scripts/shop-kit/vm-test/Prepare-VmTest.ps1` (run in an administrator PowerShell) does the Hyper-V side: report, checkpoint,
-nested virtualization (Docker Desktop cannot run in a VM without it), copying the installer in, cutting/restoring the network,
-collecting logs, reverting. **That script has not been run; it is syntax-checked and refuses to run without administrator rights.**
-Whether nested virtualization is on for this VM is unknown.
+The VM `IntraForge-Win11Pro` is a **Hyper-V** VM (an earlier claim that it did not exist was wrong: an unelevated session cannot see
+Hyper-V). With the owner's authorization (membership of the Hyper-V Administrators group, a local test account in the VM, its login
+stored DPAPI-encrypted for that user), the session could reach the VM through Hyper-V's own channel (Guest Services file copy and
+PowerShell Direct) without administrator rights. A powered-off checkpoint of clean Windows 11 Pro with nested virtualization on was the
+starting point of every run.
+
+**Complete run, network adapter disconnected (guest could not reach the internet or resolve DNS), the final single file:**
+
+| Step | Result |
+| --- | --- |
+| Copy the 1.4 GB file into the VM | 55 s (Hyper-V's channel, no network) |
+| Run 1: PC check, three checksums (kit, Docker, WSL), unpack, switch on the Windows parts, docker-users | 93 s; exit 3010 "restart needed" |
+| Graceful restart, run 2: WSL package, Docker Desktop (silent, all users), IntraForge | 455 s (4 GB VM); "IntraForge is installed and running" |
+| Health | `.install-complete` written; front page 200, `/readyz` 200; 889 MiB for all services; start-up entry and daily task present |
+| Offline evidence | guest internet False; the backend container could not reach three outside addresses; only `127.0.0.1:8443` published |
+| Run 3 (same file, installed PC) | recognised the installation and only started it (15 s); nothing changed |
+| Graceful restart | IntraForge healthy after the sign-in start-up command (85 s including starting Docker); this time Docker's engine had **not** started by itself within ~25 s of boot, unlike an earlier run: the sign-in entry is what guarantees it |
+| Backup Now + `-Verify` | 19 s; all three backups restored and validated in throw-away tests |
+| Second Setup while one is running | refused, exit 6 |
+
+**What the test found (all fixed and re-tested):**
+
+1. A clean Windows has neither WSL nor the required Windows features, so Docker Desktop could not start; a per-user Docker install
+   cannot switch them on. Measured working order: enable Virtual Machine Platform + WSL (+ Hyper-V) and add the user to `docker-users`,
+   **gracefully restart**, install the WSL package, install Docker Desktop silently (`--quiet --accept-license --backend=wsl-2`), then
+   IntraForge. `Setup-IntraForge.ps1` does this idempotently (one UAC prompt per privileged step, a RunOnce entry that continues after the
+   restart, signature checks before running the WSL / Docker installers).
+2. **My own test was the cause of an apparent "installs vanish after a restart" result:** `Restart-VM -Force` is a hard reset; Windows event 41
+   ("rebooted without cleanly shutting down") shows it, and Windows rolled back servicing that was still pending. Guest-initiated restarts
+   lose nothing (event log clean). This is not a product defect, but it is why the installer asks for a normal restart and never forces one.
+3. **Inside a VM every Windows guest reports "a hypervisor is present"**, so the PC check was fooled. In a VM the check now requires the
+   firmware flag, but only **before** the Windows features are switched on: afterwards the signals (measured) are identical with and
+   without nested virtualization, so Setup then reports it cannot be checked, and Docker's failure to start names it as the likely cause.
+4. **A run started by the sign-in resume entry collided with a run started by hand** (someone had signed in to the VM console): two runs
+   created the same containers and an interrupted install could not be continued. Setup now takes a global lock (second run exits 6);
+   the installer writes `.install-complete` last and continues an interrupted installation with its existing keys.
+
+**Not tested:** a physical PC; Windows Home (no Hyper-V feature; Docker Desktop's WSL 2 backend should not need it, unproven);
+SmartScreen and the two UAC prompts on a fresh PC (a person clicked through them on the VM console during one run, and the resume entry
+ran in that session, but it was not observed by the test); Docker Desktop with less than 4 GB in the VM (it worked but Docker's engine
+then gets only 1.9-2.8 GB); the browser experience of a first user in the VM.
+
+**Side observation (a decision for the owner):** the database migrations seed, on **every** fresh install, a separate organization
+"Harmoney Spare Parts - Catalogue Ops" with an application credential and a development OAuth client (`ifc_harmoney_spareparts_dev`);
+random secrets are printed once to the setup console. This is older behaviour (catalogue_storage 0002, oauth_provider 0002), not shop data
+and not demo data in the shop's own organization, but the shop's organization list will contain it. It was not changed.
+
+**Environment changes made to the VM (all requested by the owner's access grant):** nested virtualization on, 4 CPUs, memory reduced to
+fit the host (5 or 4 GB fixed), MAC address spoofing on, a new checkpoint `baseline-nested-no-docker`. Restored after the tests: the VM was
+put back to that clean checkpoint and its network reconnected. The host's Docker Desktop had to be stopped repeatedly to free memory and
+was restarted (the development stack was restarted by hand each time).
 
 ## Open issues
 

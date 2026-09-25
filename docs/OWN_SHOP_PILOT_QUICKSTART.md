@@ -7,26 +7,25 @@ an automatic switch. The full pilot rules and checklists are in [LOCAL_EDITION_P
 What you have is the **IntraForge Local Edition pilot kit** (a folder, or one `.zip`). It is *not* the Windows installer:
 that has never been run on a real Windows PC and is not used here.
 
-## 1. Install (about 15 minutes, once)
+## 1. Install (about 15-20 minutes, once)
 
-You have the **IntraForge-Full-Install** folder: `IntraForge-Setup.exe`, `prerequisites\Docker Desktop Installer.exe` and a
-`READ ME FIRST.txt`. No internet is needed on the shop PC.
+You have **one file**, `IntraForge-Setup-Complete.exe` (about 1.4 GB, on a USB drive formatted NTFS or exFAT). It contains IntraForge,
+Windows' WSL package and Docker Desktop, so a PC with nothing on it installs with **no internet**.
 
-1. **Copy the whole folder** to the shop PC (for example on a USB drive).
-2. **Double-click `IntraForge-Setup.exe`.** Windows may say "Windows protected your PC / Unknown publisher" (it is not
-   code-signed): **More info > Run anyway**. Press Enter when Setup asks.
-3. If **Docker Desktop** is not on the PC, Setup offers to run its installer (allow the administrator permission, keep "Use
-   WSL 2" ticked). If Docker asks to restart Windows, restart, open Docker Desktop once until it says **Engine running**, then
-   double-click `IntraForge-Setup.exe` again: it carries on. (Docker Desktop is free for a small shop; it is not inside
-   Setup because its licence does not allow that.)
-4. Setup installs IntraForge (about 2 minutes: it checks the PC, verifies every file, creates the shop's own secret keys,
-   sets up automatic start, a daily backup and shortcuts) and opens it in the browser.
-5. **Copy `C:\IntraForgeData\keys\intraforge-keys.env` to a USB drive** and keep it safe (a different drive from your
-   backups). Without it a backup cannot be read if the PC is lost.
+1. **Copy the file** to the shop PC and **double-click it.** Windows says "Unknown publisher" (not code-signed): **More info > Run
+   anyway.** Read the "Checking this PC" block; every line should be `[OK]`. Press Enter.
+2. Setup unpacks itself, then **switches on the Windows parts Docker needs**. Windows asks for administrator permission (**prompt 1**);
+   answer Yes. Setup then asks to **restart the PC**; answer Y.
+3. **Sign in again.** Setup continues by itself in a window: it installs WSL and Docker Desktop (administrator prompt **2**, about
+   2 minutes), then IntraForge (2-3 minutes). It ends with "IntraForge is installed and running". (If it did not start by itself,
+   double-click the file again: it carries on from where it stopped.)
+4. **Copy `C:\IntraForgeData\keys\intraforge-keys.env` to a USB drive** and keep it safe (a different drive from your backups).
+   Without it a backup cannot be read if the PC is lost.
 
-There is also a **single-file** build, `IntraForge-Setup-Complete.exe`, with the Docker Desktop installer inside (same steps; for your
-own PCs only, do not share it). Running `IntraForge-Setup.exe` again on an installed PC changes nothing; it only starts and opens IntraForge. (Advanced: the
-kit folder / zip with `Install-IntraForgeShop.ps1` does the same job by hand.)
+If a PC already has Docker Desktop, Setup skips those steps. Running the file again on an installed PC changes nothing; it only starts
+and opens IntraForge. If Setup shows a red `[X]` in the PC check (for example virtualization switched off in the BIOS), it says how to
+fix it. The file is for your own PCs only (Docker Desktop's licence does not allow passing it on). See
+[pilot/TEST_ON_ANOTHER_PC.md](pilot/TEST_ON_ANOTHER_PC.md) for a step-by-step test on a new PC.
 
 ## 2. Start and open IntraForge
 
