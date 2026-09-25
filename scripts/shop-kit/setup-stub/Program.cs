@@ -377,15 +377,25 @@ static class Program
         bool hypervisor = string.Equals(hv, "True", StringComparison.OrdinalIgnoreCase);
         bool firmwareOn = string.Equals(fw, "True", StringComparison.OrdinalIgnoreCase);
         bool firmwareOff = string.Equals(fw, "False", StringComparison.OrdinalIgnoreCase);
-        if (Environment.GetEnvironmentVariable("INTRAFORGE_SETUP_TEST_FAKE_NO_VIRT") == "1") { hypervisor = false; firmwareOn = false; firmwareOff = true; }
-        if (hypervisor) Ok("Virtualization is available (Windows' virtualization layer is running).");
-        else if (firmwareOn) Ok("Virtualization is switched on in the BIOS. Docker Desktop's installer will switch on the Windows parts it needs and may ask for one restart.");
-        else if (isVm)
+        if (Environment.GetEnvironmentVariable("INTRAFORGE_SETUP_TEST_FAKE_NO_VIRT") == "1") { hypervisor = false; firmwareOn = false; firmwareOff = true; isVm = false; }
+        // Inside a VM every Windows guest reports "a hypervisor is present" (the host's), whether or not nested virtualization is
+        // passed through -- so in a VM only the firmware flag tells the truth. On a physical PC either signal is enough.
+        if (isVm)
         {
-            Bad("This PC is itself a virtual machine and does not offer virtualization to programs inside it, so Docker Desktop cannot start.");
-            Say("      Fix: use a physical PC, or turn on 'nested virtualization' for this virtual machine in its host, then run Setup again.");
-            blocked = true;
+            if (firmwareOn) Ok("This PC is a virtual machine and nested virtualization is available to it.");
+            else
+            {
+                Bad("This PC is a virtual machine that does not pass virtualization through to it, so Docker Desktop cannot start.");
+                Say("      Fix it on the machine that HOSTS this virtual machine (shut the VM down first), then run this Setup again:");
+                Say("        Hyper-V    : on the host, in an administrator PowerShell:  Set-VMProcessor -VMName <vm name> -ExposeVirtualizationExtensions $true");
+                Say("        VirtualBox : Settings > System > Processor > tick 'Enable Nested VT-x/AMD-V'  (or: VBoxManage modifyvm <vm name> --nested-hw-virt on)");
+                Say("        VMware     : VM settings > Processor > tick 'Virtualize Intel VT-x/EPT or AMD-V/RVI'");
+                Say("      Or use a physical PC.");
+                blocked = true;
+            }
         }
+        else if (hypervisor) Ok("Virtualization is available (Windows' virtualization layer is running).");
+        else if (firmwareOn) Ok("Virtualization is switched on in the BIOS. Docker Desktop's installer will switch on the Windows parts it needs and may ask for one restart.");
         else if (firmwareOff)
         {
             Bad("Virtualization is switched OFF in this PC's BIOS/UEFI, so Docker Desktop (and IntraForge) cannot run.");

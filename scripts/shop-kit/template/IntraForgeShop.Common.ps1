@@ -83,11 +83,21 @@ function Get-VirtualizationVerdict {
     $firmware = $cpu.VirtualizationFirmwareEnabled
     $isVm = ("$($cs.Model) $($cs.Manufacturer)") -match 'Virtual|VMware|QEMU|KVM'
     if ($env:INTRAFORGE_SETUP_TEST_FAKE_NO_VIRT -eq '1') { $hypervisor = $false; $firmware = $false; $isVm = $false }   # test hook
+    # Inside a VM every Windows guest reports "a hypervisor is present" (the host's) whether or not nested virtualization is passed
+    # through, so in a VM only the firmware flag tells the truth. On a physical PC either signal is enough.
+    if ($isVm) {
+        if ($firmware -eq $true) { return @{ Level = 'ok'; Message = 'This PC is a virtual machine and nested virtualization is available to it.' } }
+        return @{ Level = 'block'; Message = @"
+This PC is a virtual machine that does not pass virtualization through to it, so Docker Desktop (and IntraForge) cannot start.
+Fix it on the machine that HOSTS this virtual machine (shut the VM down first), then run this again:
+  Hyper-V    : on the host, in an administrator PowerShell:  Set-VMProcessor -VMName <vm name> -ExposeVirtualizationExtensions `$true
+  VirtualBox : Settings > System > Processor > tick 'Enable Nested VT-x/AMD-V'  (or: VBoxManage modifyvm <vm name> --nested-hw-virt on)
+  VMware     : VM settings > Processor > tick 'Virtualize Intel VT-x/EPT or AMD-V/RVI'
+Or use a physical PC.
+"@ }
+    }
     if ($hypervisor) { return @{ Level = 'ok'; Message = 'Virtualization is available.' } }
     if ($firmware -eq $true) { return @{ Level = 'ok'; Message = 'Virtualization is switched on in the BIOS (Docker Desktop''s installer will switch on the Windows parts it needs and may ask for one restart).' } }
-    if ($isVm) {
-        return @{ Level = 'block'; Message = "This PC is itself a virtual machine and does not offer virtualization to programs inside it, so Docker Desktop (and IntraForge) cannot start.`nFix: use a physical PC, or turn on 'nested virtualization' for this virtual machine in its host, then run this again." }
-    }
     if ($firmware -eq $false) {
         return @{ Level = 'block'; Message = @"
 Virtualization is switched OFF in this PC's BIOS/UEFI, so Docker Desktop (and IntraForge) cannot run.
