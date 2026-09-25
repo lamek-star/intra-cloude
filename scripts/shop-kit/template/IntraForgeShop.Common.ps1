@@ -36,7 +36,11 @@ function Get-ShopSetting([string]$Name, [string]$Default) {
     return $Default
 }
 
-function Get-DataDir { return ((Get-ShopSetting 'SHOP_DATA_DIR' 'C:/IntraForgeData') -replace '/', '\') }
+# The data folder: the SHOP_DATA_DIR environment variable (set by Setup before .env exists), else .env, else the default.
+function Get-DataDir {
+    if ($env:SHOP_DATA_DIR) { return ($env:SHOP_DATA_DIR -replace '/', '\') }
+    return ((Get-ShopSetting 'SHOP_DATA_DIR' 'C:/IntraForgeData') -replace '/', '\')
+}
 function Get-ShopPort { return [int](Get-ShopSetting 'SHOP_HTTPS_PORT' '8443') }
 function Get-ShopVersion {
     $file = Join-Path $script:KitDir 'BUILD_INFO.txt'
@@ -86,7 +90,13 @@ function Get-VirtualizationVerdict {
     # Inside a VM every Windows guest reports "a hypervisor is present" (the host's) whether or not nested virtualization is passed
     # through, so in a VM only the firmware flag tells the truth. On a physical PC either signal is enough.
     if ($isVm) {
+        # Before the Windows virtualization features are on, the firmware flag is the truth (True = nested virtualization passed through).
+        # Once they are on, Windows runs its own hypervisor and the same signals read identically WITH and WITHOUT nested virtualization
+        # (measured), so nothing can be checked then; Docker's engine start is the real test and its failure message names this cause.
         if ($firmware -eq $true) { return @{ Level = 'ok'; Message = 'This PC is a virtual machine and nested virtualization is available to it.' } }
+        if ((Get-FeatureState 'VirtualMachinePlatform') -eq 'Enabled' -or (Get-FeatureState 'Microsoft-Hyper-V') -eq 'Enabled') {
+            return @{ Level = 'ok'; Message = "This PC is a virtual machine and Windows' virtualization features are already on, so passing virtualization through cannot be checked here. If Docker Desktop later fails to start, that is the likely cause: nested virtualization must be on for this VM in its host." }
+        }
         return @{ Level = 'block'; Message = @"
 This PC is a virtual machine that does not pass virtualization through to it, so Docker Desktop (and IntraForge) cannot start.
 Fix it on the machine that HOSTS this virtual machine (shut the VM down first), then run this again:
@@ -129,6 +139,7 @@ function Start-DockerIfNeeded([int]$TimeoutSeconds = 240) {
     $virt = Get-VirtualizationVerdict
     $hint = ''
     if ($virt.Level -eq 'block') { $hint = "`n`nMost likely cause:`n" + $virt.Message }
+    elseif ((Get-CimInstance Win32_ComputerSystem).Model -match 'Virtual|VMware|QEMU|KVM') { $hint = "`n`nThis PC is a virtual machine: the most likely cause is that nested virtualization is not turned on for it in its host (Hyper-V: Set-VMProcessor -VMName <vm name> -ExposeVirtualizationExtensions `$true, with the VM shut down; VirtualBox: 'Enable Nested VT-x/AMD-V'; VMware: 'Virtualize Intel VT-x/EPT')." }
     throw "Docker Desktop did not become ready within $TimeoutSeconds seconds. Open Docker Desktop, wait until it says 'Engine running', then run this again.$hint"
 }
 
@@ -151,6 +162,50 @@ function Initialize-DockerPath {
     $env:Path = $merged -join ';'
 }
 Initialize-DockerPath
+
+# ---- Windows prerequisites (used by Setup-IntraForge.ps1 and its elevated helpers) ---------------------------------------------
+
+function Test-Admin {
+    return ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+# 'Enabled', 'Disabled' or 'Unavailable' (for example Hyper-V on Windows Home). Readable without administrator rights.
+function Get-FeatureState([string]$Name) {
+    $feature = Get-CimInstance Win32_OptionalFeature -Filter "Name='$Name'" -ErrorAction SilentlyContinue
+    if (-not $feature) { return 'Unavailable' }
+    switch ([int]$feature.InstallState) { 1 { return 'Enabled' } 2 { return 'Disabled' } default { return 'Unavailable' } }
+}
+
+function Test-RebootPending {
+    if (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') { return $true }
+    if (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') { return $true }
+    $pending = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -Name PendingFileRenameOperations -ErrorAction SilentlyContinue).PendingFileRenameOperations
+    return [bool]$pending
+}
+
+# Is the group membership already part of THIS sign-in's token? (A membership added later only counts after the next sign-in.)
+function Test-DockerUsersToken { return [bool]((& whoami /groups) -match 'docker-users') }
+
+function Test-WslInstalled {
+    return ((Test-Path 'C:\Program Files\WSL\wsl.exe') -and [bool](Get-Service -Name WSLService -ErrorAction SilentlyContinue))
+}
+
+# Only a file with a valid Authenticode signature from the expected publisher is ever run.
+function Test-Signature([string]$File, [string]$Publisher) {
+    $signature = Get-AuthenticodeSignature -LiteralPath $File
+    return ($signature.Status -eq 'Valid' -and $signature.SignerCertificate.Subject -match [regex]::Escape($Publisher))
+}
+
+function Write-SetupLog([string]$Message) { Write-ShopLog $Message 'setup.log' }
+
+# Runs a script with administrator rights and returns its exit code. Already elevated: runs in this console. Otherwise one UAC prompt.
+function Invoke-ElevatedScript([string]$Script, [string]$Arguments) {
+    $powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+    $argumentList = "-NoProfile -ExecutionPolicy Bypass -File `"$Script`" $Arguments"
+    if (Test-Admin) { $process = Start-Process -FilePath $powershell -ArgumentList $argumentList -Wait -PassThru -NoNewWindow }
+    else { $process = Start-Process -FilePath $powershell -ArgumentList $argumentList -Wait -PassThru -Verb RunAs }
+    return $process.ExitCode
+}
 
 function Wait-ShopReady([int]$Tries = 60) {
     for ($i = 0; $i -lt $Tries; $i++) {

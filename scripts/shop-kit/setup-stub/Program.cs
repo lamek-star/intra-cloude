@@ -1,14 +1,15 @@
 // IntraForge Setup -- a self-extracting installer stub (C# 5, .NET Framework 4.x: present on every Windows 10/11 PC).
 //
 // The finished IntraForge-Setup.exe is:
-//   [this stub][kit .zip][Docker Desktop installer, optional][SHA-256 kit][SHA-256 docker][kit length][docker length][magic]
-// (88-byte trailer; a docker length of 0 means "no Docker installer inside": Setup then looks for one next to itself).
-// Double-click it and it: checks its own contents, unpacks the kit, makes sure Docker Desktop is there (running the Docker
-// installer it carries, after checking that installer is signed by Docker Inc), runs the kit's installer and opens
-// IntraForge. It asks for administrator rights only for the Docker Desktop installer, never for itself. It downloads nothing.
+//   [this stub][kit .zip][Docker Desktop installer][WSL package .msi][SHA-256 x3][length x3][magic "IFSFX003"]   (128-byte trailer;
+//   a length of 0 means "not included"). Double-click it and it: checks the PC, checks its own contents, unpacks the kit and the
+//   prerequisite installers into C:\IntraForge, then runs the kit's Setup-IntraForge.ps1, which does the rest (switching on the
+//   Windows parts Docker needs, restarting when Windows asks, installing WSL + Docker Desktop from the bundled copies after checking
+//   their publisher signatures, installing IntraForge). It asks for administrator rights only for those Windows steps, never for itself.
+//   It downloads nothing.
 //
 // Options (all optional):  /dir=C:\IntraForge   /port=8443   /data=C:\IntraForgeData   /quiet (no questions)   /extractonly
-//                         /check (only report whether this PC can run IntraForge; installs nothing)
+//                         /check (only report whether this PC can run IntraForge; installs nothing)   /norestart (never restart the PC)
 using System;
 using System.Diagnostics;
 using System.Management;
@@ -21,8 +22,8 @@ using System.Text;
 
 static class Program
 {
-    const string Magic = "IFSFX002";
-    const int TrailerSize = 88;
+    const string Magic = "IFSFX003";
+    const int TrailerSize = 128;
 
     // A read-only, seekable window onto part of a file, so the zip can be read in place without copying 600 MB.
     sealed class SubStream : Stream
@@ -105,21 +106,25 @@ static class Program
         if (Flag(args, "check")) { Good("This PC can run IntraForge."); return 0; }
 
         // ---- 1. read and verify our own payloads ------------------------------------------------------------------
-        long kitLength, dockerLength, kitStart, dockerStart; byte[] kitHash = new byte[32]; byte[] dockerHash = new byte[32];
+        long kitLength, dockerLength, wslLength, kitStart, dockerStart, wslStart;
+        byte[] kitHash = new byte[32]; byte[] dockerHash = new byte[32]; byte[] wslHash = new byte[32];
         using (FileStream f = new FileStream(self, FileMode.Open, FileAccess.Read, FileShare.Read))
         {
             if (f.Length < TrailerSize) throw new InvalidOperationException("This setup file has no IntraForge package inside (it looks incomplete). Copy it again.");
             byte[] tail = new byte[TrailerSize];
             f.Position = f.Length - TrailerSize; f.Read(tail, 0, TrailerSize);
-            if (Encoding.ASCII.GetString(tail, 80, 8) != Magic)
+            if (Encoding.ASCII.GetString(tail, 120, 8) != Magic)
                 throw new InvalidOperationException("This setup file is damaged or incomplete (the end of the file is missing). Copy it again from the original.");
             Array.Copy(tail, 0, kitHash, 0, 32);
             Array.Copy(tail, 32, dockerHash, 0, 32);
-            kitLength = BitConverter.ToInt64(tail, 64);
-            dockerLength = BitConverter.ToInt64(tail, 72);
-            dockerStart = f.Length - TrailerSize - dockerLength;
+            Array.Copy(tail, 64, wslHash, 0, 32);
+            kitLength = BitConverter.ToInt64(tail, 96);
+            dockerLength = BitConverter.ToInt64(tail, 104);
+            wslLength = BitConverter.ToInt64(tail, 112);
+            wslStart = f.Length - TrailerSize - wslLength;
+            dockerStart = wslStart - dockerLength;
             kitStart = dockerStart - kitLength;
-            if (kitLength <= 0 || dockerLength < 0 || kitStart < 0) throw new InvalidOperationException("This setup file is damaged (bad package size). Copy it again.");
+            if (kitLength <= 0 || dockerLength < 0 || wslLength < 0 || kitStart < 0) throw new InvalidOperationException("This setup file is damaged (bad package size). Copy it again.");
 
             Heading("Checking that this file is complete and undamaged");
             VerifyRegion(f, kitStart, kitLength, kitHash);
@@ -128,6 +133,11 @@ static class Program
             {
                 VerifyRegion(f, dockerStart, dockerLength, dockerHash);
                 Good("The Docker Desktop installer inside is complete (" + (dockerLength / (1024 * 1024)) + " MB, checksum matches).");
+            }
+            if (wslLength > 0)
+            {
+                VerifyRegion(f, wslStart, wslLength, wslHash);
+                Good("The WSL package inside is complete (" + (wslLength / (1024 * 1024)) + " MB, checksum matches).");
             }
         }
         string payloadId = BitConverter.ToString(kitHash).Replace("-", "").ToLowerInvariant();
@@ -182,73 +192,36 @@ static class Program
                     entry.ExtractToFile(target, true);
                 }
             }
+            // The Windows prerequisites (their signatures are checked by the kit's scripts right before they are run).
+            string prereq = Path.Combine(dir, "prerequisites");
+            Directory.CreateDirectory(prereq);
+            if (dockerLength > 0) ExtractRegion(self, dockerStart, dockerLength, Path.Combine(prereq, "Docker Desktop Installer.exe"), "the Docker Desktop installer");
+            if (wslLength > 0) ExtractRegion(self, wslStart, wslLength, Path.Combine(prereq, "wsl.x64.msi"), "the WSL package");
             File.WriteAllText(marker, payloadId);
             Good("Unpacked.");
         }
         if (Flag(args, "extractonly")) return 0;
 
-        // ---- 4. Docker Desktop --------------------------------------------------------------------------------------
-        Heading("Checking Docker Desktop");
-        if (DockerInstalled()) Good("Docker Desktop is installed.");
-        else
-        {
-            Warn("Docker Desktop is not installed on this PC. IntraForge needs it (it runs IntraForge's parts).");
-            string installer = null; bool temporary = false;
-            if (dockerLength > 0) { installer = ExtractDocker(self, dockerStart, dockerLength); temporary = true; }
-            else installer = FindDockerInstaller(setupDir);
-            if (installer == null)
-            {
-                Say("The Docker Desktop installer was not found next to this Setup file.");
-                Say("Put 'Docker Desktop Installer.exe' in the same folder as this Setup file (download it once from docker.com on any");
-                Say("PC with internet), then run this Setup again. Nothing else needs to be redone.");
-                return 2;
-            }
-            try
-            {
-                if (!IsSignedByDocker(installer))
-                    throw new InvalidOperationException("The Docker Desktop installer is not signed by Docker Inc, so it will NOT be run. Copy this Setup file again from the original.");
-                Good("The Docker Desktop installer is signed by Docker Inc.");
-                if (Environment.GetEnvironmentVariable("INTRAFORGE_SETUP_TEST_DOCKER_DRYRUN") == "1")
-                {
-                    Good("(test) Docker installer extracted and verified; not run.");
-                    return 0;
-                }
-                if (!quiet)
-                {
-                    Console.Write("Press Enter to install Docker Desktop now (it will ask for administrator permission; keep 'Use WSL 2' ticked)... ");
-                    Console.ReadLine();
-                }
-                ProcessStartInfo psi = new ProcessStartInfo(installer);
-                psi.UseShellExecute = true; psi.Verb = "runas";
-                using (Process p = Process.Start(psi)) { p.WaitForExit(); }
-            }
-            finally
-            {
-                if (temporary) { try { File.Delete(installer); } catch (Exception) { } }
-            }
-            if (!DockerInstalled())
-            {
-                Warn("Docker Desktop does not seem to be installed yet. Finish its installer (restart Windows if it asks), then run this Setup again.");
-                return 3;
-            }
-            Good("Docker Desktop is installed.");
-            Warn("If Docker Desktop asked you to restart Windows, restart now and run this Setup again: it will carry on from here.");
-        }
-
-        // ---- 5. run the kit's installer -----------------------------------------------------------------------------
-        Heading("Installing IntraForge (about 2 minutes)");
+        // ---- 4. hand over to the kit's setup (Windows prerequisites, restarts, Docker Desktop, IntraForge) -------------------
+        Heading("Setting up IntraForge (a few minutes; Windows may ask permission and may need to restart once)");
         string extra = "";
         if (port != null) extra += " -Port " + int.Parse(port);
         if (data != null) extra += " -DataDir \"" + data.Replace("\"", "") + "\"";   // powershell -File takes Windows quoting, not PowerShell quoting
-        int rc = RunPowerShell(dir, "Install-IntraForgeShop.ps1", extra);
+        if (quiet) extra += " -Quiet";
+        if (Flag(args, "norestart")) extra += " -NoRestart";
+        int rc = RunPowerShell(dir, "Setup-IntraForge.ps1", extra);
         if (rc == 0)
         {
             Good("Done. Open IntraForge with the 'Open IntraForge' icon on your desktop.");
             if (!quiet) { try { Process.Start("https://localhost:" + (port ?? "8443")); } catch (Exception) { } }
         }
-        else
+        else if (rc == 3010)
         {
-            Warn("The IntraForge installer stopped (see the message above). If Docker was only just installed and asked for a restart, restart Windows and run this Setup again.");
+            Warn("Windows has to restart to finish preparing this PC. After the restart, sign in and Setup carries on by itself (or double-click this file again).");
+        }
+        else if (rc != 4)
+        {
+            Warn("Setup stopped (see the message above). Details: " + (data ?? @"C:\IntraForgeData") + @"\logs\setup.log. You can fix the cause and run this Setup again: it carries on from where it stopped.");
         }
         return rc;
     }
@@ -272,13 +245,10 @@ static class Program
         }
     }
 
-    // Copies the embedded Docker Desktop installer into a temporary folder (deleted again after it has run).
-    static string ExtractDocker(string self, long start, long length)
+    // Copies one embedded payload to a file (streamed; the payloads are hundreds of MB).
+    static void ExtractRegion(string self, long start, long length, string target, string what)
     {
-        string folder = Path.Combine(Path.GetTempPath(), "IntraForge-Setup");
-        Directory.CreateDirectory(folder);
-        string target = Path.Combine(folder, "Docker Desktop Installer.exe");
-        Say("Preparing the Docker Desktop installer (" + (length / (1024 * 1024)) + " MB)...");
+        Say("  " + what + "  (" + (length / (1024 * 1024)) + " MB)");
         using (FileStream f = new FileStream(self, FileMode.Open, FileAccess.Read, FileShare.Read))
         using (FileStream o = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None))
         {
@@ -291,19 +261,6 @@ static class Program
                 o.Write(buffer, 0, n); left -= n;
             }
         }
-        return target;
-    }
-
-    // Only a Docker installer with a valid Authenticode signature from Docker Inc is ever run.
-    static bool IsSignedByDocker(string file)
-    {
-        string ps = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), @"System32\WindowsPowerShell\v1.0\powershell.exe");
-        string command = "$s = Get-AuthenticodeSignature -LiteralPath '" + file.Replace("'", "''") + "'; " +
-            "if ($s.Status -eq 'Valid' -and $s.SignerCertificate.Subject -match 'O=Docker Inc') { exit 0 } else { exit 1 }";
-        ProcessStartInfo psi = new ProcessStartInfo(ps, "-NoProfile -ExecutionPolicy Bypass -Command \"" + command.Replace("\"", "\\\"") + "\"");
-        psi.UseShellExecute = false; psi.CreateNoWindow = true;
-        psi.EnvironmentVariables.Remove("PSModulePath");
-        using (Process p = Process.Start(psi)) { p.WaitForExit(); return p.ExitCode == 0; }
     }
 
     static string FreshPath()
@@ -382,7 +339,12 @@ static class Program
         // passed through -- so in a VM only the firmware flag tells the truth. On a physical PC either signal is enough.
         if (isVm)
         {
+            // Before the Windows virtualization features are on, the firmware flag is the truth (True = nested virtualization passed
+            // through). Once they are on, Windows runs its own hypervisor and the same signals read identically WITH and WITHOUT nested
+            // virtualization (measured), so nothing can be checked then; Docker's engine start is the real test and its failure message
+            // names this cause.
             if (firmwareOn) Ok("This PC is a virtual machine and nested virtualization is available to it.");
+            else if (WindowsVirtualizationFeaturesOn()) Note("This PC is a virtual machine and Windows' virtualization features are already on, so passing virtualization through cannot be checked here. If Docker Desktop later fails to start, that is the likely cause (see the fix for your virtual machine software in the Setup guide).");
             else
             {
                 Bad("This PC is a virtual machine that does not pass virtualization through to it, so Docker Desktop cannot start.");
@@ -413,6 +375,13 @@ static class Program
         else if (FindDockerDesktopExe() != null) Ok("Docker Desktop is installed (Setup will start it).");
         else Note("Docker Desktop is not installed yet (Setup will install it from the copy it carries, or ask for the installer).");
         return blocked ? 4 : 0;
+    }
+
+    static bool WindowsVirtualizationFeaturesOn()
+    {
+        foreach (string name in new string[] { "VirtualMachinePlatform", "Microsoft-Hyper-V" })
+            if (Wmi("SELECT InstallState FROM Win32_OptionalFeature WHERE Name='" + name + "'", "InstallState") == "1") return true;
+        return false;
     }
 
     static bool DockerEngineAnswers()
@@ -469,24 +438,6 @@ static class Program
                 }
             }
             catch (Exception) { }
-        }
-        return null;
-    }
-
-    static bool DockerInstalled()
-    {
-        // Test hook (used by the qualification of this stub only): pretend Docker Desktop is missing.
-        if (Environment.GetEnvironmentVariable("INTRAFORGE_SETUP_TEST_NO_DOCKER") == "1") return false;
-        return FindDockerDesktopExe() != null || DockerEngineAnswers();
-    }
-
-    static string FindDockerInstaller(string setupDir)
-    {
-        foreach (string folder in new string[] { setupDir, Path.Combine(setupDir, "prerequisites") })
-        {
-            if (!Directory.Exists(folder)) continue;
-            foreach (string file in Directory.GetFiles(folder, "*Docker*Installer*.exe"))
-                return file;
         }
         return null;
     }
