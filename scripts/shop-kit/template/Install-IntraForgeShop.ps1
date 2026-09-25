@@ -65,9 +65,12 @@ $driveName = ([IO.Path]::GetPathRoot($DataDir)).TrimEnd('\', ':')
 $freeGb = [math]::Round((Get-PSDrive -Name $driveName).Free / 1GB, 1)
 if ($freeGb -lt 10) { Write-Host "Only $freeGb GB free on drive ${driveName}: - keep at least 10 GB free for the data and backups." -ForegroundColor Yellow }
 if ($freeGb -lt 3) { throw "Only $freeGb GB free on drive ${driveName}: - not enough. Free some space and run this again." }
-if (& docker volume ls -q --filter 'label=com.docker.compose.project=intraforge-shop') {
-    throw 'IntraForge is already installed on this computer (its data exists). Open it with "Open IntraForge". To remove it: Uninstall-IntraForgeShop.ps1.'
+$completeMarker = Join-Path $PSScriptRoot '.install-complete'
+if (Test-Path $completeMarker) {
+    throw 'IntraForge is already installed on this computer. Open it with "Open IntraForge". To remove it: Uninstall-IntraForgeShop.ps1.'
 }
+$interrupted = (Test-Path (Join-Path $PSScriptRoot '.env')) -and -not $KeysFile
+if ($interrupted) { Write-Host 'An earlier installation was interrupted: continuing it with its existing keys.' -ForegroundColor Yellow }
 $portFree = $true
 try { $probe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port); $probe.Start(); $probe.Stop() } catch { $portFree = $false }
 if (-not $portFree) { throw "Port $Port is already used by another program. Run again with a different port, for example:  .\Install-IntraForgeShop.ps1 -Port 8453" }
@@ -98,7 +101,12 @@ function New-Secret([int]$Bytes) {
     $rng = [Security.Cryptography.RandomNumberGenerator]::Create(); $rng.GetBytes($buffer); $rng.Dispose()
     return ([Convert]::ToBase64String($buffer)).TrimEnd('=').Replace('+', '-').Replace('/', '_')
 }
-if ($KeysFile) {
+if ($interrupted) {
+    $kept = Get-Content $envPath | Where-Object { $_ -notmatch '^(SHOP_HTTPS_PORT|SHOP_DATA_DIR|CSRF_TRUSTED_ORIGINS|OIDC_ISSUER)=' }
+    $text = ($kept -join "`n") + "`nSHOP_HTTPS_PORT=$Port`nSHOP_DATA_DIR=$dataDirSlash`nCSRF_TRUSTED_ORIGINS=https://localhost:$Port`nOIDC_ISSUER=https://localhost:$Port`n"
+    Write-Host 'Keeping the keys created by the interrupted installation.'
+}
+elseif ($KeysFile) {
     Copy-Item -Path $KeysFile -Destination $envPath -Force
     # the port and data folder belong to THIS installation, the secrets to the old one
     $kept = Get-Content $envPath | Where-Object { $_ -notmatch '^(SHOP_HTTPS_PORT|SHOP_DATA_DIR|CSRF_TRUSTED_ORIGINS|OIDC_ISSUER)=' }
@@ -213,6 +221,7 @@ try {
 catch { Write-Host "Could not create shortcuts ($($_.Exception.Message)); use the .ps1 files in this folder instead." -ForegroundColor Yellow }
 
 Write-ShopLog "installed $(Get-ShopVersion) port=$Port data=$DataDir restored=$([bool]$RestoreFrom)" 'shop.log'
+Set-Content -Path $completeMarker -Value "installed $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $(Get-ShopVersion)"
 Write-Host "`nIntraForge is installed and running: https://localhost:$Port" -ForegroundColor Green
 Write-Host 'Your browser will warn about the certificate (it is this computer''s own): choose Advanced, then continue.'
 Write-Host ''

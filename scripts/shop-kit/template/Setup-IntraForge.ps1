@@ -21,6 +21,14 @@ param([int]$Port = 8443, [string]$DataDir = 'C:\IntraForgeData', [switch]$Quiet,
 
 Set-Location $PSScriptRoot
 . (Join-Path $PSScriptRoot 'IntraForgeShop.Common.ps1')
+
+# Only one Setup at a time: the run that starts by itself after a restart and one you start by hand must not overlap (two runs
+# creating the same containers collide). The lock is released when this process ends.
+$setupLock = New-Object System.Threading.Mutex($false, 'Global\IntraForgeSetup')
+if (-not $setupLock.WaitOne(0)) {
+    Write-Host 'IntraForge setup is already running in another window (for example the one that started by itself after the restart). Let that one finish; it is doing the work.' -ForegroundColor Yellow
+    exit 6
+}
 $env:SHOP_DATA_DIR = ($DataDir -replace '\\', '/')
 $me = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 $runOnceKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce'

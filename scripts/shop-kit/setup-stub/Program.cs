@@ -147,7 +147,8 @@ static class Program
         string port = Arg(args, "port");
         string data = Arg(args, "data");
 
-        bool alreadyInstalled = File.Exists(Path.Combine(dir, ".env")) && File.Exists(Path.Combine(dir, "Start-IntraForgeShop.ps1"));
+        // "Installed" means the kit's installer finished (it writes .install-complete last); a leftover keys file is not enough.
+        bool alreadyInstalled = File.Exists(Path.Combine(dir, ".install-complete")) && File.Exists(Path.Combine(dir, "Start-IntraForgeShop.ps1"));
         if (alreadyInstalled && !Flag(args, "extractonly"))
         {
             Heading("IntraForge is already installed in " + dir);
@@ -218,6 +219,10 @@ static class Program
         else if (rc == 3010)
         {
             Warn("Windows has to restart to finish preparing this PC. After the restart, sign in and Setup carries on by itself (or double-click this file again).");
+        }
+        else if (rc == 6)
+        {
+            Warn("Another Setup is already running (the one that started by itself after the restart). Let it finish.");
         }
         else if (rc != 4)
         {
@@ -373,7 +378,7 @@ static class Program
 
         if (DockerEngineAnswers()) Ok("Docker is installed and running.");
         else if (FindDockerDesktopExe() != null) Ok("Docker Desktop is installed (Setup will start it).");
-        else Note("Docker Desktop is not installed yet (Setup will install it from the copy it carries, or ask for the installer).");
+        else Note("Docker Desktop is not installed yet (Setup installs it from the copy it carries).");
         return blocked ? 4 : 0;
     }
 

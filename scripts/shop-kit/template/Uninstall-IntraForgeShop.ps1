@@ -36,6 +36,7 @@ if (Test-Quiet { docker info }) {
     if ($DeleteData) { & docker compose down --volumes --remove-orphans } else { & docker compose down --remove-orphans }
     if ($LASTEXITCODE -ne 0) { throw 'Could not remove the containers.' }
 }
+Remove-Item -Path (Join-Path $PSScriptRoot '.install-complete') -ErrorAction SilentlyContinue
 Write-ShopLog "uninstalled (data deleted: $([bool]$DeleteData))"
 Write-Host "IntraForge removed from this PC. Data folder $(Get-DataDir) (backups, keys, logs) was left in place." -ForegroundColor Green
 if (-not $DeleteData) { Write-Host 'The shop''s databases and files are still stored by Docker; run again with -DeleteData to remove them.' }
