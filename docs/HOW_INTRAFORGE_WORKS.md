@@ -60,6 +60,7 @@ reachable, and by default only from that same computer (`127.0.0.1`).
 | **postgres-tenant** | PostgreSQL 18 | The *data plane*: the actual business tables. **One schema per organization**, so one organization's tables are physically separate from another's. |
 | **valkey** | Valkey 9 (Redis-compatible) | Cache, rate-limit counters and the job queue. |
 | **object-storage** | MinIO | Uploaded files (sales attachments, documents). Files are stored here, never in Django. |
+| **spareparts** (shop installer only) | Next.js 16 (a separate project) | The **spare parts reference application**: a complete sample business (catalogue, inventory, purchasing, sales, reports, documents) that is shown at `http://127.0.0.1:3000/`. See section 8b. |
 | clamav (optional) | ClamAV | Scans uploads for malware; a file that cannot be scanned is quarantined (fail-closed). |
 
 ## 4. The rules the design never breaks
@@ -142,6 +143,20 @@ How it stays correct:
   sessions only. Writing a movement through the general record API needs `inventory.adjust`.
 * **Corrections** in this release are done by the project team through the adjust authority (there is no adjust screen), always as a new
   movement, never by editing or deleting history.
+
+### 8b. The spare parts reference application (a second, separate application)
+
+The shop installer also carries **a different program**: the *spare parts reference application*, developed as its own project
+(`intraforge-spareparts-demo`, the one served on port 3000 while it is being developed). Do not confuse the two:
+
+| | IntraForge's **built-in Spare Parts / Inventory & Sales** | The **spare parts reference application** |
+| --- | --- | --- |
+| Where | Inside IntraForge (`https://localhost:8443`, Application Gallery) | Its own address `http://127.0.0.1:3000/` (this PC only) |
+| Data | In IntraForge's databases, with the stock ledger, permissions, audit and backups | **In the browser only** (a demo persona selector, 48 fictional parts, sample customers, four warehouses); not in IntraForge's backups |
+| Status | Qualified for real use | A working reference / demonstration; its connection to IntraForge (sign-in, catalogue storage) is optional and not wired in the installer |
+
+It runs as one more container (`spareparts`) on the private network with no internet route; the proxy publishes it on the loopback address only.
+The installer builds it from a copy of that project's working tree (never with its `.env` files) and records which commit and content hash went in.
 
 ### The life of a sale
 

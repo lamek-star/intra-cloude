@@ -54,6 +54,10 @@ Setup runs at a time). Its log is `C:\IntraForgeData\logs\setup.log`.
 
 ## 5. Use it
 
+0. The browser opens the **Spare Parts application** (`http://127.0.0.1:3000/`): press **Enter demo workspace**; you should see a dashboard
+   (stock valuation, recent sales, four warehouses) and be able to open Catalogue, Inventory, Sales and Reports. There is also an
+   **Open Spare Parts** icon on the desktop.
+
 1. Double-click **Open IntraForge** (accept the certificate warning: **Advanced > continue**). **Create account** (the administrator),
    create the company, install **Spare Parts / Inventory & Sales** from the Application Gallery.
 2. Real-work check (5 minutes): add a warehouse, a supplier and a product with a part number; **Receive 10**; **Sell 2**; the stock must
@@ -87,10 +91,12 @@ Double-click **IntraForge Backup Now**. It should end with "backup completed"; `
 | Setup continued by itself after the restart | yes (or: had to double-click again) | |
 | WSL + Docker Desktop installed with the internet off | works | |
 | IntraForge installs, "installed and running" | works | |
+| Spare Parts application opens at http://127.0.0.1:3000/ and shows its dashboard | works | |
 | Create account, company, Spare Parts | works | |
 | Receive 10, sell 2, stock 8, sales document | works | |
 | Backup Now, three files + `LATEST-BACKUP.txt` | works | |
 | Restart Windows, no manual start, data still there | works within ~2 minutes | |
+| Spare Parts application answers again after the restart | works | |
 | Works with the internet off | works | |
 | Anything slow (> 2 s)? what and when | note | |
 

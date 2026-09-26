@@ -29,6 +29,11 @@ fix it. The file is for your own PCs only (Docker Desktop's licence does not all
 
 ## 2. Start and open IntraForge
 
+When the installation finishes, your browser opens the **Spare Parts application** at `http://127.0.0.1:3000/` (press **Enter demo workspace**).
+The desktop has two icons: **Open Spare Parts** (that address) and **Open IntraForge** (`https://localhost:8443`). They are two different
+programs (see [HOW_INTRAFORGE_WORKS.md](HOW_INTRAFORGE_WORKS.md) section 8b): the Spare Parts application keeps its data **in that browser**
+(it is not part of the IntraForge backups), IntraForge's own Spare Parts / Inventory & Sales is described below.
+
 Sign in to Windows: IntraForge starts by itself (1-2 minutes). Double-click **Open IntraForge** on the desktop. The browser
 warns about the certificate (it is this PC's own certificate): **Advanced > continue**. Nothing is reachable from other
 computers; the address is `https://localhost:8443` on this PC only.

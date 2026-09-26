@@ -140,6 +140,30 @@ Still unknown, to be recorded by the next clean-PC test ([../pilot/TEST_ON_ANOTH
 whether Docker Desktop's own installer needs the internet (WSL component) on a PC that has never had WSL, and everything after
 "Engine running" on a machine other than the development PC.
 
+## The spare parts reference application in the installer (2026-09-26)
+
+The owner asked that the separate spare parts project shown at `http://127.0.0.1:3000` also appears after the installer finishes.
+It is bundled as a sixth IntraForge image / seventh container (`spareparts`), published on `127.0.0.1:3000` through the kit's proxy, and opened
+in the browser when Setup ends (plus an **Open Spare Parts** shortcut). What was done and what it means:
+
+* **Built from a copy of the project's working tree**, production build (`next build`, dev dependencies pruned, `node:24-alpine`); the
+  project folder itself was only read. Its `.env*` files, `.auth-data`, `.dev-certs` and `.catalogue-import-data` are excluded and the build
+  refuses if an `.env` file reaches the context (its `.env.local` holds development secrets). The native image library (sharp/libvips) is not
+  shipped (`next/image` is unused; IntraForge policy). `npm audit --omit=dev`: 0 vulnerabilities (Next.js 16.3.4).
+* **Provenance** is recorded in `BUILD_INFO.txt` and the offline manifest: source commit, the number of uncommitted files included (the project
+  had uncommitted work when it was built: what the owner sees on port 3000 is the working tree) and a content hash.
+* **The IntraForge images are now built from the committed source (`git archive HEAD`)**, not the working tree: the repository holds
+  unfinished, uncommitted work in `catalogue_storage` (not part of this task) that must never reach an installer; the builder lists what it left out.
+* **Tested here:** installed on the development PC on alternate ports (8453 / 3010): 83 s; the app answered 200 through the proxy with its
+  security headers, only on `127.0.0.1`; its container could not reach the internet; Status reports it; the shortcut was created; uninstall
+  removed everything. In a real browser the installer's copy and the developer's running copy showed the same dashboard and the same
+  My Products / Reference Catalogue / Reports / Documents screens with no errors.
+* **Limits:** the application keeps its data **in the browser** (as in the demo); it is not in the backups. Its **OEM catalogue search** and
+  "Sign in with IntraForge" need IntraForge-backed catalogue storage, a bearer token and an OAuth client secret, which are *not* configured
+  (the catalogue tables and secrets do not exist in a fresh shop; the catalogue-storage work in the repository is unfinished). The Toyota EPC
+  provider stays disabled (licensing-gated) and no third-party catalogue data is shipped. Port 3000 must be free on the shop PC
+  (`-SparePartsPort` / `/sparepartsport=` changes it). The single file grows by about 140 MB of images.
+
 ## Where the shop's data lives
 
 | What | Where | Note |
