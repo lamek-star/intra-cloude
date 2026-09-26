@@ -45,11 +45,11 @@ tar -C "$SPAREPARTS_SRC" --exclude=./node_modules --exclude='./.next*' --exclude
   --exclude=./.catalogue-import-data --exclude=./.dev-certs --exclude=./test-results --exclude=./playwright-report --exclude='*.tsbuildinfo' -cf - . \
   | tar -C "$SP_CTX" -xf -
 [ -z "$(ls -A "$SP_CTX" | grep -E '^\.env' || true)" ] || { echo "an .env file reached the spare parts build context: refusing" >&2; exit 1; }
-export SP_COMMIT="$(git --no-optional-locks -C "$SPAREPARTS_SRC" rev-parse --short=9 HEAD 2>/dev/null || echo unknown)"
-export SP_DIRTY="$(git --no-optional-locks -C "$SPAREPARTS_SRC" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+export SP_COMMIT="$(git --no-optional-locks -C "$(cygpath -m "$SPAREPARTS_SRC")" rev-parse --short=9 HEAD 2>/dev/null || echo unknown)"
+export SP_DIRTY="$(git --no-optional-locks -C "$(cygpath -m "$SPAREPARTS_SRC")" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
 export SP_HASH="$(cd "$SP_CTX" && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)"
 echo "   spare parts app: commit $SP_COMMIT, $SP_DIRTY uncommitted file(s) included, content hash $SP_HASH"
-docker build -q -t "intraforge-shop-spareparts:$TAG" -f "$HERE/spareparts-app/Dockerfile" "$(cygpath -m "$SP_CTX")" >/dev/null
+docker build -q -t "intraforge-shop-spareparts:$TAG" -f "$(cygpath -m "$HERE/spareparts-app/Dockerfile")" "$(cygpath -m "$SP_CTX")" >/dev/null
 
 echo "== 3/6 pin MinIO to the exact tested release"
 MINIO_TAG="$(docker image inspect minio/minio:latest --format '{{index .Config.Labels "version"}}')"
