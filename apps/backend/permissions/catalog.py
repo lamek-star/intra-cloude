@@ -71,9 +71,64 @@ PERMISSIONS = {
         "Required in addition to environment.manage/environment.secrets.manage for any mutating "
         "operation on a production-tier Environment"
     ),
+    # The separately deployed Spare Parts application (ADR-0018). Default-deny, granted per installed
+    # service application (resource type `service_app`) or organization-wide through a role. The
+    # application's own identity provider maps these onto its permission names.
+    "spareparts.view": "Open an installed Spare Parts application and read its settings and documents",
+    "spareparts.catalogue.read": "Search and read the Spare Parts reference catalogue",
+    "spareparts.catalogue.import": "Import catalogue CSV files and offline catalogue packages",
+    "spareparts.catalogue.manage": "Manage catalogue sources, verification and image rights",
+    "spareparts.products.read": "Read the shop's own products (My Products)",
+    "spareparts.products.manage": "Create and change products, prices, photos and part numbers",
+    "spareparts.cost.read": "See purchase costs and inventory value",
+    "spareparts.inventory.read": "Read stock levels and movements",
+    "spareparts.inventory.manage": "Receive, adjust and transfer stock; manage warehouses and locations",
+    "spareparts.sales.read": "Read customers, enquiries, quotations, orders and invoices",
+    "spareparts.sales.manage": (
+        "Manage customers, enquiries, quotations, orders and invoices, and record payments"
+    ),
+    "spareparts.suppliers.manage": "Create and change suppliers",
+    "spareparts.purchasing.read": "Read suppliers and purchase orders",
+    "spareparts.purchasing.manage": "Create purchase orders and receive goods against them",
+    "spareparts.reports.inventory": "Read inventory reports",
+    "spareparts.reports.sales": "Read sales reports",
+    "spareparts.reports.financial": "Read financial reports (outstanding invoices, payments)",
+    "spareparts.audit.read": "Read the Spare Parts application's own history",
+    "spareparts.settings.manage": "Change the Spare Parts application's shop and document settings",
 }
 
 _ALL = list(PERMISSIONS.keys())
+_SPAREPARTS_ALL = [p for p in PERMISSIONS if p.startswith("spareparts.")]
+# The Spare Parts application's own roles (SALES, INVENTORY, VIEWER; ADMIN = every spareparts.*
+# capability), reproduced as capability sets so its behaviour stays exactly what its qualification
+# tested. Its OWNER additionally manages people -- in IntraForge that is users.manage.
+_SPAREPARTS_SALES = [
+    "spareparts.view",
+    "spareparts.catalogue.read",
+    "spareparts.products.read",
+    "spareparts.inventory.read",
+    "spareparts.sales.read",
+    "spareparts.sales.manage",
+    "spareparts.reports.sales",
+]
+_SPAREPARTS_INVENTORY = [
+    "spareparts.view",
+    "spareparts.catalogue.read",
+    "spareparts.products.read",
+    "spareparts.products.manage",
+    "spareparts.cost.read",
+    "spareparts.inventory.read",
+    "spareparts.inventory.manage",
+    "spareparts.purchasing.read",
+    "spareparts.purchasing.manage",
+    "spareparts.reports.inventory",
+]
+_SPAREPARTS_VIEWER = [
+    "spareparts.view",
+    "spareparts.catalogue.read",
+    "spareparts.products.read",
+    "spareparts.inventory.read",
+]
 _STORAGE_RW = ["storage.read", "storage.write"]
 _DATABASE_RW = ["database.read", "database.write"]
 
@@ -146,6 +201,13 @@ SYSTEM_ROLES: dict[str, tuple[str, list[str]]] = {
     # Section 3). Still seeded as roles so they exist to assign.
     "guest": ("Guest", []),
     "service-account": ("Service Account", []),
+    # Spare Parts staff roles (ADR-0018). Organization administrators already hold every spareparts.*
+    # capability; these let an owner give shop staff exactly the application's own role, and nothing
+    # else in IntraForge.
+    "spare-parts-manager": ("Spare Parts Manager", _SPAREPARTS_ALL),
+    "spare-parts-sales": ("Spare Parts Sales", _SPAREPARTS_SALES),
+    "spare-parts-inventory": ("Spare Parts Inventory", _SPAREPARTS_INVENTORY),
+    "spare-parts-viewer": ("Spare Parts Viewer", _SPAREPARTS_VIEWER),
 }
 
 # Only this role may be assigned with organization=None (platform-wide) —

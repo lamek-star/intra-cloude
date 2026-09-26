@@ -77,7 +77,25 @@ LOCAL_APPS = [
     "system",
     "exports",
     "analytics",
+    "service_apps",
 ]
+
+# --- Service applications (ADR-0018) ---
+# Separately deployed services that keep their data, files, identity and audit in IntraForge.
+# A slot exists only when its service token is configured (a random secret shared with the
+# service container); its database login role reaches only the one schema IntraForge provisions.
+SERVICE_APP_DEPLOYMENTS = {
+    "spare-parts": {
+        "app_type": "spare_parts",
+        "token": env("SERVICE_APP_SPAREPARTS_TOKEN", ""),
+        "db_role": env("SERVICE_APP_SPAREPARTS_DB_ROLE", "svc_spare_parts"),
+        "db_password": env("SERVICE_APP_SPAREPARTS_DB_PASSWORD", ""),
+        "internal_url": env("SERVICE_APP_SPAREPARTS_URL", "http://spareparts:3000"),
+        "launch_path": "/apps/spare-parts/",
+    },
+}
+# How long a service-application browser session lives without use (absolute cap below).
+SERVICE_APP_SESSION_HOURS = int(env("SERVICE_APP_SESSION_HOURS", "12"))
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 

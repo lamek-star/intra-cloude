@@ -19,6 +19,7 @@
 | [0015](0015-runtime-provisioning.md) | Resumable runtime provisioning and protected schema ownership | Accepted for Phase 2 provisioning |
 | [0016](0016-tenant-operation-journal.md) | Tenant operation journal and quantity ledgers | Accepted for Local Edition |
 | [0017](0017-inventory-operation-authority.md) | Business-operation authority over stock (sell / receive / adjust / transfer) | Accepted |
+| [0018](0018-service-applications.md) | Service applications: separately deployed apps on IntraForge storage, identity and audit | Accepted |
 
 New architecturally significant decisions get a new numbered ADR here
 rather than silently changing behavior described in an existing one.

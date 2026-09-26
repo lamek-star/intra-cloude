@@ -37,9 +37,27 @@
 		Referrer-Policy "same-origin"
 	}
 
+	# The internal service-application API (ADR-0018) is for containers on the internal network
+	# only; from outside it simply does not exist.
+	@internal path /api/v1/internal /api/v1/internal/*
+	handle @internal {
+		respond 404
+	}
+
 	@backend path /api/* /healthz /readyz /oauth/* /.well-known/*
 	handle @backend {
 		reverse_proxy backend:8000
+	}
+
+	# Service applications are served on IntraForge's own origin, under their launch path, so the
+	# IntraForge login carries over (ADR-0018). The application never receives IntraForge's own
+	# session or CSRF cookie: it authenticates the path-scoped application session instead. Where
+	# the service is not deployed this answers 502.
+	@spareparts path /apps/spare-parts /apps/spare-parts/*
+	handle @spareparts {
+		reverse_proxy spareparts:3000 {
+			header_up Cookie "(^|;\s*)(sessionid|csrftoken)=[^;]*" ""
+		}
 	}
 
 	handle {
