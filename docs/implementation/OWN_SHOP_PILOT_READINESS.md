@@ -158,6 +158,18 @@ in the browser when Setup ends (plus an **Open Spare Parts** shortcut). What was
   security headers, only on `127.0.0.1`; its container could not reach the internet; Status reports it; the shortcut was created; uninstall
   removed everything. In a real browser the installer's copy and the developer's running copy showed the same dashboard and the same
   My Products / Reference Catalogue / Reports / Documents screens with no errors.
+* **Tested in the clean Windows 11 VM, network disconnected, with the final single file (1.6 GB, exe SHA-256 `cf756db9...`):** first run
+  (Windows parts, restart), second run (WSL, Docker, IntraForge): "installed and running"; `http://127.0.0.1:3000/` answered 200 with its
+  script bundle; the container had no route out; the proxy published `127.0.0.1:3000` and `127.0.0.1:8443` only; the **Open Spare Parts**
+  shortcut existed; a third run of the same file only started the installed system; after a graceful restart Docker's engine came back by
+  itself, all 10 containers were up, the sign-in start-up command finished in 47 s, and the Spare Parts application answered 200 again; a
+  backup with its three throw-away restore tests passed; a second Setup was refused while one was running (exit 6).
+  **Test-method finding (not a product defect):** two earlier runs hung because Docker Desktop had been started inside the temporary
+  sign-in session that a remote (PowerShell Direct) command creates; when that command ended, Windows unloaded the profile ("registry key
+  marked for deletion") and Docker's log shows it shut itself down five seconds after reaching "running". Runs where the account was
+  signed in for real (the console, or Windows auto sign-in, which Windows 11 ignores unless
+  `PasswordLess\Device\DevicePasswordLessBuildVersion` is 0) behave correctly, as on a shop PC. **Not tested:** clicking through the two
+  UAC prompts and SmartScreen on a fresh PC, and a physical PC.
 * **Limits:** the application keeps its data **in the browser** (as in the demo); it is not in the backups. Its **OEM catalogue search** and
   "Sign in with IntraForge" need IntraForge-backed catalogue storage, a bearer token and an OAuth client secret, which are *not* configured
   (the catalogue tables and secrets do not exist in a fresh shop; the catalogue-storage work in the repository is unfinished). The Toyota EPC
