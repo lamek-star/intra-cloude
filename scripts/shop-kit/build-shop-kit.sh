@@ -18,12 +18,14 @@ mkdir -p "$OUT"; OUT="$(cd "$OUT" && pwd)"
 OUTW="$(cygpath -m "$OUT")"; REPOW="$(cygpath -m "$REPO")"
 cd "$REPO"
 
-echo "== 1/6 the source must be exactly HEAD"
-if [ -n "$(git status --porcelain -- apps infrastructure docker-compose.yml VERSION)" ]; then
-  echo "refusing to build: the application tree has uncommitted changes, so the recorded HEAD would not be the truth:" >&2
-  git status --short -- apps infrastructure docker-compose.yml VERSION >&2
-  exit 1
+echo "== 1/6 build from the COMMITTED source (HEAD), never from a working tree that may hold unfinished work"
+DIRTY="$(git status --porcelain -- apps infrastructure docker-compose.yml VERSION)"
+if [ -n "$DIRTY" ]; then
+  echo "   note: these uncommitted changes are NOT in this build (it is built from HEAD):"; echo "$DIRTY" | sed 's/^/     /'
 fi
+EXPORT="$(mktemp -d)"
+git archive HEAD apps infrastructure docker-compose.yml VERSION | tar -x -C "$EXPORT"
+EXPORTW="$(cygpath -m "$EXPORT")"
 HEAD_FULL="$(git rev-parse HEAD)"; HEAD_SHORT="$(git rev-parse --short=9 HEAD)"
 VERSION="$(tr -d '\r\n' < VERSION)"
 TAG="1.0-pilot-$HEAD_SHORT"
@@ -31,8 +33,23 @@ BUILT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "   HEAD $HEAD_SHORT  version $VERSION  tag $TAG"
 
 echo "== 2/6 build the two IntraForge images from source"
-docker build -q -t "intraforge-shop-backend:$TAG" "$REPOW/apps/backend" >/dev/null
-docker build -q -t "intraforge-shop-frontend:$TAG" "$REPOW/apps/frontend" >/dev/null
+docker build -q -t "intraforge-shop-backend:$TAG" "$EXPORTW/apps/backend" >/dev/null
+docker build -q -t "intraforge-shop-frontend:$TAG" "$EXPORTW/apps/frontend" >/dev/null
+
+# The spare parts reference application: a SEPARATE project, built from a COPY of its working tree (its own folder is only read;
+# its .env* files, auth data, dev certificates and import data are never copied: no secrets belong in an installer).
+SPAREPARTS_SRC="${SPAREPARTS_SRC:-$HOME/Documents/intraforge-spareparts-demo}"
+[ -d "$SPAREPARTS_SRC" ] || { echo "the spare parts project was not found at $SPAREPARTS_SRC (set SPAREPARTS_SRC)" >&2; exit 1; }
+SP_CTX="$(mktemp -d)"
+tar -C "$SPAREPARTS_SRC" --exclude=./node_modules --exclude='./.next*' --exclude=./.git --exclude='./.env*' --exclude=./.auth-data \
+  --exclude=./.catalogue-import-data --exclude=./.dev-certs --exclude=./test-results --exclude=./playwright-report --exclude='*.tsbuildinfo' -cf - . \
+  | tar -C "$SP_CTX" -xf -
+[ -z "$(ls -A "$SP_CTX" | grep -E '^\.env' || true)" ] || { echo "an .env file reached the spare parts build context: refusing" >&2; exit 1; }
+export SP_COMMIT="$(git --no-optional-locks -C "$SPAREPARTS_SRC" rev-parse --short=9 HEAD 2>/dev/null || echo unknown)"
+export SP_DIRTY="$(git --no-optional-locks -C "$SPAREPARTS_SRC" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+export SP_HASH="$(cd "$SP_CTX" && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)"
+echo "   spare parts app: commit $SP_COMMIT, $SP_DIRTY uncommitted file(s) included, content hash $SP_HASH"
+docker build -q -t "intraforge-shop-spareparts:$TAG" -f "$HERE/spareparts-app/Dockerfile" "$(cygpath -m "$SP_CTX")" >/dev/null
 
 echo "== 3/6 pin MinIO to the exact tested release"
 MINIO_TAG="$(docker image inspect minio/minio:latest --format '{{index .Config.Labels "version"}}')"
@@ -44,13 +61,14 @@ echo "== 4/6 assemble the kit"
 rm -rf "$OUT/images" "$OUT/infrastructure"; mkdir -p "$OUT/images" "$OUT/infrastructure/proxy"
 sed "s/@TAG@/$TAG/g; s/@MINIO_TAG@/$MINIO_TAG/g" "$HERE/template/docker-compose.yml" > "$OUT/docker-compose.yml"
 cp "$HERE/template/"*.ps1 "$HERE/template/README.txt" "$OUT/"
-cp "$REPO/infrastructure/proxy/Caddyfile" "$OUT/infrastructure/proxy/Caddyfile"
+cp "$EXPORT/infrastructure/proxy/Caddyfile" "$OUT/infrastructure/proxy/Caddyfile"
+cat "$HERE/template/Caddyfile.spareparts" >> "$OUT/infrastructure/proxy/Caddyfile"
 cp "$REPO/VERSION" "$OUT/VERSION"
 cp "$REPO/docs/OWN_SHOP_PILOT_QUICKSTART.md" "$OUT/OWN_SHOP_PILOT_QUICKSTART.md"
 cp "$REPO/docs/LOCAL_EDITION_PILOT.md" "$OUT/LOCAL_EDITION_PILOT.md"
 cp "$REPO/docs/pilot/PILOT_LOG.md" "$OUT/PILOT_LOG.md"
 rm -f "$OUT/.env" "$OUT/DEMO_LOGINS.txt"
-IMAGES=("intraforge-shop-backend:$TAG" "intraforge-shop-frontend:$TAG" "postgres:18" "valkey/valkey:9-alpine" "minio/minio:$MINIO_TAG" "caddy:2-alpine")
+IMAGES=("intraforge-shop-backend:$TAG" "intraforge-shop-frontend:$TAG" "intraforge-shop-spareparts:$TAG" "postgres:18" "valkey/valkey:9-alpine" "minio/minio:$MINIO_TAG" "caddy:2-alpine")
 docker save -o "$OUTW/images/intraforge-shop-images.tar" "${IMAGES[@]}"
 {
   echo "IntraForge Local Edition v1.0 -- own-shop pilot build"
@@ -59,17 +77,20 @@ docker save -o "$OUTW/images/intraforge-shop-images.tar" "${IMAGES[@]}"
   echo "Built (UTC):   $BUILT_UTC"
   echo "Architecture:  linux/amd64 containers on Windows (Docker Desktop, WSL2 backend)"
   echo "Docker build host: $(docker version --format 'Docker {{.Server.Version}}')"
+  echo "Spare parts app: project intraforge-spareparts-demo, commit $SP_COMMIT, $SP_DIRTY uncommitted file(s) included, content hash $SP_HASH"
 } > "$OUT/BUILD_INFO.txt"
 
 echo "== 5/6 offline manifest and checksums"
 python - "$OUTW" "$HEAD_FULL" "$VERSION" "$BUILT_UTC" "${IMAGES[@]}" <<'PY'
-import json, pathlib, subprocess, sys
+import json, os, pathlib, subprocess, sys
 out = pathlib.Path(sys.argv[1]); head, version, built = sys.argv[2:5]; images = sys.argv[5:]
 def inspect(ref, fmt):
     return subprocess.run(["docker", "image", "inspect", ref, "--format", fmt], capture_output=True, text=True, check=True).stdout.strip()
 purpose = {
     "intraforge-shop-backend": ("IntraForge backend, workers and scheduler (Django, Celery), migrations", f"built from source at {head[:9]}", "project"),
     "intraforge-shop-frontend": ("IntraForge web interface (Next.js)", f"built from source at {head[:9]}", "project"),
+    "intraforge-shop-spareparts": ("Spare parts reference application (separate Next.js project with its own sample data; http://127.0.0.1:3000)",
+        "separate project intraforge-spareparts-demo at " + os.environ.get("SP_COMMIT", "?") + (" + " + os.environ["SP_DIRTY"] + " uncommitted file(s)" if os.environ.get("SP_DIRTY", "0") != "0" else "") + ", content hash " + os.environ.get("SP_HASH", "?"), "project (its npm dependencies keep their own licences)"),
     "postgres": ("Databases (company data and business records)", "Docker official image, postgres:18", "PostgreSQL licence"),
     "valkey/valkey": ("Cache and job queue", "Docker Hub valkey/valkey", "BSD-3-Clause"),
     "minio/minio": ("Stored files (object storage), PINNED to the tested release", "Docker Hub minio/minio", "AGPL-3.0 (commercial-distribution decision OPEN, see THIRD_PARTY_LICENSES.md)"),
@@ -114,6 +135,8 @@ lines += ["", f"Docker Desktop / engine version this kit was built and rehearsed
 (out / "OFFLINE_MANIFEST.txt").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
 PY
 ( cd "$OUT" && sha256sum --binary VERSION BUILD_INFO.txt docker-compose.yml infrastructure/proxy/Caddyfile OFFLINE_MANIFEST.json images/intraforge-shop-images.tar > SHA256SUMS.txt )
+
+rm -rf "$EXPORT" "$SP_CTX"
 
 echo "== 6/6 package"
 ZIP="$(dirname "$OUT")/IntraForge-Local-v1.0-Pilot-$HEAD_SHORT.zip"

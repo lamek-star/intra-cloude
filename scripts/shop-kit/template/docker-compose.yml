@@ -59,11 +59,18 @@ services:
     pull_policy: never
     restart: unless-stopped
     networks: [isolated]
+  spareparts:
+    image: intraforge-shop-spareparts:@TAG@
+    pull_policy: never
+    restart: unless-stopped
+    networks: [isolated]
   proxy:
     image: caddy:2-alpine
     pull_policy: never
     restart: unless-stopped
-    ports: ["127.0.0.1:${SHOP_HTTPS_PORT:-8443}:443"]
+    ports:
+      - "127.0.0.1:${SHOP_HTTPS_PORT:-8443}:443"
+      - "127.0.0.1:${SHOP_SPAREPARTS_PORT:-3000}:3000"
     environment:
       PROXY_TLS_HOSTNAMES: "localhost 127.0.0.1"
     volumes:

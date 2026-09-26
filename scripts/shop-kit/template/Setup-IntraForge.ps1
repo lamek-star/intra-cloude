@@ -17,7 +17,7 @@
     Used by the sign-in entry that continues after a restart.
 #>
 [CmdletBinding()]
-param([int]$Port = 8443, [string]$DataDir = 'C:\IntraForgeData', [switch]$Quiet, [switch]$NoRestart, [switch]$Resume)
+param([int]$Port = 8443, [int]$SparePartsPort = 3000, [string]$DataDir = 'C:\IntraForgeData', [switch]$Quiet, [switch]$NoRestart, [switch]$Resume)
 
 Set-Location $PSScriptRoot
 . (Join-Path $PSScriptRoot 'IntraForgeShop.Common.ps1')
@@ -41,7 +41,7 @@ function Confirm-Step([string]$Message) {
 # Stops for a restart, and arranges for Setup to carry on by itself at the next sign-in.
 function Request-Restart([string]$Why) {
     $powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-    $resume = "`"$powershell`" -NoProfile -ExecutionPolicy Bypass -File `"$PSScriptRoot\Setup-IntraForge.ps1`" -Resume -Port $Port -DataDir `"$DataDir`""
+    $resume = "`"$powershell`" -NoProfile -ExecutionPolicy Bypass -File `"$PSScriptRoot\Setup-IntraForge.ps1`" -Resume -Port $Port -SparePartsPort $SparePartsPort -DataDir `"$DataDir`""
     New-Item -Path $runOnceKey -Force | Out-Null
     Set-ItemProperty -Path $runOnceKey -Name 'IntraForgeSetup' -Value $resume
     Write-SetupLog "restart requested: $Why"
@@ -104,7 +104,7 @@ if (-not (Test-DockerUsersToken) -and (Test-Path 'C:\Program Files\Docker\Docker
 
 # ---- 4. IntraForge itself -----------------------------------------------------------------------------------------------------------
 Step 'Installing IntraForge'
-& (Join-Path $PSScriptRoot 'Install-IntraForgeShop.ps1') -Port $Port -DataDir $DataDir
+& (Join-Path $PSScriptRoot 'Install-IntraForgeShop.ps1') -Port $Port -SparePartsPort $SparePartsPort -DataDir $DataDir
 $rc = $LASTEXITCODE
 Write-SetupLog "IntraForge install exit code $rc"
 exit $rc

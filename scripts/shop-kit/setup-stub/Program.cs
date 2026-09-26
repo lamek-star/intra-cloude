@@ -10,6 +10,7 @@
 //
 // Options (all optional):  /dir=C:\IntraForge   /port=8443   /data=C:\IntraForgeData   /quiet (no questions)   /extractonly
 //                         /check (only report whether this PC can run IntraForge; installs nothing)   /norestart (never restart the PC)
+//                         /sparepartsport=3000 (where the spare parts application listens on this PC, loopback only)
 using System;
 using System.Diagnostics;
 using System.Management;
@@ -146,6 +147,7 @@ static class Program
         string dir = Arg(args, "dir") ?? @"C:\IntraForge";
         string port = Arg(args, "port");
         string data = Arg(args, "data");
+        string spPort = Arg(args, "sparepartsport");
 
         // "Installed" means the kit's installer finished (it writes .install-complete last); a leftover keys file is not enough.
         bool alreadyInstalled = File.Exists(Path.Combine(dir, ".install-complete")) && File.Exists(Path.Combine(dir, "Start-IntraForgeShop.ps1"));
@@ -207,14 +209,15 @@ static class Program
         Heading("Setting up IntraForge (a few minutes; Windows may ask permission and may need to restart once)");
         string extra = "";
         if (port != null) extra += " -Port " + int.Parse(port);
+        if (spPort != null) extra += " -SparePartsPort " + int.Parse(spPort);
         if (data != null) extra += " -DataDir \"" + data.Replace("\"", "") + "\"";   // powershell -File takes Windows quoting, not PowerShell quoting
         if (quiet) extra += " -Quiet";
         if (Flag(args, "norestart")) extra += " -NoRestart";
         int rc = RunPowerShell(dir, "Setup-IntraForge.ps1", extra);
         if (rc == 0)
         {
-            Good("Done. Open IntraForge with the 'Open IntraForge' icon on your desktop.");
-            if (!quiet) { try { Process.Start("https://localhost:" + (port ?? "8443")); } catch (Exception) { } }
+            Good("Done. The Spare Parts application opens in your browser; the desktop has 'Open Spare Parts' and 'Open IntraForge'.");
+            if (!quiet) { try { Process.Start("http://127.0.0.1:" + (spPort ?? "3000") + "/"); } catch (Exception) { } }
         }
         else if (rc == 3010)
         {

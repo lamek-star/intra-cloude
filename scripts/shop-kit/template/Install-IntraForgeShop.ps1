@@ -11,6 +11,8 @@
 
 .PARAMETER Port
     HTTPS port on this computer (loopback only). Default 8443.
+.PARAMETER SparePartsPort
+    HTTP port of the spare parts application on this computer (loopback only). Default 3000.
 .PARAMETER DataDir
     Folder for backups, keys and logs. Default C:\IntraForgeData.
 .PARAMETER KeysFile
@@ -27,6 +29,7 @@
 [CmdletBinding()]
 param(
     [int]$Port = 8443,
+    [int]$SparePartsPort = 3000,
     [string]$DataDir = 'C:\IntraForgeData',
     [string]$KeysFile,
     [string]$RestoreFrom,
@@ -74,7 +77,10 @@ if ($interrupted) { Write-Host 'An earlier installation was interrupted: continu
 $portFree = $true
 try { $probe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port); $probe.Start(); $probe.Stop() } catch { $portFree = $false }
 if (-not $portFree) { throw "Port $Port is already used by another program. Run again with a different port, for example:  .\Install-IntraForgeShop.ps1 -Port 8453" }
-Write-Host "Windows build $build, memory $ramGb GB (Docker $dockerMemoryGb GB), free disk $freeGb GB, port $Port available."
+$spFree = $true
+try { $probe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $SparePartsPort); $probe.Start(); $probe.Stop() } catch { $spFree = $false }
+if (-not $spFree) { throw "Port $SparePartsPort (the spare parts application) is already used by another program. Run again with a different port, for example:  .\Install-IntraForgeShop.ps1 -SparePartsPort 3010" }
+Write-Host "Windows build $build, memory $ramGb GB (Docker $dockerMemoryGb GB), free disk $freeGb GB, ports $Port and $SparePartsPort available."
 
 Step 'Checking the kit is complete and unchanged (SHA-256)'
 $sums = Join-Path $PSScriptRoot 'SHA256SUMS.txt'
@@ -102,15 +108,15 @@ function New-Secret([int]$Bytes) {
     return ([Convert]::ToBase64String($buffer)).TrimEnd('=').Replace('+', '-').Replace('/', '_')
 }
 if ($interrupted) {
-    $kept = Get-Content $envPath | Where-Object { $_ -notmatch '^(SHOP_HTTPS_PORT|SHOP_DATA_DIR|CSRF_TRUSTED_ORIGINS|OIDC_ISSUER)=' }
-    $text = ($kept -join "`n") + "`nSHOP_HTTPS_PORT=$Port`nSHOP_DATA_DIR=$dataDirSlash`nCSRF_TRUSTED_ORIGINS=https://localhost:$Port`nOIDC_ISSUER=https://localhost:$Port`n"
+    $kept = Get-Content $envPath | Where-Object { $_ -notmatch '^(SHOP_HTTPS_PORT|SHOP_SPAREPARTS_PORT|SHOP_DATA_DIR|CSRF_TRUSTED_ORIGINS|OIDC_ISSUER)=' }
+    $text = ($kept -join "`n") + "`nSHOP_HTTPS_PORT=$Port`nSHOP_SPAREPARTS_PORT=$SparePartsPort`nSHOP_DATA_DIR=$dataDirSlash`nCSRF_TRUSTED_ORIGINS=https://localhost:$Port`nOIDC_ISSUER=https://localhost:$Port`n"
     Write-Host 'Keeping the keys created by the interrupted installation.'
 }
 elseif ($KeysFile) {
     Copy-Item -Path $KeysFile -Destination $envPath -Force
     # the port and data folder belong to THIS installation, the secrets to the old one
-    $kept = Get-Content $envPath | Where-Object { $_ -notmatch '^(SHOP_HTTPS_PORT|SHOP_DATA_DIR|CSRF_TRUSTED_ORIGINS|OIDC_ISSUER)=' }
-    $text = ($kept -join "`n") + "`nSHOP_HTTPS_PORT=$Port`nSHOP_DATA_DIR=$dataDirSlash`nCSRF_TRUSTED_ORIGINS=https://localhost:$Port`nOIDC_ISSUER=https://localhost:$Port`n"
+    $kept = Get-Content $envPath | Where-Object { $_ -notmatch '^(SHOP_HTTPS_PORT|SHOP_SPAREPARTS_PORT|SHOP_DATA_DIR|CSRF_TRUSTED_ORIGINS|OIDC_ISSUER)=' }
+    $text = ($kept -join "`n") + "`nSHOP_HTTPS_PORT=$Port`nSHOP_SPAREPARTS_PORT=$SparePartsPort`nSHOP_DATA_DIR=$dataDirSlash`nCSRF_TRUSTED_ORIGINS=https://localhost:$Port`nOIDC_ISSUER=https://localhost:$Port`n"
     Write-Host 'Using the keys of the old installation (needed to read its backups).'
 }
 else {
@@ -129,7 +135,7 @@ else {
         OBJECT_STORAGE_ROOT_USER = 'intraforge'; OBJECT_STORAGE_ROOT_PASSWORD = $store
         MINIO_ROOT_USER = 'intraforge'; MINIO_ROOT_PASSWORD = $store
         SHOW_UNQUALIFIED_BUILT_IN_APPS = '0'
-        SHOP_HTTPS_PORT = "$Port"; SHOP_DATA_DIR = $dataDirSlash
+        SHOP_HTTPS_PORT = "$Port"; SHOP_SPAREPARTS_PORT = "$SparePartsPort"; SHOP_DATA_DIR = $dataDirSlash
     }
     $text = (($pairs.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join "`n") + "`n"
     Write-Host 'Generated fresh random keys for this shop (they exist only on this PC).'
@@ -137,7 +143,7 @@ else {
 [IO.File]::WriteAllText($envPath, $text, (New-Object System.Text.UTF8Encoding($false)))
 $keysCopy = Join-Path $DataDir 'keys\intraforge-keys.env'
 Copy-Item -Path $envPath -Destination $keysCopy -Force
-$env:SHOP_HTTPS_PORT = "$Port"; $env:SHOP_DATA_DIR = $dataDirSlash
+$env:SHOP_HTTPS_PORT = "$Port"; $env:SHOP_SPAREPARTS_PORT = "$SparePartsPort"; $env:SHOP_DATA_DIR = $dataDirSlash
 
 Step 'Loading the images from the kit (no download)'
 & docker load -i (Join-Path $PSScriptRoot 'images\intraforge-shop-images.tar')
@@ -220,9 +226,18 @@ try {
 }
 catch { Write-Host "Could not create shortcuts ($($_.Exception.Message)); use the .ps1 files in this folder instead." -ForegroundColor Yellow }
 
-Write-ShopLog "installed $(Get-ShopVersion) port=$Port data=$DataDir restored=$([bool]$RestoreFrom)" 'shop.log'
+# Desktop / Start-menu shortcuts that open the two web addresses (Internet shortcuts, no PowerShell involved)
+try {
+    foreach ($folder in @([Environment]::GetFolderPath('Desktop'), (Join-Path ([Environment]::GetFolderPath('Programs')) 'IntraForge'))) {
+        New-Item -ItemType Directory -Force -Path $folder | Out-Null
+        Set-Content -Path (Join-Path $folder 'Open Spare Parts.url') -Value "[InternetShortcut]`r`nURL=http://127.0.0.1:$SparePartsPort/`r`n" -Encoding ASCII
+    }
+}
+catch { Write-Host "Could not create the Spare Parts shortcut ($($_.Exception.Message))." -ForegroundColor Yellow }
+Write-ShopLog "installed $(Get-ShopVersion) port=$Port sparepartsport=$SparePartsPort data=$DataDir restored=$([bool]$RestoreFrom)" 'shop.log'
 Set-Content -Path $completeMarker -Value "installed $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $(Get-ShopVersion)"
 Write-Host "`nIntraForge is installed and running: https://localhost:$Port" -ForegroundColor Green
+Write-Host "The Spare Parts application is at:    http://127.0.0.1:$SparePartsPort/" -ForegroundColor Green
 Write-Host 'Your browser will warn about the certificate (it is this computer''s own): choose Advanced, then continue.'
 Write-Host ''
 Write-Host 'IMPORTANT - do this once, today:' -ForegroundColor Yellow

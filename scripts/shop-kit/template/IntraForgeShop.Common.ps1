@@ -42,6 +42,7 @@ function Get-DataDir {
     return ((Get-ShopSetting 'SHOP_DATA_DIR' 'C:/IntraForgeData') -replace '/', '\')
 }
 function Get-ShopPort { return [int](Get-ShopSetting 'SHOP_HTTPS_PORT' '8443') }
+function Get-SparePartsPort { return [int](Get-ShopSetting 'SHOP_SPAREPARTS_PORT' '3000') }
 function Get-ShopVersion {
     $file = Join-Path $script:KitDir 'BUILD_INFO.txt'
     if (Test-Path $file) { return ((Get-Content $file | Select-Object -First 1)) }
