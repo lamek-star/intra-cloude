@@ -40,6 +40,17 @@ services:
     image: intraforge-local-frontend:qualification
     build: ../../apps/frontend
     networks: [isolated]
+  # The Spare Parts service application (ADR-0018), built beforehand by
+  # scripts/shop-kit/build-spareparts-image.sh from a committed revision. It gets only the three values it needs --
+  # never the whole environment file (run compose with --env-file "$QUALIFICATION_ENV_FILE" so they interpolate).
+  spareparts:
+    image: intraforge-local-spareparts:qualification
+    pull_policy: never
+    environment:
+      INTRAFORGE_SERVICE_TOKEN: ${SERVICE_APP_SPAREPARTS_TOKEN:?}
+      SPAREPARTS_PG_PASSWORD: ${SERVICE_APP_SPAREPARTS_DB_PASSWORD:?}
+      SPAREPARTS_PG_DATABASE: ${TENANT_DB_NAME:?}
+    networks: [isolated]
   proxy:
     image: caddy:2-alpine
     ports: ["127.0.0.1:8444:443"]
