@@ -3,6 +3,15 @@
 Assessment started 2026-09-18. This is the continuation checkpoint for the
 Local Edition productization mandate, not a new platform roadmap.
 
+## Spare Parts integration and shop kit 1.1 (2026-09-27)
+
+The separately built Spare Parts application runs inside IntraForge as a service application (ADR-0018); shop kit
+1.1.0 adds the native Control Center, upgrade with rollback, guided restore (replace mode, cross-part rollback) and
+uninstall A/B/C. Installer `IntraForge-Setup-1.1.0.exe` (SHA-256 `ee20557a...`) verified on a clean, offline Windows 11
+VM (fresh install, upgrade from the previous installer, restore of an older-version backup, damaged-backup rollback,
+restart, removal). Awaiting the owner's authorization; the previous installer is unchanged. Full account, verdicts and
+rollback procedure: [INTRAFORGE_FINAL_QUALIFICATION_REPORT.md](../INTRAFORGE_FINAL_QUALIFICATION_REPORT.md).
+
 ## Final state (2026-09-20)
 
 Local Edition v1.0 is closed for qualification and is in **pilot / bug-fixing / release-hardening** mode. The feature
