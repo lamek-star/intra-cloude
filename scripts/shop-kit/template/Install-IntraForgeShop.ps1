@@ -177,8 +177,10 @@ if ($RestoreFrom) {
         Copy-Item -Path $set[$type].FullName -Destination $backupDir -Force
         Write-Host "  $type : $($set[$type].Name)  ($($set[$type].LastWriteTime))"
     }
+    # --replace: the freshly prepared databases become exactly the backup (also one made by an earlier version).
     foreach ($type in 'control_db', 'tenant_db', 'object_storage') {
-        Compose run --rm backend python manage.py restore_backup_file "/backups/$($set[$type].Name)" --type $type --yes
+        $mode = if ($type -eq 'object_storage') { @() } else { @('--replace') }
+        Compose run --rm backend python manage.py restore_backup_file "/backups/$($set[$type].Name)" --type $type @mode --yes
     }
     # a backup from an older version gets the newer database structure; the application schemas are handed back to their roles
     Compose run --rm backend python manage.py migrate --noinput

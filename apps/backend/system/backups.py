@@ -516,7 +516,7 @@ def restore_backup(record: BackupRecord) -> BackupRecord:
     return _restore_not_possible(record, f"unsupported backup_type: {record.backup_type!r}")
 
 
-def restore_backup_from_file(backup_type: str, file_path: str) -> str:
+def restore_backup_from_file(backup_type: str, file_path: str, *, replace: bool = False) -> str:
     """Disaster recovery from a backup FILE alone -- returns "" on success,
     otherwise the reason it failed. Never raises.
 
@@ -532,7 +532,8 @@ def restore_backup_from_file(backup_type: str, file_path: str) -> str:
     The file must sit inside `settings.BACKUP_DIR` (copy it there first): the
     restore reads a file with the platform's own database credentials, so it
     is not pointed at arbitrary host paths. Configuration restore stays a
-    manual operator procedure, as with `restore_backup`."""
+    manual operator procedure, as with `restore_backup`. `replace`: see
+    `_pg_restore_file` (database types only; object storage stays additive)."""
     if backup_type == BackupRecord.BackupType.CONFIGURATION:
         return (
             "configuration restore is a manual operator procedure, not automated by this platform "
@@ -554,7 +555,7 @@ def restore_backup_from_file(backup_type: str, file_path: str) -> str:
         if backup_type == BackupRecord.BackupType.OBJECT_STORAGE:
             _restore_object_storage_file(resolved, [])
         else:
-            _pg_restore_file(backup_type, resolved)
+            _pg_restore_file(backup_type, resolved, replace=replace)
     except Exception as exc:  # noqa: BLE001 - always report, never propagate
         logger.error("File restore failed for %s (%s): %s", file_path, backup_type, exc)
         return str(exc)[:2000] or type(exc).__name__
@@ -568,30 +569,118 @@ def _restore_not_possible(record: BackupRecord, reason: str) -> BackupRecord:
     return record
 
 
-def _pg_restore_file(backup_type: str, file_path: str) -> None:
+def _pg_restore_file(backup_type: str, file_path: str, *, replace: bool = False) -> None:
     """The mechanism shared by a record-driven restore and a file-driven one
-    (`restore_backup_from_file`): `pg_restore --clean --if-exists` of one
-    control-plane/tenant dump into its live target, then a structural
-    validation. Raises on any failure -- the callers decide how to record it.
-    Closes this process's own ORM connection to the target first and
-    terminates every other session against it, so `pg_restore` never blocks
-    on a lock held by a connection that should already be gone."""
+    (`restore_backup_from_file`), then a structural validation. Raises on any
+    failure -- the callers decide how to record it. Closes this process's own
+    ORM connection to the target first and terminates every other session
+    against it, so the restore never blocks on a lock held by a connection
+    that should already be gone.
+
+    Default: `pg_restore --clean --if-exists` -- objects in the dump are
+    dropped and recreated, anything created after the backup is left alone
+    (docs/operations/BACKUP_RESTORE.md). `replace=True`: the database becomes
+    exactly the backup, atomically (`_replace_database_contents`) -- for a
+    whole-installation point-in-time restore, and the only way to restore a
+    dump taken before a later migration added a table that references one in
+    the dump (`--clean` cannot drop the referenced table then)."""
     db = _db_settings(backup_type)
     target_db_name = db["NAME"]
     connections[_alias_for(backup_type)].close()
     _terminate_other_connections(db, target_db_name)
     with _DecryptedTempFile(file_path) as plain_path:
-        cmd = [
-            "pg_restore",
-            "-h", db["HOST"] or "localhost",
-            "-p", str(db["PORT"] or 5432),
-            "-U", db["USER"],
-            "-d", target_db_name,
-            "--clean", "--if-exists",
-            plain_path,
-        ]
-        _run(cmd, password=db["PASSWORD"], timeout=PG_RESTORE_TIMEOUT_SECONDS)
+        if replace:
+            _replace_database_contents(db, target_db_name, plain_path)
+        else:
+            cmd = [
+                "pg_restore",
+                "-h", db["HOST"] or "localhost",
+                "-p", str(db["PORT"] or 5432),
+                "-U", db["USER"],
+                "-d", target_db_name,
+                "--clean", "--if-exists",
+                plain_path,
+            ]
+            _run(cmd, password=db["PASSWORD"], timeout=PG_RESTORE_TIMEOUT_SECONDS)
     _validate_restored_database(db, target_db_name, backup_type)
+
+
+# Everything but PostgreSQL's own schemas is removed, and `public` is recreated as a new
+# database has it (PostgreSQL 15+: owned by pg_database_owner, usable by everyone); the dump
+# then recreates every schema, table, sequence, extension, ownership and privilege it holds.
+_REPLACE_PREAMBLE = r"""
+DO $replace$
+DECLARE s record;
+BEGIN
+  FOR s IN SELECT nspname FROM pg_namespace
+           WHERE nspname NOT IN ('pg_catalog', 'information_schema') AND nspname NOT LIKE 'pg\_%'
+  LOOP
+    EXECUTE format('DROP SCHEMA %I CASCADE', s.nspname);
+  END LOOP;
+END
+$replace$;
+CREATE SCHEMA public AUTHORIZATION pg_database_owner;
+GRANT USAGE ON SCHEMA public TO PUBLIC;
+"""
+
+
+def _replace_database_contents(db: dict, dbname: str, dump_path: str) -> None:
+    """Makes `dbname` exactly the dump, in ONE transaction: every non-system
+    schema is dropped, then the dump's SQL (`pg_restore -f -`) is replayed by
+    `psql` with ON_ERROR_STOP. If anything fails the database is unchanged.
+    Database-level settings and grants (not part of a dump) are kept; roles
+    that own objects in the dump must already exist.
+
+    The transaction is opened with an explicit BEGIN and COMMIT is sent only
+    after `pg_restore` itself exited successfully: an archive that breaks off
+    half-way (a damaged file) must not end psql's input and be committed as
+    it would with `--single-transaction`. Without COMMIT, psql disconnects
+    at the end of its input and PostgreSQL rolls the transaction back."""
+    env = {**os.environ, "PGPASSWORD": db["PASSWORD"], "PGCONNECT_TIMEOUT": str(CONNECT_TIMEOUT_SECONDS)}
+    psql_cmd = [
+        "psql",
+        "-h", db["HOST"] or "localhost",
+        "-p", str(db["PORT"] or 5432),
+        "-U", db["USER"],
+        "-d", dbname,
+        "-X", "-q", "-v", "ON_ERROR_STOP=1", "-f", "-",
+    ]
+    with tempfile.TemporaryFile() as restore_err, tempfile.TemporaryFile() as psql_err:
+        psql = subprocess.Popen(
+            psql_cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=psql_err, env=env
+        )
+        assert psql.stdin is not None
+        restore_rc = -1
+        restore = None
+        try:
+            try:
+                psql.stdin.write(b"BEGIN;\n" + _REPLACE_PREAMBLE.encode())
+                psql.stdin.flush()
+                restore = subprocess.Popen(
+                    ["pg_restore", "-f", "-", dump_path], stdout=psql.stdin, stderr=restore_err, env=env
+                )
+                restore_rc = restore.wait(timeout=PG_RESTORE_TIMEOUT_SECONDS)
+                if restore_rc == 0:
+                    psql.stdin.write(b"\nCOMMIT;\n")
+                    psql.stdin.flush()
+            except BrokenPipeError:
+                pass  # psql already stopped on an SQL error: nothing was committed
+            finally:
+                psql.stdin.close()
+            psql_rc = psql.wait(timeout=PG_RESTORE_TIMEOUT_SECONDS)
+        except BaseException:
+            for process in (restore, psql):
+                if process is not None and process.poll() is None:
+                    process.kill()
+            raise
+        if restore_rc != 0 or psql_rc != 0:
+            restore_err.seek(0)
+            psql_err.seek(0)
+            detail = psql_err.read().decode(errors="replace") + restore_err.read().decode(errors="replace")
+            raise BackupError(
+                "the restore was rolled back, the database is unchanged: "
+                + (detail.strip()[-2000:] or "psql/pg_restore failed")
+            )
 
 
 def _restore_postgres_backup(record: BackupRecord) -> BackupRecord:

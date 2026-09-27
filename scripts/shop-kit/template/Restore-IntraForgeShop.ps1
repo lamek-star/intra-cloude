@@ -72,8 +72,11 @@ Compose stop proxy spareparts frontend backend worker beat
 Step 'Restoring the company data, the business records and the stored files'
 # The applications' database roles must exist before the business records are restored (the backup names them as owners).
 Compose run --rm --no-deps backend python manage.py sync_service_apps
+# The databases become exactly the backup (--replace: one transaction each; everything entered after the backup goes,
+# and a backup made by an earlier version restores too). Stored files are put back as they were in the backup.
 foreach ($type in 'control_db', 'tenant_db', 'object_storage') {
-    Compose run --rm --no-deps backend python manage.py restore_backup_file "/backups/$($set[$type].Name)" --type $type --yes
+    $mode = if ($type -eq 'object_storage') { @() } else { @('--replace') }
+    Compose run --rm --no-deps backend python manage.py restore_backup_file "/backups/$($set[$type].Name)" --type $type @mode --yes
 }
 # A backup from an older version gets the current database structure; application schemas are handed back to their roles.
 Compose run --rm --no-deps backend python manage.py migrate --noinput

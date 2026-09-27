@@ -32,6 +32,15 @@ class Command(BaseCommand):
             help="What the file contains (the file name starts with this).",
         )
         parser.add_argument(
+            "--replace",
+            action="store_true",
+            help=(
+                "Databases only: make the database exactly the backup, in one transaction (everything "
+                "created after the backup is removed). For restoring a whole installation to a point in "
+                "time, including a backup made by an earlier version."
+            ),
+        )
+        parser.add_argument(
             "--yes",
             action="store_true",
             help="Required acknowledgement that this replaces the target's live data.",
@@ -44,7 +53,7 @@ class Command(BaseCommand):
                 "data and cannot be undone except by restoring an earlier backup."
             )
         backup_type, file_path = options["backup_type"], options["file_path"]
-        error = backups.restore_backup_from_file(backup_type, file_path)
+        error = backups.restore_backup_from_file(backup_type, file_path, replace=options["replace"])
 
         # Best-effort evidence: after a control-database restore the audit table is the restored
         # one, and a failure to write here must not turn a completed restore into a reported failure.
@@ -55,7 +64,11 @@ class Command(BaseCommand):
                 action="system.backup.restore_file",
                 resource_type="backup_file",
                 result=AuditEvent.Result.ERROR if error else AuditEvent.Result.SUCCESS,
-                context={"backup_type": backup_type, "file": os.path.basename(file_path)},
+                context={
+                    "backup_type": backup_type,
+                    "file": os.path.basename(file_path),
+                    "mode": "replace" if options["replace"] else "additive",
+                },
             )
         except Exception as exc:  # noqa: BLE001
             self.stderr.write(f"warning: could not write the audit event ({type(exc).__name__})")

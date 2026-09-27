@@ -206,6 +206,22 @@ three of the four backup types:
   tenant schema for an organization that signed up since) is untouched,
   since `pg_restore --clean` only ever drops/recreates objects that are
   part of the archive being restored.
+  **Replace mode** (`restore_backup_file --replace`, databases only;
+  added 2026-09-27): the database becomes exactly the backup, in one
+  transaction -- every non-system schema is dropped and the dump is
+  replayed by `psql` with `ON_ERROR_STOP`, and COMMIT is sent only after
+  `pg_restore` exited successfully, so a failed or damaged restore leaves
+  the database unchanged. This is what a whole-installation, point-in-time
+  restore needs, and the only way to restore a dump taken *before* a later
+  migration added a table that references a table in the dump: the
+  additive `--clean` restore cannot drop the referenced table and fails
+  part-way (found restoring a pre-1.1 shop-kit backup into 1.1 on the
+  Windows test VM). The shop kit's `Restore-IntraForgeShop.ps1` and
+  `Install-IntraForgeShop.ps1 -RestoreFrom` use replace mode for both
+  databases, then run `migrate` and `sync_service_apps`. Roles that own
+  objects in the dump must exist first (`sync_service_apps` creates the
+  service applications' roles). Database-level settings and grants are
+  not part of a dump and are kept.
 - **Object storage**: every object in the archive is checksum-verified
   against its manifest and written to its *real* key (not a scratch
   prefix), then read back and re-verified. Deliberately additive-only:

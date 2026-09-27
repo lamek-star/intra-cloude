@@ -351,3 +351,71 @@ class EncryptedPostgresBackupTests(BackupTestBase):
         verified = backups.verify_backup_restorable(record)
         self.assertFalse(verified.verified_restorable)
         self.assertIn("BACKUP_ENCRYPTION_KEY", verified.verification_error)
+
+
+@override_settings(BACKUP_ENCRYPTION_KEY="")
+class ReplaceRestoreTests(TransactionTestCase):
+    """`restore_backup_from_file(..., replace=True)`: the database becomes
+    exactly the backup, atomically. Found on the Windows VM: a backup made
+    before a later migration added a table referencing one in the dump could
+    not be restored with `pg_restore --clean` (the referenced table cannot
+    be dropped), and the failed restore left the database half-changed."""
+
+    databases = {"default", "tenant"}
+    TENANT = BackupRecord.BackupType.TENANT_DB
+
+    def _sql(self, statement):
+        from django.db import connections
+
+        with connections["tenant"].cursor() as cur:
+            cur.execute(statement)
+            return cur.fetchall() if cur.description else None
+
+    def tearDown(self):
+        self._sql("DROP SCHEMA IF EXISTS replace_kept CASCADE; DROP SCHEMA IF EXISTS replace_late CASCADE")
+
+    def _backup_then_change(self):
+        self._sql(
+            "CREATE SCHEMA replace_kept; "
+            "CREATE TABLE replace_kept.parts (id int PRIMARY KEY, name text); "
+            "INSERT INTO replace_kept.parts VALUES (1, 'before')"
+        )
+        record = backups.run_backup(self.TENANT)
+        self.assertEqual(record.status, BackupRecord.Status.SUCCESS, record.error_message)
+        # After the backup the data changes, and a NEW table (as a later migration would add)
+        # references a table that is in the dump.
+        self._sql(
+            "UPDATE replace_kept.parts SET name = 'after'; CREATE SCHEMA replace_late; "
+            "CREATE TABLE replace_late.child "
+            "(id int PRIMARY KEY, part_id int REFERENCES replace_kept.parts(id)); "
+            "INSERT INTO replace_late.child VALUES (1, 1)"
+        )
+        return record
+
+    def test_replace_restores_a_backup_taken_before_a_newer_dependent_table(self):
+        record = self._backup_then_change()
+
+        # the default, additive restore cannot drop the referenced table
+        self.assertTrue(backups.restore_backup_from_file(self.TENANT, record.file_path))
+
+        # replace: exactly the backup -- even after that failed attempt left the database half-changed
+        self.assertEqual(backups.restore_backup_from_file(self.TENANT, record.file_path, replace=True), "")
+        self.assertEqual(self._sql("SELECT id, name FROM replace_kept.parts"), [(1, "before")])
+        schemas = [r[0] for r in self._sql("SELECT nspname FROM pg_namespace")]
+        self.assertNotIn("replace_late", schemas)
+        self.assertIn("public", schemas)
+
+    def test_a_damaged_backup_changes_nothing(self):
+        record = self._backup_then_change()
+        damaged = record.file_path + ".damaged.dump"
+        with open(record.file_path, "rb") as src, open(damaged, "wb") as dst:
+            data = src.read()
+            dst.write(data[: len(data) * 2 // 3])  # breaks off in the data section
+        try:
+            error = backups.restore_backup_from_file(self.TENANT, damaged, replace=True)
+        finally:
+            os.remove(damaged)
+        self.assertIn("rolled back", error)
+        # the transaction was never committed: everything is as it was before the attempt
+        self.assertEqual(self._sql("SELECT id, name FROM replace_kept.parts"), [(1, "after")])
+        self.assertEqual(self._sql("SELECT part_id FROM replace_late.child"), [(1,)])
