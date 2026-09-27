@@ -1,6 +1,7 @@
 """End-to-end check of the Spare Parts service application through the real proxy (qualification stack)."""
 import http.cookiejar
 import json
+import os
 import ssl
 import sys
 import time
@@ -8,7 +9,8 @@ import urllib.error
 import urllib.request
 import uuid
 
-BASE = sys.argv[1] if len(sys.argv) > 1 else "https://localhost:8444"
+# The base URL: E2E_BASE_URL, or a first argument that is a URL (other scripts use their own arguments).
+BASE = os.environ.get("E2E_BASE_URL") or next((a for a in sys.argv[1:2] if a.startswith("http")), "https://localhost:8444")
 ctx = ssl.create_default_context()
 ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
