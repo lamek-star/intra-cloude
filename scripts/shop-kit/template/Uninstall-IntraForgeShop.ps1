@@ -78,12 +78,18 @@ Remove-Item -Path (Join-Path $PSScriptRoot '.install-complete') -ErrorAction Sil
 Write-ShopLog "uninstalled (option $(if ($DeleteData) { 'C' } elseif ($BackupFirst) { 'B' } else { 'A' }), docker reachable: $dockerUp)"
 
 if ($DeleteData -and $dockerUp) {
-    # This folder holds the running script: remove it a few seconds after this window closes.
+    # This folder holds the running script (and the Control Center, whose window may still be open): a separate,
+    # hidden process removes it, retrying every 2 s for up to 4 minutes until nothing uses it any more. It runs from
+    # the Windows folder, not from inside the folder it deletes. Never when the data folder is inside the program
+    # folder: whole paths are compared ("C:\IntraForgeData" is NOT inside "C:\IntraForge").
     $folder = $PSScriptRoot
-    if ($folder -and (Test-Path (Join-Path $folder 'Install-IntraForgeShop.ps1')) -and -not $dataDir.StartsWith($folder, [StringComparison]::OrdinalIgnoreCase)) {
-        Start-Process -FilePath "$env:SystemRoot\System32\cmd.exe" -ArgumentList "/c ping 127.0.0.1 -n 6 >nul & rmdir /s /q `"$folder`"" -WindowStyle Hidden
-        Write-Host "The program folder $folder is removed in a few seconds."
+    $inside = ($dataDir.TrimEnd('\') + '\').StartsWith($folder.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)
+    if ($folder -and (Test-Path (Join-Path $folder 'Install-IntraForgeShop.ps1')) -and -not $inside) {
+        $loop = "for /l %i in (1,1,120) do @(if exist `"$folder`" (rmdir /s /q `"$folder`" 2>nul & ping 127.0.0.1 -n 3 >nul))"
+        Start-Process -FilePath "$env:SystemRoot\System32\cmd.exe" -ArgumentList "/c $loop" -WorkingDirectory $env:SystemRoot -WindowStyle Hidden
+        Write-Host "The program folder $folder is removed as soon as nothing uses it (close the Control Center)."
     }
+    elseif ($inside) { Write-Host "The program folder $folder was kept: the data folder is inside it." -ForegroundColor Yellow }
 }
 Write-Host "`nIntraForge was removed from this PC." -ForegroundColor Green
 Write-Host "Kept: $dataDir\backups, $dataDir\keys (needed to read the backups), $dataDir\logs."
