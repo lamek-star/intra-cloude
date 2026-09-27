@@ -78,6 +78,9 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:${SHOP_HTTPS_PORT:-8443}:443"
+      # Also the IPv6 loopback: "localhost" resolves to ::1 first, and a client that does not fall back quickly
+      # (Windows retries a refused connection for ~2 s) would otherwise wait on every new connection.
+      - "[::1]:${SHOP_HTTPS_PORT:-8443}:443"
     environment:
       PROXY_TLS_HOSTNAMES: "localhost 127.0.0.1"
     volumes:
