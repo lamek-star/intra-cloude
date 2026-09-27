@@ -18,10 +18,13 @@
 .PARAMETER SkipSafetyBackup
     Do not take the safety backup first (only when IntraForge itself is broken and cannot make one).
 .PARAMETER Yes
-    Skip the typed confirmation (for tests only).
+    Skip the typed confirmation (the Control Center asks for it in its own window).
+.PARAMETER ExpectedSet
+    The three file names (comma-separated) that were checked and shown before restoring. The restore refuses to run if
+    the newest set in the folder is not exactly those files (for example because a backup ran in between).
 #>
 [CmdletBinding()]
-param([string]$BackupFolder, [switch]$SkipSafetyBackup, [switch]$Yes)
+param([string]$BackupFolder, [switch]$SkipSafetyBackup, [switch]$Yes, [string]$ExpectedSet)
 
 Set-Location $PSScriptRoot
 . (Join-Path $PSScriptRoot 'IntraForgeShop.Common.ps1')
@@ -36,6 +39,13 @@ foreach ($type in 'control_db', 'tenant_db', 'object_storage') {
 }
 foreach ($type in 'control_db', 'tenant_db', 'object_storage') {
     Write-Host ("  {0,-15} {1}   saved {2}" -f $type, $set[$type].Name, $set[$type].LastWriteTime)
+}
+if ($ExpectedSet) {
+    $chosen = @('control_db', 'tenant_db', 'object_storage' | ForEach-Object { $set[$_].Name }) | Sort-Object
+    $expected = @($ExpectedSet -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) | Sort-Object
+    if (($chosen -join ',') -ne ($expected -join ',')) {
+        throw "The backup files changed since they were checked (now: $($chosen -join ', ')). Nothing was changed: check the backup again."
+    }
 }
 $oldest = ($set.Values | Sort-Object LastWriteTime | Select-Object -First 1).LastWriteTime
 Write-Host "`nThe shop will go back to how it was on $oldest. EVERYTHING ENTERED AFTER THAT TIME WILL BE LOST." -ForegroundColor Yellow
@@ -57,12 +67,17 @@ if ($BackupFolder -ne $dataBackups) {
 
 Step 'Stopping IntraForge (the databases stay up for the restore)'
 Compose up -d --pull never postgres-control postgres-tenant valkey object-storage
-Compose stop proxy frontend backend worker beat
+Compose stop proxy spareparts frontend backend worker beat
 
 Step 'Restoring the company data, the business records and the stored files'
+# The applications' database roles must exist before the business records are restored (the backup names them as owners).
+Compose run --rm --no-deps backend python manage.py sync_service_apps
 foreach ($type in 'control_db', 'tenant_db', 'object_storage') {
     Compose run --rm --no-deps backend python manage.py restore_backup_file "/backups/$($set[$type].Name)" --type $type --yes
 }
+# A backup from an older version gets the current database structure; application schemas are handed back to their roles.
+Compose run --rm --no-deps backend python manage.py migrate --noinput
+Compose run --rm --no-deps backend python manage.py sync_service_apps
 
 Step 'Starting IntraForge again'
 Compose up -d --pull never

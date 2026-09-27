@@ -12,7 +12,8 @@
 .PARAMETER Port
     HTTPS port on this computer (loopback only). Default 8443.
 .PARAMETER SparePartsPort
-    HTTP port of the spare parts application on this computer (loopback only). Default 3000.
+    Ignored (kept so older setup files and shortcuts keep working). Spare Parts is now served by IntraForge itself, at
+    https://localhost:<Port>/apps/spare-parts/, and has no port of its own.
 .PARAMETER DataDir
     Folder for backups, keys and logs. Default C:\IntraForgeData.
 .PARAMETER KeysFile
@@ -77,10 +78,7 @@ if ($interrupted) { Write-Host 'An earlier installation was interrupted: continu
 $portFree = $true
 try { $probe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port); $probe.Start(); $probe.Stop() } catch { $portFree = $false }
 if (-not $portFree) { throw "Port $Port is already used by another program. Run again with a different port, for example:  .\Install-IntraForgeShop.ps1 -Port 8453" }
-$spFree = $true
-try { $probe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $SparePartsPort); $probe.Start(); $probe.Stop() } catch { $spFree = $false }
-if (-not $spFree) { throw "Port $SparePartsPort (the spare parts application) is already used by another program. Run again with a different port, for example:  .\Install-IntraForgeShop.ps1 -SparePartsPort 3010" }
-Write-Host "Windows build $build, memory $ramGb GB (Docker $dockerMemoryGb GB), free disk $freeGb GB, ports $Port and $SparePartsPort available."
+Write-Host "Windows build $build, memory $ramGb GB (Docker $dockerMemoryGb GB), free disk $freeGb GB, port $Port available."
 
 Step 'Checking the kit is complete and unchanged (SHA-256)'
 $sums = Join-Path $PSScriptRoot 'SHA256SUMS.txt'
@@ -109,14 +107,14 @@ function New-Secret([int]$Bytes) {
 }
 if ($interrupted) {
     $kept = Get-Content $envPath | Where-Object { $_ -notmatch '^(SHOP_HTTPS_PORT|SHOP_SPAREPARTS_PORT|SHOP_DATA_DIR|CSRF_TRUSTED_ORIGINS|OIDC_ISSUER)=' }
-    $text = ($kept -join "`n") + "`nSHOP_HTTPS_PORT=$Port`nSHOP_SPAREPARTS_PORT=$SparePartsPort`nSHOP_DATA_DIR=$dataDirSlash`nCSRF_TRUSTED_ORIGINS=https://localhost:$Port`nOIDC_ISSUER=https://localhost:$Port`n"
+    $text = ($kept -join "`n") + "`nSHOP_HTTPS_PORT=$Port`nSHOP_DATA_DIR=$dataDirSlash`nCSRF_TRUSTED_ORIGINS=https://localhost:$Port`nOIDC_ISSUER=https://localhost:$Port`n"
     Write-Host 'Keeping the keys created by the interrupted installation.'
 }
 elseif ($KeysFile) {
     Copy-Item -Path $KeysFile -Destination $envPath -Force
     # the port and data folder belong to THIS installation, the secrets to the old one
     $kept = Get-Content $envPath | Where-Object { $_ -notmatch '^(SHOP_HTTPS_PORT|SHOP_SPAREPARTS_PORT|SHOP_DATA_DIR|CSRF_TRUSTED_ORIGINS|OIDC_ISSUER)=' }
-    $text = ($kept -join "`n") + "`nSHOP_HTTPS_PORT=$Port`nSHOP_SPAREPARTS_PORT=$SparePartsPort`nSHOP_DATA_DIR=$dataDirSlash`nCSRF_TRUSTED_ORIGINS=https://localhost:$Port`nOIDC_ISSUER=https://localhost:$Port`n"
+    $text = ($kept -join "`n") + "`nSHOP_HTTPS_PORT=$Port`nSHOP_DATA_DIR=$dataDirSlash`nCSRF_TRUSTED_ORIGINS=https://localhost:$Port`nOIDC_ISSUER=https://localhost:$Port`n"
     Write-Host 'Using the keys of the old installation (needed to read its backups).'
 }
 else {
@@ -135,15 +133,20 @@ else {
         OBJECT_STORAGE_ROOT_USER = 'intraforge'; OBJECT_STORAGE_ROOT_PASSWORD = $store
         MINIO_ROOT_USER = 'intraforge'; MINIO_ROOT_PASSWORD = $store
         SHOW_UNQUALIFIED_BUILT_IN_APPS = '0'
-        SHOP_HTTPS_PORT = "$Port"; SHOP_SPAREPARTS_PORT = "$SparePartsPort"; SHOP_DATA_DIR = $dataDirSlash
+        SHOP_HTTPS_PORT = "$Port"; SHOP_DATA_DIR = $dataDirSlash
     }
     $text = (($pairs.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join "`n") + "`n"
     Write-Host 'Generated fresh random keys for this shop (they exist only on this PC).'
 }
+# The Spare Parts service application's own secrets (ADR-0018): its token for IntraForge's internal API and the
+# password of its database role. Added to keys that predate them (an older keys file or an interrupted install).
+foreach ($name in 'SERVICE_APP_SPAREPARTS_TOKEN', 'SERVICE_APP_SPAREPARTS_DB_PASSWORD') {
+    if ($text -notmatch "(?m)^$name=.+") { $text = $text.TrimEnd("`n") + "`n$name=$(New-Secret 36)`n" }
+}
 [IO.File]::WriteAllText($envPath, $text, (New-Object System.Text.UTF8Encoding($false)))
 $keysCopy = Join-Path $DataDir 'keys\intraforge-keys.env'
 Copy-Item -Path $envPath -Destination $keysCopy -Force
-$env:SHOP_HTTPS_PORT = "$Port"; $env:SHOP_SPAREPARTS_PORT = "$SparePartsPort"; $env:SHOP_DATA_DIR = $dataDirSlash
+$env:SHOP_HTTPS_PORT = "$Port"; $env:SHOP_DATA_DIR = $dataDirSlash
 
 Step 'Loading the images from the kit (no download)'
 & docker load -i (Join-Path $PSScriptRoot 'images\intraforge-shop-images.tar')
@@ -162,6 +165,8 @@ foreach ($service in 'postgres-control', 'postgres-tenant') {
 Step 'Preparing the system (database structure and permissions)'
 Compose run --rm backend python manage.py migrate --noinput
 Compose run --rm backend python manage.py seed_permissions
+# The service applications' database roles must exist before a tenant backup is restored (the backup names them as owners).
+Compose run --rm backend python manage.py sync_service_apps
 
 if ($RestoreFrom) {
     Step 'Restoring the old shop from the backup files'
@@ -175,6 +180,9 @@ if ($RestoreFrom) {
     foreach ($type in 'control_db', 'tenant_db', 'object_storage') {
         Compose run --rm backend python manage.py restore_backup_file "/backups/$($set[$type].Name)" --type $type --yes
     }
+    # a backup from an older version gets the newer database structure; the application schemas are handed back to their roles
+    Compose run --rm backend python manage.py migrate --noinput
+    Compose run --rm backend python manage.py sync_service_apps
 }
 
 Step 'Starting IntraForge'
@@ -205,39 +213,12 @@ try {
 catch {
     Write-Host "Could not create the daily backup task ($($_.Exception.Message)). IntraForge still takes a backup at sign-in when the last one is older than 20 hours; you can also use 'IntraForge Backup Now'." -ForegroundColor Yellow
 }
-try {
-    $shell = New-Object -ComObject WScript.Shell
-    $targets = @([Environment]::GetFolderPath('Desktop'), (Join-Path ([Environment]::GetFolderPath('Programs')) 'IntraForge'))
-    foreach ($folder in $targets) {
-        New-Item -ItemType Directory -Force -Path $folder | Out-Null
-        foreach ($item in @(
-            @{ Name = 'Open IntraForge';        Script = 'Start-IntraForgeShop.ps1';   Extra = '' },
-            @{ Name = 'IntraForge Backup Now';  Script = 'Backup-IntraForgeShop.ps1';  Extra = '-Pause' },
-            @{ Name = 'IntraForge Backup to USB'; Script = 'Backup-IntraForgeShop.ps1'; Extra = '-ChooseFolder -Pause' },
-            @{ Name = 'IntraForge Status';      Script = 'Status-IntraForgeShop.ps1';  Extra = '-Pause' })) {
-            $lnk = $shell.CreateShortcut((Join-Path $folder "$($item.Name).lnk"))
-            $lnk.TargetPath = $powershell
-            $lnk.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $PSScriptRoot $item.Script)`" $($item.Extra)".Trim()
-            $lnk.WorkingDirectory = $PSScriptRoot
-            $lnk.Save()
-        }
-    }
-    Write-Host 'Shortcuts created on the Desktop and in the Start menu: Open IntraForge, IntraForge Backup Now, IntraForge Backup to USB, IntraForge Status.'
-}
-catch { Write-Host "Could not create shortcuts ($($_.Exception.Message)); use the .ps1 files in this folder instead." -ForegroundColor Yellow }
-
-# Desktop / Start-menu shortcuts that open the two web addresses (Internet shortcuts, no PowerShell involved)
-try {
-    foreach ($folder in @([Environment]::GetFolderPath('Desktop'), (Join-Path ([Environment]::GetFolderPath('Programs')) 'IntraForge'))) {
-        New-Item -ItemType Directory -Force -Path $folder | Out-Null
-        Set-Content -Path (Join-Path $folder 'Open Spare Parts.url') -Value "[InternetShortcut]`r`nURL=http://127.0.0.1:$SparePartsPort/`r`n" -Encoding ASCII
-    }
-}
-catch { Write-Host "Could not create the Spare Parts shortcut ($($_.Exception.Message))." -ForegroundColor Yellow }
-Write-ShopLog "installed $(Get-ShopVersion) port=$Port sparepartsport=$SparePartsPort data=$DataDir restored=$([bool]$RestoreFrom)" 'shop.log'
+Install-ShopShortcuts
+Register-ShopUninstallEntry
+Write-ShopLog "installed $(Get-ShopVersion) port=$Port data=$DataDir restored=$([bool]$RestoreFrom)" 'shop.log'
 Set-Content -Path $completeMarker -Value "installed $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $(Get-ShopVersion)"
 Write-Host "`nIntraForge is installed and running: https://localhost:$Port" -ForegroundColor Green
-Write-Host "The Spare Parts application is at:    http://127.0.0.1:$SparePartsPort/" -ForegroundColor Green
+Write-Host 'Everything is in the IntraForge Control Center (desktop shortcut "IntraForge"): open IntraForge, your apps, backup, restore.' -ForegroundColor Green
 Write-Host 'Your browser will warn about the certificate (it is this computer''s own): choose Advanced, then continue.'
 Write-Host ''
 Write-Host 'IMPORTANT - do this once, today:' -ForegroundColor Yellow
@@ -246,5 +227,5 @@ Write-Host '  Without this file, a backup cannot be read after the PC is lost.'
 if (-not $RestoreFrom) {
     Write-Host ''
     Write-Host 'Next: open IntraForge, choose "Create account" (the first account is your administrator), create your company,'
-    Write-Host 'open the Application Gallery and install "Spare Parts / Inventory & Sales".'
+    Write-Host 'then open Apps and install Spare Parts with your shop''s name. People sign in once, to IntraForge.'
 }

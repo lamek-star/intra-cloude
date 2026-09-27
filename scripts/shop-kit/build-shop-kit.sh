@@ -3,11 +3,16 @@
 #
 #   scripts/shop-kit/build-shop-kit.sh <output-folder>
 #
-# Produces <output-folder> (the kit) and, next to it, IntraForge-Local-v1.0-Pilot-<HEAD>.zip + .sha256.
-# The kit is built from the CURRENT source (it refuses a dirty application tree so that the recorded HEAD is true),
-# contains every image the shop needs (nothing is downloaded on the shop PC), a pinned MinIO, the install / start /
-# backup / restore / status / uninstall scripts, and an offline manifest listing every component with its checksum.
-# It contains NO secrets and NO demo data: the shop PC generates its own keys at install time.
+# Produces <output-folder> (the kit) and, next to it, IntraForge-Local-<KIT_VERSION>-<HEAD>.zip + .sha256.
+# The kit is built from COMMITTED source only: IntraForge from `git archive HEAD`, the Spare Parts service application
+# (ADR-0018) from `git archive` of its own repository (SPAREPARTS_REPO / SPAREPARTS_REF, see build-spareparts-image.sh).
+# It contains every image the shop needs (nothing is downloaded on the shop PC), a pinned MinIO, the IntraForge Control
+# Center (a native Windows program, compiled here with the C# compiler that ships with Windows), the install / start /
+# backup / restore / status / upgrade / uninstall scripts, and an offline manifest listing every component with its
+# checksum. It contains NO secrets and NO demo data: the shop PC generates its own keys at install time.
+#
+# KIT_VERSION  the release version of this kit (default 1.1.0): what the shop PC reports and what the installer's file
+#              name carries. The repository's VERSION file stays the IntraForge product version.
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
 
@@ -23,33 +28,43 @@ DIRTY="$(git status --porcelain -- apps infrastructure docker-compose.yml VERSIO
 if [ -n "$DIRTY" ]; then
   echo "   note: these uncommitted changes are NOT in this build (it is built from HEAD):"; echo "$DIRTY" | sed 's/^/     /'
 fi
+# The kit's own scripts and the Control Center are taken from this folder: they must be committed, so that the recorded
+# HEAD describes exactly what the shop PC runs.
+KIT_DIRTY="$(git status --porcelain -- scripts/shop-kit)"
+[ -z "$KIT_DIRTY" ] || { echo "scripts/shop-kit has uncommitted changes; commit them first:" >&2; echo "$KIT_DIRTY" >&2; exit 1; }
 EXPORT="$(mktemp -d)"
 git archive HEAD apps infrastructure docker-compose.yml VERSION | tar -x -C "$EXPORT"
 EXPORTW="$(cygpath -m "$EXPORT")"
 HEAD_FULL="$(git rev-parse HEAD)"; HEAD_SHORT="$(git rev-parse --short=9 HEAD)"
 VERSION="$(tr -d '\r\n' < VERSION)"
-TAG="1.0-pilot-$HEAD_SHORT"
+KIT_VERSION="${KIT_VERSION:-1.1.0}"
+[[ "$KIT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "KIT_VERSION must look like 1.2.3" >&2; exit 1; }
+TAG="$KIT_VERSION-$HEAD_SHORT"
 BUILT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-echo "   HEAD $HEAD_SHORT  version $VERSION  tag $TAG"
+echo "   HEAD $HEAD_SHORT  kit $KIT_VERSION  product $VERSION  tag $TAG"
 
-echo "== 2/6 build the two IntraForge images from source"
+echo "== 2/6 build the images from source, and the Control Center"
 docker build -q -t "intraforge-shop-backend:$TAG" "$EXPORTW/apps/backend" >/dev/null
 docker build -q -t "intraforge-shop-frontend:$TAG" "$EXPORTW/apps/frontend" >/dev/null
 
-# The spare parts reference application: a SEPARATE project, built from a COPY of its working tree (its own folder is only read;
-# its .env* files, auth data, dev certificates and import data are never copied: no secrets belong in an installer).
-SPAREPARTS_SRC="${SPAREPARTS_SRC:-$HOME/Documents/intraforge-spareparts-demo}"
-[ -d "$SPAREPARTS_SRC" ] || { echo "the spare parts project was not found at $SPAREPARTS_SRC (set SPAREPARTS_SRC)" >&2; exit 1; }
-SP_CTX="$(mktemp -d)"
-tar -C "$SPAREPARTS_SRC" --exclude=./node_modules --exclude='./.next*' --exclude=./.git --exclude='./.env*' --exclude=./.auth-data \
-  --exclude=./.catalogue-import-data --exclude=./.dev-certs --exclude=./test-results --exclude=./playwright-report --exclude='*.tsbuildinfo' -cf - . \
-  | tar -C "$SP_CTX" -xf -
-[ -z "$(ls -A "$SP_CTX" | grep -E '^\.env' || true)" ] || { echo "an .env file reached the spare parts build context: refusing" >&2; exit 1; }
-export SP_COMMIT="$(git --no-optional-locks -C "$(cygpath -m "$SPAREPARTS_SRC")" rev-parse --short=9 HEAD 2>/dev/null || echo unknown)"
-export SP_DIRTY="$(git --no-optional-locks -C "$(cygpath -m "$SPAREPARTS_SRC")" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
-export SP_HASH="$(cd "$SP_CTX" && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)"
-echo "   spare parts app: commit $SP_COMMIT, $SP_DIRTY uncommitted file(s) included, content hash $SP_HASH"
-docker build -q -t "intraforge-shop-spareparts:$TAG" -f "$(cygpath -m "$HERE/spareparts-app/Dockerfile")" "$(cygpath -m "$SP_CTX")" >/dev/null
+# The Spare Parts service application (ADR-0018): a SEPARATE project, built from a committed revision of its own repository.
+SP_LINE="$(bash "$HERE/build-spareparts-image.sh" "intraforge-shop-spareparts:$TAG" "$KIT_VERSION" | tail -1)"
+export SP_COMMIT="$(sed -n 's/^commit=\([^ ]*\) .*/\1/p' <<< "$SP_LINE")"
+export SP_HASH="$(sed -n 's/.* hash=\(.*\)$/\1/p' <<< "$SP_LINE")"
+[ -n "$SP_COMMIT" ] && [ -n "$SP_HASH" ] || { echo "the Spare Parts image build did not report its provenance: $SP_LINE" >&2; exit 1; }
+SP_REPO="${SPAREPARTS_REPO:-$HOME/projects/spareparts-platform}"
+export SP_BRANCH="$(git --no-optional-locks -C "$(cygpath -m "$SP_REPO")" rev-parse --abbrev-ref "${SPAREPARTS_REF:-HEAD}" 2>/dev/null || echo "?")"
+echo "   spare parts: branch $SP_BRANCH commit $SP_COMMIT, content hash $SP_HASH"
+
+CSC="/c/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe"
+[ -x "$CSC" ] || { echo "the .NET Framework C# compiler was not found at $CSC" >&2; exit 1; }
+CC_TMP="$(mktemp -d)"
+"$CSC" -nologo -codepage:65001 -target:winexe -optimize+ -out:"$(cygpath -w "$CC_TMP/IntraForgeControlCenter.exe")" \
+  -win32icon:"$(cygpath -w "$REPO/installer/assets/icon.ico")" -win32manifest:"$(cygpath -w "$HERE/control-center/app.manifest")" \
+  -reference:System.Windows.Forms.dll -reference:System.Drawing.dll -reference:System.Management.dll \
+  -reference:System.Web.Extensions.dll -reference:System.IO.Compression.dll -reference:System.IO.Compression.FileSystem.dll \
+  "$(cygpath -w "$HERE/control-center/ControlCenter.cs")"
+echo "   control center compiled"
 
 echo "== 3/6 pin MinIO to the exact tested release"
 MINIO_TAG="$(docker image inspect minio/minio:latest --format '{{index .Config.Labels "version"}}')"
@@ -61,9 +76,9 @@ echo "== 4/6 assemble the kit"
 rm -rf "$OUT/images" "$OUT/infrastructure"; mkdir -p "$OUT/images" "$OUT/infrastructure/proxy"
 sed "s/@TAG@/$TAG/g; s/@MINIO_TAG@/$MINIO_TAG/g" "$HERE/template/docker-compose.yml" > "$OUT/docker-compose.yml"
 cp "$HERE/template/"*.ps1 "$HERE/template/README.txt" "$OUT/"
+cp "$CC_TMP/IntraForgeControlCenter.exe" "$OUT/IntraForgeControlCenter.exe"
 cp "$EXPORT/infrastructure/proxy/Caddyfile" "$OUT/infrastructure/proxy/Caddyfile"
-cat "$HERE/template/Caddyfile.spareparts" >> "$OUT/infrastructure/proxy/Caddyfile"
-cp "$REPO/VERSION" "$OUT/VERSION"
+printf '%s\n' "$KIT_VERSION" > "$OUT/VERSION"
 cp "$REPO/docs/OWN_SHOP_PILOT_QUICKSTART.md" "$OUT/OWN_SHOP_PILOT_QUICKSTART.md"
 cp "$REPO/docs/LOCAL_EDITION_PILOT.md" "$OUT/LOCAL_EDITION_PILOT.md"
 cp "$REPO/docs/pilot/PILOT_LOG.md" "$OUT/PILOT_LOG.md"
@@ -71,17 +86,19 @@ rm -f "$OUT/.env" "$OUT/DEMO_LOGINS.txt"
 IMAGES=("intraforge-shop-backend:$TAG" "intraforge-shop-frontend:$TAG" "intraforge-shop-spareparts:$TAG" "postgres:18" "valkey/valkey:9-alpine" "minio/minio:$MINIO_TAG" "caddy:2-alpine")
 docker save -o "$OUTW/images/intraforge-shop-images.tar" "${IMAGES[@]}"
 {
-  echo "IntraForge Local Edition v1.0 -- own-shop pilot build"
+  echo "IntraForge Local Edition -- shop kit $KIT_VERSION"
   echo "Source HEAD:   $HEAD_FULL"
-  echo "Product ver:   $VERSION"
+  echo "Kit version:   $KIT_VERSION"
+  echo "Product ver:   $VERSION (repository VERSION)"
   echo "Built (UTC):   $BUILT_UTC"
   echo "Architecture:  linux/amd64 containers on Windows (Docker Desktop, WSL2 backend)"
   echo "Docker build host: $(docker version --format 'Docker {{.Server.Version}}')"
-  echo "Spare parts app: project intraforge-spareparts-demo, commit $SP_COMMIT, $SP_DIRTY uncommitted file(s) included, content hash $SP_HASH"
+  echo "Spare Parts:   service application (ADR-0018), branch $SP_BRANCH, commit $SP_COMMIT (committed source only), content hash $SP_HASH"
+  echo "Control Center: IntraForgeControlCenter.exe (.NET Framework 4.x) sha256 $(sha256sum "$CC_TMP/IntraForgeControlCenter.exe" | cut -d' ' -f1)"
 } > "$OUT/BUILD_INFO.txt"
 
 echo "== 5/6 offline manifest and checksums"
-python - "$OUTW" "$HEAD_FULL" "$VERSION" "$BUILT_UTC" "${IMAGES[@]}" <<'PY'
+python - "$OUTW" "$HEAD_FULL" "$KIT_VERSION (product $VERSION)" "$BUILT_UTC" "${IMAGES[@]}" <<'PY'
 import json, os, pathlib, subprocess, sys
 out = pathlib.Path(sys.argv[1]); head, version, built = sys.argv[2:5]; images = sys.argv[5:]
 def inspect(ref, fmt):
@@ -89,8 +106,8 @@ def inspect(ref, fmt):
 purpose = {
     "intraforge-shop-backend": ("IntraForge backend, workers and scheduler (Django, Celery), migrations", f"built from source at {head[:9]}", "project"),
     "intraforge-shop-frontend": ("IntraForge web interface (Next.js)", f"built from source at {head[:9]}", "project"),
-    "intraforge-shop-spareparts": ("Spare parts reference application (separate Next.js project with its own sample data; http://127.0.0.1:3000)",
-        "separate project intraforge-spareparts-demo at " + os.environ.get("SP_COMMIT", "?") + (" + " + os.environ["SP_DIRTY"] + " uncommitted file(s)" if os.environ.get("SP_DIRTY", "0") != "0" else "") + ", content hash " + os.environ.get("SP_HASH", "?"), "project (its npm dependencies keep their own licences)"),
+    "intraforge-shop-spareparts": ("Spare Parts / Inventory & Sales service application (Next.js), served inside IntraForge at /apps/spare-parts/ (no port of its own)",
+        "separate project, branch " + os.environ.get("SP_BRANCH", "?") + " at " + os.environ.get("SP_COMMIT", "?") + " (committed source), content hash " + os.environ.get("SP_HASH", "?"), "project (its npm dependencies keep their own licences)"),
     "postgres": ("Databases (company data and business records)", "Docker official image, postgres:18", "PostgreSQL licence"),
     "valkey/valkey": ("Cache and job queue", "Docker Hub valkey/valkey", "BSD-3-Clause"),
     "minio/minio": ("Stored files (object storage), PINNED to the tested release", "Docker Hub minio/minio", "AGPL-3.0 (commercial-distribution decision OPEN, see THIRD_PARTY_LICENSES.md)"),
@@ -115,13 +132,13 @@ prereq = [
     {"component": "Memory 8 GB, free disk 10 GB", "class": "sizing evidence: demo containers 994 MiB idle; scale-qualified at 5,000 products", "checked_by": "Install-IntraForgeShop.ps1 (warning; blocking under 3 GB disk)"},
 ]
 manifest = {
-    "product": "IntraForge Local Edition v1.0 -- own-shop pilot", "product_version": version, "source_head": head, "built_utc": built,
+    "product": "IntraForge Local Edition -- shop kit", "product_version": version, "source_head": head, "built_utc": built,
     "docker_desktop_tested": subprocess.run(["docker", "version", "--format", "{{.Server.Version}}"], capture_output=True, text=True).stdout.strip(),
     "network_needed_at_install": False, "images": rows, "prerequisites": prereq,
     "not_used_at_install": ["npm/pnpm", "pip", "docker pull", "online WSL download", "GitHub", "Microsoft Store", "any package manager"],
 }
 (out / "OFFLINE_MANIFEST.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8", newline="\n")
-lines = [f"IntraForge Local Edition v1.0 -- own-shop pilot -- OFFLINE MANIFEST", f"Source HEAD {head}   version {version}   built {built}", "",
+lines = ["IntraForge Local Edition -- shop kit -- OFFLINE MANIFEST", f"Source HEAD {head}   version {version}   built {built}", "",
          "Bundled in this kit (nothing is downloaded during installation):"]
 for r in rows:
     lines += [f"  {r['image']}", f"      {r['purpose']}", f"      source: {r['source']}   licence: {r['licence']}", f"      id: {r['image_id']}   size: {r['size_bytes']:,} bytes"]
@@ -134,12 +151,12 @@ lines += ["", f"Docker Desktop / engine version this kit was built and rehearsed
           "Never used during installation: " + ", ".join(manifest["not_used_at_install"]) + "."]
 (out / "OFFLINE_MANIFEST.txt").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
 PY
-( cd "$OUT" && sha256sum --binary VERSION BUILD_INFO.txt docker-compose.yml infrastructure/proxy/Caddyfile OFFLINE_MANIFEST.json images/intraforge-shop-images.tar > SHA256SUMS.txt )
+( cd "$OUT" && sha256sum --binary VERSION BUILD_INFO.txt IntraForgeControlCenter.exe docker-compose.yml infrastructure/proxy/Caddyfile OFFLINE_MANIFEST.json images/intraforge-shop-images.tar > SHA256SUMS.txt )
 
-rm -rf "$EXPORT" "$SP_CTX"
+rm -rf "$EXPORT" "$CC_TMP"
 
 echo "== 6/6 package"
-ZIP="$(dirname "$OUT")/IntraForge-Local-v1.0-Pilot-$HEAD_SHORT.zip"
+ZIP="$(dirname "$OUT")/IntraForge-Local-$KIT_VERSION-$HEAD_SHORT.zip"
 rm -f "$ZIP" "$ZIP.sha256"
 /c/Windows/System32/tar.exe -a -c -f "$(cygpath -m "$ZIP")" -C "$OUTW" .
 ( cd "$(dirname "$ZIP")" && sha256sum --binary "$(basename "$ZIP")" > "$(basename "$ZIP").sha256" )

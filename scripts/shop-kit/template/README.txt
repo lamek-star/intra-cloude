@@ -1,60 +1,59 @@
-INTRAFORGE LOCAL EDITION v1.0 - OWN-SHOP PILOT KIT
-==================================================
+INTRAFORGE LOCAL EDITION - SHOP KIT
+===================================
 
-A private stock-and-sales system that runs on THIS shop PC only and needs no internet. This is a controlled pilot:
-keep your existing records (paper / spreadsheet / current software) as the record of truth while you use it.
-Read OWN_SHOP_PILOT_QUICKSTART.md (in this folder) for the daily steps and the checklists.
+A private system for the shop -- people, files, and the Spare Parts / Inventory & Sales application -- that runs on THIS
+PC only and needs no internet. Read OWN_SHOP_PILOT_QUICKSTART.md (in this folder) for the daily steps and checklists.
 
 WHAT IS IN THE KIT
-  Install / Start / Stop / Backup / Restore / Status / Uninstall scripts (.ps1), the program itself (images\), the list
-  of every part with checksums (OFFLINE_MANIFEST.txt), and the guides. It contains no secrets and no demo data.
+  IntraForgeControlCenter.exe (the Control Center), the Setup / Install / Start / Stop / Backup / Restore / Status / Upgrade /
+  Uninstall scripts (.ps1) it uses, the program itself (images\), the list of every part with checksums
+  (OFFLINE_MANIFEST.txt) and the guides. It contains no secrets and no demo data.
 
-BEFORE YOU START (once; needs internet only for Docker Desktop, on any PC)
-  1. Windows 10 (22H2) or Windows 11, 64-bit; 8 GB memory or more; 10 GB free disk; virtualization switched on in the
-     BIOS (it usually is).
-  2. Docker Desktop for Windows. It is NOT in this kit. On any connected PC download "Docker Desktop Installer.exe" from
-     docker.com, copy it to this PC, run it (accept "Use WSL 2"), restart Windows if it asks, then open Docker Desktop
-     once and accept its terms until it says "Engine running".
-     (Optional: Docker Desktop > Settings > General > "Start Docker Desktop when you sign in". Not required: IntraForge's own
-     sign-in entry starts Docker Desktop by itself.)
-     (Version this kit was tested with: see OFFLINE_MANIFEST.txt.)
-  3. Copy this whole folder to the PC, for example C:\IntraForge (or unpack the .zip there). Keep it there.
-
-INSTALL (about 3 minutes, no internet needed)
-  Right-click Install-IntraForgeShop.ps1 > "Run with PowerShell".
-  (If Windows blocks it: open PowerShell in this folder and run
-   powershell -ExecutionPolicy Bypass -File .\Install-IntraForgeShop.ps1 )
-  It checks the PC, verifies the kit, creates this shop's own secret keys, starts IntraForge, and sets up: start at Windows
-  sign-in, a daily backup at 19:00, and three desktop shortcuts.
-  THEN, ONCE: copy C:\IntraForgeData\keys\intraforge-keys.env to a USB drive and keep it safe. A backup cannot be read
-  without it.
+INSTALL
+  Normally: double-click the IntraForge setup file (IntraForge-Setup-<version>.exe). It prepares Windows, installs Docker
+  Desktop and IntraForge from the file itself, and restarts the PC when Windows needs it (sign in again: it carries on).
+  From this folder instead: right-click Setup-IntraForge.ps1 > "Run with PowerShell".
+  When it is done there is ONE shortcut, "IntraForge", on the Desktop and in the Start menu.
+  THEN, ONCE: Control Center > Settings > "Copy the keys file to a USB drive". A backup cannot be read without it.
 
 FIRST USE
-  Double-click "Open IntraForge" > "Create account" (the first account is your administrator) > create your company >
-  Application Gallery > install "Spare Parts / Inventory & Sales". The browser warns about the certificate (it is this PC's
-  own): Advanced > continue.
+  "IntraForge" shortcut > Open IntraForge > "Create account" (the first account is your administrator) > create your
+  company > Apps > install "Spare Parts". Open it from Apps (or from the Control Center). The browser warns about the
+  certificate the first time (it is this PC's own): Advanced > continue.
+
+THE CONTROL CENTER (the "IntraForge" shortcut)
+  Opens even when IntraForge or Docker is not running -- it is where you fix things.
+  Status       Healthy / Starting / Degraded / Stopped / Failed / Repair required, with each check and what to do.
+  Open         IntraForge, and each installed application.
+  Start / Stop / Restart services.
+  Backup now, Backup to a folder / USB, and Restore (checks the backup and shows what it holds before anything changes;
+               takes a safety backup of the current data first).
+  Settings     start with Windows, copy the keys file, where everything is.
+  Diagnostics  a zip for support (no passwords or keys in it).
+  Uninstall    A: remove, keep data   B: back up, then remove   C: complete removal (backup first; also deletes the data).
+               Backups, the keys file and logs are never deleted.
 
 EVERY DAY
-  Sign in to Windows: IntraForge starts by itself (about 1-2 minutes). "Open IntraForge" opens it.
-  End of day: "IntraForge Backup Now", then copy the newest backup to a USB drive (see the quickstart).
-  "IntraForge Status" shows whether everything is healthy, and when the last backup was made.
+  Sign in to Windows: IntraForge starts by itself (about 1-2 minutes).
+  A backup runs every day at 19:00 (or at the next start if the PC was off). Copy it to a USB drive regularly:
+  Control Center > Backup to a folder / USB.
 
 WHERE THINGS ARE
-  This folder (C:\IntraForge)        the program (can be replaced; contains the keys file .env - never delete it)
+  This folder (C:\IntraForge)        the program (contains the keys file .env - never delete it)
   C:\IntraForgeData\backups          every backup (encrypted); LATEST-BACKUP.txt says when and what
   C:\IntraForgeData\keys             a copy of the keys file - copy it to a USB drive
-  C:\IntraForgeData\logs             backup.log, shop.log, status reports (send these to the project team when asked)
+  C:\IntraForgeData\logs             setup, backup, shop and status logs
   Your shop's records and files      stored by Docker Desktop; the BACKUPS are your safety net
 
-IF INTRAFORGE DOES NOT START
-  1. Is Docker Desktop running? Open it and wait for "Engine running". Then double-click "Open IntraForge".
-  2. Double-click "IntraForge Status" and read it. Send the saved status file (C:\IntraForgeData\logs) to the project team.
+UPGRADING
+  Run the newer IntraForge setup file. It takes a safety backup, keeps your data and keys, and puts the previous version
+  back by itself if the upgrade fails. See the quickstart for going back to an older version by hand.
 
-RECOVERY
-  Same PC, something wrong with the data: Restore-IntraForgeShop.ps1 (asks you to confirm; takes a safety backup first).
-  New or rebuilt PC: install Docker Desktop, copy this kit, then
-    powershell -ExecutionPolicy Bypass -File .\Install-IntraForgeShop.ps1 -KeysFile E:\intraforge-keys.env -RestoreFrom E:\backups
-  (E: = your USB drive with the saved keys file and the backup files).
+RECOVERY ON A NEW OR REBUILT PC
+  The backups can only be read with the shop's OWN keys file, so the installation must start from it (a new installation
+  makes new keys). Unpack the kit to C:\IntraForge, then in PowerShell in that folder (E: = the USB drive):
+    powershell -ExecutionPolicy Bypass -File .\Install-IntraForgeShop.ps1 -KeysFile E:\intraforge-keys.env -RestoreFrom E:\IntraForge-backups
+  (On a PC without Docker Desktop yet, run the setup file first, then Control Center > Uninstall > option C, then the line above.)
 
-Everything in this kit is unsigned (Windows may show a warning for the scripts). MinIO, which stores your files, is AGPL-3.0
+Everything in this kit is unsigned (Windows shows "Unknown publisher"). MinIO, which stores your files, is AGPL-3.0
 licensed: fine for your own shop; see THIRD_PARTY_LICENSES.md before giving IntraForge to anyone else.

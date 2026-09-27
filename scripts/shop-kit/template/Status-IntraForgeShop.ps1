@@ -20,16 +20,15 @@ Line "Computer:         $env:COMPUTERNAME, Windows $((Get-CimInstance Win32_Oper
 $envOk = Test-Path (Join-Path $PSScriptRoot '.env')
 Line "Keys (.env):      $(if ($envOk) { 'present' } else { 'MISSING - IntraForge cannot start without it; restore it from the USB copy' })"
 if (-not (Test-Quiet { docker info })) {
-    Line 'Docker:           NOT RUNNING (open Docker Desktop, or use "Open IntraForge")'
+    Line 'Docker:           NOT RUNNING (open the IntraForge Control Center and choose Start)'
 }
 else {
     $env:SHOP_HTTPS_PORT = "$(Get-ShopPort)"; $env:SHOP_DATA_DIR = ((Get-DataDir) -replace '\\', '/')
     Line 'Docker:           running'
     $ready = Test-Quiet { docker compose exec -T backend python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/readyz', timeout=5).status == 200 else 1)" }
     Line "IntraForge:       $(if ($ready) { 'HEALTHY (ready)' } else { 'NOT READY' })   address https://localhost:$(Get-ShopPort)"
-    $spCode = 'no answer'
-    try { $spCode = [string](Invoke-WebRequest -Uri "http://127.0.0.1:$(Get-SparePartsPort)/" -UseBasicParsing -TimeoutSec 8).StatusCode } catch { }
-    Line "Spare Parts app:   $(if ($spCode -eq '200') { 'answering' } else { "NOT ANSWERING ($spCode)" })   address http://127.0.0.1:$(Get-SparePartsPort)/"
+    $spReady = Test-SparePartsReady
+    Line "Spare Parts app:  $(if ($spReady) { 'answering' } else { 'NOT ANSWERING' })   opened from IntraForge > Apps (https://localhost:$(Get-ShopPort)/apps/spare-parts/)"
     Line 'Services:'
     $rows = & docker ps -a --filter 'label=com.docker.compose.project=intraforge-shop' --format '{{.Names}}|{{.Status}}|{{.State}}'
     foreach ($row in $rows) { $p = $row -split '\|'; Line ("  {0,-38} {1}" -f $p[0], $p[1]) }
@@ -43,9 +42,9 @@ $backupDir = Join-Path (Get-DataDir) 'backups'
 $last = Get-LatestBackupTime $backupDir
 if ($last) {
     $age = [int]((Get-Date) - $last).TotalHours
-    Line "Last complete backup: $last  ($age hours ago)$(if ($age -gt 26) { '   <-- OLDER THAN A DAY: run "IntraForge Backup Now"' })"
+    Line "Last complete backup: $last  ($age hours ago)$(if ($age -gt 26) { '   <-- OLDER THAN A DAY: use Backup in the IntraForge Control Center' })"
 }
-else { Line 'Last complete backup: NONE FOUND - run "IntraForge Backup Now"' }
+else { Line 'Last complete backup: NONE FOUND - use Backup in the IntraForge Control Center' }
 if (Test-Path (Join-Path $backupDir 'BACKUP-FAILED.txt')) { Line "Last backup attempt FAILED: $(Get-Content (Join-Path $backupDir 'BACKUP-FAILED.txt'))" }
 $drive = ([IO.Path]::GetPathRoot((Get-DataDir))).TrimEnd('\', ':')
 Line "Free disk ($drive):    $([math]::Round((Get-PSDrive -Name $drive).Free / 1GB, 1)) GB"

@@ -153,9 +153,17 @@ static class Program
         bool alreadyInstalled = File.Exists(Path.Combine(dir, ".install-complete")) && File.Exists(Path.Combine(dir, "Start-IntraForgeShop.ps1"));
         if (alreadyInstalled && !Flag(args, "extractonly"))
         {
-            Heading("IntraForge is already installed in " + dir);
-            Say("Nothing is changed. Starting it and opening it in your browser.");
-            return RunPowerShell(dir, "Start-IntraForgeShop.ps1", quiet ? "-NoBrowser" : "");
+            string installedMarker = Path.Combine(dir, ".setup-extracted");
+            string installedPayload = File.Exists(installedMarker) ? File.ReadAllText(installedMarker).Trim() : "";
+            if (installedPayload == payloadId)
+            {
+                Heading("IntraForge is already installed in " + dir);
+                Say("Nothing is changed. Starting it and opening the IntraForge Control Center.");
+                int started = RunPowerShell(dir, "Start-IntraForgeShop.ps1", "-NoBrowser");
+                if (!quiet) OpenControlCenter(dir);
+                return started;
+            }
+            return Upgrade(self, kitStart, kitLength, dir, payloadId, quiet, data);
         }
 
         if (!quiet)
@@ -175,26 +183,7 @@ static class Program
         else
         {
             Heading("Unpacking IntraForge into " + dir + " (about a minute)");
-            Directory.CreateDirectory(dir);
-            string root = Path.GetFullPath(dir).TrimEnd('\\') + "\\";
-            using (FileStream f = new FileStream(self, FileMode.Open, FileAccess.Read, FileShare.Read))
-            using (SubStream sub = new SubStream(f, kitStart, kitLength))
-            using (ZipArchive zip = new ZipArchive(sub, ZipArchiveMode.Read))
-            {
-                foreach (ZipArchiveEntry entry in zip.Entries)
-                {
-                    string name = entry.FullName.Replace('/', '\\');
-                    while (name.StartsWith(".\\")) name = name.Substring(2);
-                    if (name.Length == 0) continue;
-                    string target = Path.GetFullPath(Path.Combine(dir, name));
-                    if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase) && !string.Equals(target + "\\", root, StringComparison.OrdinalIgnoreCase))
-                        throw new InvalidOperationException("The package contains an unsafe path (" + entry.FullName + "). Not unpacking.");
-                    if (entry.FullName.EndsWith("/")) { Directory.CreateDirectory(target); continue; }
-                    Directory.CreateDirectory(Path.GetDirectoryName(target));
-                    if (entry.Length > 50 * 1024 * 1024) Say("  " + name + "  (" + (entry.Length / (1024 * 1024)) + " MB)");
-                    entry.ExtractToFile(target, true);
-                }
-            }
+            ExtractKit(self, kitStart, kitLength, dir);
             // The Windows prerequisites (their signatures are checked by the kit's scripts right before they are run).
             string prereq = Path.Combine(dir, "prerequisites");
             Directory.CreateDirectory(prereq);
@@ -216,8 +205,8 @@ static class Program
         int rc = RunPowerShell(dir, "Setup-IntraForge.ps1", extra);
         if (rc == 0)
         {
-            Good("Done. The Spare Parts application opens in your browser; the desktop has 'Open Spare Parts' and 'Open IntraForge'.");
-            if (!quiet) { try { Process.Start("http://127.0.0.1:" + (spPort ?? "3000") + "/"); } catch (Exception) { } }
+            Good("Done. The IntraForge Control Center opens now; afterwards use the one desktop shortcut, 'IntraForge'.");
+            if (!quiet) OpenControlCenter(dir);
         }
         else if (rc == 3010)
         {
@@ -232,6 +221,65 @@ static class Program
             Warn("Setup stopped (see the message above). Details: " + (data ?? @"C:\IntraForgeData") + @"\logs\setup.log. You can fix the cause and run this Setup again: it carries on from where it stopped.");
         }
         return rc;
+    }
+
+    // Unpacks the kit zip (one region of this file) into a folder. Every entry must stay inside it.
+    static void ExtractKit(string self, long kitStart, long kitLength, string dir)
+    {
+        Directory.CreateDirectory(dir);
+        string root = Path.GetFullPath(dir).TrimEnd('\\') + "\\";
+        using (FileStream f = new FileStream(self, FileMode.Open, FileAccess.Read, FileShare.Read))
+        using (SubStream sub = new SubStream(f, kitStart, kitLength))
+        using (ZipArchive zip = new ZipArchive(sub, ZipArchiveMode.Read))
+        {
+            foreach (ZipArchiveEntry entry in zip.Entries)
+            {
+                string name = entry.FullName.Replace('/', '\\');
+                while (name.StartsWith(".\\")) name = name.Substring(2);
+                if (name.Length == 0) continue;
+                string target = Path.GetFullPath(Path.Combine(dir, name));
+                if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase) && !string.Equals(target + "\\", root, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("The package contains an unsafe path (" + entry.FullName + "). Not unpacking.");
+                if (entry.FullName.EndsWith("/")) { Directory.CreateDirectory(target); continue; }
+                Directory.CreateDirectory(Path.GetDirectoryName(target));
+                if (entry.Length > 50 * 1024 * 1024) Say("  " + name + "  (" + (entry.Length / (1024 * 1024)) + " MB)");
+                entry.ExtractToFile(target, true);
+            }
+        }
+    }
+
+    // An earlier version is installed: unpack this version next to it and let its Upgrade script take over (safety backup
+    // first, previous version put back if anything fails). The unpacking never touches data.
+    static int Upgrade(string self, long kitStart, long kitLength, string dir, string payloadId, bool quiet, string data)
+    {
+        string installedVersion = "an earlier version";
+        try { installedVersion = "version " + File.ReadAllText(Path.Combine(dir, "VERSION")).Trim(); } catch (Exception) { }
+        Heading("IntraForge (" + installedVersion + ") is installed in " + dir);
+        Say("This setup upgrades it. Your data is kept: a complete backup is taken first, and if anything goes wrong the");
+        Say("previous version is put back and started again.");
+        if (!quiet) { Console.Write("Press Enter to upgrade (close this window to cancel)... "); Console.ReadLine(); }
+        string staging = Path.Combine(dir, ".upgrade-staging");
+        if (Directory.Exists(staging)) Directory.Delete(staging, true);
+        Heading("Unpacking the new version (about a minute)");
+        ExtractKit(self, kitStart, kitLength, staging);
+        Good("Unpacked.");
+        Heading("Upgrading (a few minutes)");
+        int rc = RunPowerShell(staging, "Upgrade-IntraForgeShop.ps1", "-InstallDir \"" + dir + "\"" + (quiet ? " -Quiet" : ""));
+        if (rc == 0)
+        {
+            File.WriteAllText(Path.Combine(dir, ".setup-extracted"), payloadId);
+            try { Directory.Delete(staging, true); } catch (Exception) { }
+            Good("Upgraded. The IntraForge Control Center opens now; afterwards use the one desktop shortcut, 'IntraForge'.");
+            if (!quiet) OpenControlCenter(dir);
+        }
+        else Warn("The upgrade did not complete (see the messages above; details in " + (data ?? @"C:\IntraForgeData") + @"\logs\shop.log). Your data was kept.");
+        return rc;
+    }
+
+    static void OpenControlCenter(string dir)
+    {
+        string cc = Path.Combine(dir, "IntraForgeControlCenter.exe");
+        try { if (File.Exists(cc)) Process.Start(new ProcessStartInfo(cc) { WorkingDirectory = dir, UseShellExecute = true }); } catch (Exception) { }
     }
 
     static void VerifyRegion(FileStream f, long start, long length, byte[] expected)

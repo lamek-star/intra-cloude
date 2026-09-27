@@ -59,10 +59,18 @@ services:
     pull_policy: never
     restart: unless-stopped
     networks: [isolated]
+  # The Spare Parts service application (ADR-0018): served by the proxy under /apps/spare-parts/ on IntraForge's own
+  # address, with IntraForge's sign-in; its data, files, audit and settings live in IntraForge. It gets only the three
+  # values it needs from .env (compose substitutes them), never the whole file, and it has no port on this computer.
   spareparts:
     image: intraforge-shop-spareparts:@TAG@
     pull_policy: never
     restart: unless-stopped
+    environment:
+      INTRAFORGE_SERVICE_TOKEN: ${SERVICE_APP_SPAREPARTS_TOKEN:?}
+      SPAREPARTS_PG_PASSWORD: ${SERVICE_APP_SPAREPARTS_DB_PASSWORD:?}
+      SPAREPARTS_PG_DATABASE: ${TENANT_DB_NAME:?}
+    depends_on: [backend, postgres-tenant]
     networks: [isolated]
   proxy:
     image: caddy:2-alpine
@@ -70,7 +78,6 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:${SHOP_HTTPS_PORT:-8443}:443"
-      - "127.0.0.1:${SHOP_SPAREPARTS_PORT:-3000}:3000"
     environment:
       PROXY_TLS_HOSTNAMES: "localhost 127.0.0.1"
     volumes:

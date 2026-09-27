@@ -42,7 +42,12 @@ function Get-DataDir {
     return ((Get-ShopSetting 'SHOP_DATA_DIR' 'C:/IntraForgeData') -replace '/', '\')
 }
 function Get-ShopPort { return [int](Get-ShopSetting 'SHOP_HTTPS_PORT' '8443') }
-function Get-SparePartsPort { return [int](Get-ShopSetting 'SHOP_SPAREPARTS_PORT' '3000') }
+# The product version of this kit (the VERSION file; also what the Control Center and Installed apps show).
+function Get-KitVersion {
+    $file = Join-Path $script:KitDir 'VERSION'
+    if (Test-Path $file) { return (Get-Content $file -TotalCount 1).Trim() }
+    return 'unknown'
+}
 function Get-ShopVersion {
     $file = Join-Path $script:KitDir 'BUILD_INFO.txt'
     if (Test-Path $file) { return ((Get-Content $file | Select-Object -First 1)) }
@@ -232,3 +237,62 @@ function Get-LatestBackupTime([string]$Folder) {
     if ($set.Count -lt 3) { return $null }
     return ($set.Values | Sort-Object LastWriteTime | Select-Object -First 1).LastWriteTime
 }
+
+# The Spare Parts service answers its own health check (process health; installed or not).
+function Test-SparePartsReady {
+    return Test-Quiet { docker compose exec -T spareparts wget -q -T 5 -O /dev/null http://127.0.0.1:3000/apps/spare-parts/api/v1/health }
+}
+
+# ---- the one primary shortcut and the Installed-apps entry -------------------------------------------------------------------
+$script:ShortcutFolders = @([Environment]::GetFolderPath('Desktop'), (Join-Path ([Environment]::GetFolderPath('Programs')) 'IntraForge'))
+$script:LegacyShortcuts = @('Open IntraForge.lnk', 'IntraForge Backup Now.lnk', 'IntraForge Backup to USB.lnk', 'IntraForge Status.lnk', 'Open Spare Parts.url')
+function Get-ControlCenterPath { return (Join-Path $script:KitDir 'IntraForgeControlCenter.exe') }
+
+# One shortcut, "IntraForge", opening the Control Center (start, open, apps, backup, restore, diagnostics, uninstall all
+# live there). Older installations' separate shortcuts are removed.
+function Install-ShopShortcuts {
+    try {
+        $shell = New-Object -ComObject WScript.Shell
+        $cc = Get-ControlCenterPath
+        foreach ($folder in $script:ShortcutFolders) {
+            New-Item -ItemType Directory -Force -Path $folder | Out-Null
+            foreach ($old in $script:LegacyShortcuts) { Remove-Item -Path (Join-Path $folder $old) -ErrorAction SilentlyContinue }
+            $lnk = $shell.CreateShortcut((Join-Path $folder 'IntraForge.lnk'))
+            if (Test-Path $cc) { $lnk.TargetPath = $cc; $lnk.IconLocation = "$cc,0" }
+            else {
+                $lnk.TargetPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+                $lnk.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $script:KitDir 'Start-IntraForgeShop.ps1')`""
+            }
+            $lnk.WorkingDirectory = $script:KitDir
+            $lnk.Description = 'IntraForge Control Center: start and open IntraForge and your apps, back up, restore, diagnostics'
+            $lnk.Save()
+        }
+        Write-Host 'One shortcut, "IntraForge", is on the Desktop and in the Start menu. It opens the IntraForge Control Center.'
+    }
+    catch { Write-Host "Could not create the shortcut ($($_.Exception.Message)); start IntraForgeControlCenter.exe in $($script:KitDir)." -ForegroundColor Yellow }
+}
+function Remove-ShopShortcuts {
+    foreach ($folder in $script:ShortcutFolders) {
+        foreach ($name in @('IntraForge.lnk') + $script:LegacyShortcuts) { Remove-Item -Path (Join-Path $folder $name) -ErrorAction SilentlyContinue }
+    }
+    Remove-Item -Path (Join-Path ([Environment]::GetFolderPath('Programs')) 'IntraForge') -ErrorAction SilentlyContinue
+}
+
+# Windows Settings > Apps > Installed apps: "IntraForge", whose Uninstall opens the Control Center's guided removal.
+$script:UninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\IntraForge'
+function Register-ShopUninstallEntry {
+    try {
+        $cc = Get-ControlCenterPath
+        New-Item -Path $script:UninstallKey -Force | Out-Null
+        $version = Get-KitVersion
+        $values = @{
+            DisplayName = 'IntraForge'; Publisher = 'IntraForge'; DisplayVersion = $version
+            InstallLocation = $script:KitDir; NoModify = 1; NoRepair = 1
+            UninstallString = if (Test-Path $cc) { "`"$cc`" /uninstall" } else { "`"$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe`" -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $script:KitDir 'Uninstall-IntraForgeShop.ps1')`"" }
+        }
+        if (Test-Path $cc) { $values.DisplayIcon = "$cc,0" }
+        foreach ($k in $values.Keys) { Set-ItemProperty -Path $script:UninstallKey -Name $k -Value $values[$k] }
+    }
+    catch { Write-Host "Could not register IntraForge in Windows' Installed apps ($($_.Exception.Message))." -ForegroundColor Yellow }
+}
+function Unregister-ShopUninstallEntry { Remove-Item -Path $script:UninstallKey -Recurse -ErrorAction SilentlyContinue }
