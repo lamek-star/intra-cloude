@@ -450,6 +450,37 @@ scoped to the `app_instance` resource plus `database.read`/
 resource (its id comes back as `database_id` from
 `GET app-instances/{id}/runtime/`).
 
+## Service applications (ADR-0018) — a separate, internal interface
+
+Everything above is the contract for applications built *on* the App
+Platform (records in an App Platform instance). A **service application**
+— today only Spare Parts — is a separate program that IntraForge installs,
+opens and backs up, with its own database schema. It does **not** use this
+contract and nothing above changes for it. For completeness, what exists
+(details and rationale: `docs/architecture/adr/0018-service-applications.md`):
+
+- **Human-session endpoints** (same session/CSRF rules as the rest of the
+  API): `GET/POST service-apps/` (list, install), `GET/PATCH/DELETE
+  service-apps/{id}/` (settings, remove — the DELETE body carries
+  `confirm_name`, and `"delete_data": true` takes a backup first and
+  refuses if it fails), `POST service-apps/{id}/launch/`
+  (sets the app-session cookie and returns where to go),
+  `GET service-apps/{id}/removal-preview/`, `POST service-apps/{id}/reinstate/`.
+  Gated by the `spareparts.*` capabilities (open / configure / manage).
+- **Internal endpoints** `internal/service-apps/…` (`self`, `heartbeat`,
+  `sessions/introspect`, `sessions/revoke`, `users`, `audit-events`,
+  `config`, `files`, `files/{id}`): authenticated only by the deployment's
+  `X-IntraForge-Service-Token`, reachable only on the containers' private
+  network — the proxy answers **404** to `/api/v1/internal/` from outside.
+  They are not available to bearer-token `ApplicationCredential`s and are
+  not a public API; they may change with the service application they
+  serve.
+- A service application never receives an IntraForge password, session
+  cookie or bearer token: the proxy strips IntraForge's `sessionid` and
+  `csrftoken` cookies from requests to `/apps/spare-parts/`, and the
+  application checks its own app-session cookie against IntraForge on
+  every request (introspection).
+
 ## Versioning
 
 No API version header or URL-versioning scheme beyond the `/api/v1/`

@@ -1,5 +1,12 @@
 # Spare Parts Integration Readiness Review
 
+> **Superseded for the separately built Spare Parts application (2026-09-27).** That application is integrated as a
+> *service application* (ADR-0018, `docs/architecture/adr/0018-service-applications.md`): its own PostgreSQL schema and
+> least-privilege role in the tenant database, IntraForge identity / roles / files / audit / configuration / backups, opened
+> from **Apps** at `/apps/spare-parts/`. It does not use the App Platform record API this review evaluates. This review
+> remains accurate for building an application *on* the App Platform (and for the App Platform "Spare Parts / Inventory &
+> Sales" reference template).
+
 Original baseline: commit `886e75f` (App Platform Phase 3, complete — 508
 passed, 2 skipped, 0 failed). **Updated** after Post-Phase-3 Integration
 Enablement closed both blocking gaps this review originally identified
