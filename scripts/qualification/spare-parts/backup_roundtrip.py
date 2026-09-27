@@ -1,6 +1,7 @@
 """Backup -> modify -> restore -> verify, for the Spare Parts service application on the qualification stack.
 
-Uses the same management commands the shop kit's Backup/Restore scripts run (run_backup / restore_backup) and
+Runs the same commands, in the same order, as the shop kit's Backup and Restore scripts (run_backup; then
+sync_service_apps, restore_backup_file --replace for both databases, the stored files, migrate, sync_service_apps) and
 checks the application's state through its own API, opened from IntraForge exactly as a user would.
 """
 import hashlib
@@ -28,7 +29,7 @@ def manage(*args, timeout=600):
 
 def backup(kind):
     code, out = manage("run_backup", kind)
-    m = re.search(r"Backup ([0-9a-f-]{36}) succeeded", out)
+    m = re.search(r"Backup [0-9a-f-]{36} succeeded: (\S+)", out)
     check(f"backup {kind}", code == 0 and m is not None, out[-300:])
     return m.group(1) if m else None
 
@@ -92,10 +93,15 @@ changed = state(b)
 print("changed:", changed)
 check("the changes are visible before restoring", changed != before, str(changed))
 
-# --- restore (reverse order), as the shop kit's Restore does, then let the application reconnect
-for kind in ("tenant_db", "object_storage", "control_db"):
-    code, out = manage("restore_backup", ids[kind], "--yes", timeout=900)
+# --- restore exactly as the shop kit's Restore-IntraForgeShop.ps1 does, then let the application reconnect
+manage("sync_service_apps")
+for kind in ("control_db", "tenant_db", "object_storage"):
+    mode = [] if kind == "object_storage" else ["--replace"]
+    code, out = manage("restore_backup_file", ids[kind], "--type", kind, *mode, "--yes", timeout=900)
     check(f"restore {kind}", code == 0, out[-400:])
+for step in (("migrate", "--noinput"), ("sync_service_apps",)):
+    code, out = manage(*step)
+    check(" ".join(step) + " after restoring", code == 0, out[-300:])
 time.sleep(12)  # introspection (5 s) and configuration (10 s) caches
 
 b2 = Browser()

@@ -11,11 +11,13 @@ x-backend: &backend
 services:
   postgres-control:
     image: postgres:18
+    command: ["postgres", "-c", "max_locks_per_transaction=512"]
     env_file: ${QUALIFICATION_ENV_FILE}
     networks: [isolated]
     volumes: [control:/var/lib/postgresql]
   postgres-tenant:
     image: postgres:18
+    command: ["postgres", "-c", "max_locks_per_transaction=512"]
     env_file: ${QUALIFICATION_ENV_FILE}
     networks: [isolated]
     volumes: [tenant:/var/lib/postgresql]

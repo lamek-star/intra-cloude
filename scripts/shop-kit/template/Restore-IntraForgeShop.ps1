@@ -59,7 +59,9 @@ if (-not $SkipSafetyBackup) {
     Step 'Safety backup of the current state (so this restore can be undone)'
     & (Join-Path $PSScriptRoot 'Backup-IntraForgeShop.ps1')
     if ($LASTEXITCODE -ne 0) { throw 'The safety backup failed, so nothing was restored. Fix that first, or run with -SkipSafetyBackup only if IntraForge itself is broken.' }
-    # the safety backup is now the newest set: remember the chosen files before anything else changes
+    # the safety backup is now the newest set (the chosen files were remembered above): it is what a failed restore
+    # is rolled back to
+    $safety = Get-BackupSet $dataBackups
 }
 if ($BackupFolder -ne $dataBackups) {
     foreach ($type in 'control_db', 'tenant_db', 'object_storage') { Copy-Item -Path $set[$type].FullName -Destination $dataBackups -Force }
@@ -69,18 +71,36 @@ Step 'Stopping IntraForge (the databases stay up for the restore)'
 Compose up -d --pull never postgres-control postgres-tenant valkey object-storage
 Compose stop proxy spareparts frontend backend worker beat
 
-Step 'Restoring the company data, the business records and the stored files'
-# The applications' database roles must exist before the business records are restored (the backup names them as owners).
-Compose run --rm --no-deps backend python manage.py sync_service_apps
-# The databases become exactly the backup (--replace: one transaction each; everything entered after the backup goes,
-# and a backup made by an earlier version restores too). Stored files are put back as they were in the backup.
-foreach ($type in 'control_db', 'tenant_db', 'object_storage') {
-    $mode = if ($type -eq 'object_storage') { @() } else { @('--replace') }
-    Compose run --rm --no-deps backend python manage.py restore_backup_file "/backups/$($set[$type].Name)" --type $type @mode --yes
+# One backup set into the stopped system: roles first (the backup names them as owners), both databases become exactly
+# the backup (--replace: one transaction each; everything entered after the backup goes, and a backup made by an
+# earlier version restores too), the stored files are put back, then the current database structure is applied.
+function Restore-Set($files) {
+    Compose run --rm --no-deps backend python manage.py sync_service_apps
+    foreach ($type in 'control_db', 'tenant_db', 'object_storage') {
+        $mode = if ($type -eq 'object_storage') { @() } else { @('--replace') }
+        Compose run --rm --no-deps backend python manage.py restore_backup_file "/backups/$($files[$type].Name)" --type $type @mode --yes
+    }
+    Compose run --rm --no-deps backend python manage.py migrate --noinput
+    Compose run --rm --no-deps backend python manage.py sync_service_apps
 }
-# A backup from an older version gets the current database structure; application schemas are handed back to their roles.
-Compose run --rm --no-deps backend python manage.py migrate --noinput
-Compose run --rm --no-deps backend python manage.py sync_service_apps
+
+Step 'Restoring the company data, the business records and the stored files'
+try { Restore-Set $set }
+catch {
+    # Each database restore is all-or-nothing, but the three together are not: one may already be replaced when
+    # a later one fails. Put the whole safety backup back, so the shop is as it was before this restore.
+    $reason = $_.Exception.Message
+    Write-ShopLog "restore from $BackupFolder FAILED ($reason)" 'shop.log'
+    if (-not $safety) { throw "The restore failed ($reason), and there is no safety backup to go back to (-SkipSafetyBackup). Use Control Center > Diagnostics." }
+    Write-Host "`nThe restore failed: $reason" -ForegroundColor Red
+    Step 'Putting the shop back as it was before this restore (the safety backup)'
+    Restore-Set $safety
+    Compose up -d --pull never
+    $back = Wait-ShopReady
+    Write-ShopLog "after the failed restore the safety backup was put back; healthy: $back" 'shop.log'
+    if ($back) { Write-Host 'Nothing was lost: IntraForge is running again with the data it had before this restore.' -ForegroundColor Yellow }
+    throw "The restore failed ($reason). The shop was put back as it was before (healthy: $back)."
+}
 
 Step 'Starting IntraForge again'
 Compose up -d --pull never
