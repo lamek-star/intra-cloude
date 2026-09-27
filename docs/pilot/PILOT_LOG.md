@@ -12,8 +12,8 @@ polish. P0/P1 are fixed **before** IntraForge becomes the shop's only record. Re
 
 ## Timing and outliers (write every slow moment; never average it away)
 
-Note the time of any action that felt slow (more than about 2 seconds), what it was, and run **IntraForge Status** right
-away; keep the status file. Known observation to watch for: an occasional ~2-second response (cause not yet identified).
+Note the time of any action that felt slow (more than about 2 seconds), what it was, and press **Diagnostics** in the
+IntraForge Control Center right away; keep the zip. Known observation to watch for: an occasional ~2-second response (cause not yet identified).
 
 | Date / time | Action (search / open product / receive / sell / file / start) | Seconds (about) | Status file |
 | --- | --- | --- | --- |

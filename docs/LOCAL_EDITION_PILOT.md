@@ -22,7 +22,7 @@ P3 polish); fix **P0/P1 before IntraForge becomes the shop's only record**. Real
 - [ ] Existing shop records preserved and still being kept (they remain the record of truth)
 - [ ] Administrator created; shop company created; **Spare Parts installed**
 - [ ] Users and permissions configured (cashier: sell only; receiver: receive only; owner: the rest)
-- [ ] **First restart of Windows done:** signed in, waited 2 minutes, IntraForge came up by itself, data still there; "IntraForge Status" saved
+- [ ] **First restart of Windows done:** signed in, waited 2 minutes, IntraForge came up by itself (Control Center: Healthy), data still there; Diagnostics zip saved
 - [ ] Initial stock plan prepared (which products first, counted shelf quantities)
 
 **Day 1**
