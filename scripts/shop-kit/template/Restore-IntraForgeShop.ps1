@@ -77,7 +77,9 @@ Compose stop proxy spareparts frontend backend worker beat
 function Restore-Set($files) {
     Compose run --rm --no-deps backend python manage.py sync_service_apps
     foreach ($type in 'control_db', 'tenant_db', 'object_storage') {
-        $mode = if ($type -eq 'object_storage') { @() } else { @('--replace') }
+        # (built by assignment: an `if` expression would unwrap a one-element array into a string, and splatting a
+        # string passes it character by character)
+        $mode = @(); if ($type -ne 'object_storage') { $mode = @('--replace') }
         Compose run --rm --no-deps backend python manage.py restore_backup_file "/backups/$($files[$type].Name)" --type $type @mode --yes
     }
     Compose run --rm --no-deps backend python manage.py migrate --noinput
