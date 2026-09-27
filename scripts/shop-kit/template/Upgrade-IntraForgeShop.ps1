@@ -43,9 +43,13 @@ function Invoke-Kit([string]$Dir, [string]$Script, [string[]]$Arguments = @()) {
         -WorkingDirectory $Dir -NoNewWindow -Wait -PassThru
     return $p.ExitCode
 }
-function Compose-In([string]$Dir) {
-    Push-Location $Dir
-    try { & docker compose @args; if ($LASTEXITCODE -ne 0) { throw "docker compose $($args -join ' ') failed in $Dir" } }
+# `Compose-In <folder> <compose arguments...>`. Deliberately no param() block: a declared parameter would capture
+# compose's own flags by prefix (PowerShell binds `-d` to `-Dir`).
+function Compose-In {
+    $dir = $args[0]
+    $rest = @($args | Select-Object -Skip 1)
+    Push-Location $dir
+    try { & docker compose @rest; if ($LASTEXITCODE -ne 0) { throw "docker compose $($rest -join ' ') failed in $dir" } }
     finally { Pop-Location }
 }
 
@@ -62,6 +66,8 @@ if (Test-Path $previous) { Remove-Item -Recurse -Force $previous }
 New-Item -ItemType Directory -Path $previous | Out-Null
 Get-ChildItem -Force $InstallDir | Where-Object { $keep -notcontains $_.Name } | ForEach-Object { Copy-Item -Recurse -Force $_.FullName $previous }
 Copy-Item -Force (Join-Path $InstallDir '.env') (Join-Path $previous '.env')
+$keysCopy = Join-Path (Get-DataDir) 'keys\intraforge-keys.env'
+$keysBefore = if (Test-Path $keysCopy) { [IO.File]::ReadAllBytes($keysCopy) } else { $null }
 
 $envPath = Join-Path $InstallDir '.env'
 $dataDir = Get-ShopSetting 'SHOP_DATA_DIR' 'C:/IntraForgeData'
@@ -121,6 +127,7 @@ catch {
     Write-Host 'Putting the previous version back (your data is kept)...' -ForegroundColor Yellow
     try { Compose-In $InstallDir down --remove-orphans } catch { }
     Get-ChildItem -Force $previous | ForEach-Object { Copy-Item -Recurse -Force $_.FullName $InstallDir }
+    if ($keysBefore) { [IO.File]::WriteAllBytes($keysCopy, $keysBefore) }
     Push-Location $InstallDir
     try {
         & docker compose up -d --pull never
