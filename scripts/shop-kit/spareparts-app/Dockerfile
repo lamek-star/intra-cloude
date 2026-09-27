@@ -12,7 +12,11 @@ COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY . .
 # next/image is not used by this app, so the native image library (sharp/libvips) is not shipped (IntraForge policy).
-RUN npm run build && npm prune --omit=dev --no-audit --no-fund && rm -rf node_modules/@img
+# The one-off standalone -> IntraForge data migration tool, bundled to plain JavaScript (the runtime has no TypeScript runner).
+RUN npm run build \
+ && npx esbuild scripts/migrate-to-intraforge.mts --bundle --platform=node --format=esm --target=node24 \
+      --packages=external --outfile=dist/migrate-to-intraforge.mjs \
+ && npm prune --omit=dev --no-audit --no-fund && rm -rf node_modules/@img
 
 FROM node:24-alpine
 WORKDIR /app
@@ -32,6 +36,7 @@ COPY --from=build --chown=node:node /app/next.config.ts ./next.config.ts
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/.next ./.next
 COPY --from=build --chown=node:node /app/public ./public
+COPY --from=build --chown=node:node /app/dist ./dist
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
