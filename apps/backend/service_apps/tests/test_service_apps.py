@@ -8,7 +8,7 @@ from django.db import connections
 from django.test import override_settings
 from django.urls import reverse
 from psycopg import sql
-from rest_framework.test import APIClient, APITestCase
+from rest_framework.test import APIClient, APITestCase, APITransactionTestCase
 
 from accounts.models import User
 from audit.models import AuditEvent
@@ -44,10 +44,7 @@ def tenant_superuser_connect():
     )
 
 
-@override_settings(SERVICE_APP_DEPLOYMENTS=DEPLOYMENTS)
-class ServiceAppTestBase(APITestCase):
-    databases = {"default", "tenant"}
-
+class ServiceAppHelpers:
     def setUp(self):
         SeedPermissionsCommand().handle()
         self.owner = User.objects.create_user(email="owner@example.test", password="Pw-owner-12345")
@@ -86,6 +83,18 @@ class ServiceAppTestBase(APITestCase):
 
     def introspect(self, token):
         return self.service.post(f"{INTERNAL}/sessions/introspect/", {"token": token}, format="json")
+
+
+@override_settings(SERVICE_APP_DEPLOYMENTS=DEPLOYMENTS)
+class ServiceAppTestBase(ServiceAppHelpers, APITestCase):
+    databases = {"default", "tenant"}
+
+
+@override_settings(SERVICE_APP_DEPLOYMENTS=DEPLOYMENTS)
+class CommittedServiceAppTestBase(ServiceAppHelpers, APITransactionTestCase):
+    """For tests where another process (pg_dump) must see the data: rows are committed, then flushed."""
+
+    databases = {"default", "tenant"}
 
 
 class InstallTests(ServiceAppTestBase):
@@ -463,3 +472,115 @@ class RemovalTests(ServiceAppTestBase):
         self.assertEqual(self.install(name="Fresh start").status_code, 201)
         event = AuditEvent.objects.filter(action="service_app.delete_data").get()
         self.assertEqual(set(event.context["backups"]), {"tenant_db", "object_storage"})
+
+
+class ControlCenterSupportTests(CommittedServiceAppTestBase):
+    """The commands the Windows Control Center calls (it has no IntraForge sign-in of its own)."""
+
+    def setUp(self):
+        super().setUp()
+        self.app_id = self.install().data["id"]
+
+    def test_list_service_apps_shows_names_and_open_paths_without_secrets(self):
+        import json as _json
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        out = StringIO()
+        call_command("list_service_apps", "--json", stdout=out)
+        data = _json.loads(out.getvalue())
+        self.assertEqual(data["installed"][0]["display_name"], "Harbour Motors Spare Parts")
+        self.assertEqual(data["installed"][0]["open_path"], f"/service-apps/{self.app_id}/open")
+        self.assertEqual(data["available"], [])
+        self.assertNotIn(DEPLOYMENTS["spare-parts"]["db_password"], out.getvalue())
+        self.assertNotIn(TOKEN, out.getvalue())
+
+    def test_a_backup_set_is_inspected_before_restoring(self):
+        import os
+        import tarfile
+        from unittest import mock
+
+        from system import backup_inspection
+        from system.backups import run_backup
+        from system.models import BackupRecord
+
+        app = ServiceApp.objects.get()
+        with tenant_superuser_connect() as conn, conn.cursor() as cur:
+            cur.execute(sql.SQL("CREATE TABLE {}.products (id text)").format(sql.Identifier(app.schema_name)))
+            cur.execute(
+                sql.SQL("INSERT INTO {}.products VALUES ('a'), ('b')").format(sql.Identifier(app.schema_name))
+            )
+        self.service.post(
+            f"{INTERNAL}/files/",
+            {
+                "file": SimpleUploadedFile("p.png", b"\x89PNG\r\n\x1a\n" + b"\x01" * 32),
+                "kind": "PRODUCT_IMAGE",
+            },
+            format="multipart",
+        )
+        records = {k: run_backup(k) for k in ("control_db", "tenant_db", "object_storage")}
+        for r in records.values():
+            self.assertEqual(r.status, BackupRecord.Status.SUCCESS, r.error_message)
+        paths = [records[k].file_path for k in ("control_db", "tenant_db", "object_storage")]
+
+        report = backup_inspection.inspect_backup_set(*paths)
+        self.assertTrue(report["ok"], report)
+        self.assertTrue(report["compatible"])
+        [inspected] = report["applications"]
+        self.assertEqual(inspected["display_name"], "Harbour Motors Spare Parts")
+        self.assertTrue(inspected["data_present"])
+        self.assertEqual(inspected["counts"]["products"], 2)
+        self.assertGreaterEqual(report["objects"]["verified"], 1)
+        self.assertTrue(all(f["valid"] for f in report["files"].values()))
+
+        # a backup from a newer program: refused
+        loader_cls = backup_inspection.MigrationLoader
+
+        class OlderProgram(loader_cls):
+            def __init__(self, *a, **kw):
+                super().__init__(*a, **kw)
+                self.disk_migrations.pop(("service_apps", "0001_initial"), None)
+
+        with mock.patch.object(backup_inspection, "MigrationLoader", OlderProgram):
+            newer = backup_inspection.inspect_backup_set(*paths)
+        self.assertFalse(newer["ok"])
+        self.assertFalse(newer["compatible"])
+        self.assertIn("NEWER", newer["errors"][0])
+
+        # a damaged stored file: refused (only when unencrypted can it be edited in place)
+        objects = records["object_storage"].file_path
+        if not objects.endswith(".icb"):
+            damaged = objects + ".damaged.tar"
+            with tarfile.open(objects) as src, tarfile.open(damaged, "w") as dst:
+                for member in src:
+                    data = src.extractfile(member).read() if member.isfile() else None
+                    if data is not None and member.name != "_manifest.json":
+                        data = b"X" + data[1:]
+                    dst.addfile(member, None if data is None else __import__("io").BytesIO(data))
+            bad = backup_inspection.inspect_backup_set(paths[0], paths[1], damaged)
+            self.assertFalse(bad["ok"])
+            self.assertIn("checksum", " ".join(bad["errors"]))
+            os.remove(damaged)
+        # a missing file: refused
+        self.assertFalse(backup_inspection.inspect_backup_set(paths[0], paths[1], "/nope")["ok"])
+
+        # an encrypted file with one changed byte: refused with a reason, not a crash
+        from django.test import override_settings
+
+        from exports import container
+        from system.backups import _DecryptedTempFile
+
+        with _DecryptedTempFile(paths[1]) as plain, open(plain, "rb") as f:
+            sealed = bytearray(container.write_container(f.read(), passphrase="k" * 32))
+        sealed[len(sealed) // 2] ^= 1
+        tampered = paths[1] + ".tampered.icb"
+        with open(tampered, "wb") as f:
+            f.write(sealed)
+        try:
+            with override_settings(BACKUP_ENCRYPTION_KEY="k" * 32):
+                bad = backup_inspection.inspect_backup_set(paths[0], tampered, paths[2])
+            self.assertFalse(bad["ok"])
+            self.assertIn("business data backup cannot be read", " ".join(bad["errors"]))
+        finally:
+            os.remove(tampered)
