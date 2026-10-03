@@ -32,13 +32,16 @@ function LoginPageInner() {
   // Sent here by an application (its "open" page): show that application's own sign-in.
   const appId = isSafeNextPath(next) ? appIdFromOpenPath(next) : null;
   const [branding, setBranding] = useState<SignInBranding | null>(null);
+  // Until the application's name has arrived, show neither header (no flash of "IntraForge" first).
+  const [brandingSettled, setBrandingSettled] = useState(!appId);
 
   useEffect(() => {
     if (!appId) return;
     let live = true;
     getSignInBranding(appId)
       .then((b) => live && setBranding(b))
-      .catch(() => undefined); // unknown or unavailable: the ordinary IntraForge sign-in
+      .catch(() => undefined) // unknown or unavailable: the ordinary IntraForge sign-in
+      .finally(() => live && setBrandingSettled(true));
     return () => {
       live = false;
     };
@@ -80,7 +83,9 @@ function LoginPageInner() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-white px-4">
       <div className="w-full max-w-sm">
-        {branding ? (
+        {!brandingSettled ? (
+          <div className="mb-8 h-[108px]" aria-hidden="true" />
+        ) : branding ? (
           <div className="mb-8 flex flex-col items-center text-center">
             <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
               <Package size={24} aria-hidden="true" />

@@ -385,6 +385,9 @@ namespace IntraForge.ControlCenter
                 return r;
             }
             r.Checks.Add(new Check("Installation", Level.Ok, "Version " + kit.Version + " in " + kit.Dir));
+            // Neither needs Docker: a waiting upgrade and the access mode are shown even when the engine is down.
+            AddUpdateCheck(kit, r);
+            AddNetworkCheck(kit, r);
             AddMachineChecks(kit, r);
 
             string desktop = Proc.DockerDesktopExe();
@@ -457,8 +460,6 @@ namespace IntraForge.ControlCenter
 
             if (ready == 200) LoadApps(kit, r);
             AddBackupCheck(kit, r);
-            AddNetworkCheck(kit, r);
-            AddUpdateCheck(kit, r);
 
             if (down.Count == expected.Length) { r.State = "Stopped"; r.Summary = "IntraForge is stopped. Press Start."; }
             else if (ready == 200 && down.Count == 0 && unhealthy.Count == 0 && r.SparePartsOk) { r.State = "Healthy"; r.Summary = "Everything is running."; }
