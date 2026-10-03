@@ -42,7 +42,7 @@ Real messages from the applications and what to do. Fixes are only those the app
 - **What it means:** Your role does not include the permission this action needs; the server refused it.
 - **What to check:** Which action / page; see LEVEL1_ROLES.md.
 - **How to fix:** Ask an administrator to give you the right role.
-- **When to contact an administrator:** Always -- roles are given by an administrator (and there is currently no screen to give roles; see the discrepancy list).
+- **When to contact an administrator:** Always -- roles are given by an administrator (organization page > member list > Roles column, since 1.2.0).
 
 ## A page says something "wasn't found" / "not found"
 
@@ -70,7 +70,7 @@ Real messages from the applications and what to do. Fixes are only those the app
 - **What it means:** Inside IntraForge, Spare Parts' Users page cannot add or change people.
 - **What to check:** --
 - **How to fix:** Use IntraForge (add the member there).
-- **When to contact an administrator:** To give roles (no screen yet).
+- **When to contact an administrator:** To give roles (organization page > Roles column).
 
 ## Spare Parts says "Insufficient available stock for … requested, … available."
 

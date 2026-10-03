@@ -9,7 +9,7 @@ IntraForge**: one sign-in, one set of users, one backup. Opening `http://127.0.0
 
 ## 1. Install (about 15-20 minutes, once)
 
-You have **one file**, `IntraForge-Setup-1.1.0.exe` (on a USB drive formatted NTFS or exFAT). It contains IntraForge, the
+You have **one file**, `IntraForge-Setup-1.2.0.exe` (on a USB drive formatted NTFS or exFAT). It contains IntraForge, the
 Spare Parts application, Windows' WSL package and Docker Desktop, so a PC with nothing on it installs with **no internet**.
 
 1. **Copy the file** to the shop PC and **double-click it.** Windows says "Unknown publisher" (not code-signed): **More info > Run
@@ -29,9 +29,12 @@ If a PC already has Docker Desktop, Setup skips those steps. If Setup shows a re
 virtualization switched off in the BIOS), it says how to fix it. The file is for your own PCs only (Docker Desktop's licence does
 not allow passing it on).
 
-**Upgrading from the earlier pilot installer** (`IntraForge-Setup-Complete.exe`): double-click the new file on the installed PC.
-It finds the installation, takes a complete backup, installs the new version over it (keeping your data and keys) and checks
-it is healthy; if anything fails it puts the previous version back by itself. The old desktop icons are replaced by the one
+**Upgrading** (from 1.1.0, or from the earlier pilot installer `IntraForge-Setup-Complete.exe`): put the new file in
+**Downloads**, on the **Desktop** or in `C:\IntraForgeData\updates`. The Control Center then shows **"A newer IntraForge is
+ready"** with an **Upgrade to ...** button (or double-click the file yourself). Setup shows the installed version and the new
+one and asks **"Upgrade now? Type Y"** -- nothing changes until you answer Y. It closes the Control Center, takes a complete
+backup, installs the new version over the old one (keeping your data and keys) and checks it is healthy; if anything fails it
+puts the previous version back by itself. An **older** setup file is refused (go back with Restore instead). The old desktop icons are replaced by the one
 **IntraForge** shortcut. (The old demo Spare Parts at port 3000 kept its data in the browser only; there is nothing on the PC
 to carry over from it.)
 
@@ -53,8 +56,9 @@ Below the status: your **applications** with an **Open** button, and each check 
 last backup) with what to do when it is not green. On the left: **Open IntraForge**, Start / Restart services / Stop,
 Backup now, Backup to a folder / USB, Restore, Settings, Diagnostics and Uninstall.
 
-The browser warns about the certificate the first time (it is this PC's own): **Advanced > continue**. Nothing is reachable from
-other computers; the address is `https://localhost:8443` on this PC only.
+The browser warns about the certificate the first time (it is this PC's own): **Advanced > continue**. By default nothing is
+reachable from other computers: the address is `https://localhost:8443` on this PC only. To let the shop's other PCs in, see
+section 5a.
 
 ## 3. First use: your shop
 
@@ -63,10 +67,18 @@ other computers; the address is `https://localhost:8443` on this PC only.
 3. **Apps > Install** Spare Parts, give it your shop's name. It shows **Running**. **Open** takes you straight into it, with no
    second sign-in.
 4. In Spare Parts, **Shop settings**: address, currency, tax and document details.
-5. Your staff: add them to the company in IntraForge (**Organization > Members**) and give each **one** Spare Parts role:
-   *Spare Parts manager* (everything), *sales* (customers, quotations, orders, invoices, payments), *inventory* (products,
-   stock, suppliers, purchase orders) or *viewer* (read only). People without a Spare Parts role do not see it in Apps. Signing out of
-   IntraForge also signs them out of Spare Parts.
+5. Your staff:
+   - each person creates **their own account** (IntraForge > *Create account*);
+   - you open your company (**Organizations** > your company) and press **Add member** with their email;
+   - in the **Roles** column of the member list choose **Give a role...**, pick one Spare Parts role and press **Give**:
+     *Spare Parts Manager* (everything), *Sales* (customers, quotations, orders, invoices, payments -- no cost prices),
+     *Inventory* (products, stock, suppliers, purchase orders, with cost prices) or *Viewer* (look only). The line under the
+     list says what the chosen role allows. The small **x** next to a role takes it away (the last Organization Administrator
+     cannot be removed).
+
+   People without a Spare Parts role do not see it in Apps. **Sign out** in Spare Parts signs the person out of IntraForge too
+   and shows the shop's own sign-in page (*Spare Parts -- your shop name*), so on a shared counter PC the next person signs in
+   as themselves.
 
 There is **no demo data** in your shop. Everything you enter is real.
 
@@ -91,6 +103,27 @@ Stock is a **ledger**: it only changes through receiving, delivering and recorde
   organization audit log) shows who did what.
 - **End of day:** compare the day's sales and 5 fast-moving items with your existing records, write every difference in
   [pilot/PILOT_LOG.md](pilot/PILOT_LOG.md).
+
+## 5a. The shop's other PCs (optional)
+
+By default only the shop PC itself opens IntraForge. To let the other PCs in the shop use it too:
+
+1. Prepare the network (once): the shop PC on the shop's **own** network, marked **Private** in Windows (Settings > Network &
+   internet > your network > *Network profile type: Private*); customers on a separate **guest** Wi-Fi that cannot reach the
+   shop's PCs; a **fixed address** for the shop PC in the router (DHCP reservation). See
+   `BARCODE-AND-SHOP-NETWORK-GUIDE` part 6 for the router steps.
+2. **Control Center > Settings > Shop network > Allow other PCs in this shop...**, tick that this is the shop's own network,
+   **Allow**, and confirm Windows' administrator question. IntraForge restarts (about a minute) and the result window shows
+   the address, for example `https://shop-pc:8443`.
+3. On each staff PC, once: copy the folder `C:\IntraForgeData\shop-network` (USB drive) and double-click
+   **Trust-IntraForge-on-this-PC.cmd** (it trusts IntraForge's own certificate for that Windows user and opens the address).
+4. Everyone signs in with **their own** account. Spare Parts' address there is `https://shop-pc:8443/apps/spare-parts/`; it
+   shows the shop's sign-in page.
+
+What it does: IntraForge also answers on the shop PC's network address; the Windows Firewall admits the shop's **Private**
+network only and **blocks public networks**; nothing is opened to the internet. **Settings > Shop network > This computer
+only** undoes all of it. If the Control Center says *"This PC's address changed"*, press **Update the address** there (and
+reserve the address in the router). The shop PC must be on for the other PCs to work.
 
 ## 6. Backups
 
@@ -124,7 +157,7 @@ steps (cancel a quotation or order, record a return, void an invoice). Write eve
 
 **The PC is lost or rebuilt.** You need the **keys file** from your USB drive and the **backup files** (a new installation makes
 new keys, which cannot read the old backups). In a command prompt, unpack the setup file without installing:
-`IntraForge-Setup-1.1.0.exe /extractonly` (it unpacks to `C:\IntraForge`), then in PowerShell in `C:\IntraForge`
+`IntraForge-Setup-1.2.0.exe /extractonly` (it unpacks to `C:\IntraForge`), then in PowerShell in `C:\IntraForge`
 (E: = your USB drive):
 `powershell -ExecutionPolicy Bypass -File .\Setup-IntraForge.ps1 -KeysFile E:\intraforge-keys.env -RestoreFrom E:\IntraForge-backups`
 It prepares Windows and Docker as in section 1, then installs IntraForge with the shop's own keys and restores the backup.
@@ -159,5 +192,6 @@ installed (other programs may use it).
 
 ## What is not covered (tell the staff)
 
-No access from other computers (this PC only); no tax/accounting compliance. IntraForge starts when you **sign in to Windows**,
+Other computers only when you switch it on (section 5a; tested with a virtual machine, not yet with a second physical PC in a
+shop -- try it with one PC first); no tax/accounting compliance. IntraForge starts when you **sign in to Windows**,
 not at the login screen: sign in, or set Windows to sign in automatically if the PC should come up unattended.

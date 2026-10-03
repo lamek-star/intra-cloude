@@ -82,3 +82,18 @@ export async function openServiceApp(id: string): Promise<void> {
   const { url } = await api.post<{ url: string }>(`/service-apps/${id}/launch/`);
   window.location.assign(url);
 }
+
+/** What the sign-in page shows when an application sent someone there to sign in. */
+export type SignInBranding = { product_name: string; display_name: string };
+
+const OPEN_PATH = /^\/service-apps\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/open\/?$/i;
+
+/** The application a sign-in's return path ("next") opens, if it is an application's open page. */
+export function appIdFromOpenPath(next: string | null | undefined): string | null {
+  const match = next ? OPEN_PATH.exec(next) : null;
+  return match ? match[1] : null;
+}
+
+export function getSignInBranding(appId: string): Promise<SignInBranding> {
+  return api.get<SignInBranding>(`/service-apps/${appId}/sign-in/`);
+}

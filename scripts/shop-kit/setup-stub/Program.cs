@@ -252,12 +252,36 @@ static class Program
     // first, previous version put back if anything fails). The unpacking never touches data.
     static int Upgrade(string self, long kitStart, long kitLength, string dir, string payloadId, bool quiet, string data)
     {
-        string installedVersion = "an earlier version";
-        try { installedVersion = "version " + File.ReadAllText(Path.Combine(dir, "VERSION")).Trim(); } catch (Exception) { }
-        Heading("IntraForge (" + installedVersion + ") is installed in " + dir);
-        Say("This setup upgrades it. Your data is kept: a complete backup is taken first, and if anything goes wrong the");
-        Say("previous version is put back and started again.");
-        if (!quiet) { Console.Write("Press Enter to upgrade (close this window to cancel)... "); Console.ReadLine(); }
+        string installed = null, incoming = null;
+        try { installed = File.ReadAllText(Path.Combine(dir, "VERSION")).Trim(); } catch (Exception) { }
+        try { incoming = ReadKitText(self, kitStart, kitLength, "VERSION"); } catch (Exception) { }
+        Version from = ParseVersion(installed), to = ParseVersion(incoming);
+        Heading("IntraForge is already installed in " + dir);
+        Say("  Installed now:   version " + (installed ?? "unknown"));
+        Say("  This setup:      version " + (incoming ?? "unknown"));
+        if (from != null && to != null && to < from)
+        {
+            Warn("This setup is OLDER than the IntraForge on this PC, so it does not install it. Nothing was changed.");
+            Say("To go back to an earlier state of the shop, restore a backup instead (Control Center > Restore).");
+            return 1;
+        }
+        Say("");
+        Say(from != null && to != null && to == from
+            ? "This setup reinstalls the same version (a different build of it)."
+            : "This setup UPGRADES it.");
+        Say("Your data is kept: a complete backup is taken first, and if anything goes wrong the previous version is put back");
+        Say("and started again. IntraForge is unavailable for a few minutes; the IntraForge Control Center is closed meanwhile.");
+        if (!quiet)
+        {
+            Console.Write("Upgrade now? Type Y and press Enter (anything else cancels): ");
+            string answer = (Console.ReadLine() ?? "").Trim();
+            if (!answer.Equals("Y", StringComparison.OrdinalIgnoreCase) && !answer.Equals("YES", StringComparison.OrdinalIgnoreCase))
+            {
+                Say("Nothing was changed.");
+                return 0;
+            }
+        }
+        CloseControlCenter(dir);
         string staging = Path.Combine(dir, ".upgrade-staging");
         if (Directory.Exists(staging)) Directory.Delete(staging, true);
         Heading("Unpacking the new version (about a minute)");
@@ -274,6 +298,49 @@ static class Program
         }
         else Warn("The upgrade did not complete (see the messages above; details in " + (data ?? @"C:\IntraForgeData") + @"\logs\shop.log). Your data was kept.");
         return rc;
+    }
+
+    static Version ParseVersion(string text)
+    {
+        Version v;
+        return text != null && Version.TryParse(text.Trim(), out v) ? v : null;
+    }
+
+    // One small text file from the kit inside this setup file (for example VERSION), without unpacking anything.
+    static string ReadKitText(string self, long kitStart, long kitLength, string name)
+    {
+        using (FileStream f = new FileStream(self, FileMode.Open, FileAccess.Read, FileShare.Read))
+        using (SubStream sub = new SubStream(f, kitStart, kitLength))
+        using (ZipArchive zip = new ZipArchive(sub, ZipArchiveMode.Read))
+        {
+            foreach (ZipArchiveEntry entry in zip.Entries)
+            {
+                string entryName = entry.FullName;
+                while (entryName.StartsWith("./")) entryName = entryName.Substring(2);
+                if (entryName != name || entry.Length > 4096) continue;
+                using (StreamReader r = new StreamReader(entry.Open())) return r.ReadToEnd().Trim();
+            }
+        }
+        return null;
+    }
+
+    // The Control Center's own program file is replaced by the upgrade: it must not be running (its file would be locked).
+    static void CloseControlCenter(string dir)
+    {
+        string exe = Path.GetFullPath(Path.Combine(dir, "IntraForgeControlCenter.exe"));
+        foreach (Process p in Process.GetProcessesByName("IntraForgeControlCenter"))
+        {
+            try
+            {
+                string path = p.MainModule.FileName;
+                if (!string.Equals(Path.GetFullPath(path), exe, StringComparison.OrdinalIgnoreCase)) continue;
+                Say("Closing the IntraForge Control Center for the upgrade.");
+                p.CloseMainWindow();
+                if (!p.WaitForExit(8000)) { p.Kill(); p.WaitForExit(5000); }
+            }
+            catch (Exception) { }
+            finally { p.Dispose(); }
+        }
     }
 
     static void OpenControlCenter(string dir)

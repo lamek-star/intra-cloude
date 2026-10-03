@@ -62,6 +62,15 @@ Unregister-ScheduledTask -TaskName 'IntraForge daily backup' -Confirm:$false -Er
 Unregister-ScheduledTask -TaskName 'IntraForge weekly backup check' -Confirm:$false -ErrorAction SilentlyContinue
 Remove-ShopShortcuts
 Unregister-ShopUninstallEntry
+# The shop-network firewall rules, if other PCs were allowed in (changing the firewall needs one UAC prompt).
+if (Get-NetFirewallRule -Group 'IntraForge shop network' -ErrorAction SilentlyContinue) {
+    $command = "Get-NetFirewallRule -Group 'IntraForge shop network' | Remove-NetFirewallRule"
+    if (Test-Admin) { Invoke-Expression $command }
+    else {
+        Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Verb RunAs -Wait `
+            -ArgumentList "-NoProfile -Command `"$command`""
+    }
+}
 
 Step 'Removing the containers'
 if ($dockerUp) {

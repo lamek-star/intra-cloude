@@ -9,6 +9,8 @@ from rest_framework.parsers import JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from audit import services as audit
+
 from . import services, sessions
 from .authentication import IsServicePrincipal, ServiceTokenAuthentication
 from .models import ServiceApp
@@ -94,7 +96,18 @@ class InternalIntrospectView(_Internal):
 class InternalRevokeView(_Internal):
     def post(self, request):
         app = self.instance(request)
-        sessions.revoke(app, str(request.data.get("token", "")))
+        token = str(request.data.get("token", ""))
+        if request.data.get("sign_out") is True:
+            user = sessions.sign_out(app, token)
+            if user is not None:
+                audit.record(
+                    actor=user,
+                    organization_id=app.organization_id,
+                    action="auth.logout",
+                    context={"via": "service_app", "service_app": str(app.id)},
+                )
+        else:
+            sessions.revoke(app, token)
         return Response({"ok": True})
 
 

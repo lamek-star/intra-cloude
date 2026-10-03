@@ -82,13 +82,17 @@ services:
     image: caddy:2-alpine
     pull_policy: never
     restart: unless-stopped
+    # This computer only by default: the loopback addresses. "Allow other PCs in this shop" (Control Center > Settings,
+    # Set-IntraForgeNetwork.ps1) sets SHOP_BIND_V4/V6 to every address and adds the PC's name and address to the
+    # certificate; the Windows Firewall then admits the shop's PRIVATE network only and blocks public networks.
     ports:
-      - "127.0.0.1:${SHOP_HTTPS_PORT:-8443}:443"
+      - "${SHOP_BIND_V4:-127.0.0.1}:${SHOP_HTTPS_PORT:-8443}:443"
       # Also the IPv6 loopback: "localhost" resolves to ::1 first, and a client that does not fall back quickly
       # (Windows retries a refused connection for ~2 s) would otherwise wait on every new connection.
-      - "[::1]:${SHOP_HTTPS_PORT:-8443}:443"
+      - "[${SHOP_BIND_V6:-::1}]:${SHOP_HTTPS_PORT:-8443}:443"
     environment:
-      PROXY_TLS_HOSTNAMES: "localhost 127.0.0.1"
+      PROXY_TLS_HOSTNAMES: "${SHOP_TLS_HOSTNAMES:-localhost 127.0.0.1}"
+      PROXY_DEFAULT_SNI: "${SHOP_DEFAULT_SNI:-localhost}"
     volumes:
       - ./infrastructure/proxy/Caddyfile:/etc/caddy/Caddyfile:ro
       - certificates:/data

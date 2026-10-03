@@ -46,6 +46,12 @@ the IntraForge repository) that IntraForge registers, provisions, authenticates,
    authenticated with the deployment's service token. Logging out of IntraForge, disabling the user, removing
    their membership or capability, or disabling the application ends access on the next request. No identity
    ever travels in a query parameter, and the service never trusts a browser-supplied role.
+   *Amended 2026-10-04 (1.2.0):* **Sign out inside the application ends the IntraForge login too**
+   (`sessions/revoke` with `"sign_out": true` deletes the bound Django session and revokes every application session
+   opened from it; audited `auth.logout`), so a shared counter PC needs the next person's own sign-in. A person who is
+   not signed in is sent to IntraForge's sign-in page **branded for the application** ("Spare Parts -- <shop>", from
+   the public `GET service-apps/{id}/sign-in/`, which returns only the product and shop name the application already
+   shows before sign-in). The application still never sees a password: the form and its MFA step stay IntraForge's.
 4. **Capabilities.** New default-deny capabilities `spareparts.*` (catalogue, products, cost, inventory, sales,
    suppliers, purchasing, reports, audit, settings). The application's five roles are reproduced as IntraForge
    system roles; the mapping from capabilities to the application's own permission names lives in the service's

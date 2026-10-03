@@ -40,9 +40,11 @@ What you can do in it (each area only if your role allows -- see section 12):
   can be collapsed.
 - **Top bar**: a search box *"Scan or type a SKU / part number…"* (opens the product), and your name and role; the
   account menu has **Sign out**.
-- **Sign out** ends the Spare Parts session and returns you to IntraForge's home page. Signing out of IntraForge also ends
+- **Sign out** (since 1.2.0) signs you out of IntraForge as well and shows the shop's own sign-in page ("Spare Parts --
+  <shop name>"), so on a shared counter PC the next person signs in as themselves. Signing out of IntraForge also ends
   your Spare Parts session (within about 5 seconds).
-- If your Spare Parts session is missing or expired, the app sends you back through IntraForge's **Open** automatically.
+- If your Spare Parts session is missing or expired, the app sends you back through IntraForge's **Open** automatically
+  (straight back in while you are still signed in to IntraForge; otherwise to that sign-in page).
 - Most lists share the same controls: a **search box**, a **status filter** where the list has statuses, **paging**, and the
   number / name as a link that opens the record. Success and error messages appear as short notices.
 

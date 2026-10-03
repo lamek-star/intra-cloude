@@ -6,6 +6,7 @@ urlpatterns = [
     path("service-apps/", views.ServiceAppListView.as_view()),
     path("service-apps/<uuid:app_id>/", views.ServiceAppDetailView.as_view()),
     path("service-apps/<uuid:app_id>/launch/", views.ServiceAppLaunchView.as_view()),
+    path("service-apps/<uuid:app_id>/sign-in/", views.ServiceAppSignInInfoView.as_view()),
     path("service-apps/<uuid:app_id>/removal-preview/", views.ServiceAppRemovalPreviewView.as_view()),
     path("service-apps/<uuid:app_id>/reinstate/", views.ServiceAppReinstateView.as_view()),
     # Internal (service token, internal network only; the proxy refuses /api/v1/internal/).

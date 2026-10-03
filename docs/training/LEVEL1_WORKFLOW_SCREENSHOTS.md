@@ -37,5 +37,5 @@ Administrator) role, so every step is visible.
 | 26 | Review audit (IntraForge) | Organization > **Audit log** | `spareparts.…` events, filters | -- | `WF-26-IntraForge-Audit.png` |
 | 27 | Logout | Spare Parts account menu > **Sign out**; IntraForge account menu > **Log out** | The sign-in page | -- | `WF-27-Logged-Out.png` |
 
-Not included because it is not implemented in the user interface: assigning a role to a member (server API only), switching
-on two-step sign-in (server API only), returning goods to a supplier.
+Not included because it is not implemented in the user interface: switching on two-step sign-in (server API only), returning
+goods to a supplier. (Assigning a role to a member has a screen since version 1.2.0: the Roles column of the member list.)

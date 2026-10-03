@@ -156,6 +156,27 @@ def revoke(app: ServiceApp, token: str) -> bool:
     )
 
 
+def sign_out(app: ServiceApp, token: str):
+    """ "Sign out" pressed inside the application: ends the IntraForge login this application session
+    came from as well (and so every application session opened from it), the same as IntraForge's own
+    Log out. On a shared counter PC the next person then has to sign in as themselves. Returns the user
+    whose login ended, or None when the token named no live session of this instance."""
+    if not token or len(token) > 200:
+        return None
+    session = (
+        ServiceAppSession.objects.select_related("user")
+        .filter(token_hash=_hash(token), service_app=app, revoked_at__isnull=True)
+        .first()
+    )
+    if session is None:
+        return None
+    store = _django_session(session.django_session_key)
+    if store is not None:
+        store.delete(session.django_session_key)
+    revoke_for_django_session(session.django_session_key)
+    return session.user
+
+
 def revoke_for_django_session(session_key: str) -> int:
     return ServiceAppSession.objects.filter(django_session_key=session_key, revoked_at__isnull=True).update(
         revoked_at=timezone.now()

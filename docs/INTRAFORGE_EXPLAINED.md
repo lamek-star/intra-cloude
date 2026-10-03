@@ -338,7 +338,8 @@ IntraForge is tested at three levels, and every result is recorded honestly (pas
 **Not done yet, or blocked by something outside the project:**
 
 - **Code signing** -- needs a certificate; until then Windows shows "Unknown publisher".
-- **Use from other computers on the shop network** -- not tested (no second machine), and off by design for now.
+- **Use from other computers on the shop network** -- since 1.2.0 an opt-in switch in the Control Center (Settings > Shop
+  network; Private networks only, public networks blocked); tested with a virtual machine, not yet with a second physical PC.
 - **An independent security scan** (HawkScan) -- not run (no account key).
 - **A real restart test on the shop's own PC** -- tested on a virtual machine so far.
 - **Catalogue search by manufacturer name** (for example "toyota pump") is not supported yet.

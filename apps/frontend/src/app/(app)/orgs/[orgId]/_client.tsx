@@ -21,12 +21,15 @@ import {
   THead,
   TRow,
 } from "@/components/ui";
+import { MemberRoles, type OrganizationRoles } from "./MemberRoles";
 
 export default function OrgDetailClient({ orgId }: { orgId: string }) {
   const [org, setOrg] = useState<Organization | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[] | null>(null);
   const [members, setMembers] = useState<Membership[] | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
+  // Only for people who may manage roles (permissions.manage); null hides the role controls.
+  const [roles, setRoles] = useState<OrganizationRoles | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [wsModalOpen, setWsModalOpen] = useState(false);
@@ -57,6 +60,29 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
     } catch {
       setTeams([]);
     }
+    try {
+      setRoles(await api.get<OrganizationRoles>(`/organizations/${orgId}/roles/`));
+    } catch {
+      setRoles(null);
+    }
+  }
+
+  function heldBy(membershipId: string): string[] {
+    return (roles?.assignments ?? []).filter((a) => a.membership_id === membershipId).map((a) => a.role_slug);
+  }
+
+  function setHeld(membershipId: string, held: string[]) {
+    setRoles((prev) =>
+      prev
+        ? {
+            ...prev,
+            assignments: [
+              ...prev.assignments.filter((a) => a.membership_id !== membershipId),
+              ...held.map((role_slug) => ({ membership_id: membershipId, role_slug })),
+            ],
+          }
+        : prev,
+    );
   }
 
   useEffect(() => {
@@ -148,6 +174,7 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
               <Th>Name</Th>
               <Th>Status</Th>
               <Th>Team</Th>
+              {roles && <Th>Roles</Th>}
             </THead>
             <tbody>
               {members.map((m) => (
@@ -162,6 +189,18 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
                   <Td className="text-slate-500">
                     {teams.find((t) => t.id === m.team)?.name ?? "—"}
                   </Td>
+                  {roles && (
+                    <Td>
+                      <MemberRoles
+                        orgId={orgId}
+                        membershipId={m.id}
+                        who={m.user.email}
+                        roles={roles.roles}
+                        held={heldBy(m.id)}
+                        onChange={(held) => setHeld(m.id, held)}
+                      />
+                    </Td>
+                  )}
                 </TRow>
               ))}
             </tbody>

@@ -297,6 +297,89 @@ class SessionTests(ServiceAppTestBase):
         for junk in ["", "x", "' OR 1=1 --", "a" * 5000]:
             self.assertEqual(self.introspect(junk).status_code, 401)
 
+    def test_plain_revoke_keeps_the_intraforge_login(self):
+        browser, resp = self.open_as(self.owner, self.app_id)
+        token = resp.cookies["ifapp_spare_parts"].value
+        self.service.post(f"{INTERNAL}/sessions/revoke/", {"token": token}, format="json")
+        self.assertEqual(self.introspect(token).status_code, 401)
+        self.assertEqual(browser.get("/api/v1/auth/me/").status_code, 200)
+
+    def test_sign_out_in_the_application_ends_the_intraforge_login_too(self):
+        sales = self.member("counter@example.test", "spare-parts-sales")
+        browser, resp = self.open_as(sales, self.app_id)
+        token = resp.cookies["ifapp_spare_parts"].value
+        self.assertEqual(browser.get("/api/v1/auth/me/").status_code, 200)
+
+        resp = self.service.post(
+            f"{INTERNAL}/sessions/revoke/", {"token": token, "sign_out": True}, format="json"
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self.introspect(token).status_code, 401)
+        self.assertIn(browser.get("/api/v1/auth/me/").status_code, (401, 403))
+        self.assertFalse(ServiceAppSession.objects.filter(user=sales, revoked_at__isnull=True).exists())
+        event = AuditEvent.objects.get(action="auth.logout", actor=sales)
+        self.assertEqual(str(event.organization_id), self.org_id)
+        self.assertEqual(event.context, {"via": "service_app", "service_app": self.app_id})
+        # Opening again needs a new sign-in.
+        self.assertIn(browser.post(f"/api/v1/service-apps/{self.app_id}/launch/").status_code, (401, 403))
+
+    def test_sign_out_only_ends_the_login_the_token_belongs_to(self):
+        sales = self.member("counter2@example.test", "spare-parts-sales")
+        mine, resp = self.open_as(sales, self.app_id)
+        token = resp.cookies["ifapp_spare_parts"].value
+        other, other_resp = self.open_as(self.owner, self.app_id)
+        other_token = other_resp.cookies["ifapp_spare_parts"].value
+
+        self.service.post(f"{INTERNAL}/sessions/revoke/", {"token": token, "sign_out": True}, format="json")
+        self.assertIn(mine.get("/api/v1/auth/me/").status_code, (401, 403))
+        self.assertEqual(other.get("/api/v1/auth/me/").status_code, 200)
+        self.assertEqual(self.introspect(other_token).status_code, 200)
+
+    def test_sign_out_with_an_unknown_token_changes_nothing(self):
+        browser, resp = self.open_as(self.owner, self.app_id)
+        token = resp.cookies["ifapp_spare_parts"].value
+        for junk in ["", "x", "a" * 5000, token + "x"]:
+            resp = self.service.post(
+                f"{INTERNAL}/sessions/revoke/", {"token": junk, "sign_out": True}, format="json"
+            )
+            self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self.introspect(token).status_code, 200)
+        self.assertEqual(browser.get("/api/v1/auth/me/").status_code, 200)
+        self.assertFalse(AuditEvent.objects.filter(action="auth.logout").exists())
+
+    def test_sign_out_needs_the_service_token(self):
+        browser, resp = self.open_as(self.owner, self.app_id)
+        token = resp.cookies["ifapp_spare_parts"].value
+        for client in (APIClient(), browser):
+            resp = client.post(
+                f"{INTERNAL}/sessions/revoke/", {"token": token, "sign_out": True}, format="json"
+            )
+            self.assertIn(resp.status_code, (401, 403))
+        self.assertEqual(self.introspect(token).status_code, 200)
+
+
+class SignInInfoTests(ServiceAppTestBase):
+    """The public sign-in branding: only the product and shop name, only for a usable instance."""
+
+    def setUp(self):
+        super().setUp()
+        self.app_id = self.install(name="Harbour Motors").data["id"]
+
+    def test_anyone_gets_the_product_and_shop_name_and_nothing_else(self):
+        resp = APIClient().get(f"/api/v1/service-apps/{self.app_id}/sign-in/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data, {"product_name": "Spare Parts", "display_name": "Harbour Motors"})
+
+    def test_unknown_disabled_or_removed_instances_are_not_found(self):
+        anonymous = APIClient()
+        self.assertEqual(anonymous.get(f"/api/v1/service-apps/{uuid.uuid4()}/sign-in/").status_code, 404)
+        ServiceApp.objects.filter(pk=self.app_id).update(enabled=False)
+        self.assertEqual(anonymous.get(f"/api/v1/service-apps/{self.app_id}/sign-in/").status_code, 404)
+        from django.utils import timezone
+
+        ServiceApp.objects.filter(pk=self.app_id).update(enabled=True, removed_at=timezone.now())
+        self.assertEqual(anonymous.get(f"/api/v1/service-apps/{self.app_id}/sign-in/").status_code, 404)
+
 
 class InternalApiTests(ServiceAppTestBase):
     def setUp(self):

@@ -67,7 +67,7 @@ the status filter; or open the **customer** to see all their quotations, orders 
 **Audit log**.
 
 **How do I log out?**
-In Spare Parts: account menu > **Sign out** (you return to IntraForge). In IntraForge: account menu > **Log out** (this also ends
-your Spare Parts session).
+In Spare Parts: account menu > **Sign out** (since 1.2.0 this also signs you out of IntraForge and shows the shop's sign-in
+page). In IntraForge: account menu > **Log out** (this also ends your Spare Parts session).
 
 **Something does not work?** See LEVEL1_TROUBLESHOOTING.md.

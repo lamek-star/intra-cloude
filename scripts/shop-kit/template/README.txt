@@ -2,7 +2,7 @@ INTRAFORGE LOCAL EDITION - SHOP KIT
 ===================================
 
 A private system for the shop -- people, files, and the Spare Parts / Inventory & Sales application -- that runs on THIS
-PC only and needs no internet. Read OWN_SHOP_PILOT_QUICKSTART.md (in this folder) for the daily steps and checklists.
+PC (and, if you switch it on, the shop's other PCs over the shop's own network) and needs no internet. Read OWN_SHOP_PILOT_QUICKSTART.md (in this folder) for the daily steps and checklists.
 
 WHAT IS IN THE KIT
   IntraForgeControlCenter.exe (the Control Center), the Setup / Install / Start / Stop / Backup / Restore / Status / Upgrade /
@@ -28,7 +28,10 @@ THE CONTROL CENTER (the "IntraForge" shortcut)
   Start / Stop / Restart services.
   Backup now, Backup to a folder / USB, and Restore (checks the backup and shows what it holds before anything changes;
                takes a safety backup of the current data first).
-  Settings     start with Windows, copy the keys file, where everything is.
+  Settings     start with Windows, copy the keys file, where everything is, and Shop network (let the shop's other
+               PCs in, over the shop's own Private network only; or back to this computer only).
+  Upgrade      when a newer IntraForge-Setup-<version>.exe is in Downloads, on the Desktop or in
+               C:\IntraForgeData\updates, an "Upgrade to <version>..." button appears.
   Diagnostics  a zip for support (no passwords or keys in it).
   Uninstall    A: remove, keep data   B: back up, then remove   C: complete removal (backup first; also deletes the data).
                Backups, the keys file and logs are never deleted.
@@ -46,8 +49,16 @@ WHERE THINGS ARE
   Your shop's records and files      stored by Docker Desktop; the BACKUPS are your safety net
 
 UPGRADING
-  Run the newer IntraForge setup file. It takes a safety backup, keeps your data and keys, and puts the previous version
-  back by itself if the upgrade fails. See the quickstart for going back to an older version by hand.
+  Put the newer setup file in Downloads (or on the Desktop) and press "Upgrade to <version>..." in the Control Center, or
+  run the file yourself. It shows the installed and the new version and asks "Upgrade now? Type Y" -- nothing changes before
+  you answer. It takes a safety backup, keeps your data, keys and shop-network setting, and puts the previous version back by
+  itself if the upgrade fails. An older setup file is refused. See the quickstart for going back to an older version by hand.
+
+THE SHOP'S OTHER PCS (optional)
+  Control Center > Settings > Shop network > "Allow other PCs in this shop...". Only on the shop's own network marked Private
+  in Windows; public networks are blocked by the Windows Firewall; nothing is opened to the internet. Then, on each staff PC
+  once: run C:\IntraForgeData\shop-network\Trust-IntraForge-on-this-PC.cmd (copy the folder on a USB drive) and open the
+  address it shows. Everyone signs in with their own account.
 
 RECOVERY ON A NEW OR REBUILT PC
   The backups can only be read with the shop's OWN keys file, so the installation must start from it (a new installation

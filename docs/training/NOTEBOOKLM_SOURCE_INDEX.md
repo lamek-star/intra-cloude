@@ -49,7 +49,9 @@ IntraForge's `permissions/catalog.py` and the Django apps each page calls; Spare
 
 ## Discrepancies found (documentation vs implementation)
 
-1. **Assigning a role to a member has no screen.** DOCUMENTED BUT IMPLEMENTATION NOT CONFIRMED in the user interface:
+1. **RESOLVED in 1.2.0 (2026-10-04): the member list now has a Roles column** (give / take away, last-administrator guard,
+   audited). The finding below is kept as it was recorded on 2026-09-29.
+   **Assigning a role to a member has no screen.** DOCUMENTED BUT IMPLEMENTATION NOT CONFIRMED in the user interface:
    `docs/OWN_SHOP_PILOT_QUICKSTART.md` and `docs/INTRAFORGE_EXPLAINED.md` tell the owner to give staff a Spare Parts role in
    *Organization > Members*. The server supports it (`POST /api/v1/organizations/<org>/members/<membership>/role/`,
    `permissions.manage`), but no IntraForge page calls it; *Add member* adds a person **without a role** (so they can do nothing).

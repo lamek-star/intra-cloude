@@ -17,7 +17,9 @@ using System.IO.Compression;
 using System.Linq;
 using System.Management;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Security;
+using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -74,6 +76,8 @@ namespace IntraForge.ControlCenter
         public int Port = 8443;
         public string DataDir = @"C:\IntraForgeData";
         public string Version = "unknown";
+        // "shop" when other PCs in the shop may open IntraForge (Set-IntraForgeNetwork.ps1), with the PC's name/address then.
+        public string Network = "", LanAddress = "", LanName = "";
         // The kit's docker-compose.yml names its project "intraforge-shop"; the override exists only to rehearse the
         // Control Center against another stack.
         public static readonly string Project = Environment.GetEnvironmentVariable("INTRAFORGE_CC_PROJECT") ?? "intraforge-shop";
@@ -82,7 +86,7 @@ namespace IntraForge.ControlCenter
         {
             Kit k = new Kit();
             k.Dir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
-            // Only these two non-secret settings are read from the keys file; nothing else is ever shown or copied.
+            // Only these non-secret settings are read from the keys file; nothing else is ever shown or copied.
             string env = Path.Combine(k.Dir, ".env");
             if (File.Exists(env))
             {
@@ -90,6 +94,9 @@ namespace IntraForge.ControlCenter
                 {
                     if (line.StartsWith("SHOP_HTTPS_PORT=")) { int p; if (int.TryParse(line.Substring(16).Trim(), out p)) k.Port = p; }
                     if (line.StartsWith("SHOP_DATA_DIR=")) k.DataDir = line.Substring(14).Trim().Replace('/', '\\');
+                    if (line.StartsWith("SHOP_NETWORK=")) k.Network = line.Substring(13).Trim();
+                    if (line.StartsWith("SHOP_LAN_ADDRESS=")) k.LanAddress = line.Substring(17).Trim();
+                    if (line.StartsWith("SHOP_LAN_NAME=")) k.LanName = line.Substring(14).Trim();
                 }
             }
             string ver = Path.Combine(k.Dir, "VERSION");
@@ -104,6 +111,68 @@ namespace IntraForge.ControlCenter
         public string LogsDir { get { return Path.Combine(DataDir, "logs"); } }
         public string KeysFile { get { return Path.Combine(DataDir, @"keys\intraforge-keys.env"); } }
         public string Script(string name) { return Path.Combine(Dir, name); }
+        public bool ShopNetwork { get { return Network == "shop"; } }
+        public string LanUrl { get { return "https://" + LanName + ":" + Port; } }
+        public string ShopNetworkDir { get { return Path.Combine(DataDir, "shop-network"); } }
+
+        // This PC's address on the network that leads to the router (not a virtual WSL/Hyper-V adapter), or null.
+        public static string CurrentLanAddress()
+        {
+            try
+            {
+                foreach (NetworkInterface ni in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (ni.OperationalStatus != OperationalStatus.Up) continue;
+                    IPInterfaceProperties props = ni.GetIPProperties();
+                    if (!props.GatewayAddresses.Any(g => g.Address.AddressFamily == AddressFamily.InterNetwork && !g.Address.Equals(IPAddress.Any))) continue;
+                    foreach (UnicastIPAddressInformation a in props.UnicastAddresses)
+                        if (a.Address.AddressFamily == AddressFamily.InterNetwork && !a.Address.ToString().StartsWith("169.254.")) return a.Address.ToString();
+                }
+            }
+            catch (Exception) { }
+            return null;
+        }
+
+        // The newest IntraForge setup file newer than this installation, from the usual places a shop owner puts one
+        // (Downloads, Desktop, <data folder>\updates). Nothing is downloaded: IntraForge needs no internet.
+        public string[] UpdateFolders
+        {
+            get
+            {
+                string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                return new[] { Path.Combine(home, "Downloads"), Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), Path.Combine(DataDir, "updates") };
+            }
+        }
+
+        public static System.Version ParseVersion(string text)
+        {
+            Match m = Regex.Match(text ?? "", @"^\s*(\d+)\.(\d+)\.(\d+)\s*$");
+            return m.Success ? new System.Version(int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value)) : null;
+        }
+
+        public FileInfo FindNewerSetup(out System.Version newer)
+        {
+            newer = null;
+            System.Version installed = ParseVersion(Version);
+            if (installed == null) return null;
+            FileInfo best = null;
+            foreach (string folder in UpdateFolders)
+            {
+                try
+                {
+                    if (!Directory.Exists(folder)) continue;
+                    foreach (FileInfo f in new DirectoryInfo(folder).GetFiles("IntraForge-Setup-*.exe"))
+                    {
+                        Match m = Regex.Match(f.Name, @"^IntraForge-Setup-(\d+\.\d+\.\d+)\.exe$", RegexOptions.IgnoreCase);
+                        System.Version v = m.Success ? ParseVersion(m.Groups[1].Value) : null;
+                        if (v == null || v <= installed) continue;
+                        if (newer == null || v > newer || (v == newer && f.LastWriteTime > best.LastWriteTime)) { newer = v; best = f; }
+                    }
+                }
+                catch (Exception) { }
+            }
+            return best;
+        }
     }
 
     // ------------------------------------------------------------------------------------------------ running programs
@@ -195,6 +264,44 @@ namespace IntraForge.ControlCenter
             return Run(ps, "-NoProfile -ExecutionPolicy Bypass -File \"" + kit.Script(script) + "\" " + arguments, kit.Dir, timeoutMs, onLine);
         }
 
+        // A kit script that needs administrator rights (the Windows Firewall): one UAC prompt, its own window, its output
+        // collected through a transcript file. A declined prompt changes nothing.
+        public static ProcResult PowerShellElevated(Kit kit, string script, string arguments, int timeoutMs)
+        {
+            ProcResult r = new ProcResult();
+            string ps = Environment.ExpandEnvironmentVariables(@"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe");
+            string resultFile = Path.Combine(Path.GetTempPath(), "intraforge-" + Guid.NewGuid().ToString("N") + ".txt");
+            ProcessStartInfo psi = new ProcessStartInfo(ps, "-NoProfile -ExecutionPolicy Bypass -File \"" + kit.Script(script) + "\" " + arguments + " -ResultFile \"" + resultFile + "\"");
+            psi.UseShellExecute = true;
+            psi.Verb = "runas";
+            psi.WorkingDirectory = kit.Dir;
+            psi.WindowStyle = ProcessWindowStyle.Minimized;
+            try
+            {
+                using (Process p = Process.Start(psi))
+                {
+                    if (!p.WaitForExit(timeoutMs)) { r.TimedOut = true; try { p.Kill(); } catch (Exception) { } }
+                    else r.ExitCode = p.ExitCode;
+                }
+            }
+            catch (System.ComponentModel.Win32Exception ex)
+            {
+                r.ExitCode = ex.NativeErrorCode == 1223 ? 1223 : -1;
+                r.Output = ex.NativeErrorCode == 1223 ? "Cancelled: Windows' administrator question was not confirmed. Nothing was changed." : ex.Message;
+                return r;
+            }
+            try
+            {
+                string[] noise = { "**********", "Windows PowerShell transcript", "Start time:", "End time:", "Username:", "RunAs User:", "Configuration Name:",
+                                   "Machine:", "Host Application:", "Process ID:", "PSVersion:", "PSEdition:", "PSCompatibleVersions:", "BuildVersion:",
+                                   "CLRVersion:", "WSManStackVersion:", "PSRemotingProtocolVersion:", "SerializationVersion:", "Transcript started" };
+                r.Output = string.Join(Environment.NewLine, File.ReadAllLines(resultFile).Where(l => !noise.Any(n => l.StartsWith(n))));
+                File.Delete(resultFile);
+            }
+            catch (Exception) { if (r.Output.Length == 0) r.Output = "(no output)"; }
+            return r;
+        }
+
         public static int HttpStatus(string url, int timeoutMs, out string body)
         {
             body = "";
@@ -261,6 +368,8 @@ namespace IntraForge.ControlCenter
         public bool AppsKnown;
         public bool SparePartsOk;
         public DateTime? LastBackup;
+        public FileInfo NewerSetup;
+        public System.Version NewerVersion;
     }
 
     static class Health
@@ -348,6 +457,8 @@ namespace IntraForge.ControlCenter
 
             if (ready == 200) LoadApps(kit, r);
             AddBackupCheck(kit, r);
+            AddNetworkCheck(kit, r);
+            AddUpdateCheck(kit, r);
 
             if (down.Count == expected.Length) { r.State = "Stopped"; r.Summary = "IntraForge is stopped. Press Start."; }
             else if (ready == 200 && down.Count == 0 && unhealthy.Count == 0 && r.SparePartsOk) { r.State = "Healthy"; r.Summary = "Everything is running."; }
@@ -464,6 +575,28 @@ namespace IntraForge.ControlCenter
                     when.ToString("g") + " (" + (hours < 1 ? "less than an hour" : ((int)hours) + " hours") + " ago)" + (hours > 26 ? " -- older than a day: press Backup now" : "")));
         }
 
+        static void AddNetworkCheck(Kit kit, HealthReport r)
+        {
+            if (!kit.ShopNetwork) { r.Checks.Add(new Check("Access", Level.Info, "This computer only (Settings > Shop network to let the shop's other PCs in)")); return; }
+            string now = Kit.CurrentLanAddress();
+            if (now == null)
+                r.Checks.Add(new Check("Access", Level.Warn, "Shop network is on, but this PC is not connected to a network: the other PCs cannot reach IntraForge."));
+            else if (now != kit.LanAddress)
+                r.Checks.Add(new Check("Access", Level.Warn, "This PC's address changed from " + kit.LanAddress + " to " + now + ": the other PCs cannot connect. Settings > Shop network > Update the address (and reserve the address in the router)."));
+            else
+                r.Checks.Add(new Check("Access", Level.Ok, "This PC and the shop network: " + kit.LanUrl + "  (https://" + kit.LanAddress + ":" + kit.Port + ")"));
+        }
+
+        static void AddUpdateCheck(Kit kit, HealthReport r)
+        {
+            System.Version newer;
+            FileInfo setup = kit.FindNewerSetup(out newer);
+            if (setup == null) return;
+            r.NewerSetup = setup;
+            r.NewerVersion = newer;
+            r.Checks.Add(new Check("Upgrade", Level.Warn, "IntraForge " + newer + " is ready to install (" + setup.FullName + "). Press \"Upgrade to " + newer + "...\"."));
+        }
+
         public static string FirstLine(string text)
         {
             string t = (text ?? "").Trim();
@@ -482,6 +615,7 @@ namespace IntraForge.ControlCenter
         readonly Label summary = new Label();
         readonly ListView checks = new ListView();
         readonly FlowLayoutPanel appsPanel = new FlowLayoutPanel();
+        readonly FlowLayoutPanel upgradePanel = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Visible = false, Margin = new Padding(3, 0, 3, 10) };
         readonly TextBox log = new TextBox();
         readonly List<Button> actionButtons = new List<Button>();
         readonly System.Windows.Forms.Timer refreshTimer = new System.Windows.Forms.Timer();
@@ -538,11 +672,12 @@ namespace IntraForge.ControlCenter
             actions.Controls.Add(ActionButton("Backup to a folder / USB...", (s, e) => BackupToFolder()));
             actions.Controls.Add(ActionButton("Restore...", (s, e) => OpenRestore()));
             actions.Controls.Add(Spacer());
-            actions.Controls.Add(ActionButton("Settings", (s, e) => new SettingsForm(kit).ShowDialog(this)));
+            actions.Controls.Add(ActionButton("Settings", (s, e) => OpenSettings()));
             actions.Controls.Add(ActionButton("Diagnostics...", (s, e) => ExportDiagnostics()));
             actions.Controls.Add(ActionButton("Uninstall...", (s, e) => OpenUninstall()));
 
-            TableLayoutPanel right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6 };
+            TableLayoutPanel right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 7 };
+            right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -554,6 +689,7 @@ namespace IntraForge.ControlCenter
             summary.Font = new Font("Segoe UI", 10.5f);
             summary.Margin = new Padding(3, 0, 3, 10);
             right.Controls.Add(summary);
+            right.Controls.Add(upgradePanel);
             right.Controls.Add(SectionLabel("Applications"));
             appsPanel.AutoSize = true;
             appsPanel.FlowDirection = FlowDirection.TopDown;
@@ -659,6 +795,7 @@ namespace IntraForge.ControlCenter
                 default: statusDot.ForeColor = Color.FromArgb(239, 68, 68); break;
             }
             summary.Text = r.Summary;
+            ShowUpgrade(r);
             checks.BeginUpdate();
             checks.Items.Clear();
             foreach (Check c in r.Checks)
@@ -688,6 +825,46 @@ namespace IntraForge.ControlCenter
                 row.Controls.Add(open);
                 appsPanel.Controls.Add(row);
             }
+        }
+
+        void ShowUpgrade(HealthReport r)
+        {
+            upgradePanel.Controls.Clear();
+            upgradePanel.Visible = r.NewerSetup != null;
+            if (r.NewerSetup == null) return;
+            upgradePanel.Controls.Add(new Label { Text = "A newer IntraForge is ready: " + kit.Version + "  ->  " + r.NewerVersion, Font = new Font("Segoe UI Semibold", 10f), AutoSize = true, Margin = new Padding(0, 8, 12, 0) });
+            Button go = new Button { Text = "Upgrade to " + r.NewerVersion + "...", AutoSize = true, Height = 32, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(245, 158, 11), ForeColor = Color.White };
+            go.FlatAppearance.BorderSize = 0;
+            FileInfo setup = r.NewerSetup;
+            System.Version version = r.NewerVersion;
+            go.Click += (s, e) => StartUpgrade(setup, version);
+            upgradePanel.Controls.Add(go);
+        }
+
+        // The upgrade itself is the setup file's job (backup first, previous version put back on failure). The Control
+        // Center only starts it -- after asking -- and closes, so its own program file can be replaced.
+        void StartUpgrade(FileInfo setup, System.Version version)
+        {
+            if (busy) return;
+            if (!Confirm("Upgrade IntraForge from version " + kit.Version + " to " + version + "?" + Environment.NewLine + Environment.NewLine +
+                         "Setup file: " + setup.FullName + Environment.NewLine + Environment.NewLine +
+                         "Your data is kept: a complete backup is taken first, and if anything goes wrong the previous version is put back. " +
+                         "IntraForge is unavailable for a few minutes. The setup window asks you once more before it changes anything, " +
+                         "and this Control Center closes now so it can be updated.")) return;
+            try { Process.Start(new ProcessStartInfo(setup.FullName) { UseShellExecute = true, WorkingDirectory = setup.DirectoryName }); }
+            catch (Exception ex) { MessageBox.Show(this, "The setup file could not be started: " + ex.Message, "IntraForge"); return; }
+            Close();
+        }
+
+        void OpenSettings()
+        {
+            // Settings can change the shop-network mode; it then asks to be opened again with the new state.
+            while (true)
+            {
+                using (SettingsForm f = new SettingsForm(Kit.Locate()))
+                    if (f.ShowDialog(this) != DialogResult.Retry) break;
+            }
+            Refresh2();
         }
 
         async void RunAction(string title, string script, string arguments, int timeoutMs)
@@ -1050,16 +1227,16 @@ namespace IntraForge.ControlCenter
         {
             Text = "IntraForge settings";
             Font = new Font("Segoe UI", 9.5f);
-            ClientSize = new Size(640, 440);
+            ClientSize = new Size(660, 640);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterParent;
-            FlowLayoutPanel p = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, Padding = new Padding(18), WrapContents = false };
+            FlowLayoutPanel p = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, Padding = new Padding(18), WrapContents = false, AutoScroll = true };
             Func<string, string, Label> row = (k, v) => new Label { Text = k.PadRight(22) + v, AutoSize = true, Font = new Font("Consolas", 9.5f), Margin = new Padding(3, 2, 3, 2) };
             p.Controls.Add(new Label { Text = "This installation", Font = new Font("Segoe UI Semibold", 10.5f), AutoSize = true });
             p.Controls.Add(row("Address", kit.Url("/")));
-            p.Controls.Add(row("Access", "this computer only (desktop mode)"));
+            p.Controls.Add(row("Access", kit.ShopNetwork ? "this PC and the shop network (" + kit.LanUrl + ")" : "this computer only"));
             p.Controls.Add(row("Version", kit.Version));
             p.Controls.Add(row("Program folder", kit.Dir));
             p.Controls.Add(row("Data folder", kit.DataDir));
@@ -1102,15 +1279,146 @@ namespace IntraForge.ControlCenter
             buttons.Controls.Add(data);
             buttons.Controls.Add(close);
             p.Controls.Add(buttons);
+            p.Controls.Add(ShopNetworkSection(kit));
             p.Controls.Add(new Label
             {
                 AutoSize = true,
-                MaximumSize = new Size(590, 0),
+                MaximumSize = new Size(600, 0),
                 ForeColor = Color.Gray,
                 Margin = new Padding(3, 12, 3, 3),
-                Text = "Shop name, documents and people are set inside IntraForge (Apps > Settings, Organization > Members). Opening IntraForge to other computers on the shop's network is a deliberate, separate step, not a setting here.",
+                Text = "Shop name, documents and people are set inside IntraForge (Apps > Settings, Organization > Members, where each person gets their role).",
             });
             Controls.Add(p);
+            CancelButton = close;
+        }
+
+        Control ShopNetworkSection(Kit kit)
+        {
+            FlowLayoutPanel box = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = new Padding(3, 16, 3, 3) };
+            box.Controls.Add(new Label { Text = "Shop network", Font = new Font("Segoe UI Semibold", 10.5f), AutoSize = true });
+            Label state = new Label { AutoSize = true, MaximumSize = new Size(600, 0), Margin = new Padding(3, 4, 3, 6) };
+            FlowLayoutPanel buttons = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Width = 610 };
+            if (!kit.ShopNetwork)
+            {
+                state.Text = "Only this computer can open IntraForge. You can let the other PCs in the shop open it too -- over the shop's own " +
+                             "network only, never the internet.";
+                Button on = new Button { Text = "Allow other PCs in this shop...", Width = 240, Height = 32 };
+                on.Click += (s, e) =>
+                {
+                    using (ShopNetworkConfirmForm c = new ShopNetworkConfirmForm())
+                        if (c.ShowDialog(this) != DialogResult.OK) return;
+                    Apply(kit, "Shop", "Allowing the other PCs in this shop");
+                };
+                buttons.Controls.Add(on);
+            }
+            else
+            {
+                string now = Kit.CurrentLanAddress();
+                state.Text = "The other PCs in the shop open IntraForge at " + kit.LanUrl + "  (or https://" + kit.LanAddress + ":" + kit.Port + ")." +
+                             Environment.NewLine + "Each of them trusts IntraForge's certificate once: " + Path.Combine(kit.ShopNetworkDir, "Trust-IntraForge-on-this-PC.cmd") +
+                             (now != null && now != kit.LanAddress ? Environment.NewLine + "This PC's address is now " + now + ": press Update the address." : "");
+                if (now != null && now != kit.LanAddress) state.ForeColor = Color.FromArgb(180, 83, 9);
+                Button update = new Button { Text = "Update the address", Width = 170, Height = 32 };
+                update.Click += (s, e) => Apply(kit, "Shop", "Updating the shop-network address");
+                Button folder = new Button { Text = "Open the certificate folder", Width = 210, Height = 32 };
+                folder.Click += (s, e) => { try { Process.Start("explorer.exe", "\"" + kit.ShopNetworkDir + "\""); } catch (Exception) { } };
+                Button off = new Button { Text = "This computer only", Width = 170, Height = 32 };
+                off.Click += (s, e) =>
+                {
+                    if (MessageBox.Show(this, "Make IntraForge reachable from this computer only? The other PCs in the shop can no longer open it.",
+                                        "IntraForge", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
+                    Apply(kit, "ThisPC", "Making IntraForge this-computer-only");
+                };
+                buttons.Controls.Add(update);
+                buttons.Controls.Add(folder);
+                buttons.Controls.Add(off);
+            }
+            box.Controls.Add(state);
+            box.Controls.Add(buttons);
+            return box;
+        }
+
+        void Apply(Kit kit, string mode, string title)
+        {
+            Enabled = false;
+            UseWaitCursor = true;
+            ProcResult res;
+            try { res = Proc.PowerShellElevated(kit, "Set-IntraForgeNetwork.ps1", "-Mode " + mode, 15 * 60000); }
+            finally { UseWaitCursor = false; Enabled = true; }
+            using (OutputForm o = new OutputForm(title, res.TimedOut ? res.Output + Environment.NewLine + "Stopped after the time limit." : res.Output, res.ExitCode == 0))
+                o.ShowDialog(this);
+            if (res.ExitCode == 0) { DialogResult = DialogResult.Retry; Close(); }
+        }
+    }
+
+    // Before IntraForge is opened to the shop's network: what that means, and that it must be the shop's own network.
+    sealed class ShopNetworkConfirmForm : Form
+    {
+        public ShopNetworkConfirmForm()
+        {
+            Text = "Allow other PCs in this shop";
+            Font = new Font("Segoe UI", 9.5f);
+            ClientSize = new Size(600, 430);
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            StartPosition = FormStartPosition.CenterParent;
+            FlowLayoutPanel p = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, Padding = new Padding(18), WrapContents = false };
+            p.Controls.Add(new Label
+            {
+                AutoSize = true,
+                MaximumSize = new Size(560, 0),
+                Text = "The other PCs in the shop will open IntraForge in their browser, and everyone signs in with their own account." + Environment.NewLine + Environment.NewLine +
+                       "What happens:" + Environment.NewLine +
+                       "  - IntraForge also answers on this PC's network address (port 8443 or your chosen port)." + Environment.NewLine +
+                       "  - Windows Firewall lets in the shop's PRIVATE network only, and blocks public networks." + Environment.NewLine +
+                       "  - A certificate file and a one-click script for the staff PCs are put in the data folder." + Environment.NewLine +
+                       "  - Nothing is opened to the internet. You can switch back to this-computer-only at any time." + Environment.NewLine + Environment.NewLine +
+                       "Before you continue:" + Environment.NewLine +
+                       "  - This PC must be on the shop's own network, marked Private in Windows (not a public or customer Wi-Fi)." + Environment.NewLine +
+                       "  - Customers use a separate guest Wi-Fi that cannot reach the shop's PCs." + Environment.NewLine +
+                       "  - Give this PC a fixed address in the router (DHCP reservation)." + Environment.NewLine + Environment.NewLine +
+                       "Windows asks for administrator rights (the firewall).",
+            });
+            CheckBox sure = new CheckBox { Text = "This PC is on the shop's own network, not a public or customer Wi-Fi", AutoSize = true, Margin = new Padding(3, 14, 3, 3) };
+            p.Controls.Add(sure);
+            FlowLayoutPanel buttons = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(3, 12, 3, 3) };
+            Button go = new Button { Text = "Allow", Width = 120, Height = 32, Enabled = false, DialogResult = DialogResult.OK };
+            Button cancel = new Button { Text = "Cancel", Width = 100, Height = 32, DialogResult = DialogResult.Cancel };
+            sure.CheckedChanged += (s, e) => go.Enabled = sure.Checked;
+            buttons.Controls.Add(go);
+            buttons.Controls.Add(cancel);
+            p.Controls.Add(buttons);
+            Controls.Add(p);
+            AcceptButton = go;
+            CancelButton = cancel;
+        }
+    }
+
+    // The output of an elevated script (it ran in its own window).
+    sealed class OutputForm : Form
+    {
+        public OutputForm(string title, string output, bool ok)
+        {
+            Text = title + (ok ? " -- done" : " -- not done");
+            Font = new Font("Segoe UI", 9.5f);
+            ClientSize = new Size(760, 460);
+            StartPosition = FormStartPosition.CenterParent;
+            Label head = new Label
+            {
+                Dock = DockStyle.Top,
+                Height = 34,
+                Padding = new Padding(10, 8, 10, 0),
+                Font = new Font("Segoe UI Semibold", 10.5f),
+                ForeColor = ok ? Color.FromArgb(22, 163, 74) : Color.FromArgb(220, 38, 38),
+                Text = ok ? "Done." : "Not done -- the lines below say why. Nothing else was changed.",
+            };
+            TextBox text = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Font = new Font("Consolas", 9f), BackColor = Color.White, Text = (output ?? "").Trim() };
+            Button close = new Button { Text = "Close", Dock = DockStyle.Bottom, Height = 34, DialogResult = DialogResult.OK };
+            Controls.Add(text);
+            Controls.Add(head);
+            Controls.Add(close);
+            AcceptButton = close;
             CancelButton = close;
         }
     }

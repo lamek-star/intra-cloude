@@ -223,3 +223,22 @@ PLATFORM_WIDE_ROLE_SLUG = "super-administrator"
 # see ROADMAP.md Phase 10 for why that's a deliberate, documented scope
 # limit, not an oversight.
 ADMIN_PERMISSION_CODES = {"permissions.manage", "system.admin"}
+
+# The roles an organization's administrators can give to their own members from the members page,
+# in the order the page lists them, each with the one line it shows. Super Administrator is
+# platform-wide only and Service Account belongs to applications, so neither is offered there (and
+# organizations.views refuses them on that endpoint).
+ORGANIZATION_ROLE_SUMMARIES: dict[str, str] = {
+    "organization-administrator": "Everything in this organization, including members and roles.",
+    "spare-parts-manager": "Everything in Spare Parts, including prices, reports and settings.",
+    "spare-parts-sales": "Spare Parts selling: customers, quotations, orders, invoices. No cost prices.",
+    "spare-parts-inventory": "Spare Parts stock and purchasing, with cost prices. No selling.",
+    "spare-parts-viewer": "Spare Parts look-only: catalogue, products and stock levels.",
+    "editor": "Read and change files and databases.",
+    "viewer": "Read files, databases, environments and applications.",
+    "storage-administrator": "Manage file storage.",
+    "database-administrator": "Manage databases, imports and connections.",
+    "developer": "Build applications and manage development environments.",
+    "auditor": "Read the audit log.",
+    "guest": "No access of their own; only what is shared with them.",
+}

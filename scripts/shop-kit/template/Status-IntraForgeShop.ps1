@@ -19,6 +19,12 @@ Line "Build:            $(Get-ShopVersion)"
 Line "Computer:         $env:COMPUTERNAME, Windows $((Get-CimInstance Win32_OperatingSystem).Version), last Windows start $((Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToString('yyyy-MM-dd HH:mm:ss'))"
 $envOk = Test-Path (Join-Path $PSScriptRoot '.env')
 Line "Keys (.env):      $(if ($envOk) { 'present' } else { 'MISSING - IntraForge cannot start without it; restore it from the USB copy' })"
+if ((Get-ShopSetting 'SHOP_NETWORK' '') -eq 'shop') {
+    $lanName = Get-ShopSetting 'SHOP_LAN_NAME' ''; $lanAddress = Get-ShopSetting 'SHOP_LAN_ADDRESS' ''
+    $rules = @(Get-NetFirewallRule -Group 'IntraForge shop network' -ErrorAction SilentlyContinue).Count
+    Line "Access:           this PC and the shop network: https://${lanName}:$(Get-ShopPort) (https://${lanAddress}:$(Get-ShopPort)); firewall rules: $rules of 2"
+}
+else { Line 'Access:           this computer only' }
 if (-not (Test-Quiet { docker info })) {
     Line 'Docker:           NOT RUNNING (open the IntraForge Control Center and choose Start)'
 }

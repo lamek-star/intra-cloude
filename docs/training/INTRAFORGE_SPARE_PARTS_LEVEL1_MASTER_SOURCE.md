@@ -116,9 +116,9 @@ Every page of the IntraForge web interface:
   **Developer** and **Audit log**. Without `users.manage` the page says: "No member list visible — you may not hold
   users.manage in this organization."
 - **Roles**: a newly added member gets **no role**, so by default they can do nothing (everything is denied unless a role or
-  a share allows it). Giving a member a role (for example *Spare Parts Sales*) is supported by the server
-  (`POST organizations/<id>/members/<membership>/role/`, needs `permissions.manage`) but **there is no screen for it** in the
-  current web interface -- see the discrepancy list in NOTEBOOKLM_SOURCE_INDEX.md.
+  a share allows it). Since version 1.2.0 the member list has a **Roles** column (shown to people who hold
+  `permissions.manage`): **Give a role...**, pick one (the line below it says what it allows), **Give**; the small **x** takes
+  a role away. The organization's last Organization Administrator cannot be removed. (Before 1.2.0 this was server-only.)
 - **Teams** (`/orgs/<id>/teams`): **New team**, **Add member**, **Remove** -- used for sharing with a group.
 - **Units** (`/orgs/<id>/units`): the organization's structure (branches, departments): **New unit**, **Add sub-unit**,
   **Edit**, **Members**, **Delete**.
@@ -251,9 +251,11 @@ What you can do in it (each area only if your role allows -- see section 12):
   can be collapsed.
 - **Top bar**: a search box *"Scan or type a SKU / part number…"* (opens the product), and your name and role; the
   account menu has **Sign out**.
-- **Sign out** ends the Spare Parts session and returns you to IntraForge's home page. Signing out of IntraForge also ends
+- **Sign out** (since 1.2.0) signs you out of IntraForge as well and shows the shop's own sign-in page ("Spare Parts --
+  <shop name>"), so on a shared counter PC the next person signs in as themselves. Signing out of IntraForge also ends
   your Spare Parts session (within about 5 seconds).
-- If your Spare Parts session is missing or expired, the app sends you back through IntraForge's **Open** automatically.
+- If your Spare Parts session is missing or expired, the app sends you back through IntraForge's **Open** automatically
+  (straight back in while you are still signed in to IntraForge; otherwise to that sign-in page).
 - Most lists share the same controls: a **search box**, a **status filter** where the list has statuses, **paging**, and the
   number / name as a link that opens the record. Success and error messages appear as short notices.
 
@@ -572,7 +574,7 @@ Derived from the **server-side** authorization, not from hidden buttons:
 - How IntraForge's `spareparts.*` capabilities become Spare Parts permissions: `spareparts-platform/src/server/platform/capabilities.ts`.
 - Which Spare Parts action needs which permission: the Spare Parts project's generated `docs/generated/API_ROUTES.md` (every route checked on the server).
 
-**Important (implementation gap):** a member added to an organization gets **no role**. Assigning a role is implemented on the server (`POST /api/v1/organizations/<org>/members/<membership>/role/`, needs `permissions.manage`) but the web interface has **no screen** for it. The person who creates an organization automatically gets *Organization Administrator*.
+**Important:** a member added to an organization gets **no role**. Since version 1.2.0 an administrator gives one on the organization page: in the member list's **Roles** column choose **Give a role...**, pick the role, press **Give** (the **x** next to a role takes it away; the last Organization Administrator cannot be removed). The person who creates an organization automatically gets *Organization Administrator*.
 
 #### Owner / Admin (Organization Administrator) -- IntraForge role `organization-administrator`
 
@@ -653,8 +655,8 @@ Administrator) role, so every step is visible.
 | 26 | Review audit (IntraForge) | Organization > **Audit log** | `spareparts.…` events, filters | -- | `WF-26-IntraForge-Audit.png` |
 | 27 | Logout | Spare Parts account menu > **Sign out**; IntraForge account menu > **Log out** | The sign-in page | -- | `WF-27-Logged-Out.png` |
 
-Not included because it is not implemented in the user interface: assigning a role to a member (server API only), switching
-on two-step sign-in (server API only), returning goods to a supplier.
+Not included because it is not implemented in the user interface: switching on two-step sign-in (server API only), returning
+goods to a supplier. (Assigning a role to a member has a screen since version 1.2.0: the Roles column of the member list.)
 
 ### First-day questions
 
@@ -725,8 +727,8 @@ the status filter; or open the **customer** to see all their quotations, orders 
 **Audit log**.
 
 **How do I log out?**
-In Spare Parts: account menu > **Sign out** (you return to IntraForge). In IntraForge: account menu > **Log out** (this also ends
-your Spare Parts session).
+In Spare Parts: account menu > **Sign out** (since 1.2.0 this also signs you out of IntraForge and shows the shop's sign-in
+page). In IntraForge: account menu > **Log out** (this also ends your Spare Parts session).
 
 **Something does not work?** See LEVEL1_TROUBLESHOOTING.md.
 
@@ -864,7 +866,7 @@ Real messages from the applications and what to do. Fixes are only those the app
 - **What it means:** Your role does not include the permission this action needs; the server refused it.
 - **What to check:** Which action / page; see LEVEL1_ROLES.md.
 - **How to fix:** Ask an administrator to give you the right role.
-- **When to contact an administrator:** Always -- roles are given by an administrator (and there is currently no screen to give roles; see the discrepancy list).
+- **When to contact an administrator:** Always -- roles are given by an administrator (organization page > member list > Roles column, since 1.2.0).
 
 ### A page says something "wasn't found" / "not found"
 
@@ -892,7 +894,7 @@ Real messages from the applications and what to do. Fixes are only those the app
 - **What it means:** Inside IntraForge, Spare Parts' Users page cannot add or change people.
 - **What to check:** --
 - **How to fix:** Use IntraForge (add the member there).
-- **When to contact an administrator:** To give roles (no screen yet).
+- **When to contact an administrator:** To give roles (organization page > Roles column).
 
 ### Spare Parts says "Insufficient available stock for … requested, … available."
 

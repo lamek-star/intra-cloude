@@ -5,7 +5,7 @@ Derived from the **server-side** authorization, not from hidden buttons:
 - How IntraForge's `spareparts.*` capabilities become Spare Parts permissions: `spareparts-platform/src/server/platform/capabilities.ts`.
 - Which Spare Parts action needs which permission: the Spare Parts project's generated `docs/generated/API_ROUTES.md` (every route checked on the server).
 
-**Important (implementation gap):** a member added to an organization gets **no role**. Assigning a role is implemented on the server (`POST /api/v1/organizations/<org>/members/<membership>/role/`, needs `permissions.manage`) but the web interface has **no screen** for it. The person who creates an organization automatically gets *Organization Administrator*.
+**Important:** a member added to an organization gets **no role**. Since version 1.2.0 an administrator gives one on the organization page: in the member list's **Roles** column choose **Give a role...**, pick the role, press **Give** (the **x** next to a role takes it away; the last Organization Administrator cannot be removed). The person who creates an organization automatically gets *Organization Administrator*.
 
 ## The roles a shop uses
 

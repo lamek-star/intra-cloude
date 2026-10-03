@@ -467,8 +467,11 @@ contract and nothing above changes for it. For completeness, what exists
   (sets the app-session cookie and returns where to go),
   `GET service-apps/{id}/removal-preview/`, `POST service-apps/{id}/reinstate/`.
   Gated by the `spareparts.*` capabilities (open / configure / manage).
+  Public (no session): `GET service-apps/{id}/sign-in/` -- only the product and
+  shop name, for the sign-in page an application sends people to.
 - **Internal endpoints** `internal/service-apps/…` (`self`, `heartbeat`,
-  `sessions/introspect`, `sessions/revoke`, `users`, `audit-events`,
+  `sessions/introspect`, `sessions/revoke` (with `"sign_out": true` it ends
+  the IntraForge login the session came from as well), `users`, `audit-events`,
   `config`, `files`, `files/{id}`): authenticated only by the deployment's
   `X-IntraForge-Service-Token`, reachable only on the containers' private
   network — the proxy answers **404** to `/api/v1/internal/` from outside.

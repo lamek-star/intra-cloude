@@ -534,6 +534,36 @@ machine on the shop's network. That is acceptable for the trusted-administrator 
 for a hosted multi-tenant topology, which must turn the flag on. This section claims address pinning; it does **not**
 claim protection against a malicious administrator on a flat LAN.
 
+## 4e. Shop kit 1.2.0: shop-network mode, application sign-out, member roles (2026-10-04)
+
+**Shop-network mode (opt-in, off by default).** `Set-IntraForgeNetwork.ps1 -Mode Shop` (Control Center > Settings > Shop
+network, one UAC prompt) publishes the proxy on all host addresses instead of loopback and adds the PC's name and address to
+the certificate names (`PROXY_TLS_HOSTNAMES`, `default_sni`), `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`. Exposure is
+limited by the Windows Firewall, not by the bind address: an *Allow* rule for the HTTPS port on the **Private** profile from
+`LocalSubnet` only, and a *Block* rule on the **Public** profile -- a block rule wins over any other program's allow rule
+(Docker Desktop may register broad ones). The script refuses to switch on unless the gateway interface's network is Private.
+Binding all addresses (rather than the current IP) is deliberate: a DHCP address change must not stop IntraForge on the shop
+PC itself; the Control Center then reports the changed address. Nothing is opened to the internet (that remains
+`INTERNET_GATEWAY.md`). Staff PCs trust Caddy's local root CA (`certutil -user -addstore Root`, per Windows user, with Windows'
+own confirmation); its private key never leaves the proxy volume. Residual risks: anyone on the shop's Private network reaches
+the sign-in page (mitigated by the 10/min auth throttle, per-person accounts and default-deny roles -- the guide requires a
+separate guest Wi-Fi for customers); a trusted local CA could sign any name if the shop PC were compromised; the Domain profile
+is neither allowed nor blocked by these rules. Verified on a Hyper-V VM (the host as the second machine), not on a physical
+second PC.
+
+**Sign-out inside an application ends the IntraForge login** (`sessions/revoke` with `sign_out: true`, service-token
+authenticated): the bound Django session is deleted and every application session opened from it revoked; a token that
+names no live session of the caller's instance changes nothing. The branded sign-in page reads only the product and shop
+name from the public `service-apps/{id}/sign-in/` (the same name Spare Parts already shows before sign-in); unknown, disabled
+or removed instances are 404. Tests: `service_apps/tests/test_service_apps.py` `SessionTests`, `SignInInfoTests`.
+
+**Member roles from the organization page.** `GET organizations/{id}/roles/` and `DELETE .../members/{m}/roles/{slug}/`
+join the existing assign endpoint, all behind `permissions.manage` (who holds which role is not shown to every member).
+Only organization roles can be given there (`super-administrator`, `service-account` refused); assigning is idempotent;
+removing the last active Organization Administrator is refused (409) so an organization cannot lock itself out; both
+directions are audited. Cross-organization ID substitution is 404 in every direction
+(`organizations/tests/test_organizations.py` `MemberRoleManagementTests`).
+
 ## 5. Non-Goals / Explicitly Out of Scope (for now)
 
 Current review qualification (2026-09-08): the connected-PostgreSQL guard

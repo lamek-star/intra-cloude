@@ -106,15 +106,16 @@ function New-Secret([int]$Bytes) {
     return ([Convert]::ToBase64String($buffer)).TrimEnd('=').Replace('+', '-').Replace('/', '_')
 }
 if ($interrupted) {
-    $kept = Get-Content $envPath | Where-Object { $_ -notmatch '^(SHOP_HTTPS_PORT|SHOP_SPAREPARTS_PORT|SHOP_DATA_DIR|CSRF_TRUSTED_ORIGINS|OIDC_ISSUER)=' }
-    $text = ($kept -join "`n") + "`nSHOP_HTTPS_PORT=$Port`nSHOP_DATA_DIR=$dataDirSlash`nCSRF_TRUSTED_ORIGINS=https://localhost:$Port`nOIDC_ISSUER=https://localhost:$Port`n"
+    $kept = Get-Content $envPath | Where-Object { $_ -notmatch '^(SHOP_HTTPS_PORT|SHOP_SPAREPARTS_PORT|SHOP_DATA_DIR|CSRF_TRUSTED_ORIGINS|OIDC_ISSUER|ALLOWED_HOSTS|SHOP_NETWORK|SHOP_BIND_V4|SHOP_BIND_V6|SHOP_TLS_HOSTNAMES|SHOP_DEFAULT_SNI|SHOP_LAN_ADDRESS|SHOP_LAN_NAME)=' }
+    $text = ($kept -join "`n") + "`nSHOP_HTTPS_PORT=$Port`nSHOP_DATA_DIR=$dataDirSlash`nALLOWED_HOSTS=localhost,127.0.0.1,backend`nCSRF_TRUSTED_ORIGINS=https://localhost:$Port`nOIDC_ISSUER=https://localhost:$Port`n"
     Write-Host 'Keeping the keys created by the interrupted installation.'
 }
 elseif ($KeysFile) {
     Copy-Item -Path $KeysFile -Destination $envPath -Force
-    # the port and data folder belong to THIS installation, the secrets to the old one
-    $kept = Get-Content $envPath | Where-Object { $_ -notmatch '^(SHOP_HTTPS_PORT|SHOP_SPAREPARTS_PORT|SHOP_DATA_DIR|CSRF_TRUSTED_ORIGINS|OIDC_ISSUER)=' }
-    $text = ($kept -join "`n") + "`nSHOP_HTTPS_PORT=$Port`nSHOP_DATA_DIR=$dataDirSlash`nCSRF_TRUSTED_ORIGINS=https://localhost:$Port`nOIDC_ISSUER=https://localhost:$Port`n"
+    # the port and data folder belong to THIS installation, the secrets to the old one; so does the network access
+    # (the old PC's shop-network address must not come along: this PC starts as this-computer-only)
+    $kept = Get-Content $envPath | Where-Object { $_ -notmatch '^(SHOP_HTTPS_PORT|SHOP_SPAREPARTS_PORT|SHOP_DATA_DIR|CSRF_TRUSTED_ORIGINS|OIDC_ISSUER|ALLOWED_HOSTS|SHOP_NETWORK|SHOP_BIND_V4|SHOP_BIND_V6|SHOP_TLS_HOSTNAMES|SHOP_DEFAULT_SNI|SHOP_LAN_ADDRESS|SHOP_LAN_NAME)=' }
+    $text = ($kept -join "`n") + "`nSHOP_HTTPS_PORT=$Port`nSHOP_DATA_DIR=$dataDirSlash`nALLOWED_HOSTS=localhost,127.0.0.1,backend`nCSRF_TRUSTED_ORIGINS=https://localhost:$Port`nOIDC_ISSUER=https://localhost:$Port`n"
     Write-Host 'Using the keys of the old installation (needed to read its backups).'
 }
 else {

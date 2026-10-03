@@ -23,6 +23,10 @@
 
 {
 	admin off
+	# A browser that opens IntraForge by IP address sends no server name (SNI); without a default the
+	# TLS handshake fails before any page loads. The shop kit sets this to the shop PC's address when
+	# other PCs in the shop may connect; otherwise it stays "localhost".
+	default_sni {$PROXY_DEFAULT_SNI:localhost}
 }
 
 {$PROXY_TLS_HOSTNAMES:localhost 127.0.0.1} {

@@ -65,9 +65,9 @@ most recent audit events.
   **Developer** and **Audit log**. Without `users.manage` the page says: "No member list visible — you may not hold
   users.manage in this organization."
 - **Roles**: a newly added member gets **no role**, so by default they can do nothing (everything is denied unless a role or
-  a share allows it). Giving a member a role (for example *Spare Parts Sales*) is supported by the server
-  (`POST organizations/<id>/members/<membership>/role/`, needs `permissions.manage`) but **there is no screen for it** in the
-  current web interface -- see the discrepancy list in NOTEBOOKLM_SOURCE_INDEX.md.
+  a share allows it). Since version 1.2.0 the member list has a **Roles** column (shown to people who hold
+  `permissions.manage`): **Give a role...**, pick one (the line below it says what it allows), **Give**; the small **x** takes
+  a role away. The organization's last Organization Administrator cannot be removed. (Before 1.2.0 this was server-only.)
 - **Teams** (`/orgs/<id>/teams`): **New team**, **Add member**, **Remove** -- used for sharing with a group.
 - **Units** (`/orgs/<id>/units`): the organization's structure (branches, departments): **New unit**, **Add sub-unit**,
   **Edit**, **Members**, **Delete**.

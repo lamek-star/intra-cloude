@@ -5,10 +5,11 @@ import urllib.error
 import urllib.request
 
 from django.conf import settings
+from django.http import Http404
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.authentication import SessionAuthentication
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -194,3 +195,23 @@ class ServiceAppLaunchView(_HumanOnly):
             samesite="Strict",
         )
         return response
+
+
+class ServiceAppSignInInfoView(APIView):
+    """What the sign-in page shows when an application sent someone there ("Sign in to Spare Parts
+    -- <shop>"). Public, but only what the application itself already shows before sign-in: its
+    product name and shop name. Unknown, disabled or removed instances are a plain 404."""
+
+    authentication_classes: list = []
+    permission_classes = [AllowAny]
+
+    def get(self, request, app_id):
+        app = ServiceApp.objects.filter(pk=app_id, enabled=True, removed_at__isnull=True).first()
+        if app is None or get_deployment(app.deployment) is None:
+            raise Http404
+        return Response(
+            {
+                "product_name": get_type(app.app_type).product_name,
+                "display_name": (app.config or {}).get("shopName") or app.display_name,
+            }
+        )
