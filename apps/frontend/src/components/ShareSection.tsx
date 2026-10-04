@@ -23,7 +23,24 @@ import {
   TRow,
 } from "@/components/ui";
 
-const LEVEL_TONE = { read: "default", write: "info", admin: "warning" } as const;
+const LEVEL_TONE = {
+  read: "default",
+  write: "info",
+  admin: "warning",
+  sell: "info",
+  receive: "info",
+  adjust: "warning",
+  transfer: "warning",
+} as const;
+
+export type ShareLevel = { value: ShareGrant["level"]; label: string; hint?: string };
+
+/** The levels every resource type offers unless it names its own (business operations do). */
+const DEFAULT_LEVELS: ShareLevel[] = [
+  { value: "read", label: "Read" },
+  { value: "write", label: "Write" },
+  { value: "admin", label: "Admin" },
+];
 
 /** Drop into any resource's detail page to manage who it's shared with.
  * Enforcement is entirely the existing ResourceGrant/has_permission
@@ -40,10 +57,16 @@ export function ShareSection({
   organizationId,
   resourceType,
   resourceId,
+  title = "Sharing",
+  description,
+  levels = DEFAULT_LEVELS,
 }: {
   organizationId: string;
   resourceType: string;
   resourceId: string;
+  title?: string;
+  description?: string;
+  levels?: ShareLevel[];
 }) {
   const [shares, setShares] = useState<ShareGrant[] | null>(null);
   const [members, setMembers] = useState<Membership[]>([]);
@@ -105,7 +128,7 @@ export function ShareSection({
   return (
     <section>
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-600">Sharing</h2>
+        <h2 className="text-sm font-semibold text-slate-600">{title}</h2>
         {shares && (
           <Button size="sm" variant="secondary" onClick={() => setModalOpen(true)}>
             <Share2 className="h-3.5 w-3.5" />
@@ -113,6 +136,7 @@ export function ShareSection({
           </Button>
         )}
       </div>
+      {description && <p className="mb-3 max-w-2xl text-sm text-slate-600">{description}</p>}
       {error && (
         <div className="mb-3">
           <ErrorBanner message={error} />
@@ -133,7 +157,7 @@ export function ShareSection({
               <TRow key={s.id}>
                 <Td className="font-medium text-slate-900">{principalLabel(s)}</Td>
                 <Td>
-                  <Badge tone={LEVEL_TONE[s.level]}>{s.level}</Badge>
+                  <Badge tone={LEVEL_TONE[s.level]}>{levels.find((l) => l.value === s.level)?.label ?? s.level}</Badge>
                 </Td>
                 <Td className="text-slate-500">
                   {s.expires_at ? new Date(s.expires_at).toLocaleString() : "Never"}
@@ -161,6 +185,7 @@ export function ShareSection({
         organizationId={organizationId}
         resourceType={resourceType}
         resourceId={resourceId}
+        levels={levels}
         members={members}
         teams={teams}
         onClose={() => setModalOpen(false)}
@@ -178,6 +203,7 @@ function ShareModal({
   organizationId,
   resourceType,
   resourceId,
+  levels,
   members,
   teams,
   onClose,
@@ -187,15 +213,20 @@ function ShareModal({
   organizationId: string;
   resourceType: string;
   resourceId: string;
+  levels: ShareLevel[];
   members: Membership[];
   teams: Team[];
   onClose: () => void;
   onCreated: (share: ShareGrant) => void;
 }) {
   const [principalType, setPrincipalType] = useState<"user" | "team" | "organization">("user");
-  const [userId, setUserId] = useState(() => members[0]?.user.id ?? "");
-  const [teamId, setTeamId] = useState(() => teams[0]?.id ?? "");
-  const [level, setLevel] = useState<"read" | "write" | "admin">("read");
+  // The lists load after this dialog first mounts, so the visible first choice is derived, not stored: what the
+  // select shows is what is sent, even if the person never touches it.
+  const [pickedUser, setUserId] = useState("");
+  const [pickedTeam, setTeamId] = useState("");
+  const userId = pickedUser || members[0]?.user.id || "";
+  const teamId = pickedTeam || teams[0]?.id || "";
+  const [level, setLevel] = useState<ShareGrant["level"]>(levels[0].value);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -271,10 +302,15 @@ function ShareModal({
         <div>
           <Label htmlFor="share-level">Access level</Label>
           <Select id="share-level" value={level} onChange={(e) => setLevel(e.target.value as typeof level)}>
-            <option value="read">Read</option>
-            <option value="write">Write</option>
-            <option value="admin">Admin</option>
+            {levels.map((l) => (
+              <option key={l.value} value={l.value}>
+                {l.label}
+              </option>
+            ))}
           </Select>
+          {levels.find((l) => l.value === level)?.hint && (
+            <p className="mt-1 text-xs text-slate-500">{levels.find((l) => l.value === level)?.hint}</p>
+          )}
         </div>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={onClose}>

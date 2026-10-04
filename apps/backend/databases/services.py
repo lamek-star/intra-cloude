@@ -19,6 +19,7 @@ knowing — this is a compensating action, not a guarantee (see
 import logging
 import uuid
 
+from django.db import IntegrityError as DjangoIntegrityError
 from django.db import connections, transaction
 from django.http import Http404
 from psycopg import sql
@@ -60,6 +61,22 @@ def _require(actor, permission_code, organization_id, *, action, resource_type, 
 def _execute_tenant_ddl(ddl: sql.Composable) -> None:
     with transaction.atomic(using="tenant"), connections["tenant"].cursor() as cursor:
         cursor.execute(ddl)
+
+
+def _require_unmanaged_schema(database, *, allow_managed_schema: bool = False):
+    # App runtime provisioning uses these same services before publication.
+    # After publication, ordinary structural changes require a coordinated
+    # app migration -- `allow_managed_schema` is the one sanctioned
+    # exception: app_platform.schema_evolution's own additive-only,
+    # capability-checked path for extending an already-provisioned runtime
+    # (Phase 3 step 3), passed explicitly by that module alone. No other
+    # caller should ever pass it.
+    if allow_managed_schema:
+        return
+    from app_platform.models import RuntimeProvision
+
+    if RuntimeProvision.objects.filter(database_id=database.id).exists():
+        raise SchemaValidationError("Managed application schema requires an application migration")
 
 
 def _write_catalog(fn, *, compensating_ddl: sql.Composable | None = None):
@@ -155,7 +172,14 @@ def create_tenant_database(
     return tenant_db
 
 
-def create_table(*, actor, tenant_database: TenantDatabase, name: str, request_id: str = "") -> DBTable:
+def create_table(
+    *,
+    actor,
+    tenant_database: TenantDatabase,
+    name: str,
+    request_id: str = "",
+    allow_managed_schema: bool = False,
+) -> DBTable:
     org_id = tenant_database.organization_id
     _require(
         actor,
@@ -166,6 +190,7 @@ def create_table(*, actor, tenant_database: TenantDatabase, name: str, request_i
         resource_id=tenant_database.id,
         request_id=request_id,
     )
+    _require_unmanaged_schema(tenant_database, allow_managed_schema=allow_managed_schema)
 
     try:
         validate_identifier(name, kind="table name")
@@ -228,8 +253,10 @@ def add_column(
     scale: int | None = None,
     is_nullable: bool = True,
     is_unique: bool = False,
+    is_indexed: bool = False,
     default_value=None,
     request_id: str = "",
+    allow_managed_schema: bool = False,
 ) -> DBColumn:
     org_id = table.organization_id
     _require(
@@ -241,6 +268,7 @@ def add_column(
         resource_id=table.id,
         request_id=request_id,
     )
+    _require_unmanaged_schema(table.tenant_database, allow_managed_schema=allow_managed_schema)
 
     try:
         validate_column_name(name)
@@ -252,6 +280,12 @@ def add_column(
     null_sql = sql.SQL("") if is_nullable else sql.SQL(" NOT NULL")
     unique_sql = sql.SQL(" UNIQUE") if is_unique else sql.SQL("")
 
+    # Pre-generated (matching create_table's table_id/pk_column_id
+    # convention above) so a plain (non-unique) index's deterministic name
+    # can be derived and issued in the same tenant-DDL pass as the column
+    # itself, before the catalog row exists to read an id back from.
+    column_id = uuid.uuid4()
+
     ddl = sql.SQL("ALTER TABLE {schema}.{table} ADD COLUMN {col} {type}{null}{unique}{default}").format(
         schema=sql.Identifier(table.tenant_database.schema_name),
         table=sql.Identifier(table.name),
@@ -261,16 +295,56 @@ def add_column(
         unique=unique_sql,
         default=default_sql,
     )
-    _execute_tenant_ddl(ddl)
-
     drop_ddl = sql.SQL("ALTER TABLE {schema}.{table} DROP COLUMN {col}").format(
         schema=sql.Identifier(table.tenant_database.schema_name),
         table=sql.Identifier(table.name),
         col=sql.Identifier(name),
     )
 
+    try:
+        _execute_tenant_ddl(ddl)
+    except DjangoIntegrityError as exc:
+        # A brand-new UNIQUE column added to a table that already has 2+
+        # rows: every existing row gets the same DEFAULT value (or NULL,
+        # which never conflicts with anything else under Postgres UNIQUE
+        # semantics -- only a non-NULL default can actually collide here).
+        # The ALTER TABLE is one statement inside its own transaction, so
+        # Postgres has already rolled it back in full -- no partial
+        # column, no data loss; this is a clean, safe rejection to
+        # surface, not a caught-and-hidden failure.
+        raise SchemaValidationError(
+            "Cannot add a unique column here: existing rows would violate the uniqueness "
+            "constraint (they would all share the same default value)."
+        ) from exc
+
+    # A plain, non-unique index needs its own separate statement --
+    # PostgreSQL has no inline "ADD COLUMN ... INDEX" syntax the way it
+    # does for UNIQUE. Only reachable once the ADD COLUMN above has
+    # already committed (each _execute_tenant_ddl call is its own
+    # transaction), so a failure here needs its own compensating cleanup.
+    index_name = f"idx_{column_id.hex}" if (is_indexed and not is_unique) else None
+    if index_name:
+        index_ddl = sql.SQL("CREATE INDEX {index} ON {schema}.{table} ({col})").format(
+            index=sql.Identifier(index_name),
+            schema=sql.Identifier(table.tenant_database.schema_name),
+            table=sql.Identifier(table.name),
+            col=sql.Identifier(name),
+        )
+        try:
+            _execute_tenant_ddl(index_ddl)
+        except Exception:
+            try:
+                _execute_tenant_ddl(drop_ddl)
+            except Exception:
+                logger.exception(
+                    "Compensating column drop also failed after index creation failed -- "
+                    "tenant schema and catalog have drifted; manual cleanup needed."
+                )
+            raise
+
     def _write():
         column = DBColumn.objects.create(
+            id=column_id,
             table=table,
             name=name,
             data_type=data_type,
@@ -291,6 +365,9 @@ def add_column(
             # there's no need for the table ID too.
             index = DBIndex.objects.create(table=table, name=f"idx_{column.id.hex}", is_unique=True)
             index.columns.add(column)
+        elif index_name:
+            index = DBIndex.objects.create(table=table, name=index_name, is_unique=False)
+            index.columns.add(column)
         return column
 
     column = _write_catalog(_write, compensating_ddl=drop_ddl)
@@ -302,9 +379,344 @@ def add_column(
         resource_type="db_table",
         resource_id=table.id,
         request_id=request_id,
-        context={"column": name, "data_type": data_type},
+        context={"column": name, "data_type": data_type, "unique": is_unique, "indexed": bool(index_name)},
     )
     return column
+
+
+def add_unique_constraint(
+    *, actor, column: DBColumn, request_id: str = "", allow_managed_schema: bool = False
+) -> DBIndex:
+    """Retrofits a UNIQUE constraint onto an EXISTING, already-materialized
+    column -- add_column's own `is_unique=True` only ever applies at
+    column-creation time. Idempotent: if this column is already unique,
+    returns its existing DBIndex rather than re-issuing DDL or raising, so
+    re-running the same schema-evolution step twice is always safe. A
+    genuine duplicate-value conflict is surfaced as a clean
+    SchemaValidationError, never a bare 500 -- ADD CONSTRAINT is one
+    statement inside one transaction, so Postgres has already rolled the
+    whole thing back before this function's caller ever sees the error:
+    no partial constraint, no data loss, no rewritten or deleted rows."""
+    table = column.table
+    org_id = table.organization_id
+    _require(
+        actor,
+        "database.schema.manage",
+        org_id,
+        action="database.column.unique.add",
+        resource_type="db_table",
+        resource_id=table.id,
+        request_id=request_id,
+    )
+    _require_unmanaged_schema(table.tenant_database, allow_managed_schema=allow_managed_schema)
+
+    if column.is_unique:
+        existing = DBIndex.objects.filter(table=table, columns=column, is_unique=True).first()
+        if existing is not None:
+            return existing
+        raise SchemaValidationError("Column is marked unique but has no matching index record.")
+
+    index_name = f"idx_{column.id.hex}"
+    ddl = sql.SQL("ALTER TABLE {schema}.{table} ADD CONSTRAINT {name} UNIQUE ({col})").format(
+        schema=sql.Identifier(table.tenant_database.schema_name),
+        table=sql.Identifier(table.name),
+        name=sql.Identifier(index_name),
+        col=sql.Identifier(column.name),
+    )
+    drop_ddl = sql.SQL("ALTER TABLE {schema}.{table} DROP CONSTRAINT {name}").format(
+        schema=sql.Identifier(table.tenant_database.schema_name),
+        table=sql.Identifier(table.name),
+        name=sql.Identifier(index_name),
+    )
+    try:
+        _execute_tenant_ddl(ddl)
+    except DjangoIntegrityError as exc:
+        raise SchemaValidationError(
+            "Cannot add a unique constraint: existing values in this column are not unique."
+        ) from exc
+
+    def _write():
+        column.is_unique = True
+        column.save(update_fields=["is_unique"])
+        index = DBIndex.objects.create(table=table, name=index_name, is_unique=True)
+        index.columns.add(column)
+        return index
+
+    index = _write_catalog(_write, compensating_ddl=drop_ddl)
+
+    audit.record(
+        actor=actor,
+        organization_id=org_id,
+        action="database.column.unique.add",
+        resource_type="db_table",
+        resource_id=table.id,
+        request_id=request_id,
+        context={"column": column.name},
+    )
+    return index
+
+
+def add_composite_unique_constraint(
+    *,
+    actor,
+    table: DBTable,
+    column_a: DBColumn,
+    column_b: DBColumn,
+    request_id: str = "",
+    allow_managed_schema: bool = False,
+) -> DBIndex:
+    """A narrow, join-table-specific primitive -- exactly two named
+    columns, keyed by the table's own id (so only one such constraint can
+    ever exist per table). It exists solely so app_platform's many-to-many
+    join tables can enforce "no duplicate (source, target) pair" as a real
+    database constraint, and stays exactly this narrow deliberately: the
+    general "composite uniqueness over an arbitrary set of App Platform
+    fields, possibly more than one such constraint per model" capability
+    is `add_field_set_unique_constraint` below, added later, specifically
+    so this join-table path would never need to change. Idempotent like
+    add_unique_constraint/add_index: an existing constraint already
+    covering both columns is returned as-is. Neither column's own
+    `is_unique` is set -- that would mean "this column alone is unique,"
+    which is false here; only the pair is."""
+    org_id = table.organization_id
+    _require(
+        actor,
+        "database.schema.manage",
+        org_id,
+        action="database.table.composite_unique.add",
+        resource_type="db_table",
+        resource_id=table.id,
+        request_id=request_id,
+    )
+    _require_unmanaged_schema(table.tenant_database, allow_managed_schema=allow_managed_schema)
+
+    if column_a.table_id != table.id or column_b.table_id != table.id:
+        raise SchemaValidationError("Both columns must belong to the given table")
+    if column_a.id == column_b.id:
+        raise SchemaValidationError("column_a and column_b must be different columns")
+
+    existing = (
+        DBIndex.objects.filter(table=table, is_unique=True, columns=column_a).filter(columns=column_b).first()
+    )
+    if existing is not None:
+        return existing
+
+    index_name = f"idx_{table.id.hex}"
+    ddl = sql.SQL("ALTER TABLE {schema}.{table} ADD CONSTRAINT {name} UNIQUE ({col_a}, {col_b})").format(
+        schema=sql.Identifier(table.tenant_database.schema_name),
+        table=sql.Identifier(table.name),
+        name=sql.Identifier(index_name),
+        col_a=sql.Identifier(column_a.name),
+        col_b=sql.Identifier(column_b.name),
+    )
+    drop_ddl = sql.SQL("ALTER TABLE {schema}.{table} DROP CONSTRAINT {name}").format(
+        schema=sql.Identifier(table.tenant_database.schema_name),
+        table=sql.Identifier(table.name),
+        name=sql.Identifier(index_name),
+    )
+    try:
+        _execute_tenant_ddl(ddl)
+    except DjangoIntegrityError as exc:
+        raise SchemaValidationError(
+            "Cannot add a unique constraint: existing rows already duplicate this pair of columns."
+        ) from exc
+
+    def _write():
+        index = DBIndex.objects.create(table=table, name=index_name, is_unique=True)
+        index.columns.add(column_a, column_b)
+        return index
+
+    index = _write_catalog(_write, compensating_ddl=drop_ddl)
+
+    audit.record(
+        actor=actor,
+        organization_id=org_id,
+        action="database.table.composite_unique.add",
+        resource_type="db_table",
+        resource_id=table.id,
+        request_id=request_id,
+        context={"columns": [column_a.name, column_b.name]},
+    )
+    return index
+
+
+def add_field_set_unique_constraint(
+    *,
+    actor,
+    table: DBTable,
+    columns: list[DBColumn],
+    constraint_id: uuid.UUID,
+    request_id: str = "",
+    allow_managed_schema: bool = False,
+) -> DBIndex:
+    """The general composite-uniqueness primitive `add_composite_unique_
+    constraint` above deliberately isn't: an arbitrary (>=2) list of named
+    columns, keyed by a caller-supplied stable `constraint_id` rather than
+    the table's own id -- so, unlike that join-table-specific primitive,
+    more than one such constraint can coexist on the same table. Built for
+    app_platform's own general "composite uniqueness for arbitrary fields"
+    feature (App Model constraints, docs/SPARE_PARTS_INTEGRATION_
+    READINESS.md's "Inventory (Part x Warehouse)" row); `add_composite_
+    unique_constraint` itself is untouched -- many-to-many join tables keep
+    using it exactly as before.
+
+    `constraint_id` is expected to be the caller's own durable definition
+    id (never re-derived from the column/table set), so the physical
+    constraint name is stable across a display-label rename or a field's
+    position/order changing -- reprovisioning the identical constraint_id
+    is idempotent, matching add_unique_constraint/add_index/
+    add_composite_unique_constraint above: an index already named for this
+    constraint_id is returned as-is rather than re-issuing DDL.
+
+    NULL semantics: PostgreSQL's UNIQUE constraint treats NULL as distinct
+    from every other NULL (standard SQL semantics), the exact same
+    platform convention FieldDefinition.unique's own docstring
+    (app_platform/models.py) already documents for a single-column unique
+    field -- two rows can share NULL in every one of the constrained
+    columns without violating this constraint. Composite uniqueness does
+    not change or strengthen that: if any participating column is
+    nullable, a combination containing NULL is never guaranteed unique by
+    this constraint alone. Callers that need every field genuinely
+    required should mark them so at the field-definition level; this
+    primitive does not do that on a caller's behalf."""
+    org_id = table.organization_id
+    _require(
+        actor,
+        "database.schema.manage",
+        org_id,
+        action="database.table.field_set_unique.add",
+        resource_type="db_table",
+        resource_id=table.id,
+        request_id=request_id,
+    )
+    _require_unmanaged_schema(table.tenant_database, allow_managed_schema=allow_managed_schema)
+
+    if len(columns) < 2:
+        raise SchemaValidationError("A composite unique constraint needs at least two columns")
+    if len({column.id for column in columns}) != len(columns):
+        raise SchemaValidationError("A composite unique constraint cannot repeat the same column")
+    if any(column.table_id != table.id for column in columns):
+        raise SchemaValidationError("All columns must belong to the given table")
+
+    # "idx_" + a UUID's hex digits is inherently a valid, safe identifier
+    # (the same construction every sibling function above uses), but this
+    # constraint_id is a caller-supplied value, not one this function
+    # mints itself -- validated explicitly rather than trusted by
+    # construction, per Section 5's two-layer identifier defense.
+    index_name = validate_identifier(f"idx_{constraint_id.hex}")
+
+    existing = DBIndex.objects.filter(table=table, name=index_name, is_unique=True).first()
+    if existing is not None:
+        return existing
+
+    # Sorted by physical column name (itself a deterministic, id-derived
+    # string -- runtime_plan.physical_name -- never a caller-controlled
+    # display order) so the DDL, and therefore the constraint, is
+    # byte-identical across reprovisioning regardless of the order
+    # `columns` was passed in.
+    ordered = sorted(columns, key=lambda column: column.name)
+    ddl = sql.SQL("ALTER TABLE {schema}.{table} ADD CONSTRAINT {name} UNIQUE ({cols})").format(
+        schema=sql.Identifier(table.tenant_database.schema_name),
+        table=sql.Identifier(table.name),
+        name=sql.Identifier(index_name),
+        cols=sql.SQL(", ").join(sql.Identifier(column.name) for column in ordered),
+    )
+    drop_ddl = sql.SQL("ALTER TABLE {schema}.{table} DROP CONSTRAINT {name}").format(
+        schema=sql.Identifier(table.tenant_database.schema_name),
+        table=sql.Identifier(table.name),
+        name=sql.Identifier(index_name),
+    )
+    try:
+        _execute_tenant_ddl(ddl)
+    except DjangoIntegrityError as exc:
+        raise SchemaValidationError(
+            "Cannot add a unique constraint: existing rows already duplicate this combination of columns."
+        ) from exc
+
+    def _write():
+        index = DBIndex.objects.create(table=table, name=index_name, is_unique=True)
+        index.columns.add(*ordered)
+        return index
+
+    index = _write_catalog(_write, compensating_ddl=drop_ddl)
+
+    audit.record(
+        actor=actor,
+        organization_id=org_id,
+        action="database.table.field_set_unique.add",
+        resource_type="db_table",
+        resource_id=table.id,
+        request_id=request_id,
+        context={"columns": [column.name for column in ordered]},
+    )
+    return index
+
+
+def add_index(
+    *, actor, column: DBColumn, request_id: str = "", allow_managed_schema: bool = False
+) -> DBIndex:
+    """Retrofits a plain (non-unique) B-tree index onto an EXISTING
+    column. Idempotent for the same reason as add_unique_constraint above
+    -- a column that's already unique (which already carries a real,
+    single-column index) or already separately indexed on its own
+    returns its existing DBIndex rather than issuing a duplicate CREATE
+    INDEX. Deliberately narrowed to single-column indexes only: a column
+    that's merely a *member* of some other multi-column index (e.g. the
+    non-leading column of add_composite_unique_constraint's join-table
+    constraint) does NOT get the same lookup benefit a Postgres composite
+    index only accelerates prefix (leading-column) searches -- so that
+    case must still get its own real index, not a false "already
+    indexed" short-circuit."""
+    table = column.table
+    org_id = table.organization_id
+    _require(
+        actor,
+        "database.schema.manage",
+        org_id,
+        action="database.column.index.add",
+        resource_type="db_table",
+        resource_id=table.id,
+        request_id=request_id,
+    )
+    _require_unmanaged_schema(table.tenant_database, allow_managed_schema=allow_managed_schema)
+
+    # Checked one candidate at a time (never Count("columns") combined with
+    # the same filter in one queryset -- Django reuses the join, so the
+    # count would only ever reflect the single already-filtered row, not
+    # the index's true total column count).
+    for candidate in DBIndex.objects.filter(table=table, columns=column):
+        if candidate.columns.count() == 1:
+            return candidate
+
+    index_name = f"idx_{column.id.hex}"
+    ddl = sql.SQL("CREATE INDEX {index} ON {schema}.{table} ({col})").format(
+        index=sql.Identifier(index_name),
+        schema=sql.Identifier(table.tenant_database.schema_name),
+        table=sql.Identifier(table.name),
+        col=sql.Identifier(column.name),
+    )
+    drop_ddl = sql.SQL("DROP INDEX {schema}.{index}").format(
+        schema=sql.Identifier(table.tenant_database.schema_name), index=sql.Identifier(index_name)
+    )
+    _execute_tenant_ddl(ddl)
+
+    def _write():
+        index = DBIndex.objects.create(table=table, name=index_name, is_unique=False)
+        index.columns.add(column)
+        return index
+
+    index = _write_catalog(_write, compensating_ddl=drop_ddl)
+
+    audit.record(
+        actor=actor,
+        organization_id=org_id,
+        action="database.column.index.add",
+        resource_type="db_table",
+        resource_id=table.id,
+        request_id=request_id,
+        context={"column": column.name},
+    )
+    return index
 
 
 _ON_DELETE_SQL: dict[str, sql.SQL] = {
@@ -322,6 +734,7 @@ def add_foreign_key(
     references_column: DBColumn,
     on_delete: str = DBForeignKey.OnDelete.RESTRICT,
     request_id: str = "",
+    allow_managed_schema: bool = False,
 ) -> DBForeignKey:
     org_id = column.organization_id
     _require(
@@ -333,6 +746,7 @@ def add_foreign_key(
         resource_id=column.id,
         request_id=request_id,
     )
+    _require_unmanaged_schema(column.table.tenant_database, allow_managed_schema=allow_managed_schema)
 
     if references_table.tenant_database_id != column.table.tenant_database_id:
         raise SchemaValidationError("Foreign keys must reference a table in the same database")
@@ -401,6 +815,7 @@ def delete_table(*, actor, table: DBTable, request_id: str = "") -> None:
         resource_id=table.id,
         request_id=request_id,
     )
+    _require_unmanaged_schema(table.tenant_database)
 
     ddl = sql.SQL("DROP TABLE {schema}.{table}").format(
         schema=sql.Identifier(table.tenant_database.schema_name), table=sql.Identifier(table.name)
@@ -437,6 +852,7 @@ def delete_tenant_database(*, actor, tenant_database: TenantDatabase, request_id
         resource_id=tenant_database.id,
         request_id=request_id,
     )
+    _require_unmanaged_schema(tenant_database)
 
     ddl = sql.SQL("DROP SCHEMA {schema} CASCADE").format(schema=sql.Identifier(tenant_database.schema_name))
     _execute_tenant_ddl(ddl)

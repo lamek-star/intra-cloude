@@ -99,6 +99,8 @@ type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   body?: unknown;
   isFormData?: boolean;
+  /** Extra request headers -- e.g. `Idempotency-Key` on a business operation. */
+  headers?: Record<string, string>;
 };
 
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
@@ -109,7 +111,7 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     await ensureCsrfCookie();
   }
 
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...opts.headers };
   let body: BodyInit | undefined;
 
   if (opts.body !== undefined) {
@@ -160,6 +162,10 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: "POST", body }),
+  /** POST with an `Idempotency-Key`: replaying the same key and body returns the first result
+   * instead of repeating the operation (see the backend's operation journal). */
+  postIdempotent: <T>(path: string, body: unknown, idempotencyKey: string) =>
+    request<T>(path, { method: "POST", body, headers: { "Idempotency-Key": idempotencyKey } }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: "PATCH", body }),
   del: <T = void>(path: string, body?: unknown) => request<T>(path, { method: "DELETE", body }),
   postForm: <T>(path: string, form: FormData) =>
@@ -199,6 +205,23 @@ export type Team = {
   id: string;
   organization: string;
   name: string;
+  created_at: string;
+};
+
+export type OrganizationalUnit = {
+  id: string;
+  organization: string;
+  parent: string | null;
+  unit_type: string;
+  name: string;
+  created_at: string;
+  created_by: string;
+};
+
+export type UnitMembership = {
+  id: string;
+  unit: string;
+  user: User;
   created_at: string;
 };
 
@@ -467,7 +490,7 @@ export type ShareGrant = {
   principal_type: "user" | "team" | "organization";
   user: string | null;
   team: string | null;
-  level: "read" | "write" | "admin";
+  level: "read" | "write" | "admin" | "sell" | "receive" | "adjust" | "transfer";
   expires_at: string | null;
   revoked_at: string | null;
   created_by: string | null;
@@ -514,4 +537,337 @@ export type DashboardRenderResult = {
   id: string;
   name: string;
   widgets: DashboardWidgetResult[];
+};
+
+// --- App Platform (docs/implementation/APP_PLATFORM_PHASE2.md) ---
+
+// The draft/version definition format `app_platform/definitions.py`
+// validates -- id is omitted by the builder for a brand-new element (the
+// server assigns one) and echoed back for an existing one, to preserve
+// definition lineage across edits (see APP_PLATFORM_PHASE3.md).
+// The one safe default per type app_platform/definitions.py's
+// validate_field_default accepts (reusing databases/ddl.py's own DDL
+// safe-set): text/decimal/date are validated strings, integer a number,
+// boolean a bool, datetime only ever the literal "now()".
+export type FieldDefaultValue = string | number | boolean | null;
+
+export type DraftField = {
+  id?: string;
+  key: string;
+  label: string;
+  data_type: AppFieldDataType;
+  required?: boolean;
+  default_value?: FieldDefaultValue;
+};
+
+// Membership references stable AppField/AppRelationship ids -- the same
+// ids DraftField.id/DraftRelationship.id echo -- never a display label or
+// physical column/table name. A brand-new element omits `id` just like
+// DraftField/DraftRelationship; the server assigns one. At least 2
+// field_ids/relationship_ids combined are required (app_platform/
+// definitions.py's ConstraintInput). A relationship member must be a
+// many_to_one relationship owned by this same model (its own FK column) --
+// many_to_many is never eligible.
+export type DraftConstraint = {
+  id?: string;
+  key: string;
+  label: string;
+  field_ids: string[];
+  relationship_ids?: string[];
+};
+
+// Phase 5 (docs/implementation/APP_PLATFORM_PHASE5.md): a workflow's
+// "state" is just the value of one of the model's own text fields -- there
+// is no enum type in this platform. `state_field` must reference a field
+// on this same model with data_type "text".
+export type WorkflowConditionOperator = "eq" | "ne" | "is_null" | "is_not_null";
+
+export type DraftCondition = {
+  field_id: string;
+  operator: WorkflowConditionOperator;
+  value?: FieldDefaultValue;
+};
+
+export type DraftAction = {
+  field_id: string;
+  value: FieldDefaultValue;
+};
+
+export type DraftState = {
+  id?: string;
+  key: string;
+  label: string;
+};
+
+// `from_state` omitted/null means "valid from any current state". Actions
+// are literal field writes only (no calculated values) applied in the
+// same write as the state change -- see ConstraintDefinition-adjacent
+// WorkflowTransition's own docstring (app_platform/models.py) for why
+// that's also what makes a replayed apply naturally idempotent.
+// `requires_approval` gates this specific transition behind the
+// app_instance.workflow.approve capability, in addition to the ordinary
+// database.write every record write already needs. `notify_url`, if set,
+// is validated server-side against the same SSRF host guard
+// ConnectedDatabase.host already uses.
+export type DraftTransition = {
+  id?: string;
+  key: string;
+  label: string;
+  from_state?: string | null;
+  to_state: string;
+  conditions?: DraftCondition[];
+  field_actions?: DraftAction[];
+  requires_approval?: boolean;
+  notify_url?: string;
+};
+
+export type DraftWorkflow = {
+  id?: string;
+  key: string;
+  label: string;
+  state_field: string;
+  states: DraftState[];
+  transitions?: DraftTransition[];
+};
+
+export type DraftModel = {
+  id?: string;
+  key: string;
+  label: string;
+  fields: DraftField[];
+  constraints?: DraftConstraint[];
+  workflows?: DraftWorkflow[];
+};
+
+export type AppRelationshipKind = "many_to_one" | "many_to_many";
+
+export type DraftRelationship = {
+  id?: string;
+  key: string;
+  label: string;
+  source_model: string;
+  target_model: string;
+  kind?: AppRelationshipKind;
+  deletion_policy?: "restrict" | "set_null";
+};
+
+export type AppDefinition = {
+  schema_version: 1;
+  models: DraftModel[];
+  relationships: DraftRelationship[];
+};
+
+export type AppTemplate = {
+  id: string;
+  organization: string;
+  label: string;
+  description: string;
+  draft: AppDefinition;
+  archived: boolean;
+  created_at: string;
+};
+
+export type AppTemplateVersion = {
+  id: string;
+  template: string;
+  number: number;
+  definition: AppDefinition;
+  checksum_sha256: string;
+  created_at: string;
+};
+
+export type AppInstance = {
+  id: string;
+  organization: string;
+  project: string;
+  source_version: string;
+  label: string;
+  archived: boolean;
+  created_at: string;
+};
+
+export type RuntimePlan = {
+  format_version: number;
+  instance_id: string;
+  database_id: string;
+  schema_name: string;
+  models: unknown[];
+  relationships: unknown[];
+  fingerprint: string;
+};
+
+export type RuntimeStatus = {
+  instance_id: string;
+  status: "ready" | "failed" | "pending";
+  fingerprint: string;
+  database_id: string | null;
+  bindings: Record<string, unknown>;
+  error: string;
+  completed_at: string | null;
+};
+
+// Phase 9 -- template versioning and upgrades. `UpgradeDiffItem` fields
+// beyond id/key vary by bucket: `add` entries carry the new item's own
+// draft shape, `label_sync` carries from/to, `manual_review` carries a
+// `reason` (`"label_conflict"` -> template_label/live_label,
+// `"structural_change_unsupported"` -> changed_fields,
+// `"removed_upstream_unsupported"` -> none) -- see
+// docs/implementation/APP_PLATFORM_PHASE9.md for the full merge policy.
+export type UpgradeDiffItem = {
+  id: string;
+  key: string;
+  label?: string;
+  reason?: string;
+  from?: string;
+  to?: string;
+  template_label?: string;
+  live_label?: string;
+  changed_fields?: string[];
+  [key: string]: unknown;
+};
+
+export type UpgradeDiffBucket = {
+  add: UpgradeDiffItem[];
+  label_sync: UpgradeDiffItem[];
+  manual_review: UpgradeDiffItem[];
+};
+
+export type UpgradeDiff = {
+  models: UpgradeDiffBucket;
+  fields: UpgradeDiffBucket;
+  relationships: UpgradeDiffBucket;
+  constraints: UpgradeDiffBucket;
+};
+
+export type AppInstanceUpgrade = {
+  id: string;
+  instance: string;
+  from_version: string;
+  to_version: string;
+  summary: UpgradeDiff;
+  created_at: string;
+};
+
+export type AppModelDefinition = {
+  id: string;
+  instance: string;
+  key: string;
+  label: string;
+  position: number;
+  source_definition_id: string | null;
+};
+
+export type AppFieldDataType =
+  | "text"
+  | "integer"
+  | "decimal"
+  | "boolean"
+  | "date"
+  | "datetime"
+  | "org_unit_reference";
+
+export type AppFieldDefinition = {
+  id: string;
+  model: string;
+  key: string;
+  label: string;
+  data_type: AppFieldDataType;
+  required: boolean;
+  default_value: FieldDefaultValue;
+  position: number;
+  source_definition_id: string | null;
+};
+
+export type AppConstraintDefinition = {
+  id: string;
+  model: string;
+  key: string;
+  label: string;
+  position: number;
+  source_definition_id: string | null;
+  // Stable AppField/AppRelationship ids, in current display order -- never
+  // a physical constraint/index name (see databases.services.
+  // add_field_set_unique_constraint's own naming, deliberately internal).
+  field_ids: string[];
+  relationship_ids: string[];
+};
+
+export type AppWorkflowDefinition = {
+  id: string;
+  model: string;
+  key: string;
+  label: string;
+  position: number;
+  source_definition_id: string | null;
+  state_field: string;
+};
+
+export type AppWorkflowState = {
+  id: string;
+  workflow: string;
+  key: string;
+  label: string;
+  position: number;
+  source_definition_id: string | null;
+};
+
+export type AppTransitionDefinition = {
+  id: string;
+  workflow: string;
+  key: string;
+  label: string;
+  position: number;
+  source_definition_id: string | null;
+  from_state: string | null;
+  to_state: string;
+  conditions: DraftCondition[];
+  field_actions: DraftAction[];
+  requires_approval: boolean;
+  notify_url: string;
+};
+
+// Returned by POST .../transitions/{id}/apply/ -- a durable receipt, not
+// the updated record itself (re-fetch the record separately if needed).
+export type AppTransitionAttempt = {
+  id: string;
+  transition: string;
+  record_id: string;
+  state_before: string;
+  state_after: string;
+  completed_at: string | null;
+  last_error: string;
+  created_at: string;
+};
+
+export type AppRelationshipDefinition = {
+  id: string;
+  instance: string;
+  key: string;
+  label: string;
+  position: number;
+  source_definition_id: string | null;
+  source_model: string;
+  target_model: string;
+  kind: AppRelationshipKind;
+  deletion_policy: "restrict" | "set_null";
+};
+
+// Same shape as RowsPage — record values are just keyed by field/relationship
+// definition UUID instead of a physical column name (see records.py).
+export type AppRecordsPage = {
+  count: number;
+  limit: number;
+  offset: number;
+  results: Record<string, unknown>[];
+};
+
+export type AppRecordAttachment = {
+  id: string;
+  record_id: string;
+  file_id: string;
+  filename: string;
+  mime_type: string;
+  size: number;
+  status: string;
+  created_at: string;
 };

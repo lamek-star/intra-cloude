@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError, type Organization } from "@/lib/api";
+import { isSafeNextPath } from "@/lib/safe-next";
 import {
   Button,
   Card,
@@ -17,7 +18,17 @@ import {
 } from "@/components/ui";
 
 export default function OrgsPage() {
+  return (
+    <Suspense fallback={<PageLoading />}>
+      <OrgsPageInner />
+    </Suspense>
+  );
+}
+
+function OrgsPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next");
   const [orgs, setOrgs] = useState<Organization[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<unknown>(null);
@@ -40,6 +51,20 @@ export default function OrgsPage() {
 
   if (orgs === null && !error) return <PageLoading />;
 
+  const skipHref = isSafeNextPath(next) ? next : "/dashboard";
+
+  function onOrgCreated(org: Organization) {
+    // Arriving here mid-external-auth-flow (welcome's "Create" button
+    // forwards `next`) means creating an organization completes that
+    // flow too -- return to `next` instead of the new org's own page,
+    // exactly like "Continue without an organization" would have.
+    if (isSafeNextPath(next)) {
+      window.location.assign(next);
+    } else {
+      router.push(`/orgs/${org.id}`);
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -57,8 +82,15 @@ export default function OrgsPage() {
       {orgs && orgs.length === 0 ? (
         <EmptyState
           title="No organizations yet"
-          description="Create your first organization to start adding workspaces, storage, and databases."
-          action={<Button onClick={() => setModalOpen(true)}>New organization</Button>}
+          description="Organizations are optional — your personal account already works without one. Create one when you need shared workspaces, storage, or databases."
+          action={
+            <div className="flex flex-col items-center gap-2">
+              <Button onClick={() => setModalOpen(true)}>New organization</Button>
+              <Link href={skipHref} className="text-xs text-slate-500 underline underline-offset-2 hover:text-slate-700">
+                Skip — take me to my dashboard
+              </Link>
+            </div>
+          }
         />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -76,11 +108,7 @@ export default function OrgsPage() {
         </div>
       )}
 
-      <CreateOrgModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onCreated={(org) => router.push(`/orgs/${org.id}`)}
-      />
+      <CreateOrgModal open={modalOpen} onClose={() => setModalOpen(false)} onCreated={onOrgCreated} />
     </div>
   );
 }

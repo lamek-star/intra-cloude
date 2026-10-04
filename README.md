@@ -13,6 +13,14 @@ time.
 
 ## Status
 
+App Platform Phase 1 adds an independent definition/template foundation;
+it is separate from existing integration Applications. No business-record
+runtime or visual builder is implemented yet. See
+[architecture](docs/APP_PLATFORM_ARCHITECTURE.md) and
+[Phase 1 verification](docs/implementation/APP_PLATFORM_PHASE1.md).
+App Platform metadata currently requires full control-plane backups;
+portable `.icp` explicitly excludes it.
+
 **All 12 planned phases (0–11) are complete and verified end-to-end.**
 Architecture and threat modeling; infrastructure; authentication/
 organizations/permissions; file/object storage; the visual database

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Check, Copy, X } from "lucide-react";
-import { useId, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
+import { useId, useRef, useState, type ComponentPropsWithRef, type InputHTMLAttributes, type ReactNode } from "react";
 import { useDialogA11y } from "@/lib/use-dialog-a11y";
 
 export function Button({
@@ -10,7 +10,7 @@ export function Button({
   size = "md",
   className = "",
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & {
+}: ComponentPropsWithRef<"button"> & {
   variant?: "primary" | "secondary" | "danger" | "ghost";
   size?: "sm" | "md";
 }) {
@@ -280,7 +280,7 @@ export function PageHeader({
     <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
       <div>
         {breadcrumbs && breadcrumbs.length > 0 && (
-          <nav aria-label="Breadcrumb" className="mb-2 flex items-center gap-1.5 text-xs text-slate-400">
+          <nav aria-label="Breadcrumb" className="mb-2 flex items-center gap-1.5 text-xs text-slate-500">
             {breadcrumbs.map((crumb, i) => (
               <span key={i} className="flex items-center gap-1.5">
                 {i > 0 && (
@@ -399,7 +399,7 @@ export function Modal({
           </h2>
           <button
             onClick={onClose}
-            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -462,7 +462,7 @@ export function StatCard({
         </div>
         <p className="mt-3 text-xs font-medium text-slate-500">{label}</p>
         <p className="mt-0.5 text-2xl font-semibold tracking-tight text-slate-900">{value}</p>
-        {detail && <p className="mt-1 text-xs text-slate-400">{detail}</p>}
+        {detail && <p className="mt-1 text-xs text-slate-500">{detail}</p>}
       </div>
       <div className={`h-1 w-full ${tone.bar}`} />
     </Card>

@@ -20,7 +20,67 @@ context and the original product brief folded into that document; brand
 identity (logo, color tokens, typography, component patterns) lives in
 `DESIGN.md`.
 
-## Current Status
+## Local Edition v1.0 — closed for qualification (2026-09-20)
+
+**IntraForge Local Edition v1.0** is qualified as an application and is now in
+**pilot / bug-fixing / release-hardening** mode; the feature freeze stays in force
+(no new phases). The single qualified application is **Spare Parts / Inventory &
+Sales**. Read `docs/LOCAL_EDITION_V1_FINAL_QUALIFICATION.md` for the nine verdicts and
+the evidence, and `docs/implementation/CURRENT_STATE.md` for the checkpoint. Not
+qualified, and never to be claimed without evidence: the Windows installer, automatic
+startup, the Control Center restore-from-file, physical LAN and code signing (all
+externally blocked), and the commercial release.
+
+**Own-shop pilot (2026-09-21):** the owner is piloting Local Edition in their own shop from the Docker-runtime kit in `scripts/shop-kit/` (see `docs/OWN_SHOP_PILOT_QUICKSTART.md`, `docs/implementation/OWN_SHOP_PILOT_READINESS.md`); the Windows MSI was found to install only the Control Center and to have no start-at-boot mechanism, and stays unqualified. Do not claim a real Windows restart was tested until the shop PC's status file says so.
+
+Rules that came out of the qualification and that later work must keep:
+
+- **Authority belongs to the business operation (ADR-0017).** `inventory.sell`,
+  `.receive`, `.adjust` and `.transfer` are separate, default-deny capabilities; the
+  right to sell is not the right to receive. Stock movements are created by the
+  controlled `operations/sell|receive` endpoints; a movement written through the record
+  API needs `inventory.adjust`. Never add a client-settable way to name an operation.
+- **The PostgreSQL ledger alone decides whether a balance is valid** (ADR-0016). Never
+  do inventory arithmetic in the browser or in a view.
+- **The auth rate limit (10/min) is intentional.** Isolate or space tests; never loosen it.
+- **Webhook delivery is at-least-once**; never document it as at-most-once.
+- **Run the dependency audits (`npm audit --omit=dev --audit-level=high`, `pip-audit`)
+  for every release**: exact pins mean a patched release is never picked up by itself.
+- Windows/LAN/signing/HawkScan results are recorded as blocked, never fabricated.
+
+## Historical status checkpoints
+
+**App Platform** (`app_platform`) has completed **all ten phases** of its
+own delivery plan (metadata foundation and immutable template versions;
+generic per-app Postgres runtime with full record/relationship/
+attachment CRUD and a generic frontend; the visual App Builder plus safe
+live additive schema changes and basic instance-scoped sharing;
+relationship-spanning composite `UNIQUE` constraints; the "Spare Parts"
+reference application; a generic workflow engine; organizational
+hierarchy; enterprise permissions (module/unit-scoped grants); eight
+further management-template reference applications — school, HR, CRM,
+procurement, assets, projects, documents, warehouses; template
+versioning/upgrades — a three-way diff between an instance's install
+snapshot, its live configuration, and a newer template version that adds
+what's safe and never silently overwrites a customer's own local
+changes; and a developer extension platform — Environment-scoped
+`ApplicationCredential`s can now be denied access to an instance whose
+runtime database isn't bound to their own Environment (a real,
+previously-open gap on the one bearer-token-reachable record-CRUD
+surface in this codebase), and record/workflow events are pushed to
+`environments.EnvironmentWebhook` subscribers as real, HMAC-signed HTTP
+deliveries — closing `docs/EXTERNAL_APP_API_CONTRACT.md`'s own
+previously-listed "webhooks NOT YET IMPLEMENTED" gap). Existing
+`applications.Application` remains a separate integration identity from
+any of these business apps. Full control-plane backups cover this
+metadata; portable `.icp` explicitly excludes it. New endpoints use
+shared capabilities/ResourceGrants and require human sessions. Full
+history, exact verification method, and every real bug found and fixed
+for each phase lives in
+[`docs/implementation/APP_PLATFORM_ROADMAP.md`](docs/implementation/APP_PLATFORM_ROADMAP.md)
+and its per-phase checkpoint docs — this section stays a short pointer,
+not a running log. See also `docs/APP_PLATFORM_ARCHITECTURE.md` and
+ADR-0014.
 
 **All 12 planned phases (0–11) are complete and verified end-to-end.**
 Full history, bugs found and fixed, and exact verification method for
@@ -329,8 +389,9 @@ secure defaults; readable code over clever code.
 See `README.md` for the full tree. Key rule: Django is organized into
 bounded apps (`accounts`, `organizations`, `permissions`, `workspaces`,
 `storage`, `databases`, `datasets`, `imports`, `applications`,
-`environments`, `sharing`, `audit`, `system`, `exports`, `analytics`) per
-`docs/architecture/DATA_MODEL.md` Section 1 — not one monolithic app.
+`oauth_provider`, `catalogue_storage`, `environments`, `sharing`, `audit`,
+`system`, `exports`, `analytics`) per `docs/architecture/DATA_MODEL.md`
+Section 1 — not one monolithic app.
 Business logic lives in service layers, not views or
 serializers.
 

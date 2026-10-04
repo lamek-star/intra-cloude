@@ -1,21 +1,51 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
+import { Package } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { isMfaRequired, useAuth } from "@/lib/auth-context";
-import { Button, ErrorBanner, Input, Label } from "@/components/ui";
+import { isSafeNextPath } from "@/lib/safe-next";
+import { appIdFromOpenPath, getSignInBranding, type SignInBranding } from "@/lib/service-apps";
+import { Button, ErrorBanner, Input, Label, PageLoading } from "@/components/ui";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<PageLoading />}>
+      <LoginPageInner />
+    </Suspense>
+  );
+}
+
+function LoginPageInner() {
   const { login, verifyMfa } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [needsMfa, setNeedsMfa] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Sent here by an application (its "open" page): show that application's own sign-in.
+  const appId = isSafeNextPath(next) ? appIdFromOpenPath(next) : null;
+  const [branding, setBranding] = useState<SignInBranding | null>(null);
+  // Until the application's name has arrived, show neither header (no flash of "IntraForge" first).
+  const [brandingSettled, setBrandingSettled] = useState(!appId);
+
+  useEffect(() => {
+    if (!appId) return;
+    let live = true;
+    getSignInBranding(appId)
+      .then((b) => live && setBranding(b))
+      .catch(() => undefined) // unknown or unavailable: the ordinary IntraForge sign-in
+      .finally(() => live && setBrandingSettled(true));
+    return () => {
+      live = false;
+    };
+  }, [appId]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -32,7 +62,15 @@ export default function LoginPage() {
           return;
         }
       }
-      router.push("/orgs");
+      if (isSafeNextPath(next)) {
+        // A real, full navigation -- `next` may point outside the
+        // Next.js app entirely (e.g. back into /oauth/authorize on the
+        // same origin, for an external application's sign-in flow),
+        // which router.push() cannot reach.
+        window.location.assign(next);
+      } else {
+        router.push("/dashboard");
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
@@ -40,15 +78,30 @@ export default function LoginPage() {
     }
   }
 
+  const registerHref = isSafeNextPath(next) ? `/register?next=${encodeURIComponent(next)}` : "/register";
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-white px-4">
       <div className="w-full max-w-sm">
-        <div className="mb-8 flex flex-col items-center">
-          {/* eslint-disable-next-line @next/next/no-img-element -- fixed-size static brand asset */}
-          <img src="/brand/icon-96.png" alt="IntraForge" width={44} height={44} className="mb-3 h-11 w-11" />
-          <h1 className="text-lg font-semibold text-text-primary">IntraForge</h1>
-          <p className="mt-1 text-sm text-slate-500">Sign in to your organization</p>
-        </div>
+        {!brandingSettled ? (
+          <div className="mb-8 h-[108px]" aria-hidden="true" />
+        ) : branding ? (
+          <div className="mb-8 flex flex-col items-center text-center">
+            <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+              <Package size={24} aria-hidden="true" />
+            </span>
+            <h1 className="text-lg font-semibold text-text-primary">{branding.product_name}</h1>
+            <p className="mt-0.5 text-sm font-medium text-text-primary">{branding.display_name}</p>
+            <p className="mt-1 text-sm text-slate-500">Sign in with your staff account</p>
+          </div>
+        ) : (
+          <div className="mb-8 flex flex-col items-center">
+            {/* eslint-disable-next-line @next/next/no-img-element -- fixed-size static brand asset */}
+            <img src="/brand/icon-96.png" alt="IntraForge" width={44} height={44} className="mb-3 h-11 w-11" />
+            <h1 className="text-lg font-semibold text-text-primary">IntraForge</h1>
+            <p className="mt-1 text-sm text-slate-500">Sign in to your account</p>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-slate-200 bg-white p-6">
           {error && <ErrorBanner message={error} />}
@@ -104,9 +157,12 @@ export default function LoginPage() {
           </Button>
         </form>
 
+        {branding && (
+          <p className="mt-4 text-center text-xs text-slate-400">Staff accounts are managed in IntraForge.</p>
+        )}
         <p className="mt-5 text-center text-sm text-slate-500">
           Don&apos;t have an account?{" "}
-          <Link href="/register" className="text-brand-600 hover:text-brand-500">
+          <Link href={registerHref} className="text-brand-600 underline underline-offset-4 hover:text-brand-500">
             Create one
           </Link>
         </p>

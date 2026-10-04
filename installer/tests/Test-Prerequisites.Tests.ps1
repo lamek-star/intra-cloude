@@ -114,23 +114,25 @@ Describe 'Test-DiskSpace' {
 }
 
 Describe 'Test-ProxyPortAvailable' {
-    It 'reports Warning when something is already listening on the default proxy port' {
-        # A real, direct test rather than a mock: actually bind port
-        # 8443 in-process for the duration of the assertion, matching
-        # how a live Caddy proxy (or a port-collision from something
-        # else) would occupy it.
-        $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 8443)
+    It 'reports Warning when the requested proxy port is occupied' {
+        # Own a real ephemeral port; never depend on or stop the developer's proxy.
+        $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
         try {
+            $listener.ExclusiveAddressUse = $true
             $listener.Start()
-            $result = Test-ProxyPortAvailable
+            $result = Test-ProxyPortAvailable -Port $listener.LocalEndpoint.Port
             $result.Status | Should -Be 'Warning'
         } finally {
             $listener.Stop()
         }
     }
 
-    It 'reports Pass when the default proxy port is free' {
-        $result = Test-ProxyPortAvailable
+    It 'reports Pass when the requested proxy port is free' {
+        $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+        $listener.Start()
+        $freePort = $listener.LocalEndpoint.Port
+        $listener.Stop()
+        $result = Test-ProxyPortAvailable -Port $freePort
         $result.Status | Should -Be 'Pass'
     }
 }

@@ -7,7 +7,37 @@ in a view or migration.
 """
 
 PERMISSIONS = {
+    "app_template.read": "Read organization-owned business application templates and versions",
+    "app_template.manage": "Create/edit/archive business application templates",
+    "app_template.publish": "Publish immutable template versions",
+    "app_instance.read": "Read installed business application definitions",
+    "app_instance.manage": "Install, rename, archive business applications",
+    "app_instance.schema.manage": "Manage installed application model, field, and relationship definitions",
+    "app_instance.workflow.approve": (
+        "Apply a workflow transition marked as requiring approval, in addition to the ordinary "
+        "database.write every record edit already needs"
+    ),
+    # Business-operation authority (ADR-0017). Granted per installed application (resource type
+    # `inventory_operations`, resource id = the AppInstance) or organization-wide through a role. Each one
+    # authorizes ONE kind of stock-changing operation and implies none of the others: the right to sell is not
+    # the right to receive, adjust or transfer. All are default-deny.
+    "inventory.sell": "Record a sale (order, lines, stock taken out, invoice) in an installed application",
+    "inventory.receive": (
+        "Receive stock into a warehouse (optionally with a purchase order) in an installed application"
+    ),
+    "inventory.adjust": (
+        "Record arbitrary stock movements directly through the record API of an installed application "
+        "(there is no adjustment workflow in v1.0)"
+    ),
+    "inventory.transfer": (
+        "Move stock between warehouses (authority defined; no transfer workflow exists in v1.0)"
+    ),
     "workspace.manage": "Create Workspaces and Projects within an organization",
+    "org_unit.read": (
+        "View an organization's structural units (branches, departments, teams, etc.) and their membership"
+    ),
+    "org_unit.manage": "Create/rename/reparent/delete organizational units",
+    "org_unit.membership.manage": "Add/remove users from organizational units",
     "storage.read": "View/download files and folders",
     "storage.write": "Upload, create folders, rename, move",
     "storage.delete": "Delete/restore files and folders",
@@ -41,9 +71,64 @@ PERMISSIONS = {
         "Required in addition to environment.manage/environment.secrets.manage for any mutating "
         "operation on a production-tier Environment"
     ),
+    # The separately deployed Spare Parts application (ADR-0018). Default-deny, granted per installed
+    # service application (resource type `service_app`) or organization-wide through a role. The
+    # application's own identity provider maps these onto its permission names.
+    "spareparts.view": "Open an installed Spare Parts application and read its settings and documents",
+    "spareparts.catalogue.read": "Search and read the Spare Parts reference catalogue",
+    "spareparts.catalogue.import": "Import catalogue CSV files and offline catalogue packages",
+    "spareparts.catalogue.manage": "Manage catalogue sources, verification and image rights",
+    "spareparts.products.read": "Read the shop's own products (My Products)",
+    "spareparts.products.manage": "Create and change products, prices, photos and part numbers",
+    "spareparts.cost.read": "See purchase costs and inventory value",
+    "spareparts.inventory.read": "Read stock levels and movements",
+    "spareparts.inventory.manage": "Receive, adjust and transfer stock; manage warehouses and locations",
+    "spareparts.sales.read": "Read customers, enquiries, quotations, orders and invoices",
+    "spareparts.sales.manage": (
+        "Manage customers, enquiries, quotations, orders and invoices, and record payments"
+    ),
+    "spareparts.suppliers.manage": "Create and change suppliers",
+    "spareparts.purchasing.read": "Read suppliers and purchase orders",
+    "spareparts.purchasing.manage": "Create purchase orders and receive goods against them",
+    "spareparts.reports.inventory": "Read inventory reports",
+    "spareparts.reports.sales": "Read sales reports",
+    "spareparts.reports.financial": "Read financial reports (outstanding invoices, payments)",
+    "spareparts.audit.read": "Read the Spare Parts application's own history",
+    "spareparts.settings.manage": "Change the Spare Parts application's shop and document settings",
 }
 
 _ALL = list(PERMISSIONS.keys())
+_SPAREPARTS_ALL = [p for p in PERMISSIONS if p.startswith("spareparts.")]
+# The Spare Parts application's own roles (SALES, INVENTORY, VIEWER; ADMIN = every spareparts.*
+# capability), reproduced as capability sets so its behaviour stays exactly what its qualification
+# tested. Its OWNER additionally manages people -- in IntraForge that is users.manage.
+_SPAREPARTS_SALES = [
+    "spareparts.view",
+    "spareparts.catalogue.read",
+    "spareparts.products.read",
+    "spareparts.inventory.read",
+    "spareparts.sales.read",
+    "spareparts.sales.manage",
+    "spareparts.reports.sales",
+]
+_SPAREPARTS_INVENTORY = [
+    "spareparts.view",
+    "spareparts.catalogue.read",
+    "spareparts.products.read",
+    "spareparts.products.manage",
+    "spareparts.cost.read",
+    "spareparts.inventory.read",
+    "spareparts.inventory.manage",
+    "spareparts.purchasing.read",
+    "spareparts.purchasing.manage",
+    "spareparts.reports.inventory",
+]
+_SPAREPARTS_VIEWER = [
+    "spareparts.view",
+    "spareparts.catalogue.read",
+    "spareparts.products.read",
+    "spareparts.inventory.read",
+]
 _STORAGE_RW = ["storage.read", "storage.write"]
 _DATABASE_RW = ["database.read", "database.write"]
 
@@ -116,6 +201,13 @@ SYSTEM_ROLES: dict[str, tuple[str, list[str]]] = {
     # Section 3). Still seeded as roles so they exist to assign.
     "guest": ("Guest", []),
     "service-account": ("Service Account", []),
+    # Spare Parts staff roles (ADR-0018). Organization administrators already hold every spareparts.*
+    # capability; these let an owner give shop staff exactly the application's own role, and nothing
+    # else in IntraForge.
+    "spare-parts-manager": ("Spare Parts Manager", _SPAREPARTS_ALL),
+    "spare-parts-sales": ("Spare Parts Sales", _SPAREPARTS_SALES),
+    "spare-parts-inventory": ("Spare Parts Inventory", _SPAREPARTS_INVENTORY),
+    "spare-parts-viewer": ("Spare Parts Viewer", _SPAREPARTS_VIEWER),
 }
 
 # Only this role may be assigned with organization=None (platform-wide) —
@@ -131,3 +223,22 @@ PLATFORM_WIDE_ROLE_SLUG = "super-administrator"
 # see ROADMAP.md Phase 10 for why that's a deliberate, documented scope
 # limit, not an oversight.
 ADMIN_PERMISSION_CODES = {"permissions.manage", "system.admin"}
+
+# The roles an organization's administrators can give to their own members from the members page,
+# in the order the page lists them, each with the one line it shows. Super Administrator is
+# platform-wide only and Service Account belongs to applications, so neither is offered there (and
+# organizations.views refuses them on that endpoint).
+ORGANIZATION_ROLE_SUMMARIES: dict[str, str] = {
+    "organization-administrator": "Everything in this organization, including members and roles.",
+    "spare-parts-manager": "Everything in Spare Parts, including prices, reports and settings.",
+    "spare-parts-sales": "Spare Parts selling: customers, quotations, orders, invoices. No cost prices.",
+    "spare-parts-inventory": "Spare Parts stock and purchasing, with cost prices. No selling.",
+    "spare-parts-viewer": "Spare Parts look-only: catalogue, products and stock levels.",
+    "editor": "Read and change files and databases.",
+    "viewer": "Read files, databases, environments and applications.",
+    "storage-administrator": "Manage file storage.",
+    "database-administrator": "Manage databases, imports and connections.",
+    "developer": "Build applications and manage development environments.",
+    "auditor": "Read the audit log.",
+    "guest": "No access of their own; only what is shared with them.",
+}

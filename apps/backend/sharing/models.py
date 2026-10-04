@@ -28,6 +28,12 @@ class ShareGrant(models.Model):
         READ = "read", "Read"
         WRITE = "write", "Write"
         ADMIN = "admin", "Admin"
+        # Business-operation levels: only meaningful for the `inventory_operations` resource type
+        # (ADR-0017). Each is exactly one operation and implies no other.
+        SELL = "sell", "Sell"
+        RECEIVE = "receive", "Receive"
+        ADJUST = "adjust", "Adjust"
+        TRANSFER = "transfer", "Transfer"
 
     class PrincipalType(models.TextChoices):
         USER = "user", "User"

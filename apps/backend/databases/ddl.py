@@ -8,10 +8,12 @@ constant values (`psycopg.sql.Literal`) — never plain string
 interpolation/f-strings into SQL text.
 """
 
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 from psycopg import sql
 
+from .formats import DATE_FORMAT
 from .models import DBColumn
 
 
@@ -112,6 +114,12 @@ def default_clause_sql(data_type: str, default_value) -> sql.Composable:
         return sql.SQL(" DEFAULT {}::jsonb").format(sql.Literal(text))
 
     if data_type == DBColumn.DataType.DATE:
-        raise DDLValidationError("Date column defaults are not supported yet")
+        if not isinstance(default_value, str):
+            raise DDLValidationError(f"Date default must be a {DATE_FORMAT!r}-formatted string")
+        try:
+            datetime.strptime(default_value, DATE_FORMAT)
+        except ValueError as exc:
+            raise DDLValidationError(f"Date default must be a {DATE_FORMAT!r}-formatted string") from exc
+        return sql.SQL(" DEFAULT {}::date").format(sql.Literal(default_value))
 
     raise DDLValidationError(f"Unsupported data type: {data_type!r}")

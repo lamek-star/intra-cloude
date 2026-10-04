@@ -17,6 +17,26 @@ piece *was* already verified, this document says so and points at
 where — don't re-verify what's already covered; do verify everything
 else before shipping.
 
+## Status on 2026-09-20: NOT EXECUTED -- EXTERNALLY BLOCKED
+
+Nothing in this matrix was run in the latest qualification session, and none of it is claimed. What blocks it, checked
+read-only on the qualification host:
+
+* The host is the developer's own Windows 11 Pro machine, **not** a disposable VM. Its only WSL distribution is the
+  primary development distribution and must not be touched; installing an MSI, rebooting, or removing the appliance on
+  it would be a destructive act against non-disposable data.
+* Hyper-V VM management is **not permitted** from the session's token (`Get-VM` is denied) and no Windows image is
+  available to create a disposable VM.
+* There is **one** physical network adapter (Wi-Fi) and no second machine or bridged client, so physical-LAN
+  qualification cannot be run; a bridged VM could not be created either.
+* There is **no code-signing certificate** in the user or machine store.
+
+Consequently, and separately from the application qualification (which passed on the supported Docker runtime):
+**Windows installer, prerequisite handling, first start, reboot and automatic startup, Control Center, restore-from-file
+through the Control Center, physical LAN access and code signing are EXTERNALLY BLOCKED.** They need a snapshot-capable
+Windows VM (or a spare Windows PC), an elevated session, a second client on the LAN, and a real signing credential.
+The backend recovery path they depend on is qualified independently (`operations/RECOVERY_DRILL.md`).
+
 ## Before you start
 
 - A **snapshot-capable VM** (Hyper-V checkpoint, or equivalent) is

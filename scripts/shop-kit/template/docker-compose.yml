@@ -1,0 +1,110 @@
+# IntraForge Local Edition -- own-shop pilot runtime. Its own project, images, volumes and port.
+#
+# Every image is already on the machine (loaded from images/*.tar by Install-IntraForgeShop.ps1); nothing is pulled.
+# All containers sit on an internal-only network (they have no route to the internet); only the proxy is published, and
+# only on the loopback address, so IntraForge is reachable from this computer alone.
+#
+# Persistent business data lives in Docker volumes (databases, files); every backup is written to a normal Windows
+# folder (SHOP_DATA_DIR\backups) so it can be seen, copied to a USB drive and restored. Both settings come from .env.
+name: intraforge-shop
+
+x-backend: &backend
+  image: intraforge-shop-backend:@TAG@
+  pull_policy: never
+  restart: unless-stopped
+  env_file: .env
+  networks: [isolated]
+  volumes:
+    - ${SHOP_DATA_DIR:-C:/IntraForgeData}/backups:/backups
+    - ./VERSION:/VERSION:ro
+
+services:
+  postgres-control:
+    image: postgres:18
+    pull_policy: never
+    restart: unless-stopped
+    # A whole-database restore replaces every table in ONE transaction (restore_backup_file --replace); the
+    # default lock table (64 per connection) is too small for a large tenant database. ~20 MB of shared memory.
+    command: ["postgres", "-c", "max_locks_per_transaction=512"]
+    env_file: .env
+    networks: [isolated]
+    volumes: [control:/var/lib/postgresql]
+  postgres-tenant:
+    image: postgres:18
+    pull_policy: never
+    restart: unless-stopped
+    # A whole-database restore replaces every table in ONE transaction (restore_backup_file --replace); the
+    # default lock table (64 per connection) is too small for a large tenant database. ~20 MB of shared memory.
+    command: ["postgres", "-c", "max_locks_per_transaction=512"]
+    env_file: .env
+    networks: [isolated]
+    volumes: [tenant:/var/lib/postgresql]
+  valkey:
+    image: valkey/valkey:9-alpine
+    pull_policy: never
+    restart: unless-stopped
+    networks: [isolated]
+  object-storage:
+    image: minio/minio:@MINIO_TAG@
+    pull_policy: never
+    restart: unless-stopped
+    command: server /data
+    env_file: .env
+    networks: [isolated]
+    volumes: [objects:/data]
+  backend:
+    <<: *backend
+  worker:
+    <<: *backend
+    command: celery -A config worker -l info --concurrency=2
+  beat:
+    <<: *backend
+    command: celery -A config beat -l info --schedule=/tmp/celerybeat-schedule
+  frontend:
+    image: intraforge-shop-frontend:@TAG@
+    pull_policy: never
+    restart: unless-stopped
+    networks: [isolated]
+  # The Spare Parts service application (ADR-0018): served by the proxy under /apps/spare-parts/ on IntraForge's own
+  # address, with IntraForge's sign-in; its data, files, audit and settings live in IntraForge. It gets only the three
+  # values it needs from .env (compose substitutes them), never the whole file, and it has no port on this computer.
+  spareparts:
+    image: intraforge-shop-spareparts:@TAG@
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      INTRAFORGE_SERVICE_TOKEN: ${SERVICE_APP_SPAREPARTS_TOKEN:?}
+      SPAREPARTS_PG_PASSWORD: ${SERVICE_APP_SPAREPARTS_DB_PASSWORD:?}
+      SPAREPARTS_PG_DATABASE: ${TENANT_DB_NAME:?}
+    depends_on: [backend, postgres-tenant]
+    networks: [isolated]
+  proxy:
+    image: caddy:2-alpine
+    pull_policy: never
+    restart: unless-stopped
+    # This computer only by default: the loopback addresses. "Allow other PCs in this shop" (Control Center > Settings,
+    # Set-IntraForgeNetwork.ps1) sets SHOP_BIND_V4/V6 to every address and adds the PC's name and address to the
+    # certificate; the Windows Firewall then admits the shop's PRIVATE network only and blocks public networks.
+    ports:
+      - "${SHOP_BIND_V4:-127.0.0.1}:${SHOP_HTTPS_PORT:-8443}:443"
+      # Also the IPv6 loopback: "localhost" resolves to ::1 first, and a client that does not fall back quickly
+      # (Windows retries a refused connection for ~2 s) would otherwise wait on every new connection.
+      - "[${SHOP_BIND_V6:-::1}]:${SHOP_HTTPS_PORT:-8443}:443"
+    environment:
+      PROXY_TLS_HOSTNAMES: "${SHOP_TLS_HOSTNAMES:-localhost 127.0.0.1}"
+      PROXY_DEFAULT_SNI: "${SHOP_DEFAULT_SNI:-localhost}"
+    volumes:
+      - ./infrastructure/proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - certificates:/data
+    networks: [isolated, edge]
+
+networks:
+  isolated:
+    internal: true
+  edge: {}
+
+volumes:
+  control: {}
+  tenant: {}
+  objects: {}
+  certificates: {}

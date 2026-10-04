@@ -1,5 +1,21 @@
 # Backup & Restore Strategy — IntraForge
 
+App Platform Phase 2 provisioning adds runtime receipts/catalog UUID bindings
+to control PostgreSQL and real tables/records to tenant PostgreSQL. Complete
+runtime recovery therefore requires **matching control and tenant backups**,
+taken while writes/provisioning are quiesced. A populated paired restore,
+including guards and replay without rebuilding, is tested. Portable `.icp`
+still excludes app metadata; included runtime tables restore as ordinary data,
+not a working installed application. See
+[runtime recovery procedure](RUNTIME_PROVISIONING.md).
+
+App Platform Phase 1: full control-plane PostgreSQL backups preserve templates,
+versions, installed definitions, UUID lineage, constraints, and database guards.
+This was verified by a real pg_dump/pg_restore round trip. Portable `.icp`
+exports **exclude App Platform metadata** and report that limitation; they are
+not a complete backup of installed business applications. See
+[Phase 1 evidence](../implementation/APP_PLATFORM_PHASE1.md).
+
 Current assurance checkpoint: [pre-App-Platform health check](../implementation/PRE_APP_PLATFORM_HEALTH_CHECK.md).
 Fresh automated/local integration checks do not qualify Windows UI lifecycle
 or whole-infrastructure outage recovery. Configuration restore remains manual;
@@ -120,6 +136,25 @@ Windows/WSL2 path (`Invoke-IntraCloudRestore.ps1 -StopStack`, Section
    with timestamp and outcome. **Implemented** — `verified_restorable`,
    `verified_at`, `verification_error`.
 
+## 6a. Total-loss recovery from backup files — VERIFIED (2026-09-19)
+
+`restore_backup <record id>` (Section 7a) needs a `BackupRecord` row, and those
+rows live in the control database. After a total loss (a fresh install plus backup
+files from an external drive) there is no such row. `restore_backup_file` restores
+from the **file and its type alone**:
+
+```
+python manage.py restore_backup_file <file inside BACKUP_DIR> --type control_db|tenant_db|object_storage --yes
+```
+
+Restore `control_db` first, then `tenant_db`, then `object_storage`, with the
+application containers stopped; the file must already sit inside `BACKUP_DIR`.
+Configuration/secrets are never restored by the platform: keep `BACKUP_ENCRYPTION_KEY`,
+`CREDENTIAL_ENCRYPTION_KEY` and `SECRET_KEY` somewhere outside the machine. This path
+was proven by a destructive drill (destroy → fresh init → restore from off-stack files →
+47/47 measured checks), with its limits stated in [RECOVERY_DRILL.md](RECOVERY_DRILL.md).
+The Windows Control Center / `Invoke-IntraCloudRestore.ps1` do **not** yet expose it.
+
 ## 7. Automated Restoration Testing — IMPLEMENTED
 
 `CELERY_BEAT_SCHEDULE` (`config/settings/base.py`) schedules
@@ -171,6 +206,22 @@ three of the four backup types:
   tenant schema for an organization that signed up since) is untouched,
   since `pg_restore --clean` only ever drops/recreates objects that are
   part of the archive being restored.
+  **Replace mode** (`restore_backup_file --replace`, databases only;
+  added 2026-09-27): the database becomes exactly the backup, in one
+  transaction -- every non-system schema is dropped and the dump is
+  replayed by `psql` with `ON_ERROR_STOP`, and COMMIT is sent only after
+  `pg_restore` exited successfully, so a failed or damaged restore leaves
+  the database unchanged. This is what a whole-installation, point-in-time
+  restore needs, and the only way to restore a dump taken *before* a later
+  migration added a table that references a table in the dump: the
+  additive `--clean` restore cannot drop the referenced table and fails
+  part-way (found restoring a pre-1.1 shop-kit backup into 1.1 on the
+  Windows test VM). The shop kit's `Restore-IntraForgeShop.ps1` and
+  `Install-IntraForgeShop.ps1 -RestoreFrom` use replace mode for both
+  databases, then run `migrate` and `sync_service_apps`. Roles that own
+  objects in the dump must exist first (`sync_service_apps` creates the
+  service applications' roles). Database-level settings and grants are
+  not part of a dump and are kept.
 - **Object storage**: every object in the archive is checksum-verified
   against its manifest and written to its *real* key (not a scratch
   prefix), then read back and re-verified. Deliberately additive-only:

@@ -59,6 +59,7 @@ PRODUCT_VERSION = _read_product_version()
 # manifest's "excluded" list rather than silently omitted — no export
 # should ever look "complete" when it isn't (no-silent-caps discipline).
 EXCLUDED_SCOPE = [
+    "app_platform",  # Phase 1 definitions require full control-plane backup, not portable packages
     # Applications and their Environments (environments app) ARE
     # included below (manifest["applications"]) -- what's specifically
     # excluded is the credential/secret *material* itself: a bearer

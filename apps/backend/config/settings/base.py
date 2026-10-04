@@ -58,8 +58,10 @@ THIRD_PARTY_APPS = [
 # Bounded Django apps per docs/architecture/DATA_MODEL.md Section 1.
 # Each owns its own models/services/serializers/tests; no giant shared app.
 LOCAL_APPS = [
+    "app_platform",
     "accounts",
     "organizations",
+    "org_units",
     "permissions",
     "workspaces",
     "storage",
@@ -67,13 +69,33 @@ LOCAL_APPS = [
     "datasets",
     "imports",
     "applications",
+    "oauth_provider",
+    "catalogue_storage",
     "environments",
     "sharing",
     "audit",
     "system",
     "exports",
     "analytics",
+    "service_apps",
 ]
+
+# --- Service applications (ADR-0018) ---
+# Separately deployed services that keep their data, files, identity and audit in IntraForge.
+# A slot exists only when its service token is configured (a random secret shared with the
+# service container); its database login role reaches only the one schema IntraForge provisions.
+SERVICE_APP_DEPLOYMENTS = {
+    "spare-parts": {
+        "app_type": "spare_parts",
+        "token": env("SERVICE_APP_SPAREPARTS_TOKEN", ""),
+        "db_role": env("SERVICE_APP_SPAREPARTS_DB_ROLE", "svc_spare_parts"),
+        "db_password": env("SERVICE_APP_SPAREPARTS_DB_PASSWORD", ""),
+        "internal_url": env("SERVICE_APP_SPAREPARTS_URL", "http://spareparts:3000"),
+        "launch_path": "/apps/spare-parts/",
+    },
+}
+# How long a service-application browser session lives without use (absolute cap below).
+SERVICE_APP_SESSION_HOURS = int(env("SERVICE_APP_SESSION_HOURS", "12"))
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
@@ -165,6 +187,11 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+# Portable imports are memory-backed. Bound expansion before member reads.
+PORTABLE_MAX_MEMBERS = int(env("PORTABLE_MAX_MEMBERS", "10000"))
+PORTABLE_MAX_EXPANDED_BYTES = int(env("PORTABLE_MAX_EXPANDED_BYTES", str(512 * 1024 * 1024)))
+PORTABLE_MAX_MEMBER_BYTES = int(env("PORTABLE_MAX_MEMBER_BYTES", str(64 * 1024 * 1024)))
+PORTABLE_MAX_MANIFEST_BYTES = int(env("PORTABLE_MAX_MANIFEST_BYTES", str(4 * 1024 * 1024)))
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -187,6 +214,14 @@ SECURE_REFERRER_POLICY = "same-origin"
 # (Section 24 / Section 17 of the master prompt).
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "")
 CORS_ALLOW_CREDENTIALS = True
+
+# The `iss` claim oauth_provider's ID tokens carry, and the base URL its
+# discovery document (/.well-known/openid-configuration) advertises for
+# every other endpoint — must be the exact origin external clients (e.g.
+# the spare-parts site) reach this deployment at, i.e. the proxy's own
+# origin (docker-compose.yml's `proxy` service), never the internal
+# `backend:8000` service name.
+OIDC_ISSUER = env("OIDC_ISSUER", "https://localhost:8443")
 
 # --- Django REST Framework ---
 REST_FRAMEWORK = {
@@ -274,6 +309,10 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {
 # not a manual checklist item that quietly stops happening"). Only takes
 # effect for the `beat` service, which schedules these against `worker`.
 CELERY_BEAT_SCHEDULE = {
+    "recover-app-operation-publication": {
+        "task": "app_platform.tasks.recover_operation_publication",
+        "schedule": 60.0,
+    },
     "backup-control-db-nightly": {
         "task": "system.tasks.run_backup_task",
         "schedule": crontab(hour=2, minute=0),
@@ -390,6 +429,11 @@ BACKUP_ENCRYPTION_KEY = env("BACKUP_ENCRYPTION_KEY", "")
 # --- Feature flags (secure defaults: off) ---
 FEATURE_EXTERNAL_SHARING_ENABLED = env_bool("FEATURE_EXTERNAL_SHARING_ENABLED", False)
 FEATURE_INTERNET_GATEWAY_ENABLED = env_bool("FEATURE_INTERNET_GATEWAY_ENABLED", False)
+
+# Local Edition: built-in applications appear to customers only once QUALIFIED
+# (app_platform/built_in_apps.py). Turn this on for development, demos and the pilot
+# preview to also list PARTIALLY_QUALIFIED / EXPERIMENTAL ones, clearly labelled.
+SHOW_UNQUALIFIED_BUILT_IN_APPS = env_bool("SHOW_UNQUALIFIED_BUILT_IN_APPS", False)
 
 # --- Logging: structured, request-ID-aware (Section 20) ---
 LOGGING = {

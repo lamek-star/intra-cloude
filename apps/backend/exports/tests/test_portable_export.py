@@ -219,6 +219,60 @@ class PortableExportRoundTripTests(APITestCase):
         self.assertEqual(str(order_rows["results"][0]["customer_id"]), str(restored_customer_id))
         self.assertEqual(str(order_rows["results"][0]["total"]), source["order_total"])
 
+    def test_app_platform_data_is_excluded_from_the_portable_package_with_a_warning(self):
+        """App Platform (templates/instances/definitions) is deliberately
+        excluded from portable .icp packages -- manifest.py's
+        EXCLUDED_SCOPE docstring and CLAUDE.md both say a full
+        control-plane backup is the right tool for that data instead.
+        Never previously asserted end-to-end: proves the restore report
+        actually surfaces the warning and that App Platform rows
+        genuinely don't cross the round trip, not just that the API
+        forgot to expose them."""
+        from app_platform import instances, templates
+        from app_platform.models import AppInstance, AppTemplate
+        from app_platform.tests.test_foundation import sample
+        from exports import restorer
+        from organizations.models import Organization
+        from workspaces.models import Project
+
+        source = self._build_source_organization()
+        org = Organization.objects.get(pk=source["org_id"])
+        project = Project.objects.get(workspace__organization_id=org.id)
+        template = templates.create_template(self.admin, org, {"label": "App", "draft": sample()})
+        version = templates.publish_template(self.admin, template)
+        instances.install(self.admin, project, {"label": "Runtime", "template_version": str(version.id)})
+
+        export = self.client.post(reverse("export-job-list-create", args=[source["org_id"]]), {})
+        self.assertEqual(export.status_code, status.HTTP_201_CREATED)
+        download = self.client.get(reverse("export-job-download", args=[export.data["id"]]))
+        package_bytes = b"".join(download.streaming_content)
+
+        _zf, manifest = restorer.open_package(package_bytes, passphrase=None)
+        self.assertIn("app_platform", manifest["excluded"])
+        self.assertTrue(
+            any("App Platform" in warning for warning in manifest.get("warnings", [])),
+            manifest.get("warnings"),
+        )
+
+        restore = self.client.post(
+            reverse("restore-job-list-create"),
+            {"package": SimpleUploadedFile("export.icp", package_bytes)},
+            format="multipart",
+        )
+        self.assertEqual(restore.status_code, status.HTTP_201_CREATED)
+        restore_detail = self.client.get(reverse("restore-job-detail", args=[restore.data["id"]]))
+        self.assertEqual(
+            restore_detail.data["status"], "completed", restore_detail.data.get("error_message")
+        )
+        report = restore_detail.data["report"]
+        new_org_id = report["organization_id"]
+        self.assertNotEqual(new_org_id, source["org_id"])
+        self.assertTrue(
+            any("App Platform" in warning for warning in report["warnings"]), report["warnings"]
+        )
+        self.assertFalse(AppTemplate.objects.filter(organization_id=new_org_id).exists())
+        self.assertFalse(AppInstance.objects.filter(organization_id=new_org_id).exists())
+
     def test_encrypted_export_round_trip_and_wrong_passphrase_is_rejected(self):
         # Exercises the encryption/decryption logic directly
         # (container.py + restorer.open_package) rather than through the

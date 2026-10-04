@@ -217,6 +217,7 @@ function Test-DiskSpace {
 }
 
 function Test-ProxyPortAvailable {
+    param([ValidateRange(1, 65535)][int]$Port = 8443)
     # docker-compose.yml publishes exactly one host port: PROXY_BIND_ADDRESS
     # (default 127.0.0.1) : 8443 -> the Caddy proxy's 443. Its own
     # comment already flags this as the one realistic port-collision
@@ -224,7 +225,6 @@ function Test-ProxyPortAvailable {
     # connect-based check would misreport "free" for a port nothing is
     # listening on yet but that's still reserved/excluded) is the
     # direct way to ask "can something claim this port," CIM-free.
-    $port = 8443
     try {
         $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
         $listener.Start()

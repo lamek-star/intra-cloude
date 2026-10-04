@@ -20,6 +20,16 @@ urlpatterns = [
         name="membership-role-assign",
     ),
     path(
+        "organizations/<uuid:organization_id>/members/<uuid:membership_id>/roles/<slug:role_slug>/",
+        views.MembershipRoleRemoveView.as_view(),
+        name="membership-role-remove",
+    ),
+    path(
+        "organizations/<uuid:organization_id>/roles/",
+        views.OrganizationRolesView.as_view(),
+        name="organization-roles",
+    ),
+    path(
         "organizations/<uuid:organization_id>/teams/",
         views.TeamListCreateView.as_view(),
         name="team-list-create",

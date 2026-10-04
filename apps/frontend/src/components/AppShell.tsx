@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { Building2, ChevronDown, LayoutDashboard, LogOut, Search, type LucideIcon } from "lucide-react";
+import { Building2, ChevronDown, LayoutDashboard, LayoutGrid, LogOut, Search, type LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { ConfirmProvider } from "@/components/ConfirmProvider";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -52,6 +52,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <nav aria-label="Main navigation" className="flex flex-1 flex-col gap-1 text-sm">
             <SidebarLink href="/dashboard" icon={LayoutDashboard}>
               Dashboard
+            </SidebarLink>
+            <SidebarLink href="/apps" icon={LayoutGrid}>
+              Apps
             </SidebarLink>
             <SidebarLink href="/orgs" icon={Building2}>
               Organizations

@@ -1,5 +1,118 @@
 # Threat Model — IntraForge
 
+## App Platform Phase 2 qualification pass
+
+Closes Phase 2 with tests spanning the previous three steps' boundaries
+rather than just re-asserting them: a real record id from one model's
+tenant table substituted into a second, unrelated model's attachment URL
+in the *same* organization confirms the `(model, record_id)` scoping (not
+org membership alone) actually rejects it; revoking a `ResourceGrant`
+mid-session denies the very next request, no stale-authorization window;
+two real threads concurrently updating the *same* record leave it in one
+of the two submitted states, never a corrupted mix (Postgres's per-row
+`UPDATE` locking, no application lock needed); and the new
+`RecordAttachment` control-plane row survives a real control+tenant backup/
+restore cycle. Also live-verified in a browser: a user with zero
+relationship to an app's organization gets the app's real "Not found."
+page at both the instance and model URLs, not a blank page or a leak.
+Record creation is confirmed *not* idempotent (a retried POST duplicates
+the record) — an accepted, named limitation shared with the generic data
+explorer's own row-insert endpoint, not a new gap. Full evidence:
+[APP_PLATFORM_PHASE2.md](../implementation/APP_PLATFORM_PHASE2.md)'s
+qualification step and `app_platform/tests/test_records.py`/
+`test_attachments.py`.
+
+## App Platform Phase 2 attachments boundary
+
+Attaching never accepts file bytes -- only a reference (`file_id`) to a
+`FileObject` that already passed the real upload pipeline (malware scan,
+checksum, MIME sniff), so this step inherits that pipeline's guarantees
+rather than needing its own. The cross-organization case is the one this
+step specifically had to guard against and test for: `get_member_file`
+only proves the actor belongs to *some* organization that owns the file,
+which is true whenever the actor happens to be a member of both the
+attaching app's organization and the file's — an explicit
+`file.organization_id == instance.organization_id` check closes that gap,
+verified by `test_file_from_a_foreign_organization_cannot_be_attached`,
+where the attaching actor is deliberately a member of both organizations.
+A quarantined or already-deleted file is rejected at attach time, and
+`storage.read` plus the file's live status are rechecked again at every
+download (not cached from attach time), so revoking Sharing or a later
+malware-scan quarantine takes effect immediately, matching storage's own
+`FileDownloadView` discipline exactly, not a separate, weaker copy of it.
+Listing attachments returns filename/mime type/size/status only -- never
+`object_key`, the same non-negotiable the storage app's own docstrings
+already state for that field. Deleting a record removes its attachment
+rows as a second, un-transacted step after the tenant-table row delete
+already committed (attachments are a control-plane model; the record is a
+raw tenant-table row) -- a crash between the two leaves an attachment row
+pointing at a now-nonexistent record, not a leaked file or a dangling
+storage object, and is cheap to reconcile later precisely because the
+record it points to is already gone. See `app_platform/tests/
+test_attachments.py` for the live-verified cases.
+
+## App Platform Phase 2 record CRUD boundary
+
+Record values are always addressed by definition UUID in the API; the
+runtime's generated physical table/column names are never accepted from or
+returned to a client. `databases.rows`/`databases.values` perform the actual
+type/required/decimal validation already relied on by the generic data
+explorer; this step only translates ids and adds a real PostgreSQL exception
+mapping (`django.db.IntegrityError`/`Error`, since Django's cursor wrapper
+re-raises driver errors under its own hierarchy, not the raw psycopg
+classes) so a foreign-key violation, decimal overflow, or a non-finite
+number is a clean 400, not a leaked 500. A relationship value is a real
+enforced foreign key with the deletion policy chosen at definition time, not
+an application-level check. Every create/update/delete is audited with the
+record id and (update only) which field/relationship ids changed, never the
+values themselves, matching the "never storing secret or full record
+payloads" constraint the docstring of this whole subsystem already commits
+to. Cross-organization model-id substitution is a 404 (via the same
+`get_owned` membership scoping used everywhere else in `app_platform`); a
+member with no `database.read`/`write` grant is a 403. See
+`app_platform/tests/test_records.py` for the live-verified cases: CRUD round
+trip, filter/search/order/pagination, relationship round trip and FK-
+violation rejection, required-field/decimal-overflow/unknown-field
+rejection, cross-org 404, permission-grant-gated 403, unprovisioned-instance
+404, and audited-without-payload-leak mutations.
+
+## App Platform Phase 2 provisioning boundary
+
+Runtime reservation is human-only and requires actual app schema and database
+capabilities; the worker rechecks authority. Strict request validation accepts
+only the plan fingerprint. Installed UUIDs produce validated physical names,
+and existing quoting/DDL services construct the schema. Durable reservation,
+instance/advisory locks, operation-marked tenant schemas and atomic control
+publication prevent a retry from rebuilding published data. An unmarked
+schema or any catalog owner blocks reconciliation. Published bindings and
+structural definitions/catalog rows have PostgreSQL guards; normal database
+services reject destructive schema operations before executing DDL.
+
+Generated records currently inherit existing database/Environment access;
+there is no parallel app record policy or field/record-level isolation claim.
+Broker enqueue and control/tenant commits are not distributed transactions.
+Pending receipts can require explicit re-enqueue or operator review. Matching
+quiesced control+tenant backups are required for complete runtime restoration.
+Real process/worker SIGKILL, concurrency, foreign organization, catalog guard
+and populated restore tests cover this step. See
+[ADR-0015](../architecture/adr/0015-runtime-provisioning.md) and
+[operating limits](../operations/RUNTIME_PROVISIONING.md).
+
+## App Platform Phase 1 boundary
+
+New metadata uses active membership plus `app_template.*`/`app_instance.*`
+capabilities and exact ResourceGrants; no role-name bypass or parallel policy
+engine. Service-account principals are denied until an explicit environment
+binding contract exists. Definitions use immutable UUIDs; keys are validated
+server-side, labels never become SQL, and no record DDL executes in Phase 1.
+Strict input schemas reject mass-assigned ownership and lineage. PostgreSQL
+guards reject version mutation, ownership changes, and cross-instance
+relationships. Published provenance and referenced models use PROTECT;
+archive is the supported removal operation. Portable export explicitly
+excludes these definitions; only full control-plane backups cover them.
+Regression evidence: `app_platform/tests/`; design:
+[ADR-0014](../architecture/adr/0014-app-platform-foundation.md).
+
 Status: Living document — implemented through Phase 12 (production
 hardening); no longer a Phase 0 draft. Updated alongside the code as new
 phases land, per CLAUDE.md's engineering process.
@@ -396,6 +509,60 @@ and failure-injection coverage remain P2 work in the health check.
 Full session narrative, test/lint re-verification, and the disposable
 test organizations left behind: `docs/implementation/RELEASE_READINESS.md`'s
 "Completed 2026-09-08" entry.
+
+## 4d. Outbound connections: address pinning and the trust assumption (2026-09-20)
+
+Review of the DNS-rebinding concern in connector networking. **Both outbound paths validate every resolved address
+and then connect to that exact address; nothing is resolved twice.**
+
+* `databases/connectors.py::_connect` resolves the host once (`assert_host_is_safe`, which rejects a host if **any**
+  resolved address is link-local (which includes the cloud-metadata address), unspecified, reserved or multicast, or
+  -- when `CONNECTED_DATABASE_BLOCK_PRIVATE_NETWORKS` is on -- private/loopback; IPv4-mapped IPv6 is unwrapped first) and passes the validated address to libpq as
+  `hostaddr`, keeping `host` only for TLS name verification and SNI. The check is repeated on every connection, not just
+  at creation. Tests (`databases/tests/test_connector_address_binding.py`): the driver receives the validated address and the
+  original TLS hostname; a mixed safe-and-metadata answer never connects; an IPv4-mapped private address is rejected;
+  an empty resolution never falls back to the driver's own DNS.
+* `app_platform/outbound_http.py::post` (webhook delivery) validates the URL (HTTP(S), no credentials), resolves once with
+  the same guard and connects to that address through a pre-built socket, so `HTTPConnection` never resolves the host
+  again; redirects are never followed and the response body is never read.
+
+**Trust assumption, stated so nobody assumes more.** By default private and loopback addresses are **allowed**
+(`CONNECTED_DATABASE_BLOCK_PRIVATE_NETWORKS` is off): a Local Edition shop legitimately connects to a database on its own
+LAN, and configuring a connector or a webhook is an organization-administrator act (`connection.manage`,
+`environment.manage`), not a customer-staff one. In that posture an administrator can point a connector at another
+machine on the shop's network. That is acceptable for the trusted-administrator Local Edition and **not** acceptable
+for a hosted multi-tenant topology, which must turn the flag on. This section claims address pinning; it does **not**
+claim protection against a malicious administrator on a flat LAN.
+
+## 4e. Shop kit 1.2.0: shop-network mode, application sign-out, member roles (2026-10-04)
+
+**Shop-network mode (opt-in, off by default).** `Set-IntraForgeNetwork.ps1 -Mode Shop` (Control Center > Settings > Shop
+network, one UAC prompt) publishes the proxy on all host addresses instead of loopback and adds the PC's name and address to
+the certificate names (`PROXY_TLS_HOSTNAMES`, `default_sni`), `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`. Exposure is
+limited by the Windows Firewall, not by the bind address: an *Allow* rule for the HTTPS port on the **Private** profile from
+`LocalSubnet` only, and a *Block* rule on the **Public** profile -- a block rule wins over any other program's allow rule
+(Docker Desktop may register broad ones). The script refuses to switch on unless the gateway interface's network is Private.
+Binding all addresses (rather than the current IP) is deliberate: a DHCP address change must not stop IntraForge on the shop
+PC itself; the Control Center then reports the changed address. Nothing is opened to the internet (that remains
+`INTERNET_GATEWAY.md`). Staff PCs trust Caddy's local root CA (`certutil -user -addstore Root`, per Windows user, with Windows'
+own confirmation); its private key never leaves the proxy volume. Residual risks: anyone on the shop's Private network reaches
+the sign-in page (mitigated by the 10/min auth throttle, per-person accounts and default-deny roles -- the guide requires a
+separate guest Wi-Fi for customers); a trusted local CA could sign any name if the shop PC were compromised; the Domain profile
+is neither allowed nor blocked by these rules. Verified on a Hyper-V VM (the host as the second machine), not on a physical
+second PC.
+
+**Sign-out inside an application ends the IntraForge login** (`sessions/revoke` with `sign_out: true`, service-token
+authenticated): the bound Django session is deleted and every application session opened from it revoked; a token that
+names no live session of the caller's instance changes nothing. The branded sign-in page reads only the product and shop
+name from the public `service-apps/{id}/sign-in/` (the same name Spare Parts already shows before sign-in); unknown, disabled
+or removed instances are 404. Tests: `service_apps/tests/test_service_apps.py` `SessionTests`, `SignInInfoTests`.
+
+**Member roles from the organization page.** `GET organizations/{id}/roles/` and `DELETE .../members/{m}/roles/{slug}/`
+join the existing assign endpoint, all behind `permissions.manage` (who holds which role is not shown to every member).
+Only organization roles can be given there (`super-administrator`, `service-account` refused); assigning is idempotent;
+removing the last active Organization Administrator is refused (409) so an organization cannot lock itself out; both
+directions are audited. Cross-organization ID substitution is 404 in every direction
+(`organizations/tests/test_organizations.py` `MemberRoleManagementTests`).
 
 ## 5. Non-Goals / Explicitly Out of Scope (for now)
 
