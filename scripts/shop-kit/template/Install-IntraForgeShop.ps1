@@ -146,6 +146,13 @@ foreach ($name in 'SERVICE_APP_SPAREPARTS_TOKEN', 'SERVICE_APP_SPAREPARTS_DB_PAS
 }
 [IO.File]::WriteAllText($envPath, $text, (New-Object System.Text.UTF8Encoding($false)))
 $keysCopy = Join-Path $DataDir 'keys\intraforge-keys.env'
+# After a complete removal (option C) the data folder still holds the OLD installation's keys, which are the only way to
+# read its kept backups. A new installation has new keys: keep the old file under a dated name, never overwrite it.
+if ((Test-Path $keysCopy) -and ((Get-FileHash $keysCopy).Hash -ne (Get-FileHash $envPath).Hash)) {
+    $earlierKeys = Join-Path $DataDir ('keys\intraforge-keys-before-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.env')
+    Move-Item -Path $keysCopy -Destination $earlierKeys
+    Write-Host "The keys of the earlier installation were kept as $earlierKeys -- they are needed to read its backups." -ForegroundColor Yellow
+}
 Copy-Item -Path $envPath -Destination $keysCopy -Force
 $env:SHOP_HTTPS_PORT = "$Port"; $env:SHOP_DATA_DIR = $dataDirSlash
 

@@ -190,6 +190,10 @@ itself is kept as `IntraForge-Setup-Complete.exe` (do not delete it until the ne
 In every option the **backups**, the **keys** and the **logs** in `C:\IntraForgeData` are kept, and Docker Desktop stays
 installed (other programs may use it).
 
+Installing again after option C starts a **new** shop with **new** keys. The earlier keys file is not overwritten: it is
+kept as `C:\IntraForgeData\keys\intraforge-keys-before-<date>.env` -- keep it with the old backups, it is the only way to
+read them.
+
 ## What is not covered (tell the staff)
 
 Other computers only when you switch it on (section 5a; tested with a virtual machine, not yet with a second physical PC in a
