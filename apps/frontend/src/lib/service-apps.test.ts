@@ -47,3 +47,18 @@ describe("appHealthLines", () => {
     expect(appHealthLines([app("Ghost", "not_configured")])[0].status).toBe("unavailable");
   });
 });
+
+describe("install settings per application type", () => {
+  it("asks Pay only for the shop name and sends only that", async () => {
+    const { installConfig, installSettings } = await import("./service-apps");
+    expect(installSettings("intraforge_pay").currency).toBeNull();
+    expect(installConfig("intraforge_pay", " Test Shop ", "AED")).toEqual({ shopName: "Test Shop" });
+  });
+
+  it("gives Spare Parts and the Pharmacy a currency with their own default", async () => {
+    const { installConfig, installSettings } = await import("./service-apps");
+    expect(installSettings("spare_parts").currency).toBe("AED");
+    expect(installSettings("pharmacy").currency).toBe("ERN");
+    expect(installConfig("pharmacy", "Asmara Pharmacy", "ern")).toEqual({ currency: "ERN" });
+  });
+});

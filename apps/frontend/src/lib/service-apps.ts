@@ -52,6 +52,28 @@ export type InstallableApp = {
 
 export type ServiceAppList = { results: ServiceApp[]; available: InstallableApp[] };
 
+/** What the install dialog asks for, per application type (service_apps/types.py: each type accepts only its
+ * own settings and refuses unknown ones). Spare Parts and the Pharmacy have a currency; IntraForge Pay has only
+ * the shop name shown on its receipts. */
+export type InstallSettings = { currency: string | null; namePlaceholder: string };
+
+export function installSettings(appType: string): InstallSettings {
+  switch (appType) {
+    case "intraforge_pay":
+      return { currency: null, namePlaceholder: "The shop name on payment receipts" };
+    case "pharmacy":
+      return { currency: "ERN", namePlaceholder: "The pharmacy name on receipts and invoices" };
+    default:
+      return { currency: "AED", namePlaceholder: "The name on your quotations and invoices" };
+  }
+}
+
+/** The `config` sent with an install: only settings the application type accepts. */
+export function installConfig(appType: string, shopName: string, currency: string): Record<string, string> {
+  if (appType === "intraforge_pay") return { shopName: shopName.trim() };
+  return { currency: currency.trim().toUpperCase() };
+}
+
 export const STATE_LABEL: Record<ServiceAppState, string> = {
   running: "Running",
   degraded: "Not responding",

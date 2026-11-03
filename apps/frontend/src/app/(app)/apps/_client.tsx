@@ -9,6 +9,8 @@ import {
   STATE_LABEL,
   STATE_TONE,
   type InstallableApp,
+  installConfig,
+  installSettings,
   type ServiceApp,
   type ServiceAppList,
 } from "@/lib/service-apps";
@@ -208,7 +210,8 @@ function InstallDialog({
 }) {
   const [org, setOrg] = useState(organizations[0]?.id ?? "");
   const [name, setName] = useState("");
-  const [currency, setCurrency] = useState("AED");
+  const settings = installSettings(app.app_type);
+  const [currency, setCurrency] = useState(settings.currency ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<unknown>(null);
   const ids = { org: useId(), name: useId(), currency: useId() };
@@ -222,7 +225,7 @@ function InstallDialog({
         deployment: app.deployment,
         organization: org,
         display_name: name.trim(),
-        config: { currency: currency.trim().toUpperCase() },
+        config: installConfig(app.app_type, name, currency),
       });
       await onInstalled();
     } catch (error) {
@@ -255,20 +258,22 @@ function InstallDialog({
             maxLength={200}
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="The name on your quotations and invoices"
+            placeholder={settings.namePlaceholder}
           />
         </div>
-        <div>
-          <Label htmlFor={ids.currency}>Currency</Label>
-          <Input
-            id={ids.currency}
-            required
-            pattern="[A-Za-z]{3}"
-            maxLength={3}
-            value={currency}
-            onChange={(e) => setCurrency(e.target.value)}
-          />
-        </div>
+        {settings.currency !== null && (
+          <div>
+            <Label htmlFor={ids.currency}>Currency</Label>
+            <Input
+              id={ids.currency}
+              required
+              pattern="[A-Za-z]{3}"
+              maxLength={3}
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+            />
+          </div>
+        )}
         <p className="text-xs text-slate-500">
           IntraForge creates the application&apos;s storage, keeps its data in your IntraForge backups, and lets people
           open it with their IntraForge sign-in. You can change these settings later.
