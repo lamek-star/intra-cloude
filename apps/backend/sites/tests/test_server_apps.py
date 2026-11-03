@@ -146,7 +146,8 @@ class ServerAppLifecycleTests(SiteTestBase):
 
     def test_offline_online_and_delete_go_through_the_runner(self):
         site_id = self._create_app().data["id"]
-        hex_id = Site.objects.get().id.hex
+        site = Site.objects.get()
+        hex_id, application_id = site.id.hex, site.application_id
         self.client.patch(reverse("site-detail", args=[site_id]), {"status": "disabled"}, format="json")
         self.client.patch(reverse("site-detail", args=[site_id]), {"status": "active"}, format="json")
         self.assertEqual(self.client.delete(reverse("site-detail", args=[site_id])).status_code, 204)
@@ -158,8 +159,13 @@ class ServerAppLifecycleTests(SiteTestBase):
                 ("DELETE", f"/apps/{hex_id}"),
             ],
         )
-        # The deleted app's credential no longer works.
-        self.assertFalse(ApplicationCredential.objects.filter(revoked_at__isnull=True).exists())
+        # The deleted app's credential no longer works. (Scoped to this app: the test database is reused
+        # between runs, and tests that commit for real leave other applications' credentials behind.)
+        self.assertFalse(
+            ApplicationCredential.objects.filter(
+                service_account__application_id=application_id, revoked_at__isnull=True
+            ).exists()
+        )
 
     def test_a_runner_failure_is_recorded_not_lost(self):
         from sites import runner
