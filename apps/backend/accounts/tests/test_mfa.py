@@ -120,6 +120,24 @@ class LoginWithMFATests(MFATestBase):
         me = self.client.get(reverse("auth-me"))
         self.assertEqual(me.status_code, status.HTTP_200_OK)
 
+    def test_a_completed_two_step_sign_in_lasts_as_long_as_any_other_sign_in(self):
+        # The pending "password OK, code not yet given" session is limited to a few minutes; that limit
+        # must not carry over into the signed-in session (it used to: two-step users were signed out
+        # about five minutes after signing in).
+        from django.conf import settings
+        from django.contrib.sessions.backends.db import SessionStore
+
+        self.client.post(
+            reverse("auth-login"), {"email": "mfa-user@example.com", "password": "a-strong-passw0rd!"}
+        )
+        pending = SessionStore(session_key=self.client.cookies[settings.SESSION_COOKIE_NAME].value)
+        self.assertLessEqual(pending.get_expiry_age(), 300)
+
+        self.client.post(reverse("mfa-verify"), {"code": totp.generate_totp(self.secret)})
+        session = SessionStore(session_key=self.client.cookies[settings.SESSION_COOKIE_NAME].value)
+        self.assertNotIn("_session_expiry", session.load())
+        self.assertEqual(session.get_expiry_age(), settings.SESSION_COOKIE_AGE)
+
     def test_wrong_code_after_password_does_not_complete_login(self):
         self.client.post(
             reverse("auth-login"), {"email": "mfa-user@example.com", "password": "a-strong-passw0rd!"}

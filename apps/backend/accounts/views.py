@@ -116,6 +116,9 @@ class MFALoginVerifyView(APIView):
             return Response({"detail": "Invalid code."}, status=status.HTTP_401_UNAUTHORIZED)
 
         del request.session[MFA_PENDING_SESSION_KEY]
+        # The pending step's short limit (MFA_PENDING_SESSION_TIMEOUT_SECONDS) is for the half-signed-in
+        # state only; without this, login() carried it over and signed two-step users out minutes later.
+        request.session.set_expiry(None)
         login(request, user)
         audit.record(actor=user, organization_id=None, action="auth.login")
         return Response(UserSerializer(user).data)
