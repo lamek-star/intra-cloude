@@ -237,6 +237,26 @@ def upload_new_version(*, file: FileObject, uploaded_file, creator) -> FileObjec
     return file
 
 
+class FolderNameTaken(Exception):
+    """A folder with this name already exists where the new one would go."""
+
+
+def create_folder(*, bucket: Bucket, parent: Folder | None, name: str, creator) -> Folder:
+    """Checked here as well as by unique_folder_name_per_parent: that constraint cannot see folders
+    at the top of a bucket (parent IS NULL, and Postgres treats NULLs as distinct), and a clash below
+    the top would otherwise surface as an unhandled IntegrityError."""
+    taken = FolderNameTaken(f"A folder named “{name}” is already here.")
+    siblings = Folder.objects.filter(bucket=bucket, name=name)
+    siblings = siblings.filter(parent__isnull=True) if parent is None else siblings.filter(parent=parent)
+    if siblings.exists():
+        raise taken
+    try:
+        with transaction.atomic():
+            return Folder.objects.create(bucket=bucket, parent=parent, name=name, created_by=creator)
+    except IntegrityError as exc:
+        raise taken from exc
+
+
 def delete_file(file: FileObject, *, actor) -> None:
     file.status = FileObject.Status.DELETED
     file.save(update_fields=["status", "updated_at"])

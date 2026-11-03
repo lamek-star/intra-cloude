@@ -381,6 +381,19 @@ class EnvironmentCredentialAndIsolationTests(EnvironmentTestBase):
         )
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_development_credential_cannot_list_or_create_folders_in_production_storage(self):
+        # The folder endpoints skipped the environment check every other storage view makes.
+        self.client.logout()
+        url = reverse("folder-list-create", args=[self.prod_bucket_id])
+        listing = self.client.get(url, **self._auth_headers(self.dev_token))
+        self.assertEqual(listing.status_code, status.HTTP_403_FORBIDDEN)
+        create = self.client.post(url, {"name": "smuggled"}, **self._auth_headers(self.dev_token))
+        self.assertEqual(create.status_code, status.HTTP_403_FORBIDDEN)
+        own = self.client.get(
+            reverse("folder-list-create", args=[self.dev_bucket_id]), **self._auth_headers(self.dev_token)
+        )
+        self.assertEqual(own.status_code, status.HTTP_200_OK)
+
     def test_development_credential_cannot_access_production_storage(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
 

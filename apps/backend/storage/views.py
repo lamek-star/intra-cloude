@@ -21,8 +21,10 @@ from .serializers import (
     FolderSerializer,
 )
 from .services import (
+    FolderNameTaken,
     RestoreRefused,
     UploadTooLarge,
+    create_folder,
     delete_file,
     get_member_bucket,
     get_member_file,
@@ -113,6 +115,8 @@ class FolderListCreateView(APIView):
         bucket = get_member_bucket(request.user, bucket_id)
         if not _require(request, "storage.read", bucket.organization_id, bucket_id=bucket.id):
             return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, bucket):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         parent_id = request.query_params.get("parent")
         folders = Folder.objects.filter(bucket=bucket, parent_id=parent_id or None)
         return Response(FolderSerializer(folders, many=True).data)
@@ -120,6 +124,8 @@ class FolderListCreateView(APIView):
     def post(self, request, bucket_id):
         bucket = get_member_bucket(request.user, bucket_id)
         if not _require(request, "storage.write", bucket.organization_id, bucket_id=bucket.id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, bucket):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
         serializer = FolderCreateSerializer(data=request.data)
@@ -132,9 +138,12 @@ class FolderListCreateView(APIView):
             except Folder.DoesNotExist as exc:
                 raise Http404 from exc
 
-        folder = Folder.objects.create(
-            bucket=bucket, parent=parent, name=serializer.validated_data["name"], created_by=request.user
-        )
+        try:
+            folder = create_folder(
+                bucket=bucket, parent=parent, name=serializer.validated_data["name"], creator=request.user
+            )
+        except FolderNameTaken as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         return Response(FolderSerializer(folder).data, status=status.HTTP_201_CREATED)
 
 

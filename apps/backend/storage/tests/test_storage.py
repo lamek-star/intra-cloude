@@ -11,7 +11,7 @@ from audit.models import AuditEvent
 from organizations.models import Membership
 from permissions.management.commands.seed_permissions import Command as SeedPermissionsCommand
 from storage import scanning
-from storage.models import FileObject, FileVersion
+from storage.models import FileObject, FileVersion, Folder
 
 PNG_HEAD = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
 TEXT_CONTENT = b"hello world\n" * 1000
@@ -59,6 +59,19 @@ class BucketFolderTests(StorageTestBase):
         listing = self.client.get(reverse("folder-list-create", args=[self.bucket_id]))
         self.assertEqual(len(listing.data), 1)
         self.assertEqual(listing.data[0]["name"], "reports")
+
+
+class FolderNameTests(StorageTestBase):
+    def test_a_second_folder_with_the_same_name_is_a_clear_conflict(self):
+        url = reverse("folder-list-create", args=[self.bucket_id])
+        parent = self.client.post(url, {"name": "invoices"}).data["id"]
+        for parent_id in (None, parent):
+            body = {"name": "2026"} if parent_id is None else {"name": "2026", "parent_id": parent_id}
+            self.assertEqual(self.client.post(url, body).status_code, status.HTTP_201_CREATED)
+            again = self.client.post(url, body)
+            self.assertEqual(again.status_code, status.HTTP_409_CONFLICT)
+            self.assertIn("2026", again.data["detail"])
+        self.assertEqual(Folder.objects.filter(bucket_id=self.bucket_id, name="2026").count(), 2)
 
 
 class FileUploadRoundTripTests(StorageTestBase):
