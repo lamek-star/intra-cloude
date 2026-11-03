@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { api, ApiError, type AuditEvent, type Organization, type Paginated, type Workspace } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { appHealthLines, type ServiceAppList } from "@/lib/service-apps";
 import { Badge, Card, EmptyState, ErrorBanner, PageHeader, PageLoading, Spinner, StatCard } from "@/components/ui";
 
 type OrgSummary = { org: Organization; workspaceCount: number | null };
@@ -98,6 +99,9 @@ export default function DashboardPage() {
       } else {
         checks.push({ name: "Readiness", status: readyz.ok ? "healthy" : "unavailable" });
       }
+      // Installed applications, best-effort: the platform checks above must still show if this fails.
+      const apps = await api.get<ServiceAppList>("/service-apps/").catch(() => null);
+      if (apps) checks.push(...appHealthLines(apps.results));
       setHealth(checks);
     })();
   }, []);
@@ -177,7 +181,7 @@ export default function DashboardPage() {
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium text-slate-800">{org.name}</span>
-                        <span className="block text-xs text-slate-400">
+                        <span className="block text-xs text-text-muted">
                           {workspaceCount === null
                             ? "Workspace count unavailable"
                             : `${workspaceCount} workspace${workspaceCount === 1 ? "" : "s"}`}
@@ -196,7 +200,7 @@ export default function DashboardPage() {
           <SectionHeader title="Recent activity" />
           {recentActivity === null ? (
             <Card>
-              <div className="flex items-center gap-2 text-sm text-slate-400">
+              <div className="flex items-center gap-2 text-sm text-text-muted">
                 <Spinner className="h-4 w-4" /> Loading…
               </div>
             </Card>
@@ -220,9 +224,9 @@ export default function DashboardPage() {
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm text-slate-800">
                         {event.action}{" "}
-                        <span className="text-slate-400">on {event.resource_type}</span>
+                        <span className="text-text-muted">on {event.resource_type}</span>
                       </span>
-                      <span className="block text-xs text-slate-400">
+                      <span className="block text-xs text-text-muted">
                         {new Date(event.timestamp).toLocaleString()}
                       </span>
                     </span>
@@ -249,7 +253,7 @@ export default function DashboardPage() {
         <SectionHeader title="System health" />
         {health === null ? (
           <Card>
-            <div className="flex items-center gap-2 text-sm text-slate-400">
+            <div className="flex items-center gap-2 text-sm text-text-muted">
               <Spinner className="h-4 w-4" /> Checking…
             </div>
           </Card>

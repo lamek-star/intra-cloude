@@ -199,6 +199,8 @@ export type Membership = {
   team: string | null;
   status: "invited" | "active" | "suspended";
   created_at: string;
+  /** Set when this member is an application's sign-in (its service account), not a person. */
+  application: { id: string; name: string } | null;
 };
 
 export type Team = {
@@ -254,9 +256,32 @@ export type FileObject = {
   folder: string | null;
   display_filename: string;
   size: number;
-  content_type: string;
-  status: "active" | "deleted";
+  /** Detected from the content on upload (storage/backends.py sniff_mime_type), not the filename. */
+  mime_type: string;
+  checksum_sha256: string;
+  status: "active" | "deleted" | "quarantined";
   created_at: string;
+  updated_at: string;
+};
+
+export type Folder = {
+  id: string;
+  bucket: string;
+  parent: string | null;
+  name: string;
+  created_at: string;
+  created_by: string;
+};
+
+/** A kept earlier content of a file, in a bucket with versioning on. */
+export type FileVersion = {
+  id: string;
+  file: string;
+  size: number;
+  checksum_sha256: string;
+  created_at: string;
+  created_by: string;
+  created_by_email: string;
 };
 
 export type TenantDatabase = {

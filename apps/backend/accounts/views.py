@@ -141,7 +141,10 @@ class MFAEnrollView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        result = services.start_mfa_enrollment(user=request.user)
+        try:
+            result = services.start_mfa_enrollment(user=request.user)
+        except services.MFAError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(result, status=status.HTTP_201_CREATED)
 
 

@@ -16,11 +16,15 @@ from .serializers import (
     BucketSerializer,
     FileObjectSerializer,
     FileUpdateSerializer,
+    FileVersionSerializer,
     FolderCreateSerializer,
     FolderSerializer,
 )
 from .services import (
+    FolderNameTaken,
+    RestoreRefused,
     UploadTooLarge,
+    create_folder,
     delete_file,
     get_member_bucket,
     get_member_file,
@@ -111,6 +115,8 @@ class FolderListCreateView(APIView):
         bucket = get_member_bucket(request.user, bucket_id)
         if not _require(request, "storage.read", bucket.organization_id, bucket_id=bucket.id):
             return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, bucket):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         parent_id = request.query_params.get("parent")
         folders = Folder.objects.filter(bucket=bucket, parent_id=parent_id or None)
         return Response(FolderSerializer(folders, many=True).data)
@@ -118,6 +124,8 @@ class FolderListCreateView(APIView):
     def post(self, request, bucket_id):
         bucket = get_member_bucket(request.user, bucket_id)
         if not _require(request, "storage.write", bucket.organization_id, bucket_id=bucket.id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, bucket):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
         serializer = FolderCreateSerializer(data=request.data)
@@ -130,9 +138,12 @@ class FolderListCreateView(APIView):
             except Folder.DoesNotExist as exc:
                 raise Http404 from exc
 
-        folder = Folder.objects.create(
-            bucket=bucket, parent=parent, name=serializer.validated_data["name"], created_by=request.user
-        )
+        try:
+            folder = create_folder(
+                bucket=bucket, parent=parent, name=serializer.validated_data["name"], creator=request.user
+            )
+        except FolderNameTaken as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         return Response(FolderSerializer(folder).data, status=status.HTTP_201_CREATED)
 
 
@@ -151,7 +162,18 @@ class FileListCreateView(APIView):
         if _environment_scope_denied(request, bucket):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
-        files = FileObject.objects.filter(bucket=bucket, status=FileObject.Status.ACTIVE)
+        # ?status=deleted is the bucket's Trash. Restoring needs storage.delete, so listing the Trash
+        # does too. Quarantined files are never listed here.
+        wanted = request.query_params.get("status", FileObject.Status.ACTIVE)
+        if wanted not in (FileObject.Status.ACTIVE, FileObject.Status.DELETED):
+            return Response(
+                {"detail": "status must be active or deleted."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        if wanted == FileObject.Status.DELETED and not _require(
+            request, "storage.delete", bucket.organization_id, bucket_id=bucket.id
+        ):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        files = FileObject.objects.filter(bucket=bucket, status=wanted)
 
         folder_id = request.query_params.get("folder")
         files = files.filter(folder_id=folder_id or None)
@@ -253,13 +275,26 @@ class FileRestoreView(APIView):
             return Response(status=status.HTTP_403_FORBIDDEN)
         if _environment_scope_denied(request, file_obj.bucket):
             return Response(status=status.HTTP_403_FORBIDDEN)
-        restore_file(file_obj, actor=request.user)
+        try:
+            restore_file(file_obj, actor=request.user)
+        except RestoreRefused as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         return Response(FileObjectSerializer(file_obj).data)
 
 
 class FileVersionUploadView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = _UPLOAD_PARSERS
+
+    def get(self, request, file_id):
+        """The file's kept earlier contents, newest first: metadata only, never storage keys."""
+        file_obj = get_member_file(request.user, file_id)
+        if not _require(request, "storage.read", file_obj.organization_id, bucket_id=file_obj.bucket_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, file_obj.bucket):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        versions = file_obj.versions.select_related("created_by").order_by("-created_at")
+        return Response(FileVersionSerializer(versions, many=True).data)
 
     def post(self, request, file_id):
         file_obj = get_member_file(request.user, file_id)

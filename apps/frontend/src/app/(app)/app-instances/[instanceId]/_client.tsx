@@ -729,7 +729,7 @@ function UpgradeSection({ instance, onUpgraded }: { instance: AppInstance; onUpg
           )}
         </div>
       ) : (
-        <p className="text-xs text-slate-400">Already on the newest published version.</p>
+        <p className="text-xs text-text-muted">Already on the newest published version.</p>
       )}
 
       {previewError && (
@@ -761,7 +761,7 @@ function UpgradeSection({ instance, onUpgraded }: { instance: AppInstance; onUpg
             diff.constraints.add.length +
             diff.constraints.label_sync.length +
             diff.constraints.manual_review.length ===
-            0 && <p className="text-xs text-slate-400">No differences — already up to date.</p>}
+            0 && <p className="text-xs text-text-muted">No differences — already up to date.</p>}
         </div>
       )}
 

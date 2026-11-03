@@ -3,6 +3,7 @@ from rest_framework import serializers
 from accounts.serializers import UserSerializer
 
 from .models import Membership, Organization, Team
+from .services import service_account_of
 
 
 class OrganizationSerializer(serializers.ModelSerializer):
@@ -18,11 +19,21 @@ class OrganizationCreateSerializer(serializers.Serializer):
 
 class MembershipSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
+    # Set when this member is an Application's service account (applications.ServiceAccount): the
+    # members page shows it as that application, without the role picker -- a service account gets
+    # access through resource grants, never an organization role (PERMISSIONS.md section 3).
+    application = serializers.SerializerMethodField()
 
     class Meta:
         model = Membership
-        fields = ["id", "user", "organization", "team", "status", "created_at"]
+        fields = ["id", "user", "organization", "team", "status", "created_at", "application"]
         read_only_fields = fields
+
+    def get_application(self, membership: Membership) -> dict | None:
+        account = service_account_of(membership.user)
+        if account is None:
+            return None
+        return {"id": str(account.application_id), "name": account.application.name}
 
 
 class AddMemberSerializer(serializers.Serializer):

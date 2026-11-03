@@ -4,7 +4,7 @@ import uuid
 from dataclasses import dataclass
 
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.http import Http404
 
 from audit import services as audit
@@ -237,6 +237,26 @@ def upload_new_version(*, file: FileObject, uploaded_file, creator) -> FileObjec
     return file
 
 
+class FolderNameTaken(Exception):
+    """A folder with this name already exists where the new one would go."""
+
+
+def create_folder(*, bucket: Bucket, parent: Folder | None, name: str, creator) -> Folder:
+    """Checked here as well as by unique_folder_name_per_parent: that constraint cannot see folders
+    at the top of a bucket (parent IS NULL, and Postgres treats NULLs as distinct), and a clash below
+    the top would otherwise surface as an unhandled IntegrityError."""
+    taken = FolderNameTaken(f"A folder named “{name}” is already here.")
+    siblings = Folder.objects.filter(bucket=bucket, name=name)
+    siblings = siblings.filter(parent__isnull=True) if parent is None else siblings.filter(parent=parent)
+    if siblings.exists():
+        raise taken
+    try:
+        with transaction.atomic():
+            return Folder.objects.create(bucket=bucket, parent=parent, name=name, created_by=creator)
+    except IntegrityError as exc:
+        raise taken from exc
+
+
 def delete_file(file: FileObject, *, actor) -> None:
     file.status = FileObject.Status.DELETED
     file.save(update_fields=["status", "updated_at"])
@@ -249,9 +269,40 @@ def delete_file(file: FileObject, *, actor) -> None:
     )
 
 
+class RestoreRefused(Exception):
+    """A restore that must not happen; the message says why, in words for the person asking."""
+
+
 def restore_file(file: FileObject, *, actor) -> None:
+    """Brings back a deleted file. Only from DELETED: a quarantined file stays quarantined (restore
+    used to set any file active, which released malware-scan quarantines as ordinary downloads), and
+    an active file has nothing to restore."""
+    if file.status == FileObject.Status.QUARANTINED:
+        raise RestoreRefused("This file was quarantined by malware scanning and cannot be restored.")
+    if file.status != FileObject.Status.DELETED:
+        raise RestoreRefused("Only a deleted file can be restored.")
+    name_taken = RestoreRefused(
+        f"A file named “{file.display_filename}” is already in this folder. "
+        "Rename or move that one, then restore this one."
+    )
+    # Checked here as well as by unique_active_filename_per_folder: that constraint cannot see files
+    # at the top of a bucket (folder IS NULL, and Postgres treats NULLs as distinct).
+    same_place = FileObject.objects.filter(
+        bucket_id=file.bucket_id, display_filename=file.display_filename, status=FileObject.Status.ACTIVE
+    )
+    if file.folder_id is None:
+        same_place = same_place.filter(folder__isnull=True)
+    else:
+        same_place = same_place.filter(folder_id=file.folder_id)
+    if same_place.exists():
+        raise name_taken
     file.status = FileObject.Status.ACTIVE
-    file.save(update_fields=["status", "updated_at"])
+    try:
+        with transaction.atomic():
+            file.save(update_fields=["status", "updated_at"])
+    except IntegrityError as exc:  # a same-named upload won the race
+        file.status = FileObject.Status.DELETED
+        raise name_taken from exc
     audit.record(
         actor=actor,
         organization_id=file.organization_id,

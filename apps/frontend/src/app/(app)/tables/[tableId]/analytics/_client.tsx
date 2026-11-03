@@ -120,7 +120,7 @@ export default function AnalyticsClient({ tableId }: { tableId: string }) {
                   <span className="text-sm font-medium text-slate-900">{c.name}</span>
                   <Badge>{c.data_type}</Badge>
                 </div>
-                <dl className="space-y-1 text-xs text-slate-400">
+                <dl className="space-y-1 text-xs text-text-muted">
                   <Row label="Missing" value={`${c.missing_count} (${c.null_percentage}%)`} />
                   <Row label="Unique" value={String(c.unique_count)} />
                   {c.mean !== undefined && <Row label="Mean" value={c.mean.toFixed(2)} />}

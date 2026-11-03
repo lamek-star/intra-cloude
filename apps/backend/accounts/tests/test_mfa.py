@@ -52,6 +52,22 @@ class EnrollmentTests(MFATestBase):
         self.user.refresh_from_db()
         self.assertFalse(self.user.mfa_enabled)
 
+    def test_enroll_cannot_switch_off_mfa_that_is_already_on(self):
+        # Turning MFA off needs a current code (mfa-disable). Re-enrolling must not be a way around
+        # that: it used to set mfa_enabled=False and replace the secret with no code at all.
+        secret = self.client.post(reverse("mfa-enroll")).data["secret"]
+        self.client.post(reverse("mfa-confirm"), {"code": totp.generate_totp(secret)})
+        self.user.refresh_from_db()
+        stored = bytes(self.user.mfa_secret_encrypted)
+
+        resp = self.client.post(reverse("mfa-enroll"))
+
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertNotIn("secret", resp.data)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.mfa_enabled)
+        self.assertEqual(bytes(self.user.mfa_secret_encrypted), stored)
+
     def test_confirm_without_a_prior_enroll_call_is_rejected(self):
         resp = self.client.post(reverse("mfa-confirm"), {"code": "123456"})
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)

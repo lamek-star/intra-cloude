@@ -313,7 +313,7 @@ export default function ConnectApplicationClient({ orgId }: { orgId: string }) {
               </div>
             )}
             {resources === null ? (
-              <div className="flex items-center gap-2 text-sm text-slate-400">
+              <div className="flex items-center gap-2 text-sm text-text-muted">
                 <Spinner className="h-4 w-4" /> Loading storage and databases…
               </div>
             ) : resources.length === 0 ? (
@@ -372,7 +372,7 @@ export default function ConnectApplicationClient({ orgId }: { orgId: string }) {
                         )}
                         <span className="min-w-0 flex-1">
                           <span className="block text-sm font-medium text-slate-800">{r.name}</span>
-                          <span className="block text-xs text-slate-400">{r.projectName}</span>
+                          <span className="block text-xs text-text-muted">{r.projectName}</span>
                         </span>
                       </label>
                     );
@@ -476,14 +476,14 @@ function Stepper({ current }: { current: number }) {
                 ? "bg-brand-600 text-white"
                 : i === current
                   ? "bg-brand-100 text-brand-700 ring-2 ring-brand-300"
-                  : "bg-slate-100 text-slate-400"
+                  : "bg-slate-100 text-text-muted"
             }`}
           >
             {i < current ? <Check className="h-3.5 w-3.5" /> : i + 1}
           </div>
           <span
             aria-current={i === current ? "step" : undefined}
-            className={`shrink-0 text-xs font-medium ${i <= current ? "text-slate-700" : "text-slate-400"}`}
+            className={`shrink-0 text-xs font-medium ${i <= current ? "text-slate-700" : "text-text-muted"}`}
           >
             {label}
           </span>

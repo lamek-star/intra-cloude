@@ -158,7 +158,7 @@ function LoginPageInner() {
         </form>
 
         {branding && (
-          <p className="mt-4 text-center text-xs text-slate-400">Staff accounts are managed in IntraForge.</p>
+          <p className="mt-4 text-center text-xs text-text-muted">Staff accounts are managed in IntraForge.</p>
         )}
         <p className="mt-5 text-center text-sm text-slate-500">
           Don&apos;t have an account?{" "}

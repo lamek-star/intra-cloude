@@ -21,7 +21,7 @@ from .serializers import (
     TeamMemberSerializer,
     TeamSerializer,
 )
-from .services import add_team_member, create_organization, remove_team_member
+from .services import add_team_member, create_organization, remove_team_member, service_account_of
 from .services import get_member_organization as _get_member_organization
 from .services import get_member_team as _get_member_team
 
@@ -55,7 +55,9 @@ class MembershipListCreateView(APIView):
 
     def get(self, request, organization_id):
         org = _get_member_organization(request.user, organization_id)
-        memberships = Membership.objects.filter(organization=org).select_related("user")
+        memberships = Membership.objects.filter(organization=org).select_related(
+            "user", "user__service_account__application"
+        )
         return Response(MembershipSerializer(memberships, many=True).data)
 
     def post(self, request, organization_id):
@@ -138,6 +140,16 @@ class MembershipRoleAssignView(APIView):
         org, membership, refused = _membership_for_role_change(request, organization_id, membership_id)
         if refused:
             return refused
+
+        account = service_account_of(membership.user)
+        if account is not None:
+            return Response(
+                {
+                    "detail": f"This is the sign-in of the application “{account.application.name}”. "
+                    "Give it access to specific files or data from the application's page instead."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         serializer = AssignRoleSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

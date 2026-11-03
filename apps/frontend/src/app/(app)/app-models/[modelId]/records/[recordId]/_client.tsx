@@ -287,7 +287,7 @@ export default function AppRecordClient({ modelId, recordId }: { modelId: string
           {incoming.map((r) => (
             <div key={r.id}>
               <Label htmlFor={`incoming-${r.id}`}>
-                {r.label} <span className="text-xs text-slate-400">(read-only)</span>
+                {r.label} <span className="text-xs text-text-muted">(read-only)</span>
               </Label>
               <IncomingAssociations
                 relationship={r}
@@ -352,7 +352,7 @@ export default function AppRecordClient({ modelId, recordId }: { modelId: string
                       ))}
                     </div>
                   ) : (
-                    <p className="mt-2 text-xs text-slate-400">No transitions available from this state.</p>
+                    <p className="mt-2 text-xs text-text-muted">No transitions available from this state.</p>
                   )}
                 </Card>
               );
@@ -425,7 +425,7 @@ export default function AppRecordClient({ modelId, recordId }: { modelId: string
           <div className="space-y-1.5">
             {history.map((event) => (
               <div key={event.id} className="flex items-center gap-3 text-xs text-slate-500">
-                <span className="whitespace-nowrap text-slate-400">
+                <span className="whitespace-nowrap text-text-muted">
                   {new Date(event.timestamp).toLocaleString()}
                 </span>
                 <span className="font-medium text-slate-700">{event.action}</span>

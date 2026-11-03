@@ -177,7 +177,7 @@ export default function WebhooksClient({ orgId }: { orgId: string }) {
               ))}
             </tbody>
           </Table>
-          <p className="mt-2 text-xs text-slate-400">
+          <p className="mt-2 text-xs text-text-muted">
             An empty event-type list on a webhook subscribes it to every event type above.
           </p>
         </div>
@@ -192,7 +192,8 @@ export default function WebhooksClient({ orgId }: { orgId: string }) {
           <span className="font-mono">X-IntraForge-Signature</span> header --{" "}
           <span className="font-mono">sha256=&lt;hex&gt;</span>, an HMAC-SHA256 of the exact raw request
           body, keyed by the webhook&apos;s own signing secret (shown once, at creation time). Delivery is
-          at-most-once and retried on failure by a background worker.
+          at-least-once: a background worker retries failures, so the same event can arrive more than
+          once. Use <span className="font-mono">event_id</span> to ignore repeats.
         </div>
       </div>
     </div>

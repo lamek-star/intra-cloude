@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import { useProjectTrail } from "@/lib/project-trail";
+import { useRuntimeLabels } from "@/lib/runtime-names";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LayoutGrid, Table as TableIcon } from "lucide-react";
@@ -33,6 +35,8 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
   const confirm = useConfirm();
   const [db, setDb] = useState<TenantDatabase | null>(null);
   const [project, setProject] = useState<Project | null>(null);
+  const trail = useProjectTrail(project?.id);
+  const runtimeLabels = useRuntimeLabels(db?.name);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [tables, setTables] = useState<DBTable[] | null>(null);
   const [dashboards, setDashboards] = useState<Dashboard[] | null>(null);
@@ -107,7 +111,7 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
         title={db.name}
         breadcrumbs={[
           { label: "Organizations", href: "/orgs" },
-          ...(project ? [{ label: project.name, href: `/projects/${project.id}` }] : []),
+          ...trail,
           { label: db.name },
         ]}
         description="A real, isolated PostgreSQL schema — each table below is a genuine table in it."
@@ -140,12 +144,17 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
               <Card className="transition-colors hover:border-brand-400/40 hover:bg-slate-50">
                 <div className="flex items-center gap-2">
                   <TableIcon className="h-4 w-4 text-brand-600" />
-                  <p className="font-medium text-slate-900">{t.name}</p>
+                  <p className="font-medium text-slate-900">{runtimeLabels[t.name] ?? t.name}</p>
                 </div>
+                {runtimeLabels[t.name] && (
+                  <p className="mt-0.5 truncate font-mono text-[11px] text-text-muted" title={t.name}>
+                    {t.name}
+                  </p>
+                )}
                 <p className="mt-2 text-xs text-slate-500">{t.columns.length} column(s)</p>
                 <div className="mt-2 flex flex-wrap gap-1">
                   {t.columns.slice(0, 4).map((c) => (
-                    <Badge key={c.id}>{c.name}</Badge>
+                    <Badge key={c.id}>{runtimeLabels[c.name] ?? c.name}</Badge>
                   ))}
                   {t.columns.length > 4 && <Badge>+{t.columns.length - 4}</Badge>}
                 </div>

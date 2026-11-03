@@ -1,5 +1,6 @@
 import secrets
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError, transaction
 from django.http import Http404
 from django.utils.text import slugify
@@ -8,6 +9,18 @@ from audit import services as audit
 from permissions.services import assign_role
 
 from .models import Membership, Organization, Team
+
+
+def service_account_of(user):
+    """The applications.ServiceAccount this user is the identity of, or None for a person.
+
+    A service account is an Application's sign-in, kept as a Membership so the get_member_* helpers
+    resolve it (applications/models.py). It gets access only through resource grants, never an
+    organization role (docs/security/PERMISSIONS.md section 3)."""
+    try:
+        return user.service_account
+    except ObjectDoesNotExist:
+        return None
 
 
 def get_member_organization(user, organization_id) -> Organization:

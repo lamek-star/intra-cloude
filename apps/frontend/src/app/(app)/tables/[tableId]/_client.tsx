@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import { useProjectTrail } from "@/lib/project-trail";
+import { useRuntimeLabels } from "@/lib/runtime-names";
 import {
   api,
   ApiError,
@@ -47,6 +49,8 @@ const PAGE_SIZE = 25;
 export default function TableDetailClient({ tableId }: { tableId: string }) {
   const [table, setTable] = useState<DBTable | null>(null);
   const [database, setDatabase] = useState<TenantDatabase | null>(null);
+  const trail = useProjectTrail(database?.project);
+  const labels = useRuntimeLabels(database?.name);
   const [page, setPage] = useState<RowsPage | null>(null);
   const [offset, setOffset] = useState(0);
   const [search, setSearch] = useState("");
@@ -107,13 +111,14 @@ export default function TableDetailClient({ tableId }: { tableId: string }) {
   return (
     <div>
       <PageHeader
-        title={table.name}
+        title={labels[table.name] ?? table.name}
         breadcrumbs={[
           { label: "Organizations", href: "/orgs" },
+          ...trail,
           ...(database
             ? [{ label: database.name, href: `/tenant-databases/${database.id}` }]
             : []),
-          { label: table.name },
+          { label: labels[table.name] ?? table.name },
         ]}
         actions={
           <>
@@ -159,7 +164,7 @@ export default function TableDetailClient({ tableId }: { tableId: string }) {
       <div className="mb-3 flex flex-wrap items-center gap-1.5">
         {table.columns.map((c) => (
           <Badge key={c.id} tone={c.is_primary_key ? "info" : "default"}>
-            {c.name}: {c.data_type}
+            {labels[c.name] ?? c.name}: {c.data_type}
             {!c.is_nullable && !c.is_primary_key ? " · required" : ""}
             {c.is_unique && !c.is_primary_key ? " · unique" : ""}
           </Badge>
@@ -201,7 +206,7 @@ export default function TableDetailClient({ tableId }: { tableId: string }) {
           <Table>
             <THead>
               {table.columns.map((c) => (
-                <Th key={c.id}>{c.name}</Th>
+                <Th key={c.id}>{labels[c.name] ?? c.name}</Th>
               ))}
               <Th>
                 <span className="sr-only">Actions</span>

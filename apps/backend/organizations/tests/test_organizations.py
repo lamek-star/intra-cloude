@@ -216,6 +216,38 @@ class MemberRoleManagementTests(APITestCase):
             1,
         )
 
+    def _application_membership(self):
+        from applications.services import register_application
+        from organizations.models import Organization
+
+        application = register_application(
+            organization=Organization.objects.get(id=self.org_id),
+            name="pay intraforge",
+            description="",
+            owner=self.admin,
+        )
+        identity = application.service_account.identity_user
+        return Membership.objects.get(user=identity, organization_id=self.org_id), identity
+
+    def test_an_applications_service_account_cannot_be_given_an_organization_role(self):
+        membership, identity = self._application_membership()
+        for role in ("organization-administrator", "spare-parts-sales", "viewer"):
+            resp = self.give(self.client, role, membership_id=membership.id)
+            self.assertEqual(resp.status_code, 400)
+            self.assertIn("pay intraforge", resp.data["detail"])
+        self.assertFalse(RoleAssignment.objects.filter(user=identity).exists())
+        self.assertFalse(
+            AuditEvent.objects.filter(action="permissions.role.assign", resource_id=str(identity.id)).exists()
+        )
+
+    def test_members_list_names_the_application_behind_a_service_account(self):
+        membership, _ = self._application_membership()
+        resp = self.client.get(reverse("membership-list-create", args=[self.org_id]))
+        self.assertEqual(resp.status_code, 200)
+        rows = {row["id"]: row for row in resp.data}
+        self.assertEqual(rows[str(membership.id)]["application"]["name"], "pay intraforge")
+        self.assertIsNone(rows[str(self.membership.id)]["application"])
+
     def test_platform_and_application_roles_cannot_be_given_here(self):
         for role in ("super-administrator", "service-account", "no-such-role"):
             self.assertEqual(self.give(self.client, role).status_code, 400)

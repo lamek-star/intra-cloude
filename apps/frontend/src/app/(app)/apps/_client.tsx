@@ -133,7 +133,7 @@ export default function AppsClient() {
                       <Badge tone={STATE_TONE[state]}>{STATE_LABEL[state]}</Badge>
                     </div>
                     {STATE_HELP[state] && <p className="text-xs text-slate-500">{STATE_HELP[state]}</p>}
-                    {app.version && <p className="text-xs text-slate-400">Version {app.version}</p>}
+                    {app.version && <p className="text-xs text-text-muted">Version {app.version}</p>}
                     <div className="mt-auto flex flex-wrap gap-2 pt-1">
                       {app.can_open && (
                         <Button onClick={() => open(app)} disabled={!openable || opening === app.id}>

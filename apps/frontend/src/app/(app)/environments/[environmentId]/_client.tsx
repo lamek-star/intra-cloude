@@ -733,7 +733,7 @@ function ApiKeysTab({ environmentId }: { environmentId: string }) {
               const active = tone === "success";
               return (
                 <TRow key={c.id}>
-                  <Td className="font-mono text-xs text-slate-400">{c.id.slice(0, 8)}...</Td>
+                  <Td className="font-mono text-xs text-text-muted">{c.id.slice(0, 8)}...</Td>
                   <Td>
                     <Badge tone={tone}>{label}</Badge>
                   </Td>
@@ -1244,7 +1244,7 @@ function LogsTab({ environmentId, organizationId }: { environmentId: string; org
             <tbody>
               {events?.map((event) => (
                 <TRow key={event.id}>
-                  <Td className="whitespace-nowrap text-slate-400">{new Date(event.timestamp).toLocaleString()}</Td>
+                  <Td className="whitespace-nowrap text-text-muted">{new Date(event.timestamp).toLocaleString()}</Td>
                   <Td className="font-medium text-slate-900">{event.action}</Td>
                   <Td>
                     <Badge tone={event.result === "success" ? "success" : event.result === "denied" ? "warning" : "danger"}>
@@ -1328,7 +1328,7 @@ function ActivityTab({ environmentId, organizationId }: { environmentId: string;
           {events.map((event) => (
             <li key={event.id} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0">
               <span className="text-slate-800">{event.action}</span>
-              <span className="text-xs text-slate-400">{new Date(event.timestamp).toLocaleString()}</span>
+              <span className="text-xs text-text-muted">{new Date(event.timestamp).toLocaleString()}</span>
             </li>
           ))}
         </ul>

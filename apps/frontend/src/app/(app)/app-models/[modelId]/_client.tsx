@@ -762,7 +762,7 @@ function RecordFormModal({
           incomingRelationships.map((r) => (
             <div key={r.id}>
               <Label htmlFor={`incoming-${r.id}`}>
-                {r.label} <span className="text-xs text-slate-400">(read-only)</span>
+                {r.label} <span className="text-xs text-text-muted">(read-only)</span>
               </Label>
               <IncomingAssociations
                 relationship={r}
@@ -973,7 +973,7 @@ export function MultiReferenceSelect({
 
   if (!options) {
     return (
-      <div id={id} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-400">
+      <div id={id} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-text-muted">
         Loading…
       </div>
     );
@@ -981,7 +981,7 @@ export function MultiReferenceSelect({
 
   if (options.length === 0) {
     return (
-      <div id={id} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-400">
+      <div id={id} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-text-muted">
         No records to link yet.
       </div>
     );
@@ -1044,8 +1044,8 @@ export function IncomingAssociations({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, relationship.source_model, ids.join(",")]);
 
-  if (!labels) return <span className="text-xs text-slate-400">Loading…</span>;
-  if (ids.length === 0) return <span className="text-xs text-slate-400">None</span>;
+  if (!labels) return <span className="text-xs text-text-muted">Loading…</span>;
+  if (ids.length === 0) return <span className="text-xs text-text-muted">None</span>;
   return (
     <div className="flex flex-wrap gap-1">
       {ids.map((recordId) => (
@@ -1493,7 +1493,7 @@ function AddConstraintForm({
                   )
                 }
               />
-              {r.label} <span className="text-xs text-slate-400">(relationship)</span>
+              {r.label} <span className="text-xs text-text-muted">(relationship)</span>
             </label>
           ))}
         </div>

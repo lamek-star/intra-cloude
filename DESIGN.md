@@ -83,7 +83,7 @@ This is the theme the application ships today.
 | `--border-strong` | `#CBD5E1` | Dividers that must survive a busy screen |
 | `--text-primary` | `#0F172A` | Headings, values, primary body — 17.06:1 on canvas |
 | `--text-secondary` | `#475569` | Body copy, table cells — 7.24:1 on canvas |
-| `--text-tertiary` | `#94A3B8` | Labels, captions, disabled, placeholder |
+| `--text-tertiary` | `#64748B` | Labels, captions, placeholder — 4.76:1 on white, 4.55:1 on canvas (was `#94A3B8` in this table, 2.56:1; the components already used `#64748B`) |
 | `--text-inverse` | `#FFFFFF` | Text on brand / navy fills |
 
 ### 2.2 Brand `[shipped]`
@@ -306,7 +306,8 @@ grow with the data model.
 ### 7.2 Rules
 
 - Exactly one nav item may be active. Active state = white text on
-  `--color-brand-500` background plus `aria-current="page"`.
+  `--color-nav-active` (`#2563EB`, brand-600) background plus `aria-current="page"`. Not
+  brand-500: white on `#3B82F6` is 3.68:1 and fails AA for the 14px label.
 - **Every** nav landmark carries an `aria-label` (`Main navigation`, etc.) —
   already true across the app and must stay true. `[shipped]`
 - Breadcrumbs appear whenever a page is more than one level below a rail
@@ -326,16 +327,20 @@ necessary, the layout is doing too much.
 
 | Variant | Fill | Text | Border | Use |
 |---|---|---|---|---|
-| `primary` | `--color-brand-600` → `--color-brand-500` hover | inverse | none | The one action the page exists for |
+| `primary` | `--color-brand-600` → `--color-accent-hover` (`#1D4ED8`) hover | inverse | none | The one action the page exists for |
 | `secondary` | raised → `--surface-muted` hover | secondary | subtle | Everything else |
-| `danger` | `#DC2626` → `#EF4444` hover | inverse | none | Destructive, after confirmation |
+| `danger` | `#DC2626` → `--color-danger-hover` (`#B91C1C`) hover | inverse | none | Destructive, after confirmation |
+
+Hover states darken, never lighten: the lighter steps (`#3B82F6` 3.68:1, `#EF4444` 3.76:1)
+fail AA behind a white label.
 | `ghost` | transparent → `--surface-muted` hover | secondary | none | Toolbar, row-level, tertiary |
 
 - Sizes: `sm` = 12px text / 10×6 padding · `md` = 14px text / 14×8 padding.
 - Radius `md` (8px), weight 500, `transition-colors` only.
 - **One `primary` per view.** A page with two primary buttons has an unresolved
   hierarchy problem.
-- Focus: 2px `--color-brand-500` ring, 2px offset against the canvas. `[shipped]`
+- Focus: 2px `--color-focus` (`#3B82F6`) ring, 2px offset against the canvas, on **every**
+  variant — secondary and ghost used `slate-300` (1.42:1), which is invisible. `[shipped]`
 - Disabled: 50% opacity, pointer events off. Never hide a disabled action —
   explain why it is disabled nearby.
 - Destructive actions route through `ConfirmProvider`, never a bare `onClick`.
@@ -351,8 +356,10 @@ necessary, the layout is doing too much.
 text. Fields stack at 16px. Related fields group inside a `fieldset` with a
 `legend` — as the connect wizard's access-level radios already do.
 
-**Controls:** full width, raised background, subtle border, radius `md`,
-12×8 padding, 14px text, `--text-tertiary` placeholder. Focus moves the border
+**Controls:** full width, raised background, `--color-border-input` (`#8492A6`,
+3.16:1 — `--border-subtle` is 1.23:1 and fails WCAG 1.4.11 for a control boundary)
+border, radius `md`, 12×8 padding, 14px text, `--color-text-placeholder` (`#64748B`)
+placeholder. Checkboxes use `--color-border-checkbox`. Focus moves the border
 to `--color-brand-400` and adds a 2px `--color-brand-500/20` ring.
 
 **Validation rules**
@@ -563,8 +570,10 @@ Non-negotiable. The app has already been through an accessibility pass; these
 are the invariants that pass established.
 
 - **Contrast:** 4.5:1 for text under 18px, 3:1 for large text and for the
-  boundary of every interactive control. `--text-tertiary` (`#94A3B8`) passes on
-  white for 12px+ **labels only** — never for body copy. `--color-teal-500`/
+  boundary of every interactive control. `#94A3B8` (slate-400) is 2.56:1 on white
+  and fails for any text, labels included — it is used only on the navy rail
+  (5.73:1). Check hover, focus and border colours too, not just resting text:
+  the 2026-11 pass found seven failing pairs there. `--color-teal-500`/
   `--color-green-500` fail AA as a text/small-fill colour (2.49:1 / 2.28:1) —
   decorative or large-element use only, per §2.2.
 - **Focus:** a global `focus-visible` rule gives every interactive element a 2px

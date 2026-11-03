@@ -11,7 +11,7 @@ from audit.models import AuditEvent
 from organizations.models import Membership
 from permissions.management.commands.seed_permissions import Command as SeedPermissionsCommand
 from storage import scanning
-from storage.models import FileObject, FileVersion
+from storage.models import FileObject, FileVersion, Folder
 
 PNG_HEAD = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
 TEXT_CONTENT = b"hello world\n" * 1000
@@ -61,6 +61,19 @@ class BucketFolderTests(StorageTestBase):
         self.assertEqual(listing.data[0]["name"], "reports")
 
 
+class FolderNameTests(StorageTestBase):
+    def test_a_second_folder_with_the_same_name_is_a_clear_conflict(self):
+        url = reverse("folder-list-create", args=[self.bucket_id])
+        parent = self.client.post(url, {"name": "invoices"}).data["id"]
+        for parent_id in (None, parent):
+            body = {"name": "2026"} if parent_id is None else {"name": "2026", "parent_id": parent_id}
+            self.assertEqual(self.client.post(url, body).status_code, status.HTTP_201_CREATED)
+            again = self.client.post(url, body)
+            self.assertEqual(again.status_code, status.HTTP_409_CONFLICT)
+            self.assertIn("2026", again.data["detail"])
+        self.assertEqual(Folder.objects.filter(bucket_id=self.bucket_id, name="2026").count(), 2)
+
+
 class FileUploadRoundTripTests(StorageTestBase):
     def test_upload_list_download_delete_restore(self):
         upload_url = reverse("file-list-create", args=[self.bucket_id])
@@ -88,6 +101,37 @@ class FileUploadRoundTripTests(StorageTestBase):
         self.assertEqual(restore.status_code, status.HTTP_200_OK)
         listing_after_restore = self.client.get(upload_url)
         self.assertEqual([f["id"] for f in listing_after_restore.data], [file_id])
+
+    def test_restoring_onto_a_name_now_in_use_is_a_clear_conflict(self):
+        upload_url = reverse("file-list-create", args=[self.bucket_id])
+        old_id = _upload_file(self.client, upload_url, display_filename="price-list.txt").data["id"]
+        self.client.delete(reverse("file-detail", args=[old_id]))
+        new_id = _upload_file(self.client, upload_url, display_filename="price-list.txt").data["id"]
+
+        restore = self.client.post(reverse("file-restore", args=[old_id]))
+
+        self.assertEqual(restore.status_code, status.HTTP_409_CONFLICT)
+        self.assertIn("price-list.txt", restore.data["detail"])
+        self.assertEqual(FileObject.objects.get(id=old_id).status, FileObject.Status.DELETED)
+        self.assertEqual(FileObject.objects.get(id=new_id).status, FileObject.Status.ACTIVE)
+
+    def test_restoring_a_file_that_is_not_deleted_changes_nothing(self):
+        upload_url = reverse("file-list-create", args=[self.bucket_id])
+        file_id = _upload_file(self.client, upload_url, display_filename="a.txt").data["id"]
+        restore = self.client.post(reverse("file-restore", args=[file_id]))
+        self.assertEqual(restore.status_code, status.HTTP_409_CONFLICT)
+
+    def test_trash_lists_deleted_files_only_for_people_who_can_restore(self):
+        upload_url = reverse("file-list-create", args=[self.bucket_id])
+        kept = _upload_file(self.client, upload_url, display_filename="kept.txt").data["id"]
+        gone = _upload_file(self.client, upload_url, display_filename="gone.txt").data["id"]
+        self.client.delete(reverse("file-detail", args=[gone]))
+
+        trash = self.client.get(upload_url, {"status": "deleted"})
+        self.assertEqual(trash.status_code, status.HTTP_200_OK)
+        self.assertEqual([f["id"] for f in trash.data], [gone])
+        self.assertEqual([f["id"] for f in self.client.get(upload_url).data], [kept])
+        self.assertEqual(self.client.get(upload_url, {"status": "quarantined"}).status_code, 400)
 
     def test_checksum_is_computed_correctly(self):
         import hashlib
@@ -174,6 +218,29 @@ class FileVersioningTests(StorageTestBase):
         self.assertEqual(versions.count(), 1)
         self.assertEqual(versions.first().checksum_sha256, first_checksum)
 
+        listing = self.client.get(reverse("file-version-upload", args=[file_id]))
+        self.assertEqual(listing.status_code, status.HTTP_200_OK)
+        self.assertEqual([v["checksum_sha256"] for v in listing.data], [first_checksum])
+        self.assertEqual(listing.data[0]["size"], 2)
+        self.assertNotIn("object_key", listing.data[0])
+
+    def test_version_list_needs_storage_read(self):
+        upload_url = reverse("file-list-create", args=[self.bucket_id])
+        file_id = _upload_file(self.client, upload_url, display_filename="doc.txt").data["id"]
+        stranger = User.objects.create_user(email="versions-stranger@example.com", password="x")
+        Membership.objects.create(user=stranger, organization_id=self.org_id, status=Membership.Status.ACTIVE)
+        self.client.force_login(stranger)
+        resp = self.client.get(reverse("file-version-upload", args=[file_id]))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_version_list_of_another_organizations_file_is_not_found(self):
+        upload_url = reverse("file-list-create", args=[self.bucket_id])
+        file_id = _upload_file(self.client, upload_url, display_filename="doc.txt").data["id"]
+        outsider = User.objects.create_user(email="versions-outsider@example.com", password="x")
+        self.client.force_login(outsider)
+        resp = self.client.get(reverse("file-version-upload", args=[file_id]))
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_new_version_without_versioning_does_not_keep_history(self):
         upload_url = reverse("file-list-create", args=[self.bucket_id])
         first = _upload_file(self.client, upload_url, content=b"v1", display_filename="doc.txt")
@@ -227,6 +294,26 @@ class MalwareScanningTests(StorageTestBase):
         self.assertEqual(download.status_code, status.HTTP_403_FORBIDDEN)
 
     @override_settings(MALWARE_SCAN_ENABLED=True)
+    def test_restore_cannot_release_a_quarantined_file(self):
+        # "Restore" brings back a deleted file. It used to set any file active, so a quarantined
+        # upload could be restored into an ordinary download, bypassing malware scanning.
+        with patch(
+            "storage.services.scanning.scan_stream",
+            return_value=scanning.ScanResult(clean=False, signature="Test.Signature"),
+        ):
+            resp = _upload_file(
+                self.client, reverse("file-list-create", args=[self.bucket_id]), display_filename="evil.txt"
+            )
+        file_id = resp.data["id"]
+
+        restore = self.client.post(reverse("file-restore", args=[file_id]))
+
+        self.assertEqual(restore.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(FileObject.objects.get(id=file_id).status, FileObject.Status.QUARANTINED)
+        download = self.client.get(reverse("file-download", args=[file_id]))
+        self.assertEqual(download.status_code, status.HTTP_403_FORBIDDEN)
+
+    @override_settings(MALWARE_SCAN_ENABLED=True)
     def test_unreachable_scanner_fails_closed_into_quarantine(self):
         with patch(
             "storage.services.scanning.scan_stream", side_effect=scanning.ScanUnavailable("unreachable")
@@ -275,6 +362,16 @@ class StoragePermissionTests(StorageTestBase):
     def test_member_without_storage_read_cannot_list_folders(self):
         resp = self.client.get(reverse("folder-list-create", args=[self.bucket_id]))
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_a_viewer_can_list_files_but_not_the_trash(self):
+        from organizations.models import Organization
+        from permissions.services import assign_role
+
+        org = Organization.objects.get(id=self.org_id)
+        assign_role(user=self.outsider, role_slug="viewer", organization=org)
+        url = reverse("file-list-create", args=[self.bucket_id])
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_200_OK)
+        self.assertEqual(self.client.get(url, {"status": "deleted"}).status_code, status.HTTP_403_FORBIDDEN)
 
 
 class BucketListVisibilityTests(StorageTestBase):
