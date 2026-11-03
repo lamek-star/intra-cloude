@@ -18,11 +18,11 @@ export function Button({
     "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas";
   const sizes = { sm: "px-2.5 py-1.5 text-xs", md: "px-3.5 py-2 text-sm" };
   const variants = {
-    primary: "bg-brand-600 text-white shadow-sm hover:bg-brand-500 focus-visible:ring-brand-500",
+    primary: "bg-brand-600 text-white shadow-sm hover:bg-accent-hover focus-visible:ring-brand-500",
     secondary:
-      "bg-white text-slate-700 border border-slate-200 shadow-sm hover:bg-slate-50 focus-visible:ring-slate-300",
-    danger: "bg-red-600 text-white shadow-sm hover:bg-red-500 focus-visible:ring-red-500",
-    ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-slate-300",
+      "bg-white text-slate-700 border border-slate-200 shadow-sm hover:bg-slate-50 focus-visible:ring-focus",
+    danger: "bg-red-600 text-white shadow-sm hover:bg-danger-hover focus-visible:ring-focus",
+    ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-focus",
   };
   return (
     <button className={`${base} ${sizes[size]} ${variants[variant]} ${className}`} {...props} />
@@ -45,7 +45,7 @@ export function LinkButton({
   const base = "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors";
   const sizes = { sm: "px-2.5 py-1.5 text-xs", md: "px-3.5 py-2 text-sm" };
   const variants = {
-    primary: "bg-brand-600 text-white shadow-sm hover:bg-brand-500",
+    primary: "bg-brand-600 text-white shadow-sm hover:bg-accent-hover",
     secondary: "bg-white text-slate-700 border border-slate-200 shadow-sm hover:bg-slate-50",
     ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
   };
@@ -59,7 +59,7 @@ export function LinkButton({
 export function Input({ className = "", ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
-      className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 ${className}`}
+      className={`w-full rounded-lg border border-border-input bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-text-placeholder outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 ${className}`}
       {...props}
     />
   );
@@ -71,7 +71,7 @@ export function Textarea({
 }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
-      className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 ${className}`}
+      className={`w-full rounded-lg border border-border-input bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-text-placeholder outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 ${className}`}
       {...props}
     />
   );
@@ -83,7 +83,7 @@ export function Select({
 }: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
-      className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 ${className}`}
+      className={`w-full rounded-lg border border-border-input bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 ${className}`}
       {...props}
     />
   );
@@ -93,7 +93,7 @@ export function Checkbox(props: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       type="checkbox"
-      className="h-4 w-4 rounded border-slate-300 bg-white text-brand-600 focus:ring-brand-500/30"
+      className="h-4 w-4 rounded border-border-checkbox bg-white text-brand-600 focus:ring-focus"
       {...props}
     />
   );
@@ -164,7 +164,7 @@ export function Spinner({ className = "" }: { className?: string }) {
 
 export function PageLoading() {
   return (
-    <div className="flex h-64 items-center justify-center text-slate-400">
+    <div className="flex h-64 items-center justify-center text-text-muted">
       <Spinner className="h-6 w-6" />
     </div>
   );
@@ -203,7 +203,7 @@ export function ErrorBanner({ message, error }: { message: string; error?: unkno
     <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
       {message}
       {details && (
-        <details className="mt-1.5 text-xs text-red-600/80">
+        <details className="mt-1.5 text-xs text-danger-fg">
           <summary className="cursor-pointer select-none">View technical details</summary>
           <dl className="mt-1 space-y-0.5 font-mono">
             <div>status: {details.status}</div>

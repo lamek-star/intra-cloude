@@ -78,7 +78,7 @@ export function MemberRoles({
               disabled={busy}
               onClick={() => void takeAway(slug)}
               aria-label={`Take away ${byslug.get(slug)?.name ?? slug} from ${who}`}
-              className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-red-600 disabled:opacity-50"
+              className="rounded p-0.5 text-text-muted hover:bg-slate-100 hover:text-red-600 disabled:opacity-50"
             >
               <X size={12} aria-hidden="true" />
             </button>

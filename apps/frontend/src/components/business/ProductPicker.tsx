@@ -139,7 +139,7 @@ export default function ProductPicker({
             }
           }
         }}
-        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20"
+        className="w-full rounded-lg border border-border-input bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-text-placeholder outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20"
       />
       <div
         ref={listRef}

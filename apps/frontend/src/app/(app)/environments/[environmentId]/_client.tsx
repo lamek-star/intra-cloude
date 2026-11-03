@@ -1328,7 +1328,7 @@ function ActivityTab({ environmentId, organizationId }: { environmentId: string;
           {events.map((event) => (
             <li key={event.id} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0">
               <span className="text-slate-800">{event.action}</span>
-              <span className="text-xs text-slate-400">{new Date(event.timestamp).toLocaleString()}</span>
+              <span className="text-xs text-text-muted">{new Date(event.timestamp).toLocaleString()}</span>
             </li>
           ))}
         </ul>

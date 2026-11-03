@@ -101,7 +101,7 @@ function AccessSummary({ resources, grants }: { resources: OrgResource[]; grants
             {shownCannot.map((line) => (
               <li key={line}>{line}</li>
             ))}
-            {hiddenCannotCount > 0 && <li className="text-slate-400">+{hiddenCannotCount} more</li>}
+            {hiddenCannotCount > 0 && <li className="text-text-muted">+{hiddenCannotCount} more</li>}
           </ul>
         )}
       </Card>
@@ -366,7 +366,7 @@ export default function ApplicationDetailClient({ applicationId }: { application
         <section>
           <h2 className="mb-3 text-sm font-semibold text-slate-600">Access summary</h2>
           {resources === null ? (
-            <div className="flex items-center gap-2 text-sm text-slate-400">
+            <div className="flex items-center gap-2 text-sm text-text-muted">
               <Spinner className="h-4 w-4" /> Building access summary…
             </div>
           ) : (

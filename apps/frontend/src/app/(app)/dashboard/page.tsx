@@ -177,7 +177,7 @@ export default function DashboardPage() {
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium text-slate-800">{org.name}</span>
-                        <span className="block text-xs text-slate-400">
+                        <span className="block text-xs text-text-muted">
                           {workspaceCount === null
                             ? "Workspace count unavailable"
                             : `${workspaceCount} workspace${workspaceCount === 1 ? "" : "s"}`}
@@ -196,7 +196,7 @@ export default function DashboardPage() {
           <SectionHeader title="Recent activity" />
           {recentActivity === null ? (
             <Card>
-              <div className="flex items-center gap-2 text-sm text-slate-400">
+              <div className="flex items-center gap-2 text-sm text-text-muted">
                 <Spinner className="h-4 w-4" /> Loading…
               </div>
             </Card>
@@ -220,9 +220,9 @@ export default function DashboardPage() {
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm text-slate-800">
                         {event.action}{" "}
-                        <span className="text-slate-400">on {event.resource_type}</span>
+                        <span className="text-text-muted">on {event.resource_type}</span>
                       </span>
-                      <span className="block text-xs text-slate-400">
+                      <span className="block text-xs text-text-muted">
                         {new Date(event.timestamp).toLocaleString()}
                       </span>
                     </span>
@@ -249,7 +249,7 @@ export default function DashboardPage() {
         <SectionHeader title="System health" />
         {health === null ? (
           <Card>
-            <div className="flex items-center gap-2 text-sm text-slate-400">
+            <div className="flex items-center gap-2 text-sm text-text-muted">
               <Spinner className="h-4 w-4" /> Checking…
             </div>
           </Card>

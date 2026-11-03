@@ -1012,7 +1012,7 @@ function AddConstraintForm({
                   )
                 }
               />
-              {r.label} <span className="text-xs text-slate-400">(relationship)</span>
+              {r.label} <span className="text-xs text-text-muted">(relationship)</span>
             </label>
           ))}
         </div>
@@ -1387,7 +1387,7 @@ function MoveButtons({
   onMoveDown: () => void;
 }) {
   return (
-    <span className="flex items-center gap-1 text-slate-400">
+    <span className="flex items-center gap-1 text-text-muted">
       <button
         type="button"
         aria-label="Move up"

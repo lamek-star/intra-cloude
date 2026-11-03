@@ -121,15 +121,15 @@ export function CommandPalette({ open, setOpen }: { open: boolean; setOpen: (ope
             aria-expanded="true"
             aria-controls="command-palette-results"
             aria-activedescendant={items[activeIndex] ? `command-palette-item-${items[activeIndex].id}` : undefined}
-            className="w-full text-sm text-slate-900 outline-none placeholder:text-slate-400"
+            className="w-full text-sm text-slate-900 outline-none placeholder:text-text-placeholder"
           />
-          <kbd className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] text-slate-400">
+          <kbd className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-text-muted">
             Esc
           </kbd>
         </div>
         <div id="command-palette-results" role="listbox" className="max-h-80 overflow-y-auto p-1.5">
           {items.length === 0 ? (
-            <p className="px-3 py-6 text-center text-sm text-slate-400">No matches.</p>
+            <p className="px-3 py-6 text-center text-sm text-text-muted">No matches.</p>
           ) : (
             items.map((item, i) => (
               <button
@@ -145,7 +145,7 @@ export function CommandPalette({ open, setOpen }: { open: boolean; setOpen: (ope
               >
                 <item.icon aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-400" />
                 <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                {item.hint && <span className="shrink-0 text-xs text-slate-400">{item.hint}</span>}
+                {item.hint && <span className="shrink-0 text-xs text-text-muted">{item.hint}</span>}
               </button>
             ))
           )}

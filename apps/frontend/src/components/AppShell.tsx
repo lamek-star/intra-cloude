@@ -159,7 +159,7 @@ function SidebarLink({
       href={href}
       aria-current={active ? "page" : undefined}
       className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors ${
-        active ? "bg-brand-500 text-white shadow-sm" : "text-slate-300 hover:bg-white/5 hover:text-white"
+        active ? "bg-nav-active text-white shadow-sm" : "text-slate-300 hover:bg-white/5 hover:text-white"
       }`}
     >
       <Icon aria-hidden="true" className="h-4 w-4" strokeWidth={2} />

@@ -329,7 +329,7 @@ export default function ImportClient({ tableId }: { tableId: string }) {
 
       {step === "preview" && preview && selectedFile && (
         <div className="space-y-6">
-          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
+          <div className="flex flex-wrap items-center gap-2 text-sm text-text-muted">
             <span>
               {selectedFile.display_filename} · detected encoding <Badge>{preview.encoding}</Badge>
               delimiter <Badge>{preview.delimiter === "\t" ? "tab" : preview.delimiter}</Badge>

@@ -110,7 +110,7 @@ export default function DeveloperOverviewClient({ orgId }: { orgId: string }) {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-slate-800">{app.name}</span>
                     {app.description && (
-                      <span className="block truncate text-xs text-slate-400">{app.description}</span>
+                      <span className="block truncate text-xs text-text-muted">{app.description}</span>
                     )}
                   </span>
                   <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />

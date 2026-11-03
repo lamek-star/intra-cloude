@@ -207,7 +207,7 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
           </Table>
         ) : (
           <p className="text-sm text-slate-500">
-            No member list visible — you may not hold <code className="text-slate-400">users.manage</code> in
+            No member list visible — you may not hold <code className="text-text-muted">users.manage</code> in
             this organization.
           </p>
         )}

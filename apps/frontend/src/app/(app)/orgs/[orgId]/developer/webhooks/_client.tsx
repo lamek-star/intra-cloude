@@ -177,7 +177,7 @@ export default function WebhooksClient({ orgId }: { orgId: string }) {
               ))}
             </tbody>
           </Table>
-          <p className="mt-2 text-xs text-slate-400">
+          <p className="mt-2 text-xs text-text-muted">
             An empty event-type list on a webhook subscribes it to every event type above.
           </p>
         </div>
