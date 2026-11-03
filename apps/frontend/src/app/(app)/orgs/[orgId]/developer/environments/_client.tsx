@@ -27,6 +27,7 @@ import {
   THead,
   TRow,
 } from "@/components/ui";
+import { ENVIRONMENT_TYPES, exampleEnvironmentName, namesProductionWithoutType } from "@/lib/environment-type";
 import { DeveloperNav } from "@/components/DeveloperNav";
 
 type EnvironmentRow = Environment & { applicationName: string };
@@ -270,7 +271,6 @@ export default function EnvironmentsClient({ orgId }: { orgId: string }) {
   );
 }
 
-const ENVIRONMENT_TYPES = ["development", "staging", "production", "custom"];
 
 function CreateEnvironmentModal({
   open,
@@ -343,7 +343,7 @@ function CreateEnvironmentModal({
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Production"
+            placeholder={exampleEnvironmentName(environmentType)}
           />
         </div>
         <div>
@@ -355,6 +355,12 @@ function CreateEnvironmentModal({
               </option>
             ))}
           </Select>
+          {namesProductionWithoutType(name, environmentType) && (
+            <p role="alert" className="mt-1.5 text-xs text-amber-700">
+              The name says production, but the type is {environmentType}: this environment would not get
+              production&apos;s permission gate or delete confirmation. Choose the production type, or rename it.
+            </p>
+          )}
           {environmentType === "production" && (
             <p className="mt-1.5 text-xs text-amber-700">
               Production environments get an extra permission gate -- only an organization administrator
