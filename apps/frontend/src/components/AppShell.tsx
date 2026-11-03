@@ -12,6 +12,7 @@ import { useDialogA11y } from "@/lib/use-dialog-a11y";
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
@@ -63,17 +64,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           {user && (
             <div className="mt-4 space-y-1 border-t border-white/10 pt-4">
-              <div className="flex items-center gap-2.5 rounded-xl bg-white/5 px-2.5 py-2.5">
+              <Link
+                href="/account"
+                aria-current={pathname === "/account" ? "page" : undefined}
+                className="flex items-center gap-2.5 rounded-xl bg-white/5 px-2.5 py-2.5 hover:bg-white/10"
+              >
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-500/25 text-xs font-semibold text-brand-100">
                   {user.email.slice(0, 1).toUpperCase()}
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-medium text-white">
-                    {user.first_name || "Account"}
+                    {user.first_name || "Your account"}
                   </p>
                   <p className="truncate text-[11px] text-slate-400">{user.email}</p>
                 </div>
-              </div>
+              </Link>
               <button
                 onClick={handleLogout}
                 className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-red-300 hover:bg-white/5 hover:text-red-200"
@@ -122,6 +127,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       Signed in as
                       <div className="truncate text-slate-700">{user?.email}</div>
                     </div>
+                    <Link
+                      role="menuitem"
+                      href="/account"
+                      onClick={() => setMenuOpen(false)}
+                      className="block w-full px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    >
+                      Your account
+                    </Link>
                     <button
                       role="menuitem"
                       onClick={handleLogout}
