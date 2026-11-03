@@ -62,3 +62,30 @@ behaviour).
 Not done: screenshots into `replica/clone-screens/` for replica-diff, a check at 390 px, and a click-through against a
 running stack built from this branch. The kit you run is built from `dbf44f593`, not from this branch, so the changes
 are not visible in your shop until they are merged there and a new kit is built.
+
+## Integration 1.5.0 (`integration/1.5.0`, 2026-11-03/04)
+
+Recovered 1.4.0 source (`recovered/kit-1.4.0`) + `replica/aws-parity`, then fixes found by clicking through a 1.5.0
+test copy (https://localhost:9543, test data only):
+
+| commit | fix |
+| --- | --- |
+| 606431a | opening IntraForge by IP address failed the TLS handshake (on-demand certificate check refused IntraForge's own names) -- also in 1.4.0 |
+| ff7a4ef | two-step sign-in signed people out ~5 minutes after signing in (pending-step expiry carried over) -- also in 1.4.0 |
+| 316befc | installing IntraForge Pay failed ("Unknown setting: currency"); install dialog follows the app type |
+| 7f04756 | audit log "Who" column back; sign-in says "two-step sign-in" |
+| 38e0312 | creating a folder is audited |
+| e13648d | Websites and Internet access pages rebuilt (1.4.0 frontend source was lost) |
+| 86dc2c2 | the Super Administrator can pick any online site to publish on the internet |
+| 6e2f581 | order-dependent sites test scoped to its own app |
+
+Checked live: account two-step on/off, folders/upload/versions/Trash/restore, database + table, Pay install,
+customer wallet, maker/checker credit, QR sale paid from the wallet (ledger balanced, receipt stored in
+IntraForge), Spare Parts and Pharmacy install/open, website published and served by IP address, Internet page
+for an org admin and the Super Administrator.
+
+Final checks: backend full suite **1,289 passed, 0 failed** (2 skipped, 235 subtests); frontend tsc 0,
+ESLint clean, Vitest 114 passed, production image build compiles.
+
+Open: Spare Parts / Pharmacy overview shows AED regardless of the shop's currency (their 1.4.0 source is lost);
+Pay counts "today" and receipt dates in UTC (needs a shop time zone); a real Cloudflare tunnel is untested.
