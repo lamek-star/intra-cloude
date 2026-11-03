@@ -1,6 +1,7 @@
 from django.contrib.auth import authenticate, login, logout
 from django.middleware.csrf import get_token
 from rest_framework import status
+from rest_framework.authentication import BaseAuthentication
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -31,7 +32,7 @@ class CSRFView(APIView):
     `X-CSRFToken` header on that very first mutating request)."""
 
     permission_classes = [AllowAny]
-    authentication_classes = []
+    authentication_classes: list[type[BaseAuthentication]] = []
 
     def get(self, request):
         get_token(request)
@@ -140,7 +141,10 @@ class MFAEnrollView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        result = services.start_mfa_enrollment(user=request.user)
+        try:
+            result = services.start_mfa_enrollment(user=request.user)
+        except services.MFAError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(result, status=status.HTTP_201_CREATED)
 
 

@@ -14,6 +14,12 @@
 | [0010](0010-async-job-processing-celery-redis.md) | Asynchronous job processing — Celery + Redis | Accepted |
 | [0011](0011-valkey-over-redis.md) | Use Valkey instead of Redis for the broker/cache (licensing) | Accepted |
 | [0012](0012-windows-deployment-architecture.md) | Windows deployment — installer-managed WSL2 appliance (default) + Control Center/customer-managed Linux host (Business/Enterprise) | Accepted |
+| [0013](0013-docker-engine-bundled-in-wsl2-rootfs.md) | Bundle Docker Engine into the WSL2 rootfs, release-pinned not live-updated | Accepted |
+| [0014](0014-app-platform-foundation.md) | Separate App Platform definitions, immutable versions, independent instances, and capabilities | Accepted for Phase 1 |
+| [0015](0015-runtime-provisioning.md) | Resumable runtime provisioning and protected schema ownership | Accepted for Phase 2 provisioning |
+| [0016](0016-tenant-operation-journal.md) | Tenant operation journal and quantity ledgers | Accepted for Local Edition |
+| [0017](0017-inventory-operation-authority.md) | Business-operation authority over stock (sell / receive / adjust / transfer) | Accepted |
+| [0018](0018-service-applications.md) | Service applications: separately deployed apps on IntraForge storage, identity and audit | Accepted |
 
 New architecturally significant decisions get a new numbered ADR here
 rather than silently changing behavior described in an existing one.

@@ -30,4 +30,13 @@ public sealed class LocalConnectionValidationTests
         await Assert.ThrowsAsync<ArgumentException>(
             () => connection.GetContainerLogsAsync("not-a-real-service"));
     }
+
+    [Fact]
+    public async Task RestoreBackupAsync_rejects_a_record_id_that_is_not_a_real_guid()
+    {
+        var connection = new LocalConnection(scriptsDirectory: "unused-for-this-test");
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => connection.RestoreBackupAsync("not-a-guid", stopStack: true));
+    }
 }

@@ -4,6 +4,7 @@ from django.conf import settings
 from django.db import connections
 from django.db.utils import OperationalError
 from django.http import HttpResponse
+from rest_framework.authentication import BaseAuthentication
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -37,6 +38,18 @@ def _dependency_checks() -> tuple[dict[str, bool], bool]:
         checks["valkey"] = False
         logger.warning("Dependency check failed for valkey: %s", exc)
 
+    # Every upload, download and backup of files goes through object storage; without this check
+    # the dashboard reported "all checks passing" while files could not be read.
+    try:
+        from storage.backends import check_object_storage
+
+        check_object_storage()
+        checks["object_storage"] = True
+    except Exception as exc:  # noqa: BLE001 - a dependency check must not crash the process
+        healthy = False
+        checks["object_storage"] = False
+        logger.warning("Dependency check failed for object storage: %s", exc)
+
     return checks, healthy
 
 
@@ -46,7 +59,7 @@ class HealthzView(APIView):
     the process, not whether it's ready to serve real traffic."""
 
     permission_classes = [AllowAny]
-    authentication_classes = []
+    authentication_classes: list[type[BaseAuthentication]] = []
 
     def get(self, request):
         return Response({"status": "ok"})
@@ -59,7 +72,7 @@ class ReadyzView(APIView):
     Section 9)."""
 
     permission_classes = [AllowAny]
-    authentication_classes = []
+    authentication_classes: list[type[BaseAuthentication]] = []
 
     def get(self, request):
         checks, healthy = _dependency_checks()
@@ -80,7 +93,7 @@ class MetricsView(APIView):
     rather than silently omitted."""
 
     permission_classes = [AllowAny]
-    authentication_classes = []
+    authentication_classes: list[type[BaseAuthentication]] = []
 
     def get(self, request):
         checks, _ = _dependency_checks()

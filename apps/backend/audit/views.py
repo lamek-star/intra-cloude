@@ -38,6 +38,9 @@ class AuditEventListView(generics.ListAPIView):
         resource_type = params.get("resource_type")
         if resource_type:
             queryset = queryset.filter(resource_type=resource_type)
+        resource_id = params.get("resource_id")
+        if resource_id:
+            queryset = queryset.filter(resource_id=resource_id)
         result = params.get("result")
         if result:
             queryset = queryset.filter(result=result)

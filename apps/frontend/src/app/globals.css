@@ -1,21 +1,149 @@
 @import "tailwindcss";
 
-/* This app is dark-only by design (bg-slate-950 throughout) — no
-   light/dark media-query switch. Set directly on `body` inside a layer
-   so Tailwind's `bg-slate-950` utility on the same element (layout.tsx)
-   cascades correctly instead of being overridden by an unlayered rule. */
+/* IntraForge design system. See DESIGN.md for the full rationale behind
+   every token here -- this file is the implementation, that doc is the
+   source of truth. `--font-sans` is set from next/font's `--font-inter`
+   CSS variable (see layout.tsx) so Tailwind's `font-sans`/default body
+   font resolve to the self-hosted Inter build, not a system fallback.
+
+   Every color below is a stock Tailwind v4 palette value (slate/blue/
+   teal/green), not an invented hex -- verified against the brand brief:
+   navy=blue-950, primary=blue-600, turquoise=teal-500, green=green-500,
+   background=slate-50, text=slate-900/600, border=slate-200. Defining
+   them as named `--color-*` theme entries (rather than using the raw
+   `slate-900`/`blue-600` utilities directly everywhere) is what makes
+   this a *theme*: a future palette change is a one-line edit here, not
+   a repo-wide find/replace. */
+/* Role tokens (bg-surface, text-muted, border-border-input, ring-focus, bg-accent-hover, …) sit
+   beside the palette names below and resolve to the same values, so components can name what a
+   colour does rather than which swatch it is. Every role used for text, a control boundary or a
+   focus ring is checked against WCAG AA (DESIGN.md §2, §14); values marked "AA fix" replaced a
+   pair that failed. */
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+
+  /* ---- Brand (existing names, unchanged values) ---- */
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6; /* focus ring + decorative only; never behind white text */
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-navy: #172554;
+  --color-navy-800: #1e3a8a;
+
+  --color-teal-50: #f0fdfa;
+  --color-teal-500: #14b8a6;
+  --color-teal-600: #0d9488;
+  --color-teal-700: #0f766e;
+  --color-green-50: #f0fdf4;
+  --color-green-500: #22c55e;
+  --color-green-600: #16a34a;
+  --color-green-700: #15803d;
+
+  /* ---- Surfaces / text / borders (existing names) ---- */
+  --color-surface-canvas: #f8fafc;
+  --color-surface-raised: #ffffff;
+  --color-surface-sunken: #f1f5f9;
+  --color-surface-muted: #f8fafc;
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #64748b; /* AA fix in the doc: was #94A3B8 (2.56:1); code already used this */
+  --color-text-inverse: #ffffff;
+  --color-border-subtle: #e2e8f0; /* decorative edges only (cards, rows) -- never a control boundary */
+  --color-border-strong: #cbd5e1;
+
+  /* ---- Status (existing names) ---- */
+  --color-warning: #d97706;
+  --color-warning-tint: #fffbeb;
+  --color-warning-fg: #b45309;
+  --color-danger: #dc2626;
+  --color-danger-tint: #fef2f2;
+  --color-danger-fg: #b91c1c;
+  --color-info-tint: #eff6ff;
+  --color-info-fg: #1d4ed8;
+
+  /* ---- Replica role names (new; same values as above unless marked) ---- */
+  --color-bg: #f8fafc;
+  --color-surface: #ffffff;
+  --color-border: #e2e8f0;
+  --color-border-input: #8492a6;      /* AA fix: was slate-200 #E2E8F0 (1.23:1) on inputs/selects/textareas */
+  --color-border-checkbox: #8492a6;   /* AA fix: was slate-300 #CBD5E1 (1.48:1) */
+  --color-text: #0f172a;
+  --color-text-body: #334155;
+  --color-text-muted: #64748b;
+  --color-text-placeholder: #64748b;  /* AA fix: was slate-400 #94A3B8 (2.56:1) */
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;      /* AA fix: was brand-500 #3B82F6 (white 3.68:1) */
+  --color-on-accent: #ffffff;
+  --color-focus: #3b82f6;             /* one ring colour for every control (was slate-300 on secondary/ghost: 1.42:1) */
+  --color-chrome: #172554;
+  --color-on-chrome: #ffffff;
+  --color-on-chrome-muted: #94a3b8;   /* 5.73:1 on navy -- fine here, NOT on white */
+  --color-nav-active: #2563eb;        /* AA fix: was brand-500 (white 3.68:1) */
+  --color-danger-hover: #b91c1c;      /* AA fix: was red-500 #EF4444 (white 3.76:1) */
+  --color-success: #16a34a;
+  --color-success-tint: #f0fdf4;
+  --color-success-fg: #15803d;
+
+  /* ---- Radius ---- */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* ---- Shadow ---- */
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-control: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-menu: 0 8px 24px -8px rgba(11, 14, 36, 0.18);
+  --shadow-overlay: 0 20px 40px -12px rgba(11, 14, 36, 0.35);
+
+  /* ---- Type (Tailwind's text-* sizes already match 12/14/18/24; these add the two missing) ---- */
+  --text-caption: 11px;
+  --text-caption--line-height: 16px;
+
+  /* ---- Motion ---- */
+  --ease-emphasis: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 120ms;
+  --duration-menu: 150ms;
+  --duration-base: 200ms;
+}
+
 @layer base {
-  body {
-    background: #020617;
-    color: #f1f5f9;
-    font-family:
-      ui-sans-serif,
-      system-ui,
-      -apple-system,
-      "Segoe UI",
-      Roboto,
-      Helvetica,
-      Arial,
-      sans-serif;
+  /* Reduced motion: instant state changes instead of removed feedback
+     (DESIGN.md SS16). The one exception, Spinner's rotation, opts back
+     in explicitly via its own rule below. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+    .motion-safe-spin {
+      animation-duration: 800ms !important;
+      animation-iteration-count: infinite !important;
+    }
+  }
+
+  /* A consistent, on-brand focus ring for every interactive element
+     site-wide, so keyboard users can always see where focus is --
+     rather than depending on each ad hoc `<button className="text-left">`
+     list-item wrapper across the app (org cards, application cards,
+     table rows, etc.) to opt in individually. Elements that already
+     declare their own `focus-visible:` utility (Button, Input, TRow)
+     simply override this with their own ring. */
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
   }
 }

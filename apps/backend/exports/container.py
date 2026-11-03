@@ -27,6 +27,12 @@ from argon2.low_level import Type, hash_secret_raw
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+# Not renamed for the IntraForge rebrand, deliberately: this is an
+# on-disk format identifier, byte-for-byte compatible with every .icp
+# package ever written under either name. Changing it would break
+# restoring an export created before this rebrand. Same reasoning
+# applies to the JSON header's "format" value below and to
+# exports/manifest.py's FORMAT_NAME.
 MAGIC = b"ICPKG001"
 
 # Deliberately conservative-but-usable defaults (RFC 9106's "low-memory"
@@ -40,6 +46,7 @@ ARGON2_PARALLELISM = 4
 ARGON2_SALT_BYTES = 16
 AES_KEY_BYTES = 32  # AES-256
 AES_NONCE_BYTES = 12  # standard GCM nonce size
+MAX_HEADER_BYTES = 16 * 1024
 
 
 class ContainerError(Exception):
@@ -92,13 +99,18 @@ def write_container(zip_bytes: bytes, *, passphrase: str | None = None) -> bytes
 
 
 def read_container_header(data: bytes) -> dict:
-    if data[:8] != MAGIC:
-        raise ContainerError("not an Intra-Cloud portable package (bad magic bytes)")
+    if len(data) < 12 or data[:8] != MAGIC:
+        raise ContainerError("not a valid IntraForge portable package (bad magic bytes)")
     header_len = int.from_bytes(data[8:12], "big")
+    if not 0 < header_len <= MAX_HEADER_BYTES or 12 + header_len > len(data):
+        raise ContainerError("invalid package header size")
     try:
-        return json.loads(data[12 : 12 + header_len])
-    except json.JSONDecodeError as exc:
+        header = json.loads(data[12 : 12 + header_len])
+    except (ValueError, UnicodeError, RecursionError) as exc:
         raise ContainerError("corrupt package header") from exc
+    if not isinstance(header, dict) or header.get("format") != "intracloud-portable-container":
+        raise ContainerError("unsupported package header")
+    return header
 
 
 def read_container_payload(data: bytes, *, passphrase: str | None = None) -> bytes:
@@ -115,6 +127,11 @@ def read_container_payload(data: bytes, *, passphrase: str | None = None) -> byt
     if encryption is None:
         return payload
 
+    if not isinstance(encryption, dict):
+        raise ContainerError("invalid encryption metadata")
+    if encryption.get("algorithm") != "AES-256-GCM" or encryption.get("kdf") != "argon2id":
+        raise ContainerError("unsupported encryption algorithm or key derivation")
+
     if passphrase is None:
         raise DecryptionFailed("this package is encrypted; a passphrase is required")
 
@@ -122,8 +139,19 @@ def read_container_payload(data: bytes, *, passphrase: str | None = None) -> byt
         salt = bytes.fromhex(encryption["salt"])
         nonce = bytes.fromhex(encryption["nonce"])
         kdf_params = encryption["kdf_params"]
-    except (KeyError, ValueError) as exc:
+    except (KeyError, ValueError, TypeError) as exc:
         raise ContainerError("corrupt encryption metadata in package header") from exc
+
+    if not isinstance(kdf_params, dict) or len(salt) != ARGON2_SALT_BYTES or len(nonce) != AES_NONCE_BYTES:
+        raise ContainerError("invalid encryption parameters")
+    bounds = {"time_cost": (1, ARGON2_TIME_COST), "memory_cost_kib": (8, ARGON2_MEMORY_COST_KIB),
+              "parallelism": (1, ARGON2_PARALLELISM)}
+    for name, (minimum, maximum) in bounds.items():
+        value = kdf_params.get(name)
+        if type(value) is not int or not minimum <= value <= maximum:
+            raise ContainerError("key derivation parameters exceed supported resource limits")
+    if kdf_params["memory_cost_kib"] < 8 * kdf_params["parallelism"]:
+        raise ContainerError("invalid key derivation memory cost")
 
     key = hash_secret_raw(
         secret=passphrase.encode("utf-8"),

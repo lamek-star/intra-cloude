@@ -1,4 +1,4 @@
-# Data Model — Private Data Cloud
+# Data Model — IntraForge
 
 Status: Living document — implemented through Phase 12 (production
 hardening); no longer a Phase 0 draft. Updated alongside the code as new

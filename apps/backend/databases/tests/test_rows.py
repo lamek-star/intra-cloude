@@ -8,6 +8,8 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from accounts.models import User
+from databases import rows as row_ops
+from databases.models import DBTable
 from organizations.models import Membership
 from permissions.management.commands.seed_permissions import Command as SeedPermissionsCommand
 
@@ -159,6 +161,19 @@ class RowQueryTests(RowTestBase):
             reverse("row-list-create", args=[self.table_id]), {"ordering": "'; DROP TABLE people; --"}
         )
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_a_list_valued_filter_matches_any_of_its_values(self):
+        # Internal/programmatic-only capability (app_platform's unit-scoped
+        # record access) -- the HTTP row API never sends a list filter
+        # itself, so this calls row_ops.list_rows directly.
+        table = DBTable.objects.get(pk=self.table_id)
+        result = row_ops.list_rows(table=table, filters={"age": [25, 35]})
+        self.assertEqual({r["name"] for r in result["results"]}, {"Bob", "Carol"})
+
+    def test_an_empty_list_valued_filter_matches_nothing(self):
+        table = DBTable.objects.get(pk=self.table_id)
+        result = row_ops.list_rows(table=table, filters={"age": []})
+        self.assertEqual(result["count"], 0)
 
 
 class RowExportTests(RowTestBase):

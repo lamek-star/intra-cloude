@@ -22,7 +22,12 @@ def start_mfa_enrollment(*, user: User) -> dict:
     """Generates and stores a new secret, but does NOT enable MFA yet —
     that only happens once the user proves (via confirm_mfa_enrollment)
     they can actually generate a valid code with it. Calling this again
-    before confirming discards any prior unconfirmed secret."""
+    before confirming discards any prior unconfirmed secret.
+
+    Refused while MFA is on: turning it off needs a current code (disable_mfa), and re-enrolling
+    would otherwise clear mfa_enabled and replace the secret with no code at all."""
+    if user.mfa_enabled:
+        raise MFAError("Two-step sign-in is already on. Turn it off with a current code first.")
     secret = totp.generate_secret()
     user.mfa_secret_encrypted = encrypt_secret(secret)
     user.mfa_enabled = False

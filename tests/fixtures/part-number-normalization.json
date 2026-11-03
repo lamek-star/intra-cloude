@@ -1,0 +1,100 @@
+{
+  "rule": "uppercase; remove whitespace (JavaScript \\s) and the ASCII hyphen-minus; keep everything else",
+  "vectors": [
+    {
+      "input": "04465-0K290",
+      "key": "044650K290",
+      "why": "hyphenated display form"
+    },
+    {
+      "input": "044650K290",
+      "key": "044650K290",
+      "why": "already compact"
+    },
+    {
+      "input": "04465 0K290",
+      "key": "044650K290",
+      "why": "space separated"
+    },
+    {
+      "input": "04465-0k290",
+      "key": "044650K290",
+      "why": "lower case"
+    },
+    {
+      "input": "  04465  0K290  ",
+      "key": "044650K290",
+      "why": "surrounding and repeated spaces"
+    },
+    {
+      "input": "04465\t0K290",
+      "key": "044650K290",
+      "why": "tab"
+    },
+    {
+      "input": "04465\n0K290",
+      "key": "044650K290",
+      "why": "newline"
+    },
+    {
+      "input": "04465\u00a00K290",
+      "key": "044650K290",
+      "why": "non-breaking space"
+    },
+    {
+      "input": "04465\u20030K290",
+      "key": "044650K290",
+      "why": "em space"
+    },
+    {
+      "input": "04465\u30000K290",
+      "key": "044650K290",
+      "why": "ideographic space"
+    },
+    {
+      "input": "04465\u202f0K290",
+      "key": "044650K290",
+      "why": "narrow no-break space"
+    },
+    {
+      "input": "\ufeff04465-0K290",
+      "key": "044650K290",
+      "why": "byte order mark (JavaScript treats it as whitespace)"
+    },
+    {
+      "input": "04465-0K290-",
+      "key": "044650K290",
+      "why": "trailing hyphen"
+    },
+    {
+      "input": "15690-65010",
+      "key": "1569065010",
+      "why": "catalogue example"
+    },
+    {
+      "input": "AB.12/3",
+      "key": "AB.12/3",
+      "why": "dots and slashes are significant"
+    },
+    {
+      "input": "A_B",
+      "key": "A_B",
+      "why": "underscore is significant"
+    },
+    {
+      "input": "AB\u2013123",
+      "key": "AB\u2013123",
+      "why": "en dash is NOT a hyphen and is kept"
+    },
+    {
+      "input": "",
+      "key": "",
+      "why": "empty"
+    },
+    {
+      "input": " - ",
+      "key": "",
+      "why": "only separators"
+    }
+  ]
+}

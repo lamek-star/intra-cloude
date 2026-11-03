@@ -27,7 +27,7 @@ Docker Desktop (Architecture B) and native Windows services
 
 ## Context
 
-Intra-Cloud is, and remains, a Linux-container-oriented product: nine
+IntraForge is, and remains, a Linux-container-oriented product: nine
 Docker Compose services (`postgres-control`, `postgres-tenant`,
 `valkey`, `object-storage`, `backend`, `worker`, `beat`, `frontend`,
 `proxy`, plus an optional `clamav`), tested in CI and by hand
@@ -98,7 +98,7 @@ Linux host running it — not fake either.
 ## Security Considerations
 
 - The WSL2 distribution the installer provisions is dedicated to
-  Intra-Cloud — not a general-purpose developer WSL environment the
+  IntraForge — not a general-purpose developer WSL environment the
   customer already has — so its compromise surface is scoped to
   exactly this product's own container images.
 - Architecture A never requires exposing the Docker daemon socket over

@@ -65,6 +65,27 @@ def get_member_connected_database(user, connected_database_id) -> ConnectedDatab
         raise Http404 from exc
 
 
+def require_connection_manage(
+    actor, connected_database: ConnectedDatabase, *, action: str, request_id: str = ""
+) -> None:
+    """Gates viewing a ConnectedDatabase's own configuration (host, port,
+    database name, username -- never the password, see
+    ConnectedDatabaseSerializer) or listing an project's connections, the
+    same `connection.manage` requirement create/test/delete already use --
+    this is real external-network connection metadata, not merely "does
+    this project have a connection," and previously leaked to any org
+    member via get_member_project/get_member_connected_database with no
+    capability check at all."""
+    _require(
+        actor,
+        "connection.manage",
+        connected_database.organization_id,
+        action=action,
+        resource_id=connected_database.id,
+        request_id=request_id,
+    )
+
+
 def _connection_params(connected_database: ConnectedDatabase, *, password: str) -> ConnectionParams:
     return ConnectionParams(
         host=connected_database.host,

@@ -49,6 +49,34 @@ def _require_read(actor, table: DBTable, *, action: str) -> None:
         raise AnalyticsPermissionDenied("database.read required")
 
 
+def require_read_tenant_database(
+    actor, tenant_database: TenantDatabase, *, action: str, audit_as: Dashboard | None = None
+) -> None:
+    """Gates listing a database's dashboards, or viewing one dashboard's own
+    definition (name + widget configs, i.e. which tables/columns/operations
+    it queries) when `audit_as` names that dashboard — same `database.read`
+    requirement this module's docstring already states for "viewing a
+    dashboard", previously enforced only at render time (render_dashboard/
+    `_require_read`) and not on these definition-reading endpoints
+    themselves."""
+    allowed = has_permission(
+        actor,
+        "database.read",
+        organization_id=tenant_database.organization_id,
+        resource=(RESOURCE_TYPE_TENANT_DATABASE, tenant_database.id),
+    )
+    if not allowed:
+        audit.record(
+            actor=actor,
+            organization_id=tenant_database.organization_id,
+            action=action,
+            resource_type="dashboard" if audit_as else "tenant_database",
+            resource_id=audit_as.id if audit_as else tenant_database.id,
+            result=AuditEvent.Result.DENIED,
+        )
+        raise AnalyticsPermissionDenied("database.read required")
+
+
 def run_analysis(*, actor, table: DBTable, operation: str, params: dict) -> dict:
     _require_read(actor, table, action="analytics.run")
 

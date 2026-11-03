@@ -21,11 +21,16 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- RootNamespace/internal C# namespace kept as "IntraCloud.
+         ControlCenter" during the IntraForge rebrand, deliberately: it's
+         an internal implementation identifier with no user-visible
+         surface (unlike AssemblyName below, which names the actual
+         shipped .exe). Renaming a namespace across every .cs file in
+         this project is a separate, larger mechanical pass with its own
+         build-verification burden — not bundled into this one. -->
     <RootNamespace>IntraCloud.ControlCenter</RootNamespace>
-    <AssemblyName>IntraCloudControlCenter</AssemblyName>
-    <!-- ApplicationIcon intentionally not set yet — a real product icon
-         is a Phase 19 (installer/branding) asset, not part of this
-         phase's walking skeleton. -->
+    <AssemblyName>IntraForgeControlCenter</AssemblyName>
+    <ApplicationIcon>Resources\icon.ico</ApplicationIcon>
 
     <!-- Single source of truth for the product version — the same
          VERSION file the installer (installer/wix) and CI both read,
@@ -46,9 +51,9 @@
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
 
-    <Company>Intra-Cloud</Company>
-    <Product>Intra-Cloud Control Center</Product>
-    <AssemblyTitle>Intra-Cloud Control Center</AssemblyTitle>
+    <Company>IntraForge</Company>
+    <Product>IntraForge Control Center</Product>
+    <AssemblyTitle>IntraForge Control Center</AssemblyTitle>
   </PropertyGroup>
 
   <!-- SDK-style projects glob **/*.cs by default, which would also
@@ -62,6 +67,14 @@
     <EmbeddedResource Remove="tests\**\*" />
     <None Remove="tests\**\*" />
     <Page Remove="tests\**\*.xaml" />
+  </ItemGroup>
+
+  <!-- The brand logo MainWindow.xaml's header displays via a pack URI
+       (Resources/logo.png) — explicit, not relied on via implicit SDK
+       globbing, so it's guaranteed embedded regardless of default-item
+       behavior for this SDK/TargetFramework combination. -->
+  <ItemGroup>
+    <Resource Include="Resources\logo.png" />
   </ItemGroup>
 
   <!-- Phase 18: the Control Center invokes the Phase 17 lifecycle

@@ -20,6 +20,8 @@ from django.http import Http404
 from django.utils import timezone
 from psycopg import sql
 
+from audit import services as audit
+from audit.models import AuditEvent
 from databases.formats import BOOLEAN_FALSE_VALUES, BOOLEAN_TRUE_VALUES, DATE_FORMAT, DATETIME_FORMATS
 from databases.models import DBColumn, DBTable
 from organizations.models import Membership
@@ -95,9 +97,19 @@ def start_import(
     encoding: str,
     delimiter: str,
     column_mapping: list[dict],
+    request_id: str = "",
 ) -> ImportJob:
     org_id = table.organization_id
     if not has_permission(actor, "dataset.import", organization_id=org_id):
+        audit.record(
+            actor=actor,
+            organization_id=org_id,
+            action="dataset.import.start",
+            resource_type="db_table",
+            resource_id=table.id,
+            request_id=request_id,
+            result=AuditEvent.Result.DENIED,
+        )
         raise ImportPermissionDenied("dataset.import required")
 
     validate_column_mapping(table, column_mapping)
@@ -109,6 +121,20 @@ def start_import(
         delimiter=delimiter,
         column_mapping=column_mapping,
         created_by=actor,
+    )
+
+    audit.record(
+        actor=actor,
+        organization_id=org_id,
+        action="dataset.import.start",
+        resource_type="import_job",
+        resource_id=job.id,
+        request_id=request_id,
+        context={
+            "table": table.name,
+            "file_id": str(file.id),
+            "target_columns": [m["target_column"] for m in column_mapping],
+        },
     )
 
     from .tasks import run_import_task
@@ -246,6 +272,32 @@ def run_import(job_id: str) -> None:
     job.status = ImportJob.Status.COMPLETED
     job.completed_at = timezone.now()
     job.save(update_fields=["total_rows", "status", "completed_at"])
+
+    record_import_outcome(job, AuditEvent.Result.SUCCESS)
+
+
+def record_import_outcome(job: ImportJob, result: str) -> None:
+    """
+    Audits how a bulk insert actually landed. A run writes rows directly into a
+    tenant table, so the row counts — not just the fact a job was requested —
+    are the security-relevant record. Called from the worker, where there is no
+    request, so `request_id` is necessarily empty.
+    """
+    audit.record(
+        actor=job.created_by,
+        organization_id=job.table.organization_id,
+        action="dataset.import.finish",
+        resource_type="import_job",
+        resource_id=job.id,
+        result=result,
+        context={
+            "table": job.table.name,
+            "status": job.status,
+            "imported_rows": job.imported_rows,
+            "rejected_rows": job.rejected_rows,
+            "error_message": job.error_message[:500],
+        },
+    )
 
 
 def _checkpoint(job: ImportJob, imported: int, rejected: int, row_number: int, pending_errors: list) -> None:

@@ -1,0 +1,260 @@
+diff --git a/apps/frontend/src/app/globals.css b/apps/frontend/src/app/globals.css
+index e42aa9c..646e40f 100644
+--- a/apps/frontend/src/app/globals.css
++++ b/apps/frontend/src/app/globals.css
+@@ -14,65 +14,54 @@
+    `slate-900`/`blue-600` utilities directly everywhere) is what makes
+    this a *theme*: a future palette change is a one-line edit here, not
+    a repo-wide find/replace. */
++/* IntraForge design tokens -- generated from replica/design/tokens.json.
++ *
++ * Tailwind v4 has no tailwind.config.js: the @theme block below IS the Tailwind mapping. It is a
++ * drop-in replacement for the @theme block in apps/frontend/src/app/globals.css (keep that file's
++ * @import "tailwindcss" and its @layer base rules). Every existing --color-* name is kept, so no
++ * component breaks; new names are additions.
++ *
++ * Changed values (all WCAG AA fixes, see tokens.json _changed) are marked  // AA fix.
++ * Role utilities: bg-surface, text-muted, border-input, ring-focus ... map to the replica role names;
++ * the existing brand-*, surface-*, text-* names map to the same values.
++ */
+ @theme {
+   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+     Helvetica, Arial, sans-serif;
++  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+ 
+-  /* Brand -- primary interactive color (the logo's blue). WCAG AA
+-     verified: brand-600 on white = 5.17:1, white on brand-600 = 5.17:1,
+-     white on brand-700 = 6.70:1. */
++  /* ---- Brand (existing names, unchanged values) ---- */
+   --color-brand-50: #eff6ff;
+   --color-brand-100: #dbeafe;
+   --color-brand-400: #60a5fa;
+-  --color-brand-500: #3b82f6;
++  --color-brand-500: #3b82f6; /* focus ring + decorative only; never behind white text */
+   --color-brand-600: #2563eb;
+   --color-brand-700: #1d4ed8;
+-
+-  /* Navy -- headings, chrome/nav, dark surfaces. 14.69:1 on white. */
+   --color-navy: #172554;
+   --color-navy-800: #1e3a8a;
+ 
+-  /* Teal -- "connect" accent (icons, chart series, tinted badges only;
+-     14B8A6 solid is 2.49:1 against white and MUST NOT carry small text
+-     directly -- pair teal-700 text on teal-50, both verified >5:1). */
+   --color-teal-50: #f0fdfa;
+   --color-teal-500: #14b8a6;
+   --color-teal-600: #0d9488;
+   --color-teal-700: #0f766e;
+-
+-  /* Green -- "growth"/success accent. Same rule as teal: 22C55E solid
+-     is 2.28:1 against white, decorative/icon use only. green-700 on
+-     green-50 = 5.21:1, green-700 on white = 5.48:1 for status text. */
+   --color-green-50: #f0fdf4;
+   --color-green-500: #22c55e;
+   --color-green-600: #16a34a;
+   --color-green-700: #15803d;
+ 
+-  /* Surfaces */
++  /* ---- Surfaces / text / borders (existing names) ---- */
+   --color-surface-canvas: #f8fafc;
+   --color-surface-raised: #ffffff;
+   --color-surface-sunken: #f1f5f9;
+   --color-surface-muted: #f8fafc;
+-
+-  /* Text -- 17.06:1 / 7.24:1 / -- against surface-canvas. text-tertiary
+-     is for labels/captions only, per DESIGN.md's contrast rule, never
+-     body copy. */
+   --color-text-primary: #0f172a;
+-  --color-text-secondary: #475569;
+-  --color-text-tertiary: #94a3b8;
++  --color-text-secondary: #334155;
++  --color-text-tertiary: #64748b; /* AA fix in the doc: was #94A3B8 (2.56:1); code already used this */
+   --color-text-inverse: #ffffff;
+-
+-  /* Borders -- deliberately low-contrast (1.23:1); paired with
+-     --shadow-card for definition, never load-bearing on their own for
+-     an interactive control's boundary (inputs/buttons use a stronger,
+-     explicit border + focus ring instead). */
+-  --color-border-subtle: #e2e8f0;
++  --color-border-subtle: #e2e8f0; /* decorative edges only (cards, rows) -- never a control boundary */
+   --color-border-strong: #cbd5e1;
+ 
+-  /* Status semantics -- unchanged from the pre-rebrand system (already
+-     accessible, already shipped, already tested); warning/danger are
+-     conventionally brand-independent. Info now maps to brand blue
+-     instead of indigo. */
++  /* ---- Status (existing names) ---- */
+   --color-warning: #d97706;
+   --color-warning-tint: #fffbeb;
+   --color-warning-fg: #b45309;
+@@ -81,8 +70,67 @@
+   --color-danger-fg: #b91c1c;
+   --color-info-tint: #eff6ff;
+   --color-info-fg: #1d4ed8;
++
++  /* ---- Replica role names (new; same values as above unless marked) ---- */
++  --color-bg: #f8fafc;
++  --color-surface: #ffffff;
++  --color-border: #e2e8f0;
++  --color-border-input: #8492a6;      /* AA fix: was slate-200 #E2E8F0 (1.23:1) on inputs/selects/textareas */
++  --color-border-checkbox: #8492a6;   /* AA fix: was slate-300 #CBD5E1 (1.48:1) */
++  --color-text: #0f172a;
++  --color-text-body: #334155;
++  --color-text-muted: #64748b;
++  --color-text-placeholder: #64748b;  /* AA fix: was slate-400 #94A3B8 (2.56:1) */
++  --color-accent: #2563eb;
++  --color-accent-hover: #1d4ed8;      /* AA fix: was brand-500 #3B82F6 (white 3.68:1) */
++  --color-on-accent: #ffffff;
++  --color-focus: #3b82f6;             /* one ring colour for every control (was slate-300 on secondary/ghost: 1.42:1) */
++  --color-chrome: #172554;
++  --color-on-chrome: #ffffff;
++  --color-on-chrome-muted: #94a3b8;   /* 5.73:1 on navy -- fine here, NOT on white */
++  --color-nav-active: #2563eb;        /* AA fix: was brand-500 (white 3.68:1) */
++  --color-danger-hover: #b91c1c;      /* AA fix: was red-500 #EF4444 (white 3.76:1) */
++  --color-success: #16a34a;
++  --color-success-tint: #f0fdf4;
++  --color-success-fg: #15803d;
++
++  /* ---- Radius ---- */
++  --radius-sm: 6px;
++  --radius-md: 8px;
++  --radius-lg: 12px;
++  --radius-xl: 16px;
++
++  /* ---- Shadow ---- */
++  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04);
++  --shadow-control: 0 1px 2px rgba(16, 24, 40, 0.06);
++  --shadow-menu: 0 8px 24px -8px rgba(11, 14, 36, 0.18);
++  --shadow-overlay: 0 20px 40px -12px rgba(11, 14, 36, 0.35);
++
++  /* ---- Type (Tailwind's text-* sizes already match 12/14/18/24; these add the two missing) ---- */
++  --text-caption: 11px;
++  --text-caption--line-height: 16px;
++
++  /* ---- Motion ---- */
++  --ease-emphasis: cubic-bezier(0.16, 1, 0.3, 1);
++  --duration-fast: 120ms;
++  --duration-menu: 150ms;
++  --duration-base: 200ms;
+ }
+ 
++/* Component class changes that go with the token fixes (ui.tsx), so the tokens are actually used:
++ *
++ *   Button primary     hover:bg-brand-500      -> hover:bg-accent-hover
++ *   LinkButton primary hover:bg-brand-500      -> hover:bg-accent-hover
++ *   Button danger      hover:bg-red-500        -> hover:bg-danger-hover
++ *   Button secondary   focus-visible:ring-slate-300 -> focus-visible:ring-focus
++ *   Button ghost       focus-visible:ring-slate-300 -> focus-visible:ring-focus
++ *   Input/Textarea/Select  border-slate-200 placeholder:text-slate-400
++ *                      -> border-border-input placeholder:text-text-placeholder
++ *   Checkbox           border-slate-300        -> border-border-checkbox
++ *   ErrorBanner details text-red-600/80        -> text-danger-fg
++ *   AppShell active rail item  bg-brand-500    -> bg-nav-active
++ */
++
+ @layer base {
+   /* Reduced motion: instant state changes instead of removed feedback
+      (DESIGN.md SS16). The one exception, Spinner's rotation, opts back
+diff --git a/apps/frontend/src/components/AppShell.tsx b/apps/frontend/src/components/AppShell.tsx
+index 8eb9058..c25af9f 100644
+--- a/apps/frontend/src/components/AppShell.tsx
++++ b/apps/frontend/src/components/AppShell.tsx
+@@ -159,7 +159,7 @@ function SidebarLink({
+       href={href}
+       aria-current={active ? "page" : undefined}
+       className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors ${
+-        active ? "bg-brand-500 text-white shadow-sm" : "text-slate-300 hover:bg-white/5 hover:text-white"
++        active ? "bg-nav-active text-white shadow-sm" : "text-slate-300 hover:bg-white/5 hover:text-white"
+       }`}
+     >
+       <Icon aria-hidden="true" className="h-4 w-4" strokeWidth={2} />
+diff --git a/apps/frontend/src/components/CommandPalette.tsx b/apps/frontend/src/components/CommandPalette.tsx
+index 7ef6818..b981b05 100644
+--- a/apps/frontend/src/components/CommandPalette.tsx
++++ b/apps/frontend/src/components/CommandPalette.tsx
+@@ -121,9 +121,9 @@ export function CommandPalette({ open, setOpen }: { open: boolean; setOpen: (ope
+             aria-expanded="true"
+             aria-controls="command-palette-results"
+             aria-activedescendant={items[activeIndex] ? `command-palette-item-${items[activeIndex].id}` : undefined}
+-            className="w-full text-sm text-slate-900 outline-none placeholder:text-slate-400"
++            className="w-full text-sm text-slate-900 outline-none placeholder:text-text-placeholder"
+           />
+-          <kbd className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] text-slate-400">
++          <kbd className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-text-muted">
+             Esc
+           </kbd>
+         </div>
+diff --git a/apps/frontend/src/components/ui.tsx b/apps/frontend/src/components/ui.tsx
+index aa39453..9902171 100644
+--- a/apps/frontend/src/components/ui.tsx
++++ b/apps/frontend/src/components/ui.tsx
+@@ -18,11 +18,11 @@ export function Button({
+     "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas";
+   const sizes = { sm: "px-2.5 py-1.5 text-xs", md: "px-3.5 py-2 text-sm" };
+   const variants = {
+-    primary: "bg-brand-600 text-white shadow-sm hover:bg-brand-500 focus-visible:ring-brand-500",
++    primary: "bg-brand-600 text-white shadow-sm hover:bg-accent-hover focus-visible:ring-brand-500",
+     secondary:
+-      "bg-white text-slate-700 border border-slate-200 shadow-sm hover:bg-slate-50 focus-visible:ring-slate-300",
+-    danger: "bg-red-600 text-white shadow-sm hover:bg-red-500 focus-visible:ring-red-500",
+-    ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-slate-300",
++      "bg-white text-slate-700 border border-slate-200 shadow-sm hover:bg-slate-50 focus-visible:ring-focus",
++    danger: "bg-red-600 text-white shadow-sm hover:bg-danger-hover focus-visible:ring-focus",
++    ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-focus",
+   };
+   return (
+     <button className={`${base} ${sizes[size]} ${variants[variant]} ${className}`} {...props} />
+@@ -45,7 +45,7 @@ export function LinkButton({
+   const base = "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors";
+   const sizes = { sm: "px-2.5 py-1.5 text-xs", md: "px-3.5 py-2 text-sm" };
+   const variants = {
+-    primary: "bg-brand-600 text-white shadow-sm hover:bg-brand-500",
++    primary: "bg-brand-600 text-white shadow-sm hover:bg-accent-hover",
+     secondary: "bg-white text-slate-700 border border-slate-200 shadow-sm hover:bg-slate-50",
+     ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+   };
+@@ -59,7 +59,7 @@ export function LinkButton({
+ export function Input({ className = "", ...props }: InputHTMLAttributes<HTMLInputElement>) {
+   return (
+     <input
+-      className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 ${className}`}
++      className={`w-full rounded-lg border border-border-input bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-text-placeholder outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 ${className}`}
+       {...props}
+     />
+   );
+@@ -71,7 +71,7 @@ export function Textarea({
+ }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+   return (
+     <textarea
+-      className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 ${className}`}
++      className={`w-full rounded-lg border border-border-input bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-text-placeholder outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 ${className}`}
+       {...props}
+     />
+   );
+@@ -83,7 +83,7 @@ export function Select({
+ }: React.SelectHTMLAttributes<HTMLSelectElement>) {
+   return (
+     <select
+-      className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 ${className}`}
++      className={`w-full rounded-lg border border-border-input bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 ${className}`}
+       {...props}
+     />
+   );
+@@ -93,7 +93,7 @@ export function Checkbox(props: InputHTMLAttributes<HTMLInputElement>) {
+   return (
+     <input
+       type="checkbox"
+-      className="h-4 w-4 rounded border-slate-300 bg-white text-brand-600 focus:ring-brand-500/30"
++      className="h-4 w-4 rounded border-border-checkbox bg-white text-brand-600 focus:ring-focus"
+       {...props}
+     />
+   );
+@@ -203,7 +203,7 @@ export function ErrorBanner({ message, error }: { message: string; error?: unkno
+     <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+       {message}
+       {details && (
+-        <details className="mt-1.5 text-xs text-red-600/80">
++        <details className="mt-1.5 text-xs text-danger-fg">
+           <summary className="cursor-pointer select-none">View technical details</summary>
+           <dl className="mt-1 space-y-0.5 font-mono">
+             <div>status: {details.status}</div>

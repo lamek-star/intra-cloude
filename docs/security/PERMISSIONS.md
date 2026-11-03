@@ -1,4 +1,85 @@
-# Permissions & Authorization Model — Private Data Cloud
+# Permissions & Authorization Model — IntraForge
+
+## App Platform Phase 5 workflow engine
+
+Applying a workflow transition requires exactly the same `database.write`
+on the instance's `TenantDatabase` resource every other record write
+already requires — a transition is fundamentally a record update, not a
+new resource type or a new baseline capability. A transition additionally
+marked `requires_approval` requires the new `app_instance.workflow.approve`
+capability *in addition to* `database.write`, checked the same
+`access.check`/`ResourceGrant`-scoped way as every other capability in
+this catalog — not a new authorization primitive, and not a stateful
+pending/approved workflow state of its own (see
+`docs/implementation/APP_PLATFORM_PHASE5.md` for that scope decision).
+Authoring a workflow definition (states/transitions) requires
+`app_instance.manage` (not `.schema.manage` — workflow metadata is pure
+control-plane declaration, never physically provisioned as tenant schema,
+so it doesn't need the stronger DDL-adjacent capability
+`app_instance.schema.manage` gates).
+
+## App Platform Phase 2 attachments
+
+Attaching a file requires `database.write` on the record's runtime
+`TenantDatabase` resource (the same authority as editing the record) *and*
+`storage.read` on the file's bucket resource (`storage.bucket`) — two
+independent, already-existing capabilities, not a new grant type. The
+file's organization must equal the app instance's organization; an actor
+who is a member of both organizations does not get to cross that boundary
+just because both checks would otherwise pass (`get_member_file` alone
+only proves *a* shared organization, not the *right* one). Listing requires
+`database.read` and detaching requires `database.write`, the same way
+records do; downloading rechecks `storage.read` again independently, since
+a Sharing grant or the file's quarantine/deletion status can change after
+it was attached.
+
+## App Platform Phase 2 record CRUD
+
+Record list/read requires `database.read`, and create/update/delete require
+`database.write`, on the runtime's `TenantDatabase` resource (`databases.
+tenant_database`) — the exact same resource-scoped capability the generic
+data explorer's row endpoints already enforce, not a new app-specific or
+record-level grant, per the provisioning step's own decision below. A caller
+still needs active organization membership (via the model's `get_owned`
+lookup) but no separate `app_instance.*` capability gates record access —
+`app_instance.read`/`manage` govern the app's own metadata (labels, model/
+field/relationship definitions), a different resource. Since `app_platform`
+views only ever accept a human session, the Environment-scoped-credential
+check the row endpoints also carry is structurally unreachable here and is
+not duplicated.
+
+Runtime reservation/execution requires an active human member with
+`app_instance.schema.manage` on the instance and organization-wide
+`database.create` plus `database.schema.manage`. A schema-only app grant does
+not confer database creation privileges. Workers recheck current authority;
+GET runtime status requires instance schema-management authority. Generated
+records remain under the existing database permissions and Environment checks;
+this step does not introduce app-specific or record-level data grants.
+
+## App Platform Phase 2 preflight
+
+The runtime-plan GET endpoint uses `app_instance.schema.manage` against the
+specific instance, not `app_instance.read`. It returns administrative schema
+planning information only and performs no DDL. Active human membership and
+exact grant revocation are enforced through the same shared checks as
+definition editing. No new capability or service-account access is introduced.
+
+## App Platform Phase 1
+
+Per [ADR-0014](../architecture/adr/0014-app-platform-foundation.md),
+`app_template.read`, `app_template.manage`, `app_template.publish`,
+`app_instance.read`, `app_instance.manage`, `app_instance.schema.manage`
+extend the existing catalog. Organization administrators receive them through
+the catalog's all-organization-capabilities rule; no other organization role
+gets implicit new grants. Re-run `seed_permissions` on upgrade.
+
+Exact `app_template` and `app_instance` ResourceGrants are supported; instance
+children use the instance resource scope. Creation/installation requires an
+organization-wide manage capability. Install also requires template read and
+same-organization project/template ownership. Membership alone grants no read
+or write; lists filter before pagination. Phase 1 denies service-account
+principals until an explicit environment binding contract is designed.
+See [App Platform architecture](../APP_PLATFORM_ARCHITECTURE.md).
 
 Status: DRAFT (Phase 0)
 Last updated: 2026-08-07
@@ -21,6 +102,10 @@ Last updated: 2026-08-07
 
 | Permission | Meaning |
 |---|---|
+| `workspace.manage` | Create Workspaces and Projects within an organization |
+| `org_unit.read` | View an organization's structural units (branches, departments, teams, etc.) and their membership |
+| `org_unit.manage` | Create/rename/reparent/delete organizational units |
+| `org_unit.membership.manage` | Add/remove users from organizational units |
 | `storage.read` | View/download files and folders |
 | `storage.write` | Upload, create folders, rename, move |
 | `storage.delete` | Delete/restore files and folders |
@@ -33,6 +118,7 @@ Last updated: 2026-08-07
 | `database.delete` | Drop a database/schema |
 | `dataset.import` | Run CSV import jobs |
 | `dataset.export` | Export data (CSV, API) |
+| `application.read` | View an organization's registered Applications and their metadata |
 | `application.create` | Register a new Application |
 | `application.credentials.manage` | Issue/rotate/revoke Application credentials |
 | `permissions.manage` | Create/edit Roles, assign Roles, create Resource Grants |
@@ -42,7 +128,23 @@ Last updated: 2026-08-07
 | `export.manage` | Create and download portable (`.icp`) exports of an organization |
 | `connection.manage` | Create/edit ConnectedDatabase configurations |
 | `sharing.manage` | Create/revoke ShareGrants (internal/external) |
+| `inventory.sell` | Record a sale in an installed application (ADR-0017). Implies no other inventory capability. |
+| `inventory.receive` | Receive stock into a warehouse in an installed application (ADR-0017). Implies no other inventory capability. |
+| `inventory.adjust` | Write arbitrary stock movements through the record API of an installed application (ADR-0017); no adjustment workflow exists in v1.0. |
+| `inventory.transfer` | Move stock between warehouses (ADR-0017); the authority is defined, no transfer workflow exists in v1.0. |
 | `system.admin` | Platform-wide administrative operations (Super Administrator only) |
+| `environment.read` | View an Application's Environments and their non-secret configuration/status |
+| `environment.manage` | Create/update/clone/disable/delete Environments, variables, and webhooks |
+| `environment.secrets.manage` | Create/rotate/delete Environment secrets and issue/revoke environment-scoped credentials |
+| `environment.production.manage` | Required *in addition to* `environment.manage`/`environment.secrets.manage` for any mutating operation on a production-tier Environment (`environments.services.can_manage_environment`) — capability-based, not a role-name check; `is_production_tier` is the field that actually gates this, independent of the `environment_type` display string |
+
+**Business-operation authority (ADR-0017).** The four `inventory.*` capabilities authorize one kind of stock-changing
+operation each -- *may sell is not may receive is not may adjust is not may transfer*. They are granted per installed
+application through the sharing system (share resource type `inventory_operations`, levels `sell`, `receive`,
+`adjust`, `transfer`; the resource id is the AppInstance) or organization-wide through a role
+(`organization-administrator` holds all four). They answer only "may this actor perform this operation?": which
+records an operation may touch is still decided by the per-model grants, and whether an inventory transition is valid
+is still decided by the PostgreSQL quantity ledger.
 
 New permissions are added by extending this table plus a migration/fixture;
 they are never invented inline in view code.
@@ -53,11 +155,11 @@ they are never invented inline in view code.
 |---|---|---|
 | Super Administrator | Platform operator | `system.admin` + all permissions, all organizations |
 | Organization Administrator | Org owner/IT admin | All permissions except `system.admin`, scoped to their own organization (see implementation note below) |
-| Storage Administrator | IT/ops for files | `storage.read/write/delete/share/manage` |
-| Database Administrator | Data team lead | `database.*`, `dataset.import/export/analyze`, `connection.manage` |
-| Developer | App/integration builder | `application.create`, `application.credentials.manage`, `database.read`, `database.write`, `dataset.import/export/analyze` |
+| Storage Administrator | IT/ops for files | `workspace.manage`, `storage.read/write/delete/share/manage` |
+| Database Administrator | Data team lead | `workspace.manage`, `database.*`, `dataset.import/export/analyze`, `connection.manage` |
+| Developer | App/integration builder | `workspace.manage`, `application.read`, `application.create`, `application.credentials.manage`, `database.read`, `database.write`, `dataset.import/export/analyze`, `environment.read/manage/secrets.manage` (deliberately *not* `environment.production.manage` — a Developer can manage Development/Staging but any mutating operation on a production-tier Environment needs that permission too) |
 | Editor | General contributor | `storage.read/write`, `database.read/write`, `dataset.import` |
-| Viewer | Read-only staff | `storage.read`, `database.read` |
+| Viewer | Read-only staff | `storage.read`, `database.read`, `environment.read`, `application.read` |
 | Auditor | Compliance/security | `audit.read` only |
 | Guest | Limited external-ish internal collaborator | Permissions granted only via explicit `ResourceGrant`, no role-wide grants |
 | Service Account | Application's runtime identity | No default permissions; entirely `ResourceGrant`/scope-driven |
@@ -128,6 +230,27 @@ Applications authenticate as a `ServiceAccount`. A scope like
 This directly implements the master prompt's requirement: *"A
 `database:read` scope must not automatically authorize reading every
 organizational database."*
+
+**Environment scoping (Phase 22) is a second, independent restriction
+on top of the above, not a replacement for it.** An `ApplicationCredential`
+may optionally carry an `environment` (the `environments` app's
+`Environment`). When set, `environments.services.check_environment_scope`
+— called from every row/file-data view in `databases`/`storage` before
+the `RoleAssignment`/`ResourceGrant` check even matters — requires the
+target `TenantDatabase`/`Bucket`'s own `environment` binding to equal
+the credential's exactly. A resource that isn't bound to *any*
+Environment is unreachable through an Environment-scoped credential
+either, even with a valid `ResourceGrant` naming it directly — explicit
+binding is required, "no conflicting binding" is not enough. This is
+why the Development-vs-Production isolation test deliberately grants
+`database.read`/`storage.read` on *both* environments' resources to the
+same service account before testing: proving the Environment check
+itself blocks cross-environment access, not merely an absent grant a
+future misconfiguration could just as easily create. A credential with
+no `environment` set (every credential issued before this phase
+existed, and any current Application-level credential not created
+through an Environment's own "New credential" action) is entirely
+unaffected — this restriction is opt-in.
 
 ## 6. Enforcement Points
 

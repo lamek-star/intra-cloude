@@ -19,6 +19,7 @@ from .services import (
     delete_dashboard,
     get_member_dashboard,
     render_dashboard,
+    require_read_tenant_database,
     run_analysis,
     run_profile,
     update_dashboard,
@@ -64,6 +65,10 @@ class DashboardListCreateView(APIView):
 
     def get(self, request, tenant_database_id):
         tenant_db = get_member_tenant_database(request.user, tenant_database_id)
+        try:
+            require_read_tenant_database(request.user, tenant_db, action="analytics.dashboard.list")
+        except AnalyticsPermissionDenied:
+            return Response(status=status.HTTP_403_FORBIDDEN)
         dashboards = Dashboard.objects.filter(tenant_database=tenant_db)
         return Response(DashboardSerializer(dashboards, many=True).data)
 
@@ -91,6 +96,15 @@ class DashboardDetailView(APIView):
 
     def get(self, request, dashboard_id):
         dashboard = get_member_dashboard(request.user, dashboard_id)
+        try:
+            require_read_tenant_database(
+                request.user,
+                dashboard.tenant_database,
+                action="analytics.dashboard.get",
+                audit_as=dashboard,
+            )
+        except AnalyticsPermissionDenied:
+            return Response(status=status.HTTP_403_FORBIDDEN)
         return Response(DashboardSerializer(dashboard).data)
 
     def patch(self, request, dashboard_id):

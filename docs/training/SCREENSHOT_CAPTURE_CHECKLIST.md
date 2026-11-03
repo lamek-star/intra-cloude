@@ -1,0 +1,994 @@
+# Screenshot capture checklist (Level 1)
+
+One entry for every page and every dialog found in the code. Capture in a **test organization with sample data, never real customer data**. Spare Parts pages are under `https://localhost:8443/apps/spare-parts/...` after Apps > Open. Suggested resolution: a normal desktop window (about 1400 x 900). File names are suggestions.
+
+## IntraForge
+
+- [ ] **IF-001 Landing page**
+  - How to get there: Open https://localhost:8443/ (route `/`)
+  - Must be visible: the page title, the menu, buttons Get Started, View Demo, Go home
+  - Dialog open: none (page view)
+  - File name: `IF-001-Landing-page.png`
+
+- [ ] **IF-002 Sign in**
+  - How to get there: Open IntraForge; you are sent here when not signed in (route `/login`)
+  - Must be visible: the page title, the menu, buttons Verify / Sign in
+  - Dialog open: none (page view)
+  - File name: `IF-002-Sign-in.png`
+
+- [ ] **IF-003 Create account**
+  - How to get there: Sign-in page > create an account (route `/register`)
+  - Must be visible: the page title, the menu, buttons Create account
+  - Dialog open: none (page view)
+  - File name: `IF-003-Create-account.png`
+
+- [ ] **IF-004 Welcome**
+  - How to get there: Shown after registering (route `/welcome`)
+  - Must be visible: the page title, the menu, buttons Continue, Create, Hide / How?, Organizations
+  - Dialog open: none (page view)
+  - File name: `IF-004-Welcome.png`
+
+- [ ] **IF-005 Dashboard**
+  - How to get there: Sidebar > Dashboard (also shown right after sign-in) (route `/dashboard`)
+  - Must be visible: the page title, the menu
+  - Dialog open: none (page view)
+  - File name: `IF-005-Dashboard.png`
+
+- [ ] **IF-006 Apps**
+  - How to get there: Sidebar > Apps (route `/apps`)
+  - Must be visible: the page title, the menu, buttons Open, Settings, Install, Cancel
+  - Dialog open: none (page view)
+  - File name: `IF-006-Apps.png`
+- [ ] **IF-007 Apps -- dialog "Install …" OPEN**
+  - How to get there: Sidebar > Apps, then open "Install …"
+  - Must be visible: the whole dialog with its fields and buttons (Organization, Shop name, Currency)
+  - Dialog open: **Install …** (fill example values, do not save if it would change real data)
+  - File name: `IF-007-Apps-Install-dialog.png`
+
+- [ ] **IF-008 Open application**
+  - How to get there: Apps > Open (route `/service-apps/[appId]/open`)
+  - Must be visible: the page title, the menu, buttons Back to Apps
+  - Dialog open: none (page view)
+  - File name: `IF-008-Open-application.png`
+
+- [ ] **IF-009 Application settings**
+  - How to get there: Apps > Settings (route `/service-apps/[appId]/settings`)
+  - Must be visible: the page title, the menu, buttons Save, Disable / Enable, Remove..., Back up, then delete everything / Remove, keep data, Cancel, Reinstate
+  - Dialog open: none (page view)
+  - File name: `IF-009-Application-settings.png`
+
+- [ ] **IF-010 Organizations**
+  - How to get there: Sidebar > Organizations (route `/orgs`)
+  - Must be visible: the page title, the menu, buttons New organization, Cancel, Create
+  - Dialog open: none (page view)
+  - File name: `IF-010-Organizations.png`
+- [ ] **IF-011 Organizations -- dialog "New organization" OPEN**
+  - How to get there: Sidebar > Organizations, then open "New organization"
+  - Must be visible: the whole dialog with its fields and buttons (Name)
+  - Dialog open: **New organization** (fill example values, do not save if it would change real data)
+  - File name: `IF-011-Organizations-New-organization-dialog.png`
+
+- [ ] **IF-012 Organization**
+  - How to get there: Organizations > click an organization (route `/orgs/[orgId]`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Apps, Developer, Teams, Units, Audit log, New workspace, Add member, Cancel
+  - Dialog open: none (page view)
+  - File name: `IF-012-Organization.png`
+- [ ] **IF-013 Organization -- dialog "New workspace" OPEN**
+  - How to get there: Organizations > click an organization, then open "New workspace"
+  - Must be visible: the whole dialog with its fields and buttons (Name, Email of an existing user)
+  - Dialog open: **New workspace** (fill example values, do not save if it would change real data)
+  - File name: `IF-013-Organization-New-workspace-dialog.png`
+- [ ] **IF-014 Organization -- dialog "Add member" OPEN**
+  - How to get there: Organizations > click an organization, then open "Add member"
+  - Must be visible: the whole dialog with its fields and buttons (Name, Email of an existing user)
+  - Dialog open: **Add member** (fill example values, do not save if it would change real data)
+  - File name: `IF-014-Organization-Add-member-dialog.png`
+
+- [ ] **IF-015 Teams**
+  - How to get there: Organization > Teams (route `/orgs/[orgId]/teams`)
+  - Must be visible: the page title, the menu, buttons New team, Add member, Remove, Cancel, Create, Add
+  - Dialog open: none (page view)
+  - File name: `IF-015-Teams.png`
+- [ ] **IF-016 Teams -- dialog "New team" OPEN**
+  - How to get there: Organization > Teams, then open "New team"
+  - Must be visible: the whole dialog with its fields and buttons (Name, Member)
+  - Dialog open: **New team** (fill example values, do not save if it would change real data)
+  - File name: `IF-016-Teams-New-team-dialog.png`
+- [ ] **IF-017 Teams -- dialog "Add member to …" OPEN**
+  - How to get there: Organization > Teams, then open "Add member to …"
+  - Must be visible: the whole dialog with its fields and buttons (Name, Member)
+  - Dialog open: **Add member to …** (fill example values, do not save if it would change real data)
+  - File name: `IF-017-Teams-Add-member-to-dialog.png`
+
+- [ ] **IF-018 Organizational units**
+  - How to get there: Organization > Units (route `/orgs/[orgId]/units`)
+  - Must be visible: the page title, the menu, buttons Add sub-unit, Members, Edit, Delete, New unit, Cancel, Create, Save
+  - Dialog open: none (page view)
+  - File name: `IF-018-Organizational-units.png`
+- [ ] **IF-019 Organizational units -- dialog "Edit …" OPEN**
+  - How to get there: Organization > Units, then open "Edit …"
+  - Must be visible: the whole dialog with its fields and buttons (Name, Type, Name, Type, Parent, Add member)
+  - Dialog open: **Edit …** (fill example values, do not save if it would change real data)
+  - File name: `IF-019-Organizational-units-Edit-dialog.png`
+- [ ] **IF-020 Organizational units -- dialog "Members of …" OPEN**
+  - How to get there: Organization > Units, then open "Members of …"
+  - Must be visible: the whole dialog with its fields and buttons (Name, Type, Name, Type, Parent, Add member)
+  - Dialog open: **Members of …** (fill example values, do not save if it would change real data)
+  - File name: `IF-020-Organizational-units-Members-of-dialog.png`
+
+- [ ] **IF-021 Audit log (organization)**
+  - How to get there: Organization > Audit log (route `/orgs/[orgId]/audit`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Apply, Clear, Previous, Next
+  - Dialog open: none (page view)
+  - File name: `IF-021-Audit-log-organization.png`
+
+- [ ] **IF-022 Business app templates**
+  - How to get there: Organization > templates (route `/orgs/[orgId]/app-templates`)
+  - Must be visible: the page title, the menu, buttons New template, Cancel, Create
+  - Dialog open: none (page view)
+  - File name: `IF-022-Business-app-templates.png`
+- [ ] **IF-023 Business app templates -- dialog "New app template" OPEN**
+  - How to get there: Organization > templates, then open "New app template"
+  - Must be visible: the whole dialog with its fields and buttons (Name, Description)
+  - Dialog open: **New app template** (fill example values, do not save if it would change real data)
+  - File name: `IF-023-Business-app-templates-New-app-template-dialog.png`
+
+- [ ] **IF-024 Workspace**
+  - How to get there: Organization > a workspace (route `/orgs/[orgId]/workspaces/[workspaceId]`)
+  - Must be visible: the page title, the menu, buttons New project, Cancel, Create
+  - Dialog open: none (page view)
+  - File name: `IF-024-Workspace.png`
+- [ ] **IF-025 Workspace -- dialog "New project" OPEN**
+  - How to get there: Organization > a workspace, then open "New project"
+  - Must be visible: the whole dialog with its fields and buttons (Name)
+  - Dialog open: **New project** (fill example values, do not save if it would change real data)
+  - File name: `IF-025-Workspace-New-project-dialog.png`
+
+- [ ] **IF-026 Project**
+  - How to get there: Workspace > a project (route `/projects/[projectId]`)
+  - Must be visible: the page title, the menu, buttons Applications, New bucket, New database, New connection, Install app, Cancel, Install, Create
+  - Dialog open: none (page view)
+  - File name: `IF-026-Project.png`
+- [ ] **IF-027 Project -- dialog "Install app" OPEN**
+  - How to get there: Workspace > a project, then open "Install app"
+  - Must be visible: the whole dialog with its fields and buttons (Template, Version, Name this installed app, Name, Name, Name, Host, Port)
+  - Dialog open: **Install app** (fill example values, do not save if it would change real data)
+  - File name: `IF-027-Project-Install-app-dialog.png`
+- [ ] **IF-028 Project -- dialog "New bucket" OPEN**
+  - How to get there: Workspace > a project, then open "New bucket"
+  - Must be visible: the whole dialog with its fields and buttons (Template, Version, Name this installed app, Name, Name, Name, Host, Port)
+  - Dialog open: **New bucket** (fill example values, do not save if it would change real data)
+  - File name: `IF-028-Project-New-bucket-dialog.png`
+- [ ] **IF-029 Project -- dialog "New database" OPEN**
+  - How to get there: Workspace > a project, then open "New database"
+  - Must be visible: the whole dialog with its fields and buttons (Template, Version, Name this installed app, Name, Name, Name, Host, Port)
+  - Dialog open: **New database** (fill example values, do not save if it would change real data)
+  - File name: `IF-029-Project-New-database-dialog.png`
+- [ ] **IF-030 Project -- dialog "Connect a database" OPEN**
+  - How to get there: Workspace > a project, then open "Connect a database"
+  - Must be visible: the whole dialog with its fields and buttons (Template, Version, Name this installed app, Name, Name, Name, Host, Port)
+  - Dialog open: **Connect a database** (fill example values, do not save if it would change real data)
+  - File name: `IF-030-Project-Connect-a-database-dialog.png`
+
+- [ ] **IF-031 Applications (built-in business apps)**
+  - How to get there: Project > Applications (route `/projects/[projectId]/apps`)
+  - Must be visible: the page title, the menu, buttons Open, Finishing… / Finish setup, Install another copy, Install, Close, Open application, Cancel, Try again / Install
+  - Dialog open: none (page view)
+  - File name: `IF-031-Applications-built-in-business-apps.png`
+- [ ] **IF-032 Applications (built-in business apps) -- dialog "Install …" OPEN**
+  - How to get there: Project > Applications, then open "Install …"
+  - Must be visible: the whole dialog with its fields and buttons (Application name, I understand this is a … that has not completed production qualification, and I will keep my existing records alongside it.)
+  - Dialog open: **Install …** (fill example values, do not save if it would change real data)
+  - File name: `IF-032-Applications-built-in-business-apps-Install-dialog.png`
+
+- [ ] **IF-033 Bucket (files)**
+  - How to get there: Project > a bucket (route `/buckets/[bucketId]`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Upload files, Delete, Share, Revoke, Cancel
+  - Dialog open: none (page view)
+  - File name: `IF-033-Bucket-files.png`
+- [ ] **IF-034 Bucket (files) -- dialog "Share" OPEN**
+  - How to get there: Project > a bucket, then open "Share"
+  - Must be visible: the whole dialog with its fields and buttons (Share with, Member, Team, Access level)
+  - Dialog open: **Share** (fill example values, do not save if it would change real data)
+  - File name: `IF-034-Bucket-files-Share-dialog.png`
+
+- [ ] **IF-035 Database**
+  - How to get there: Project > a database (route `/tenant-databases/[dbId]`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Drop database, New table, New dashboard, Cancel, Create, Share, Revoke
+  - Dialog open: none (page view)
+  - File name: `IF-035-Database.png`
+- [ ] **IF-036 Database -- dialog "New table" OPEN**
+  - How to get there: Project > a database, then open "New table"
+  - Must be visible: the whole dialog with its fields and buttons (Name, Name)
+  - Dialog open: **New table** (fill example values, do not save if it would change real data)
+  - File name: `IF-036-Database-New-table-dialog.png`
+- [ ] **IF-037 Database -- dialog "New dashboard" OPEN**
+  - How to get there: Project > a database, then open "New dashboard"
+  - Must be visible: the whole dialog with its fields and buttons (Name, Name)
+  - Dialog open: **New dashboard** (fill example values, do not save if it would change real data)
+  - File name: `IF-037-Database-New-dashboard-dialog.png`
+- [ ] **IF-038 Database -- dialog "Share" OPEN**
+  - How to get there: Project > a database, then open "Share"
+  - Must be visible: the whole dialog with its fields and buttons (Share with, Member, Team, Access level)
+  - Dialog open: **Share** (fill example values, do not save if it would change real data)
+  - File name: `IF-038-Database-Share-dialog.png`
+
+- [ ] **IF-039 Table**
+  - How to get there: Database > a table (route `/tables/[tableId]`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Add column, Add row, Edit, Delete, Previous, Next, Cancel, Save / Add row
+  - Dialog open: none (page view)
+  - File name: `IF-039-Table.png`
+- [ ] **IF-040 Table -- dialog "Add column" OPEN**
+  - How to get there: Database > a table, then open "Add column"
+  - Must be visible: the whole dialog with its fields and buttons (Name, Type, Max length, Precision, Scale, Nullable, Unique, …)
+  - Dialog open: **Add column** (fill example values, do not save if it would change real data)
+  - File name: `IF-040-Table-Add-column-dialog.png`
+
+- [ ] **IF-041 CSV import**
+  - How to get there: Table > Import (route `/tables/[tableId]/import`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Create bucket, Use this file, Back, Starting… / Start import, Import another file
+  - Dialog open: none (page view)
+  - File name: `IF-041-CSV-import.png`
+
+- [ ] **IF-042 Table analytics**
+  - How to get there: Table > Analytics (route `/tables/[tableId]/analytics`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Run
+  - Dialog open: none (page view)
+  - File name: `IF-042-Table-analytics.png`
+
+- [ ] **IF-043 Dashboard (analytics)**
+  - How to get there: Database > a dashboard (route `/dashboards/[dashboardId]`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Delete, Refresh, Add widget, Add one, Remove widget, Cancel
+  - Dialog open: none (page view)
+  - File name: `IF-043-Dashboard-analytics.png`
+- [ ] **IF-044 Dashboard (analytics) -- dialog "Add widget" OPEN**
+  - How to get there: Database > a dashboard, then open "Add widget"
+  - Must be visible: the whole dialog with its fields and buttons (Table, Operation, …, Title (optional), Display as)
+  - Dialog open: **Add widget** (fill example values, do not save if it would change real data)
+  - File name: `IF-044-Dashboard-analytics-Add-widget-dialog.png`
+
+- [ ] **IF-045 Connected database**
+  - How to get there: Project > a connected database (route `/connected-databases/[connectedDatabaseId]`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Remove, Previous, Next, Share, Revoke, Cancel
+  - Dialog open: none (page view)
+  - File name: `IF-045-Connected-database.png`
+- [ ] **IF-046 Connected database -- dialog "Share" OPEN**
+  - How to get there: Project > a connected database, then open "Share"
+  - Must be visible: the whole dialog with its fields and buttons (Share with, Member, Team, Access level)
+  - Dialog open: **Share** (fill example values, do not save if it would change real data)
+  - File name: `IF-046-Connected-database-Share-dialog.png`
+
+- [ ] **IF-047 Template builder**
+  - How to get there: Organization > templates > a template (route `/app-templates/[templateId]`)
+  - Must be visible: the page title, the menu, buttons Edit details, Publish version, Rename, Delete, Edit, Add model, Add field, Add unique constraint
+  - Dialog open: none (page view)
+  - File name: `IF-047-Template-builder.png`
+- [ ] **IF-048 Template builder -- dialog "Rename" OPEN**
+  - How to get there: Organization > templates > a template, then open "Rename"
+  - Must be visible: the whole dialog with its fields and buttons (Required, New model name, Key, New field name, Key, Type, Default, Required)
+  - Dialog open: **Rename** (fill example values, do not save if it would change real data)
+  - File name: `IF-048-Template-builder-Rename-dialog.png`
+- [ ] **IF-049 Template builder -- dialog "Edit field" OPEN**
+  - How to get there: Organization > templates > a template, then open "Edit field"
+  - Must be visible: the whole dialog with its fields and buttons (Required, New model name, Key, New field name, Key, Type, Default, Required)
+  - Dialog open: **Edit field** (fill example values, do not save if it would change real data)
+  - File name: `IF-049-Template-builder-Edit-field-dialog.png`
+- [ ] **IF-050 Template builder -- dialog "Edit template details" OPEN**
+  - How to get there: Organization > templates > a template, then open "Edit template details"
+  - Must be visible: the whole dialog with its fields and buttons (Required, New model name, Key, New field name, Key, Type, Default, Required)
+  - Dialog open: **Edit template details** (fill example values, do not save if it would change real data)
+  - File name: `IF-050-Template-builder-Edit-template-details-dialog.png`
+
+- [ ] **IF-051 Template version**
+  - How to get there: Template > a version (route `/app-template-versions/[versionId]`)
+  - Must be visible: the page title, the menu
+  - Dialog open: none (page view)
+  - File name: `IF-051-Template-version.png`
+
+- [ ] **IF-052 Installed business app (definition)**
+  - How to get there: Project > Applications > an instance (route `/app-instances/[instanceId]`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Edit, Starting… / Provision runtime, Retrying… / Retry, Cancel, Save, Add model, Add relationship, Comparing… / Preview
+  - Dialog open: none (page view)
+  - File name: `IF-052-Installed-business-app-definition.png`
+- [ ] **IF-053 Installed business app (definition) -- dialog "Edit app" OPEN**
+  - How to get there: Project > Applications > an instance, then open "Edit app"
+  - Must be visible: the whole dialog with its fields and buttons (Name, Archived, New model name, Key, New relationship name, Key, From, References)
+  - Dialog open: **Edit app** (fill example values, do not save if it would change real data)
+  - File name: `IF-053-Installed-business-app-definition-Edit-app-dialog.png`
+- [ ] **IF-054 Installed business app (definition) -- dialog "Share" OPEN**
+  - How to get there: Project > Applications > an instance, then open "Share"
+  - Must be visible: the whole dialog with its fields and buttons (Share with, Member, Team, Access level)
+  - Dialog open: **Share** (fill example values, do not save if it would change real data)
+  - File name: `IF-054-Installed-business-app-definition-Share-dialog.png`
+
+- [ ] **IF-055 Model records**
+  - How to get there: Installed app > a model (route `/app-models/[modelId]`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Add record, Edit, Delete, Previous, Next, Cancel, Save / Add record, Add field
+  - Dialog open: none (page view)
+  - File name: `IF-055-Model-records.png`
+- [ ] **IF-056 Model records -- dialog "Share" OPEN**
+  - How to get there: Installed app > a model, then open "Share"
+  - Must be visible: the whole dialog with its fields and buttons (Share with, Member, Team, Access level)
+  - Dialog open: **Share** (fill example values, do not save if it would change real data)
+  - File name: `IF-056-Model-records-Share-dialog.png`
+
+- [ ] **IF-057 Record**
+  - How to get there: Model > a record (route `/app-models/[modelId]/records/[recordId]`)
+  - Must be visible: the page title, the menu, buttons Save, Attach file, Detach, Cancel, Attach
+  - Dialog open: none (page view)
+  - File name: `IF-057-Record.png`
+- [ ] **IF-058 Record -- dialog "Attach a file" OPEN**
+  - How to get there: Model > a record, then open "Attach a file"
+  - Must be visible: the whole dialog with its fields and buttons (…, …, (read-only), Bucket, File)
+  - Dialog open: **Attach a file** (fill example values, do not save if it would change real data)
+  - File name: `IF-058-Record-Attach-a-file-dialog.png`
+
+- [ ] **IF-059 Built-in Spare Parts business app: overview**
+  - How to get there: Project > Applications > Open (route `/apps/[instanceId]`)
+  - Must be visible: the page title, the menu, buttons Go to Applications, Search
+  - Dialog open: none (page view)
+  - File name: `IF-059-Built-in-Spare-Parts-business-app-overview.png`
+
+- [ ] **IF-060 Built-in app: Products**
+  - How to get there: Built-in app > Catalogue > Products (route `/apps/[instanceId]/products`)
+  - Must be visible: the page title, the menu, buttons Go to Applications, Search, Previous, Next, Add, Cancel, Adding… / Add
+  - Dialog open: none (page view)
+  - File name: `IF-060-Built-in-app-Products.png`
+
+- [ ] **IF-061 Built-in app: Product**
+  - How to get there: Products > a product (route `/apps/[instanceId]/products/[partId]`)
+  - Must be visible: the page title, the menu, tabs Overview, Part numbers, Stock, Movements, Files, the main table with its columns, buttons Add part number, Go to Applications, Search, Receive stock, Cancel, Adding… / Add, Previous, Next
+  - Dialog open: none (page view)
+  - File name: `IF-061-Built-in-app-Product.png`
+- [ ] **IF-062 Built-in app: Product -- tab Part numbers**
+  - How to get there: as above, click the *Part numbers* tab
+  - Must be visible: the *Part numbers* tab content
+  - Dialog open: none
+  - File name: `IF-062-Built-in-app-Product-Part-numbers.png`
+- [ ] **IF-063 Built-in app: Product -- tab Stock**
+  - How to get there: as above, click the *Stock* tab
+  - Must be visible: the *Stock* tab content
+  - Dialog open: none
+  - File name: `IF-063-Built-in-app-Product-Stock.png`
+- [ ] **IF-064 Built-in app: Product -- tab Movements**
+  - How to get there: as above, click the *Movements* tab
+  - Must be visible: the *Movements* tab content
+  - Dialog open: none
+  - File name: `IF-064-Built-in-app-Product-Movements.png`
+- [ ] **IF-065 Built-in app: Product -- tab Files**
+  - How to get there: as above, click the *Files* tab
+  - Must be visible: the *Files* tab content
+  - Dialog open: none
+  - File name: `IF-065-Built-in-app-Product-Files.png`
+- [ ] **IF-066 Built-in app: Product -- dialog "Add part number" OPEN**
+  - How to get there: Products > a product, then open "Add part number"
+  - Must be visible: the whole dialog with its fields and buttons (Search part numbers, Part number *, Source)
+  - Dialog open: **Add part number** (fill example values, do not save if it would change real data)
+  - File name: `IF-066-Built-in-app-Product-Add-part-number-dialog.png`
+
+- [ ] **IF-067 Built-in app: Part numbers**
+  - How to get there: Built-in app > Part numbers (route `/apps/[instanceId]/part-numbers`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Add part number, Search, Cancel, Adding… / Add, Go to Applications, Change, Previous, Next
+  - Dialog open: none (page view)
+  - File name: `IF-067-Built-in-app-Part-numbers.png`
+- [ ] **IF-068 Built-in app: Part numbers -- dialog "Add part number" OPEN**
+  - How to get there: Built-in app > Part numbers, then open "Add part number"
+  - Must be visible: the whole dialog with its fields and buttons (Search part numbers, Part number *, Source)
+  - Dialog open: **Add part number** (fill example values, do not save if it would change real data)
+  - File name: `IF-068-Built-in-app-Part-numbers-Add-part-number-dialog.png`
+
+- [ ] **IF-069 Built-in app: Stock**
+  - How to get there: Built-in app > Inventory > Stock (route `/apps/[instanceId]/inventory`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Receive stock, Go to Applications, Search, Previous, Next, Add, Cancel, Adding… / Add
+  - Dialog open: none (page view)
+  - File name: `IF-069-Built-in-app-Stock.png`
+
+- [ ] **IF-070 Built-in app: Warehouses**
+  - How to get there: Built-in app > Warehouses (route `/apps/[instanceId]/warehouses`)
+  - Must be visible: the page title, the menu, buttons Go to Applications, Search, Previous, Next, Add, Cancel, Adding… / Add
+  - Dialog open: none (page view)
+  - File name: `IF-070-Built-in-app-Warehouses.png`
+
+- [ ] **IF-071 Built-in app: Receive stock**
+  - How to get there: Built-in app > Receive stock (route `/apps/[instanceId]/receive`)
+  - Must be visible: the page title, the menu, buttons Receive more, View stock, Receiving… / Confirm receive, Go to Applications, Search, Change
+  - Dialog open: none (page view)
+  - File name: `IF-071-Built-in-app-Receive-stock.png`
+
+- [ ] **IF-072 Built-in app: Suppliers**
+  - How to get there: Built-in app > Suppliers (route `/apps/[instanceId]/suppliers`)
+  - Must be visible: the page title, the menu, buttons Go to Applications, Search, Previous, Next, Add, Cancel, Adding… / Add
+  - Dialog open: none (page view)
+  - File name: `IF-072-Built-in-app-Suppliers.png`
+
+- [ ] **IF-073 Built-in app: Customers**
+  - How to get there: Built-in app > Customers (route `/apps/[instanceId]/customers`)
+  - Must be visible: the page title, the menu, buttons Go to Applications, Search, Previous, Next, Add, Cancel, Adding… / Add
+  - Dialog open: none (page view)
+  - File name: `IF-073-Built-in-app-Customers.png`
+
+- [ ] **IF-074 Built-in app: Sales**
+  - How to get there: Built-in app > Sales (route `/apps/[instanceId]/sales`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons New sale, Go to Applications, Search, Previous, Next, Add, Cancel, Adding… / Add
+  - Dialog open: none (page view)
+  - File name: `IF-074-Built-in-app-Sales.png`
+
+- [ ] **IF-075 Built-in app: New sale**
+  - How to get there: Built-in app > New sale (route `/apps/[instanceId]/sales/new`)
+  - Must be visible: the page title, the menu, buttons Open sales document, New sale, Add another item, Recording sale… / Confirm sale, Remove item, Go to Applications, Search, Change
+  - Dialog open: none (page view)
+  - File name: `IF-075-Built-in-app-New-sale.png`
+
+- [ ] **IF-076 Built-in app: Sale**
+  - How to get there: Sales > a sale (route `/apps/[instanceId]/sales/[orderId]`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Print invoice, Go to Applications, Search
+  - Dialog open: none (page view)
+  - File name: `IF-076-Built-in-app-Sale.png`
+
+- [ ] **IF-077 Application (API client)**
+  - How to get there: Organization > Developer > Applications > one (route `/applications/[applicationId]`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons New environment, New credential, Rotate, Revoke, Grant permission, Cancel, Grant, Create
+  - Dialog open: none (page view)
+  - File name: `IF-077-Application-API-client.png`
+- [ ] **IF-078 Application (API client) -- dialog "Grant permission" OPEN**
+  - How to get there: Organization > Developer > Applications > one, then open "Grant permission"
+  - Must be visible: the whole dialog with its fields and buttons (Permission code, Resource type, Resource ID, Name, Type)
+  - Dialog open: **Grant permission** (fill example values, do not save if it would change real data)
+  - File name: `IF-078-Application-API-client-Grant-permission-dialog.png`
+- [ ] **IF-079 Application (API client) -- dialog "New environment" OPEN**
+  - How to get there: Organization > Developer > Applications > one, then open "New environment"
+  - Must be visible: the whole dialog with its fields and buttons (Permission code, Resource type, Resource ID, Name, Type)
+  - Dialog open: **New environment** (fill example values, do not save if it would change real data)
+  - File name: `IF-079-Application-API-client-New-environment-dialog.png`
+
+- [ ] **IF-080 Environment**
+  - How to get there: Application > an environment (route `/environments/[environmentId]`)
+  - Must be visible: the page title, the menu, tabs Overview, Configuration, Secrets, API Keys, Database, Storage, Auth, Webhooks, Logs, Activity, Settings, the main table with its columns, buttons Remove, Save, Saved / Save, New secret, Rotate, Delete, Cancel, Create
+  - Dialog open: none (page view)
+  - File name: `IF-080-Environment.png`
+- [ ] **IF-081 Environment -- tab Configuration**
+  - How to get there: as above, click the *Configuration* tab
+  - Must be visible: the *Configuration* tab content
+  - Dialog open: none
+  - File name: `IF-081-Environment-Configuration.png`
+- [ ] **IF-082 Environment -- tab Secrets**
+  - How to get there: as above, click the *Secrets* tab
+  - Must be visible: the *Secrets* tab content
+  - Dialog open: none
+  - File name: `IF-082-Environment-Secrets.png`
+- [ ] **IF-083 Environment -- tab API Keys**
+  - How to get there: as above, click the *API Keys* tab
+  - Must be visible: the *API Keys* tab content
+  - Dialog open: none
+  - File name: `IF-083-Environment-API-Keys.png`
+- [ ] **IF-084 Environment -- tab Database**
+  - How to get there: as above, click the *Database* tab
+  - Must be visible: the *Database* tab content
+  - Dialog open: none
+  - File name: `IF-084-Environment-Database.png`
+- [ ] **IF-085 Environment -- tab Storage**
+  - How to get there: as above, click the *Storage* tab
+  - Must be visible: the *Storage* tab content
+  - Dialog open: none
+  - File name: `IF-085-Environment-Storage.png`
+- [ ] **IF-086 Environment -- tab Auth**
+  - How to get there: as above, click the *Auth* tab
+  - Must be visible: the *Auth* tab content
+  - Dialog open: none
+  - File name: `IF-086-Environment-Auth.png`
+- [ ] **IF-087 Environment -- tab Webhooks**
+  - How to get there: as above, click the *Webhooks* tab
+  - Must be visible: the *Webhooks* tab content
+  - Dialog open: none
+  - File name: `IF-087-Environment-Webhooks.png`
+- [ ] **IF-088 Environment -- tab Logs**
+  - How to get there: as above, click the *Logs* tab
+  - Must be visible: the *Logs* tab content
+  - Dialog open: none
+  - File name: `IF-088-Environment-Logs.png`
+- [ ] **IF-089 Environment -- tab Activity**
+  - How to get there: as above, click the *Activity* tab
+  - Must be visible: the *Activity* tab content
+  - Dialog open: none
+  - File name: `IF-089-Environment-Activity.png`
+- [ ] **IF-090 Environment -- tab Settings**
+  - How to get there: as above, click the *Settings* tab
+  - Must be visible: the *Settings* tab content
+  - Dialog open: none
+  - File name: `IF-090-Environment-Settings.png`
+- [ ] **IF-091 Environment -- dialog "Delete "…"?" OPEN**
+  - How to get there: Application > an environment, then open "Delete "…"?"
+  - Must be visible: the whole dialog with its fields and buttons (Key, Value, Base URL this environment's application should call, Key, Value, Tenant database, Bucket, Allowed origins (comma-separated))
+  - Dialog open: **Delete "…"?** (fill example values, do not save if it would change real data)
+  - File name: `IF-091-Environment-Delete-dialog.png`
+
+- [ ] **IF-092 Developer portal**
+  - How to get there: Organization > Developer (route `/orgs/[orgId]/developer`)
+  - Must be visible: the page title, the menu, buttons Manage applications, New application
+  - Dialog open: none (page view)
+  - File name: `IF-092-Developer-portal.png`
+
+- [ ] **IF-093 Developer: Applications**
+  - How to get there: Developer > Applications (route `/orgs/[orgId]/developer/applications`)
+  - Must be visible: the page title, the menu, buttons New application, Connect application, Cancel, Create
+  - Dialog open: none (page view)
+  - File name: `IF-093-Developer-Applications.png`
+- [ ] **IF-094 Developer: Applications -- dialog "New application" OPEN**
+  - How to get there: Developer > Applications, then open "New application"
+  - Must be visible: the whole dialog with its fields and buttons (Name, Description (optional))
+  - Dialog open: **New application** (fill example values, do not save if it would change real data)
+  - File name: `IF-094-Developer-Applications-New-application-dialog.png`
+
+- [ ] **IF-095 Developer: Connect application**
+  - How to get there: Developer > Applications > Connect application (route `/orgs/[orgId]/developer/applications/connect`)
+  - Must be visible: the page title, the menu, buttons Next, Back, Create application, Skip for now, Granting…, Generating… / Generate credential, Testing… / Test connection, Done — open application
+  - Dialog open: none (page view)
+  - File name: `IF-095-Developer-Connect-application.png`
+
+- [ ] **IF-096 Developer: Environments**
+  - How to get there: Developer > Environments (route `/orgs/[orgId]/developer/environments`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Create environment, Go to Applications, Clone, Disable / Enable, Delete, Cancel, Create, Delete environment
+  - Dialog open: none (page view)
+  - File name: `IF-096-Developer-Environments.png`
+- [ ] **IF-097 Developer: Environments -- dialog "Create environment" OPEN**
+  - How to get there: Developer > Environments, then open "Create environment"
+  - Must be visible: the whole dialog with its fields and buttons (Application, Name, Type, Type … to confirm, I understand this is a production environment and I want to permanently delete it.)
+  - Dialog open: **Create environment** (fill example values, do not save if it would change real data)
+  - File name: `IF-097-Developer-Environments-Create-environment-dialog.png`
+- [ ] **IF-098 Developer: Environments -- dialog "Delete "…"?" OPEN**
+  - How to get there: Developer > Environments, then open "Delete "…"?"
+  - Must be visible: the whole dialog with its fields and buttons (Application, Name, Type, Type … to confirm, I understand this is a production environment and I want to permanently delete it.)
+  - Dialog open: **Delete "…"?** (fill example values, do not save if it would change real data)
+  - File name: `IF-098-Developer-Environments-Delete-dialog.png`
+
+- [ ] **IF-099 Developer: Webhooks**
+  - How to get there: Developer > Webhooks (route `/orgs/[orgId]/developer/webhooks`)
+  - Must be visible: the page title, the menu, the main table with its columns
+  - Dialog open: none (page view)
+  - File name: `IF-099-Developer-Webhooks.png`
+
+- [ ] **IF-100 Developer: Docs**
+  - How to get there: Developer > Docs (route `/orgs/[orgId]/developer/docs`)
+  - Must be visible: the page title, the menu
+  - Dialog open: none (page view)
+  - File name: `IF-100-Developer-Docs.png`
+
+- [ ] **IF-101 Developer: SDKs**
+  - How to get there: Developer > SDKs (route `/orgs/[orgId]/developer/sdks`)
+  - Must be visible: the page title, the menu
+  - Dialog open: none (page view)
+  - File name: `IF-101-Developer-SDKs.png`
+
+### IntraForge -- outside the browser
+
+- [ ] **IF-CC-01 Control Center -- Healthy** (the IntraForge shortcut; all checks green, the app listed with Open). File `IF-CC-01-Control-Center-Healthy.png`
+- [ ] **IF-CC-02 Control Center -- Stopped** (Docker not running; shows the diagnoses). File `IF-CC-02-Control-Center-Stopped.png`
+- [ ] **IF-CC-03 Control Center -- Restore dialog OPEN** after *Check this backup* (the preview). File `IF-CC-03-Restore-Check.png`
+- [ ] **IF-CC-04 Control Center -- Uninstall dialog OPEN** (options A / B / C). File `IF-CC-04-Uninstall-Options.png`
+- [ ] **IF-CC-05 Control Center -- Settings dialog OPEN**. File `IF-CC-05-Settings.png`
+- [ ] **IF-CC-06 Browser certificate warning** at first open (Advanced > continue). File `IF-CC-06-Certificate-Warning.png`
+
+Already captured on the test VM (can be reused): `C:\Users\Hp\Intraforge-main\release-1.1.0\vm-evidence\cc-healthy.png`, `cc-after-restart.png`, `cc-docker-stopped.png`, `cc-final.png`.
+
+## Spare Parts Shop
+
+- [ ] **SP-001 Dashboard (Business overview)**
+  - How to get there: Menu > Overview > Dashboard (first page after Open) (route `/apps/spare-parts/`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Load sample data (development only)
+  - Dialog open: none (page view)
+  - File name: `SP-001-Dashboard-Business-overview.png`
+
+- [ ] **SP-002 Reference Catalogue**
+  - How to get there: Menu > Catalogue > Reference Catalogue (route `/apps/spare-parts/catalogue`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Search, Hide filters / Filters, Add to enquiry
+  - Dialog open: none (page view)
+  - File name: `SP-002-Reference-Catalogue.png`
+
+- [ ] **SP-003 Reference part details**
+  - How to get there: Catalogue > click a part number (route `/apps/spare-parts/catalogue/parts/[id]`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Add to enquiry, IMPORT TO MY PRODUCTS, Receive, Save adjustment, Transfer
+  - Dialog open: none (page view)
+  - File name: `SP-003-Reference-part-details.png`
+- [ ] **SP-004 Reference part details -- dialog "Import … to My Products" OPEN**
+  - How to get there: Catalogue > click a part number, then open "Import … to My Products"
+  - Must be visible: the whole dialog with its fields and buttons (Your SKU, Product name, Selling price, Cost price, Reorder level, Supplier, Store in, Quantity in stock now)
+  - Dialog open: **Import … to My Products** (fill example values, do not save if it would change real data)
+  - File name: `SP-004-Reference-part-details-Import-to-My-Products-dialog.png`
+- [ ] **SP-005 Reference part details -- dialog "Receive stock — …" OPEN**
+  - How to get there: Catalogue > click a part number, then open "Receive stock — …"
+  - Must be visible: the whole dialog with its fields and buttons (Location, Quantity received, Note (delivery note, source), Location, Change in quantity, Reason, From, To)
+  - Dialog open: **Receive stock — …** (fill example values, do not save if it would change real data)
+  - File name: `SP-005-Reference-part-details-Receive-stock-dialog.png`
+- [ ] **SP-006 Reference part details -- dialog "Adjust stock — …" OPEN**
+  - How to get there: Catalogue > click a part number, then open "Adjust stock — …"
+  - Must be visible: the whole dialog with its fields and buttons (Location, Quantity received, Note (delivery note, source), Location, Change in quantity, Reason, From, To)
+  - Dialog open: **Adjust stock — …** (fill example values, do not save if it would change real data)
+  - File name: `SP-006-Reference-part-details-Adjust-stock-dialog.png`
+- [ ] **SP-007 Reference part details -- dialog "Transfer stock — …" OPEN**
+  - How to get there: Catalogue > click a part number, then open "Transfer stock — …"
+  - Must be visible: the whole dialog with its fields and buttons (Location, Quantity received, Note (delivery note, source), Location, Change in quantity, Reason, From, To)
+  - Dialog open: **Transfer stock — …** (fill example values, do not save if it would change real data)
+  - File name: `SP-007-Reference-part-details-Transfer-stock-dialog.png`
+
+- [ ] **SP-008 Drawing**
+  - How to get there: Part details > a drawing (route `/apps/spare-parts/catalogue/drawings/[id]`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Add to enquiry
+  - Dialog open: none (page view)
+  - File name: `SP-008-Drawing.png`
+
+- [ ] **SP-009 Import reference catalogue**
+  - How to get there: Menu > Catalogue > Import (route `/apps/spare-parts/catalogue/import`)
+  - Must be visible: the page title, the menu, tabs CSV import, Offline package, History, the main table with its columns, buttons Choose a different file / Choose CSV file, Checking… / Validate and preview, Choose a different package / Choose package file, Importing… / Import package
+  - Dialog open: none (page view)
+  - File name: `SP-009-Import-reference-catalogue.png`
+- [ ] **SP-010 Import reference catalogue -- tab Offline package**
+  - How to get there: as above, click the *Offline package* tab
+  - Must be visible: the *Offline package* tab content
+  - Dialog open: none
+  - File name: `SP-010-Import-reference-catalogue-Offline-package.png`
+- [ ] **SP-011 Import reference catalogue -- tab History**
+  - How to get there: as above, click the *History* tab
+  - Must be visible: the *History* tab content
+  - Dialog open: none
+  - File name: `SP-011-Import-reference-catalogue-History.png`
+
+- [ ] **SP-012 Import job**
+  - How to get there: Import > after preview (route `/apps/spare-parts/catalogue/import/[jobId]`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Resume import, Include / Exclude
+  - Dialog open: none (page view)
+  - File name: `SP-012-Import-job.png`
+
+- [ ] **SP-013 My Products**
+  - How to get there: Menu > Inventory > My Products (route `/apps/spare-parts/products`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons New product, Receive, Save adjustment, Transfer
+  - Dialog open: none (page view)
+  - File name: `SP-013-My-Products.png`
+- [ ] **SP-014 My Products -- dialog "New product" OPEN**
+  - How to get there: Menu > Inventory > My Products, then open "New product"
+  - Must be visible: the whole dialog with its fields and buttons (Low stock only)
+  - Dialog open: **New product** (fill example values, do not save if it would change real data)
+  - File name: `SP-014-My-Products-New-product-dialog.png`
+- [ ] **SP-015 My Products -- dialog "Receive stock — …" OPEN**
+  - How to get there: Menu > Inventory > My Products, then open "Receive stock — …"
+  - Must be visible: the whole dialog with its fields and buttons (Location, Quantity received, Note (delivery note, source), Location, Change in quantity, Reason, From, To)
+  - Dialog open: **Receive stock — …** (fill example values, do not save if it would change real data)
+  - File name: `SP-015-My-Products-Receive-stock-dialog.png`
+- [ ] **SP-016 My Products -- dialog "Adjust stock — …" OPEN**
+  - How to get there: Menu > Inventory > My Products, then open "Adjust stock — …"
+  - Must be visible: the whole dialog with its fields and buttons (Location, Quantity received, Note (delivery note, source), Location, Change in quantity, Reason, From, To)
+  - Dialog open: **Adjust stock — …** (fill example values, do not save if it would change real data)
+  - File name: `SP-016-My-Products-Adjust-stock-dialog.png`
+- [ ] **SP-017 My Products -- dialog "Transfer stock — …" OPEN**
+  - How to get there: Menu > Inventory > My Products, then open "Transfer stock — …"
+  - Must be visible: the whole dialog with its fields and buttons (Location, Quantity received, Note (delivery note, source), Location, Change in quantity, Reason, From, To)
+  - Dialog open: **Transfer stock — …** (fill example values, do not save if it would change real data)
+  - File name: `SP-017-My-Products-Transfer-stock-dialog.png`
+
+- [ ] **SP-018 Product details**
+  - How to get there: My Products > a product (route `/apps/spare-parts/products/[id]`)
+  - Must be visible: the page title, the menu, tabs Overview, Fitment, Stock, Supplier, OEM Reference, Sales, History, the main table with its columns, buttons Edit product, Uploading… / Add photos, Make primary, ← Earlier, Later →, Barcode label, QR label, Open to print
+  - Dialog open: none (page view)
+  - File name: `SP-018-Product-details.png`
+- [ ] **SP-019 Product details -- tab Fitment**
+  - How to get there: as above, click the *Fitment* tab
+  - Must be visible: the *Fitment* tab content
+  - Dialog open: none
+  - File name: `SP-019-Product-details-Fitment.png`
+- [ ] **SP-020 Product details -- tab Stock**
+  - How to get there: as above, click the *Stock* tab
+  - Must be visible: the *Stock* tab content
+  - Dialog open: none
+  - File name: `SP-020-Product-details-Stock.png`
+- [ ] **SP-021 Product details -- tab Supplier**
+  - How to get there: as above, click the *Supplier* tab
+  - Must be visible: the *Supplier* tab content
+  - Dialog open: none
+  - File name: `SP-021-Product-details-Supplier.png`
+- [ ] **SP-022 Product details -- tab OEM Reference**
+  - How to get there: as above, click the *OEM Reference* tab
+  - Must be visible: the *OEM Reference* tab content
+  - Dialog open: none
+  - File name: `SP-022-Product-details-OEM-Reference.png`
+- [ ] **SP-023 Product details -- tab Sales**
+  - How to get there: as above, click the *Sales* tab
+  - Must be visible: the *Sales* tab content
+  - Dialog open: none
+  - File name: `SP-023-Product-details-Sales.png`
+- [ ] **SP-024 Product details -- tab History**
+  - How to get there: as above, click the *History* tab
+  - Must be visible: the *History* tab content
+  - Dialog open: none
+  - File name: `SP-024-Product-details-History.png`
+- [ ] **SP-025 Product details -- dialog "Edit product" OPEN**
+  - How to get there: My Products > a product, then open "Edit product"
+  - Must be visible: the whole dialog with its fields and buttons (Supplier, Supplier's part number, Cost from this supplier, Preferred supplier, Number, Type, Brand, Notes)
+  - Dialog open: **Edit product** (fill example values, do not save if it would change real data)
+  - File name: `SP-025-Product-details-Edit-product-dialog.png`
+- [ ] **SP-026 Product details -- dialog "Supplier for this product" OPEN**
+  - How to get there: My Products > a product, then open "Supplier for this product"
+  - Must be visible: the whole dialog with its fields and buttons (Supplier, Supplier's part number, Cost from this supplier, Preferred supplier, Number, Type, Brand, Notes)
+  - Dialog open: **Supplier for this product** (fill example values, do not save if it would change real data)
+  - File name: `SP-026-Product-details-Supplier-for-this-product-dialog.png`
+- [ ] **SP-027 Product details -- dialog "Add part number" OPEN**
+  - How to get there: My Products > a product, then open "Add part number"
+  - Must be visible: the whole dialog with its fields and buttons (Supplier, Supplier's part number, Cost from this supplier, Preferred supplier, Number, Type, Brand, Notes)
+  - Dialog open: **Add part number** (fill example values, do not save if it would change real data)
+  - File name: `SP-027-Product-details-Add-part-number-dialog.png`
+- [ ] **SP-028 Product details -- dialog "Receive stock — …" OPEN**
+  - How to get there: My Products > a product, then open "Receive stock — …"
+  - Must be visible: the whole dialog with its fields and buttons (Location, Quantity received, Note (delivery note, source), Location, Change in quantity, Reason, From, To)
+  - Dialog open: **Receive stock — …** (fill example values, do not save if it would change real data)
+  - File name: `SP-028-Product-details-Receive-stock-dialog.png`
+- [ ] **SP-029 Product details -- dialog "Adjust stock — …" OPEN**
+  - How to get there: My Products > a product, then open "Adjust stock — …"
+  - Must be visible: the whole dialog with its fields and buttons (Location, Quantity received, Note (delivery note, source), Location, Change in quantity, Reason, From, To)
+  - Dialog open: **Adjust stock — …** (fill example values, do not save if it would change real data)
+  - File name: `SP-029-Product-details-Adjust-stock-dialog.png`
+- [ ] **SP-030 Product details -- dialog "Transfer stock — …" OPEN**
+  - How to get there: My Products > a product, then open "Transfer stock — …"
+  - Must be visible: the whole dialog with its fields and buttons (Location, Quantity received, Note (delivery note, source), Location, Change in quantity, Reason, From, To)
+  - Dialog open: **Transfer stock — …** (fill example values, do not save if it would change real data)
+  - File name: `SP-030-Product-details-Transfer-stock-dialog.png`
+
+- [ ] **SP-031 Stock & Locations**
+  - How to get there: Menu > Inventory > Stock & Locations (route `/apps/spare-parts/inventory`)
+  - Must be visible: the page title, the menu, tabs Stock, Warehouses & locations, Movements, Integrity check, the main table with its columns, buttons New warehouse, Add rack / shelf / bin, Edit, Receive, Save adjustment, Transfer
+  - Dialog open: none (page view)
+  - File name: `SP-031-Stock-Locations.png`
+- [ ] **SP-032 Stock & Locations -- tab Warehouses & locations**
+  - How to get there: as above, click the *Warehouses & locations* tab
+  - Must be visible: the *Warehouses & locations* tab content
+  - Dialog open: none
+  - File name: `SP-032-Stock-Locations-Warehouses-locations.png`
+- [ ] **SP-033 Stock & Locations -- tab Movements**
+  - How to get there: as above, click the *Movements* tab
+  - Must be visible: the *Movements* tab content
+  - Dialog open: none
+  - File name: `SP-033-Stock-Locations-Movements.png`
+- [ ] **SP-034 Stock & Locations -- tab Integrity check**
+  - How to get there: as above, click the *Integrity check* tab
+  - Must be visible: the *Integrity check* tab content
+  - Dialog open: none
+  - File name: `SP-034-Stock-Locations-Integrity-check.png`
+- [ ] **SP-035 Stock & Locations -- dialog "New warehouse" OPEN**
+  - How to get there: Menu > Inventory > Stock & Locations, then open "New warehouse"
+  - Must be visible: the whole dialog with its fields and buttons (Name, Address, Name, Address, Status, Rack, Shelf, Bin)
+  - Dialog open: **New warehouse** (fill example values, do not save if it would change real data)
+  - File name: `SP-035-Stock-Locations-New-warehouse-dialog.png`
+- [ ] **SP-036 Stock & Locations -- dialog "Edit warehouse" OPEN**
+  - How to get there: Menu > Inventory > Stock & Locations, then open "Edit warehouse"
+  - Must be visible: the whole dialog with its fields and buttons (Name, Address, Name, Address, Status, Rack, Shelf, Bin)
+  - Dialog open: **Edit warehouse** (fill example values, do not save if it would change real data)
+  - File name: `SP-036-Stock-Locations-Edit-warehouse-dialog.png`
+- [ ] **SP-037 Stock & Locations -- dialog "Add rack / shelf / bin" OPEN**
+  - How to get there: Menu > Inventory > Stock & Locations, then open "Add rack / shelf / bin"
+  - Must be visible: the whole dialog with its fields and buttons (Name, Address, Name, Address, Status, Rack, Shelf, Bin)
+  - Dialog open: **Add rack / shelf / bin** (fill example values, do not save if it would change real data)
+  - File name: `SP-037-Stock-Locations-Add-rack-shelf-bin-dialog.png`
+- [ ] **SP-038 Stock & Locations -- dialog "Receive stock — …" OPEN**
+  - How to get there: Menu > Inventory > Stock & Locations, then open "Receive stock — …"
+  - Must be visible: the whole dialog with its fields and buttons (Location, Quantity received, Note (delivery note, source), Location, Change in quantity, Reason, From, To)
+  - Dialog open: **Receive stock — …** (fill example values, do not save if it would change real data)
+  - File name: `SP-038-Stock-Locations-Receive-stock-dialog.png`
+- [ ] **SP-039 Stock & Locations -- dialog "Adjust stock — …" OPEN**
+  - How to get there: Menu > Inventory > Stock & Locations, then open "Adjust stock — …"
+  - Must be visible: the whole dialog with its fields and buttons (Location, Quantity received, Note (delivery note, source), Location, Change in quantity, Reason, From, To)
+  - Dialog open: **Adjust stock — …** (fill example values, do not save if it would change real data)
+  - File name: `SP-039-Stock-Locations-Adjust-stock-dialog.png`
+- [ ] **SP-040 Stock & Locations -- dialog "Transfer stock — …" OPEN**
+  - How to get there: Menu > Inventory > Stock & Locations, then open "Transfer stock — …"
+  - Must be visible: the whole dialog with its fields and buttons (Location, Quantity received, Note (delivery note, source), Location, Change in quantity, Reason, From, To)
+  - Dialog open: **Transfer stock — …** (fill example values, do not save if it would change real data)
+  - File name: `SP-040-Stock-Locations-Transfer-stock-dialog.png`
+
+- [ ] **SP-041 Scan / Lookup**
+  - How to get there: Menu > Inventory > Scan / Lookup (or the search box in the top bar) (route `/apps/spare-parts/scan`)
+  - Must be visible: the page title, the menu
+  - Dialog open: none (page view)
+  - File name: `SP-041-Scan-Lookup.png`
+
+- [ ] **SP-042 Purchase Orders**
+  - How to get there: Menu > Inventory > Purchase Orders (route `/apps/spare-parts/purchasing`)
+  - Must be visible: the page title, the menu, the main table with its columns
+  - Dialog open: none (page view)
+  - File name: `SP-042-Purchase-Orders.png`
+
+- [ ] **SP-043 New purchase order**
+  - How to get there: Purchase Orders > New (route `/apps/spare-parts/purchasing/new`)
+  - Must be visible: the page title, the menu, buttons Save draft, Remove line, Add a free-text line
+  - Dialog open: none (page view)
+  - File name: `SP-043-New-purchase-order.png`
+
+- [ ] **SP-044 Purchase order**
+  - How to get there: Purchase Orders > a PO (route `/apps/spare-parts/purchasing/[id]`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Confirm, Receive goods, Receive into stock
+  - Dialog open: none (page view)
+  - File name: `SP-044-Purchase-order.png`
+- [ ] **SP-045 Purchase order -- dialog "Receive goods" OPEN**
+  - How to get there: Purchase Orders > a PO, then open "Receive goods"
+  - Must be visible: the whole dialog with its fields and buttons
+  - Dialog open: **Receive goods** (fill example values, do not save if it would change real data)
+  - File name: `SP-045-Purchase-order-Receive-goods-dialog.png`
+
+- [ ] **SP-046 Enquiries**
+  - How to get there: Menu > Sales > Enquiries (route `/apps/spare-parts/enquiries`)
+  - Must be visible: the page title, the menu, the main table with its columns
+  - Dialog open: none (page view)
+  - File name: `SP-046-Enquiries.png`
+
+- [ ] **SP-047 Enquiry cart**
+  - How to get there: Add to enquiry (catalogue, part, drawing) > the cart (route `/apps/spare-parts/enquiries/cart`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Remove, Submit enquiry
+  - Dialog open: none (page view)
+  - File name: `SP-047-Enquiry-cart.png`
+
+- [ ] **SP-048 Enquiry**
+  - How to get there: Enquiries > an enquiry (route `/apps/spare-parts/enquiries/[id]`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Create quotation
+  - Dialog open: none (page view)
+  - File name: `SP-048-Enquiry.png`
+- [ ] **SP-049 Enquiry -- dialog "Create quotation" OPEN**
+  - How to get there: Enquiries > an enquiry, then open "Create quotation"
+  - Must be visible: the whole dialog with its fields and buttons (Customer)
+  - Dialog open: **Create quotation** (fill example values, do not save if it would change real data)
+  - File name: `SP-049-Enquiry-Create-quotation-dialog.png`
+
+- [ ] **SP-050 Quotations**
+  - How to get there: Menu > Sales > Quotations (route `/apps/spare-parts/quotations`)
+  - Must be visible: the page title, the menu, the main table with its columns
+  - Dialog open: none (page view)
+  - File name: `SP-050-Quotations.png`
+
+- [ ] **SP-051 New quotation**
+  - How to get there: Quotations > New (route `/apps/spare-parts/quotations/new`)
+  - Must be visible: the page title, the menu, buttons Save draft, Remove line, Add a free-text line
+  - Dialog open: none (page view)
+  - File name: `SP-051-New-quotation.png`
+
+- [ ] **SP-052 Quotation**
+  - How to get there: Quotations > a quotation (route `/apps/spare-parts/quotations/[id]`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Edit lines, Issue to customer, Customer accepted, Customer rejected, Create order, Cancel, Save, Remove line
+  - Dialog open: none (page view)
+  - File name: `SP-052-Quotation.png`
+- [ ] **SP-053 Quotation -- dialog "Edit …" OPEN**
+  - How to get there: Quotations > a quotation, then open "Edit …"
+  - Must be visible: the whole dialog with its fields and buttons (If there is not enough stock)
+  - Dialog open: **Edit …** (fill example values, do not save if it would change real data)
+  - File name: `SP-053-Quotation-Edit-dialog.png`
+- [ ] **SP-054 Quotation -- dialog "Create order" OPEN**
+  - How to get there: Quotations > a quotation, then open "Create order"
+  - Must be visible: the whole dialog with its fields and buttons (If there is not enough stock)
+  - Dialog open: **Create order** (fill example values, do not save if it would change real data)
+  - File name: `SP-054-Quotation-Create-order-dialog.png`
+
+- [ ] **SP-055 Orders**
+  - How to get there: Menu > Sales > Orders (route `/apps/spare-parts/orders`)
+  - Must be visible: the page title, the menu, the main table with its columns
+  - Dialog open: none (page view)
+  - File name: `SP-055-Orders.png`
+
+- [ ] **SP-056 Sales order**
+  - How to get there: Orders > an order (route `/apps/spare-parts/orders/[id]`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Record delivery, Invoice delivered items, Record return, Reserve available stock, Cancel order, Save delivery
+  - Dialog open: none (page view)
+  - File name: `SP-056-Sales-order.png`
+- [ ] **SP-057 Sales order -- dialog "Record delivery" OPEN**
+  - How to get there: Orders > an order, then open "Record delivery"
+  - Must be visible: the whole dialog with its fields and buttons (Item, Quantity returned, Return to location, Reason)
+  - Dialog open: **Record delivery** (fill example values, do not save if it would change real data)
+  - File name: `SP-057-Sales-order-Record-delivery-dialog.png`
+- [ ] **SP-058 Sales order -- dialog "Record return" OPEN**
+  - How to get there: Orders > an order, then open "Record return"
+  - Must be visible: the whole dialog with its fields and buttons (Item, Quantity returned, Return to location, Reason)
+  - Dialog open: **Record return** (fill example values, do not save if it would change real data)
+  - File name: `SP-058-Sales-order-Record-return-dialog.png`
+
+- [ ] **SP-059 Invoices & Payments**
+  - How to get there: Menu > Sales > Invoices & Payments (route `/apps/spare-parts/invoices`)
+  - Must be visible: the page title, the menu, the main table with its columns
+  - Dialog open: none (page view)
+  - File name: `SP-059-Invoices-Payments.png`
+
+- [ ] **SP-060 Invoice**
+  - How to get there: Invoices > an invoice (route `/apps/spare-parts/invoices/[id]`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Record payment, Void, Void invoice
+  - Dialog open: none (page view)
+  - File name: `SP-060-Invoice.png`
+- [ ] **SP-061 Invoice -- dialog "Record payment" OPEN**
+  - How to get there: Invoices > an invoice, then open "Record payment"
+  - Must be visible: the whole dialog with its fields and buttons (Method, Reference (receipt / transfer no.), Notes, Reason)
+  - Dialog open: **Record payment** (fill example values, do not save if it would change real data)
+  - File name: `SP-061-Invoice-Record-payment-dialog.png`
+- [ ] **SP-062 Invoice -- dialog "Void invoice" OPEN**
+  - How to get there: Invoices > an invoice, then open "Void invoice"
+  - Must be visible: the whole dialog with its fields and buttons (Method, Reference (receipt / transfer no.), Notes, Reason)
+  - Dialog open: **Void invoice** (fill example values, do not save if it would change real data)
+  - File name: `SP-062-Invoice-Void-invoice-dialog.png`
+
+- [ ] **SP-063 Customers**
+  - How to get there: Menu > Contacts > Customers (route `/apps/spare-parts/customers`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons New customer
+  - Dialog open: none (page view)
+  - File name: `SP-063-Customers.png`
+- [ ] **SP-064 Customers -- dialog "New customer" OPEN**
+  - How to get there: Menu > Contacts > Customers, then open "New customer"
+  - Must be visible: the whole dialog with its fields and buttons
+  - Dialog open: **New customer** (fill example values, do not save if it would change real data)
+  - File name: `SP-064-Customers-New-customer-dialog.png`
+
+- [ ] **SP-065 Customer**
+  - How to get there: Customers > a customer (route `/apps/spare-parts/customers/[id]`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Edit
+  - Dialog open: none (page view)
+  - File name: `SP-065-Customer.png`
+- [ ] **SP-066 Customer -- dialog "Edit customer" OPEN**
+  - How to get there: Customers > a customer, then open "Edit customer"
+  - Must be visible: the whole dialog with its fields and buttons
+  - Dialog open: **Edit customer** (fill example values, do not save if it would change real data)
+  - File name: `SP-066-Customer-Edit-customer-dialog.png`
+
+- [ ] **SP-067 Suppliers**
+  - How to get there: Menu > Contacts > Suppliers (route `/apps/spare-parts/suppliers`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons New supplier
+  - Dialog open: none (page view)
+  - File name: `SP-067-Suppliers.png`
+- [ ] **SP-068 Suppliers -- dialog "New supplier" OPEN**
+  - How to get there: Menu > Contacts > Suppliers, then open "New supplier"
+  - Must be visible: the whole dialog with its fields and buttons
+  - Dialog open: **New supplier** (fill example values, do not save if it would change real data)
+  - File name: `SP-068-Suppliers-New-supplier-dialog.png`
+
+- [ ] **SP-069 Supplier**
+  - How to get there: Suppliers > a supplier (route `/apps/spare-parts/suppliers/[id]`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Edit
+  - Dialog open: none (page view)
+  - File name: `SP-069-Supplier.png`
+- [ ] **SP-070 Supplier -- dialog "Edit supplier" OPEN**
+  - How to get there: Suppliers > a supplier, then open "Edit supplier"
+  - Must be visible: the whole dialog with its fields and buttons
+  - Dialog open: **Edit supplier** (fill example values, do not save if it would change real data)
+  - File name: `SP-070-Supplier-Edit-supplier-dialog.png`
+
+- [ ] **SP-071 Reports**
+  - How to get there: Menu > Insights > Reports (route `/apps/spare-parts/reports`)
+  - Must be visible: the page title, the menu
+  - Dialog open: none (page view)
+  - File name: `SP-071-Reports.png`
+
+- [ ] **SP-072 Users**
+  - How to get there: Menu > Administration > Users (route `/apps/spare-parts/admin/users`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Add user, Edit, Reset password, Disable, Enable
+  - Dialog open: none (page view)
+  - File name: `SP-072-Users.png`
+- [ ] **SP-073 Users -- dialog "Add user" OPEN**
+  - How to get there: Menu > Administration > Users, then open "Add user"
+  - Must be visible: the whole dialog with its fields and buttons (Name, Email (used to sign in), Role, Temporary password, Name, Role, New temporary password)
+  - Dialog open: **Add user** (fill example values, do not save if it would change real data)
+  - File name: `SP-073-Users-Add-user-dialog.png`
+- [ ] **SP-074 Users -- dialog "Edit …" OPEN**
+  - How to get there: Menu > Administration > Users, then open "Edit …"
+  - Must be visible: the whole dialog with its fields and buttons (Name, Email (used to sign in), Role, Temporary password, Name, Role, New temporary password)
+  - Dialog open: **Edit …** (fill example values, do not save if it would change real data)
+  - File name: `SP-074-Users-Edit-dialog.png`
+- [ ] **SP-075 Users -- dialog "Reset password — …" OPEN**
+  - How to get there: Menu > Administration > Users, then open "Reset password — …"
+  - Must be visible: the whole dialog with its fields and buttons (Name, Email (used to sign in), Role, Temporary password, Name, Role, New temporary password)
+  - Dialog open: **Reset password — …** (fill example values, do not save if it would change real data)
+  - File name: `SP-075-Users-Reset-password-dialog.png`
+
+- [ ] **SP-076 Shop settings**
+  - How to get there: Menu > Administration > Shop settings (route `/apps/spare-parts/admin/settings`)
+  - Must be visible: the page title, the menu, buttons Save settings
+  - Dialog open: none (page view)
+  - File name: `SP-076-Shop-settings.png`
+
+- [ ] **SP-077 Audit log (Spare Parts)**
+  - How to get there: Menu > Administration > Audit log (route `/apps/spare-parts/admin/audit`)
+  - Must be visible: the page title, the menu, the main table with its columns, buttons Newer, Older
+  - Dialog open: none (page view)
+  - File name: `SP-077-Audit-log-Spare-Parts.png`
+
+## Not captured yet
+
+None of the 178 browser screenshots above exists yet; only the four Control Center states listed were captured during testing. The checklist is the plan.
+

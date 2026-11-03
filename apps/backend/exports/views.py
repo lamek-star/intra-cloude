@@ -1,16 +1,18 @@
 from django.http import Http404, StreamingHttpResponse
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from organizations.services import get_member_organization
+from permissions.services import has_permission
 
 from .models import ExportJob, RestoreJob
 from .serializers import ExportJobCreateSerializer, ExportJobSerializer, RestoreJobSerializer
 from .services import (
     ExportPermissionDenied,
+    RestoreRequestConflict,
     RestoreValidationError,
     download_export,
     get_member_export_job,
@@ -24,6 +26,8 @@ class ExportJobListCreateView(APIView):
 
     def get(self, request, organization_id):
         org = get_member_organization(request.user, organization_id)
+        if not has_permission(request.user, "export.manage", organization_id=org.id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         jobs = ExportJob.objects.filter(organization=org)
         return Response(ExportJobSerializer(jobs, many=True).data)
 
@@ -48,6 +52,8 @@ class ExportJobDetailView(APIView):
 
     def get(self, request, job_id):
         job = get_member_export_job(request.user, job_id)
+        if not has_permission(request.user, "export.manage", organization_id=job.organization_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
         return Response(ExportJobSerializer(job).data)
 
 
@@ -85,8 +91,16 @@ class RestoreJobListCreateView(APIView):
             return Response({"detail": "No package file provided."}, status=status.HTTP_400_BAD_REQUEST)
 
         passphrase = request.data.get("passphrase") or None
+        key_header = request.headers.get("Idempotency-Key")
+        key = serializers.UUIDField().run_validation(key_header) if key_header is not None else None
         try:
-            job = stage_restore_upload(actor=request.user, uploaded_file=uploaded, passphrase=passphrase)
+            job = stage_restore_upload(
+                actor=request.user, uploaded_file=uploaded, passphrase=passphrase, idempotency_key=key
+            )
+        except RestoreRequestConflict as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        except ExportPermissionDenied:
+            return Response(status=status.HTTP_403_FORBIDDEN)
         except RestoreValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
         return Response(RestoreJobSerializer(job).data, status=status.HTTP_201_CREATED)

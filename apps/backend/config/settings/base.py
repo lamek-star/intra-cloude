@@ -58,8 +58,10 @@ THIRD_PARTY_APPS = [
 # Bounded Django apps per docs/architecture/DATA_MODEL.md Section 1.
 # Each owns its own models/services/serializers/tests; no giant shared app.
 LOCAL_APPS = [
+    "app_platform",
     "accounts",
     "organizations",
+    "org_units",
     "permissions",
     "workspaces",
     "storage",
@@ -67,12 +69,33 @@ LOCAL_APPS = [
     "datasets",
     "imports",
     "applications",
+    "oauth_provider",
+    "catalogue_storage",
+    "environments",
     "sharing",
     "audit",
     "system",
     "exports",
     "analytics",
+    "service_apps",
 ]
+
+# --- Service applications (ADR-0018) ---
+# Separately deployed services that keep their data, files, identity and audit in IntraForge.
+# A slot exists only when its service token is configured (a random secret shared with the
+# service container); its database login role reaches only the one schema IntraForge provisions.
+SERVICE_APP_DEPLOYMENTS = {
+    "spare-parts": {
+        "app_type": "spare_parts",
+        "token": env("SERVICE_APP_SPAREPARTS_TOKEN", ""),
+        "db_role": env("SERVICE_APP_SPAREPARTS_DB_ROLE", "svc_spare_parts"),
+        "db_password": env("SERVICE_APP_SPAREPARTS_DB_PASSWORD", ""),
+        "internal_url": env("SERVICE_APP_SPAREPARTS_URL", "http://spareparts:3000"),
+        "launch_path": "/apps/spare-parts/",
+    },
+}
+# How long a service-application browser session lives without use (absolute cap below).
+SERVICE_APP_SESSION_HOURS = int(env("SERVICE_APP_SESSION_HOURS", "12"))
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
@@ -164,6 +187,11 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+# Portable imports are memory-backed. Bound expansion before member reads.
+PORTABLE_MAX_MEMBERS = int(env("PORTABLE_MAX_MEMBERS", "10000"))
+PORTABLE_MAX_EXPANDED_BYTES = int(env("PORTABLE_MAX_EXPANDED_BYTES", str(512 * 1024 * 1024)))
+PORTABLE_MAX_MEMBER_BYTES = int(env("PORTABLE_MAX_MEMBER_BYTES", str(64 * 1024 * 1024)))
+PORTABLE_MAX_MANIFEST_BYTES = int(env("PORTABLE_MAX_MANIFEST_BYTES", str(4 * 1024 * 1024)))
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -186,6 +214,14 @@ SECURE_REFERRER_POLICY = "same-origin"
 # (Section 24 / Section 17 of the master prompt).
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "")
 CORS_ALLOW_CREDENTIALS = True
+
+# The `iss` claim oauth_provider's ID tokens carry, and the base URL its
+# discovery document (/.well-known/openid-configuration) advertises for
+# every other endpoint — must be the exact origin external clients (e.g.
+# the spare-parts site) reach this deployment at, i.e. the proxy's own
+# origin (docker-compose.yml's `proxy` service), never the internal
+# `backend:8000` service name.
+OIDC_ISSUER = env("OIDC_ISSUER", "https://localhost:8443")
 
 # --- Django REST Framework ---
 REST_FRAMEWORK = {
@@ -220,6 +256,27 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "system.exceptions.structured_exception_handler",
 }
 
+# --- Cache (DRF throttling, and anything else Django's cache framework
+# backs) -- gunicorn runs multiple worker processes (Dockerfile: --workers
+# 3), each with its own memory. Without an explicit CACHES setting here,
+# Django silently falls back to LocMemCache, which is per-process: DRF's
+# rate-limit counters (ScopedRateThrottle "auth" scope, OrganizationRateThrottle
+# "import" scope) each only ever see the fraction of requests gunicorn's
+# round-robin happened to route to that one worker, so the real,
+# live-verified effective budget was inconsistent and roughly workers-times
+# looser than DEFAULT_THROTTLE_RATES actually states -- exactly the
+# credential-stuffing/brute-force protection the "auth" scope's own
+# comment above exists for. A separate Valkey DB index (1, not 0) keeps
+# cache keys out of Celery's broker/result-backend namespace on the same
+# instance -- no new datastore per CLAUDE.md rule 6, boring technology
+# already running.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": env("CACHE_URL", "redis://localhost:6379/1"),
+    }
+}
+
 # --- Celery (broker/result backend: Valkey, Redis-protocol — see ADR-0011) ---
 CELERY_BROKER_URL = env("REDIS_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = env("REDIS_URL", "redis://localhost:6379/0")
@@ -229,12 +286,33 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 
+# How long the Redis/Valkey broker transport waits before treating an
+# unacknowledged message as abandoned and redelivering it -- the
+# complement imports/tasks.py's run_import_task acks_late=True actually
+# needs to matter in practice. Redis-transport Celery defaults this to
+# 3600s (1 hour) when unset; live-verified that acks_late alone, at that
+# default, left a worker-killed import job stuck for the full hour before
+# ever becoming redeliverable, which defeats the point for an operator
+# watching a job that should self-heal in minutes, not defeat the point
+# by silently keeping the 1-hour default. Set comfortably above
+# CELERY_TASK_TIME_LIMIT above (never redeliver a task that's still
+# legitimately within its own allowed runtime -- that would risk two
+# workers running the same import concurrently) but well short of an
+# hour.
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "visibility_timeout": int(env("CELERY_VISIBILITY_TIMEOUT_SECONDS", str(40 * 60)))
+}
+
 # Nightly full backups, weekly automated restoration tests (Phase 11;
 # docs/operations/BACKUP_RESTORE.md Sections 3 and 7 — "a recurring job
 # restores the latest backup set... this is a scheduled Celery Beat job,
 # not a manual checklist item that quietly stops happening"). Only takes
 # effect for the `beat` service, which schedules these against `worker`.
 CELERY_BEAT_SCHEDULE = {
+    "recover-app-operation-publication": {
+        "task": "app_platform.tasks.recover_operation_publication",
+        "schedule": 60.0,
+    },
     "backup-control-db-nightly": {
         "task": "system.tasks.run_backup_task",
         "schedule": crontab(hour=2, minute=0),
@@ -351,6 +429,11 @@ BACKUP_ENCRYPTION_KEY = env("BACKUP_ENCRYPTION_KEY", "")
 # --- Feature flags (secure defaults: off) ---
 FEATURE_EXTERNAL_SHARING_ENABLED = env_bool("FEATURE_EXTERNAL_SHARING_ENABLED", False)
 FEATURE_INTERNET_GATEWAY_ENABLED = env_bool("FEATURE_INTERNET_GATEWAY_ENABLED", False)
+
+# Local Edition: built-in applications appear to customers only once QUALIFIED
+# (app_platform/built_in_apps.py). Turn this on for development, demos and the pilot
+# preview to also list PARTIALLY_QUALIFIED / EXPERIMENTAL ones, clearly labelled.
+SHOW_UNQUALIFIED_BUILT_IN_APPS = env_bool("SHOW_UNQUALIFIED_BUILT_IN_APPS", False)
 
 # --- Logging: structured, request-ID-aware (Section 20) ---
 LOGGING = {

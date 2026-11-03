@@ -14,15 +14,18 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Backup = new BackupViewModel(connection);
         Settings = new SettingsViewModel(settingsService);
         Logs = new LogsViewModel(connection, new DiagnosticsCollector(connection));
+        Setup = new SetupViewModel(connection, settingsService);
 
         Status.StartAutoRefresh();
         _ = Backup.RefreshAsync();
+        _ = Setup.RefreshStateAsync();
     }
 
     public StatusViewModel Status { get; }
     public BackupViewModel Backup { get; }
     public SettingsViewModel Settings { get; }
     public LogsViewModel Logs { get; }
+    public SetupViewModel Setup { get; }
 
     public void Dispose() => Status.Dispose();
 }
