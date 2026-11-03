@@ -82,6 +82,14 @@ def status() -> dict:
             }
             for s in published
         ],
+        # What can be published now: online sites without a public name, from every organization. The Super
+        # Administrator publishes platform-wide and is usually not a member of the shop's organization.
+        "publishable": [
+            {"site": str(s.id), "name": s.name, "organization": s.organization.name}
+            for s in Site.objects.filter(status=Site.Status.ACTIVE, internet_hostname__isnull=True)
+            .select_related("organization")
+            .order_by("organization__name", "name")
+        ],
     }
 
 

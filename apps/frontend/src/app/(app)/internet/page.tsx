@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Globe2, ShieldAlert } from "lucide-react";
-import { api, ApiError, ensureCsrfCookie, type Organization } from "@/lib/api";
-import type { InternetGateway, Site } from "@/lib/sites";
-import { Badge, Button, Card, EmptyState, ErrorBanner, Input, Label, PageHeader, PageLoading, Select } from "@/components/ui";
+import { api, ApiError, ensureCsrfCookie } from "@/lib/api";
+import type { InternetGateway } from "@/lib/sites";
+import { Badge, Button, Card, ErrorBanner, Input, Label, PageHeader, PageLoading, Select } from "@/components/ui";
 import { useConfirm } from "@/components/ConfirmProvider";
 
 /** Internet access (ADR-0020 decision 4): off by default. Only the Super Administrator, with password and
@@ -13,26 +13,12 @@ import { useConfirm } from "@/components/ConfirmProvider";
 export default function InternetPage() {
   const confirm = useConfirm();
   const [gate, setGate] = useState<InternetGateway | null>(null);
-  const [sites, setSites] = useState<(Site & { orgName: string })[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const g = await api.get<InternetGateway>("/internet-gateway/");
-      setGate(g);
-      if (g.can_manage) {
-        const orgs = await api.get<Organization[]>("/organizations/");
-        const lists = await Promise.all(
-          orgs.map((o) =>
-            api
-              .get<Site[]>(`/organizations/${o.id}/sites/`)
-              .then((list) => list.map((s) => ({ ...s, orgName: o.name })))
-              .catch(() => []),
-          ),
-        );
-        setSites(lists.flat());
-      }
+      setGate(await api.get<InternetGateway>("/internet-gateway/"));
     } catch (err) {
       setError(err);
     }
@@ -142,12 +128,9 @@ export default function InternetPage() {
                 ))}
               </ul>
             )}
-            {gate.enabled && <PublishForm sites={sites} busy={busy} onPublish={(id, name) => act(() => api.post(`/sites/${id}/internet/`, { hostname: name }))} />}
+            {gate.enabled && <PublishForm candidates={gate.publishable ?? []} busy={busy} onPublish={(id, name) => act(() => api.post(`/sites/${id}/internet/`, { hostname: name }))} />}
           </Card>
         </>
-      )}
-      {gate?.can_manage && sites.length === 0 && (
-        <EmptyState title="No websites to publish" description="Publish a website under an organization's Websites first." />
       )}
     </div>
   );
@@ -191,32 +174,33 @@ function EnableForm({ busy, onEnable }: { busy: boolean; onEnable: (token: strin
 }
 
 function PublishForm({
-  sites,
+  candidates,
   busy,
   onPublish,
 }: {
-  sites: (Site & { orgName: string })[];
+  candidates: NonNullable<InternetGateway["publishable"]>;
   busy: boolean;
   onPublish: (siteId: string, hostname: string) => Promise<void>;
 }) {
-  const candidates = sites.filter((s) => s.status === "active" && !s.internet_hostname);
   const [siteId, setSiteId] = useState("");
   const [name, setName] = useState("");
-  if (candidates.length === 0) return null;
+  if (candidates.length === 0) {
+    return <p className="text-sm text-text-muted">No online website is waiting to be published.</p>;
+  }
   return (
     <form
       className="grid gap-3 border-t border-border-subtle pt-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
       onSubmit={(e: FormEvent) => {
         e.preventDefault();
-        void onPublish(siteId || candidates[0].id, name.trim().toLowerCase()).then(() => setName(""));
+        void onPublish(siteId || candidates[0].site, name.trim().toLowerCase()).then(() => setName(""));
       }}
     >
       <div>
         <Label htmlFor="publish-site">Website</Label>
-        <Select id="publish-site" value={siteId || candidates[0].id} onChange={(e) => setSiteId(e.target.value)}>
+        <Select id="publish-site" value={siteId || candidates[0].site} onChange={(e) => setSiteId(e.target.value)}>
           {candidates.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name} ({s.orgName})
+            <option key={s.site} value={s.site}>
+              {s.name} ({s.organization})
             </option>
           ))}
         </Select>

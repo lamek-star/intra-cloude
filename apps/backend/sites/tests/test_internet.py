@@ -68,6 +68,17 @@ class InternetGateTests(SiteTestBase):
         )
         self.assertEqual(self._visit("www.myshop.com").status_code, 404)
 
+    def test_the_super_administrator_sees_every_online_site_that_can_be_published(self):
+        # The Super Administrator publishes platform-wide but is usually not a member of the shop's
+        # organization, so the gate's status lists the online, unpublished sites to choose from.
+        status = self.root_client.get(reverse("internet-gateway")).data
+        self.assertEqual([c["site"] for c in status["publishable"]], [self.site_id])
+        self.assertEqual(status["publishable"][0]["organization"], "Shop")
+        self.client.patch(reverse("site-detail", args=[self.site_id]), {"status": "disabled"}, format="json")
+        self.assertEqual(self.root_client.get(reverse("internet-gateway")).data["publishable"], [])
+        # Others learn only whether the gate is on.
+        self.assertNotIn("publishable", self.client.get(reverse("internet-gateway")).data)
+
     def test_an_organization_administrator_cannot_touch_it(self):
         # self.client is the organization's creator: organization administrator, not Super Administrator.
         self.assertEqual(self._enable(self.client).status_code, 403)

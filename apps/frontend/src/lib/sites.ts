@@ -45,6 +45,8 @@ export type InternetGateway = {
     internet_hostname: string;
     published_at: string | null;
   }[];
+  /** Online sites without a public name, from every organization (Super Administrator only). */
+  publishable?: { site: string; name: string; organization: string }[];
 };
 
 /** Where a site opens, built from the host the browser already uses for IntraForge (the backend gives only
