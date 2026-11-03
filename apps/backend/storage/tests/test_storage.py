@@ -62,6 +62,13 @@ class BucketFolderTests(StorageTestBase):
 
 
 class FolderNameTests(StorageTestBase):
+    def test_creating_a_folder_is_audited(self):
+        url = reverse("folder-list-create", args=[self.bucket_id])
+        folder_id = self.client.post(url, {"name": "receipts"}).data["id"]
+        event = AuditEvent.objects.get(action="storage.folder.create")
+        self.assertEqual(event.resource_id, str(folder_id))
+        self.assertEqual(event.context, {"name": "receipts", "bucket": str(self.bucket_id)})
+
     def test_a_second_folder_with_the_same_name_is_a_clear_conflict(self):
         url = reverse("folder-list-create", args=[self.bucket_id])
         parent = self.client.post(url, {"name": "invoices"}).data["id"]

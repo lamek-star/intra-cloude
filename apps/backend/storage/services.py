@@ -252,9 +252,18 @@ def create_folder(*, bucket: Bucket, parent: Folder | None, name: str, creator) 
         raise taken
     try:
         with transaction.atomic():
-            return Folder.objects.create(bucket=bucket, parent=parent, name=name, created_by=creator)
+            folder = Folder.objects.create(bucket=bucket, parent=parent, name=name, created_by=creator)
     except IntegrityError as exc:
         raise taken from exc
+    audit.record(
+        actor=creator,
+        organization_id=bucket.organization_id,
+        action="storage.folder.create",
+        resource_type="folder",
+        resource_id=folder.id,
+        context={"name": name, "bucket": str(bucket.id)},
+    )
+    return folder
 
 
 def delete_file(file: FileObject, *, actor) -> None:
