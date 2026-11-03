@@ -78,6 +78,7 @@ LOCAL_APPS = [
     "exports",
     "analytics",
     "service_apps",
+    "sites",
 ]
 
 # --- Service applications (ADR-0018) ---
@@ -92,6 +93,28 @@ SERVICE_APP_DEPLOYMENTS = {
         "db_password": env("SERVICE_APP_SPAREPARTS_DB_PASSWORD", ""),
         "internal_url": env("SERVICE_APP_SPAREPARTS_URL", "http://spareparts:3000"),
         "launch_path": "/apps/spare-parts/",
+    },
+    # The Pharmacy: the same engine built as its pharmacy edition, one per installation.
+    "pharmacy": {
+        "app_type": "pharmacy",
+        "token": env("SERVICE_APP_PHARMACY_TOKEN", ""),
+        "db_role": env("SERVICE_APP_PHARMACY_DB_ROLE", "svc_pharmacy"),
+        "db_password": env("SERVICE_APP_PHARMACY_DB_PASSWORD", ""),
+        "internal_url": env("SERVICE_APP_PHARMACY_URL", "http://pharmacy:3000"),
+        "launch_path": "/apps/pharmacy/",
+    },
+    # IntraForge Pay: one slot per shop (one Pay service, one schema and one ledger each), so several
+    # organizations on one installation each get their own Pay. Slot N runs at http://pay-N:8600.
+    **{
+        f"pay-{n}": {
+            "app_type": "intraforge_pay",
+            "token": env(f"SERVICE_APP_PAY{n}_TOKEN", ""),
+            "db_role": env(f"SERVICE_APP_PAY{n}_DB_ROLE", f"svc_pay_{n}"),
+            "db_password": env(f"SERVICE_APP_PAY{n}_DB_PASSWORD", ""),
+            "internal_url": env(f"SERVICE_APP_PAY{n}_URL", f"http://pay-{n}:8600"),
+            "launch_path": f"/apps/pay-{n}/",
+        }
+        for n in range(1, 4)
     },
 }
 # How long a service-application browser session lives without use (absolute cap below).
@@ -371,6 +394,28 @@ OBJECT_STORAGE_BUCKET_PREFIX = env("OBJECT_STORAGE_BUCKET_PREFIX", "pdc")
 # operator with a real capacity plan (docs/architecture/... hardware
 # guide, once written) can raise or lower it per deployment profile.
 MAX_UPLOAD_SIZE_BYTES = int(env("MAX_UPLOAD_SIZE_BYTES", str(2 * 1024**3)))
+
+# --- Hosted websites (ADR-0019) ---
+# Served by the proxy on their own port; the frontend shows https://<this host>:<port>/<slug>/.
+SITES_PUBLIC_PORT = int(env("SITES_PUBLIC_PORT", "8445"))
+SITES_MAX_ZIP_BYTES = int(env("SITES_MAX_ZIP_BYTES", str(200 * 1024 * 1024)))
+SITES_MAX_TOTAL_BYTES = int(env("SITES_MAX_TOTAL_BYTES", str(500 * 1024 * 1024)))
+SITES_MAX_FILE_BYTES = int(env("SITES_MAX_FILE_BYTES", str(100 * 1024 * 1024)))
+SITES_MAX_FILES = int(env("SITES_MAX_FILES", "5000"))
+# An entry larger than 1 MB that unpacks to more than this many times its packed size is refused (zip bomb).
+SITES_MAX_RATIO = int(env("SITES_MAX_RATIO", "200"))
+# Node.js server apps (ADR-0020): a zip with intraforge.json. They carry their node_modules, hence
+# higher limits.
+SITES_MAX_APP_FILES = int(env("SITES_MAX_APP_FILES", "40000"))
+SITES_MAX_APP_TOTAL_BYTES = int(env("SITES_MAX_APP_TOTAL_BYTES", str(800 * 1024 * 1024)))
+# The app runner (a separate service; empty URL = server apps are not available on this installation).
+SITES_RUNNER_URL = env("SITES_RUNNER_URL", "")
+SITES_RUNNER_TOKEN = env("SITES_RUNNER_TOKEN", "")
+# Where an app reaches IntraForge's public API on its own network (the proxy's API listener).
+SITES_APP_API_URL = env("SITES_APP_API_URL", "http://intraforge:8080/api/v1/")
+# The PC's address on the shop network (set by the shop kit's network script): the address a site's own name
+# must point to on the other PCs (hosts file or router DNS). Empty: this computer only.
+SITES_LAN_ADDRESS = env("SHOP_LAN_ADDRESS", "")
 
 # --- Malware scanning (Section 33 of the master prompt) ---
 # Off by default: turning this on requires a ClamAV daemon actually

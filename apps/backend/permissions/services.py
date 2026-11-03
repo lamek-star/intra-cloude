@@ -206,3 +206,22 @@ def grant_resource_permission(
         context={"permission": permission_code, "granted_to": str(user.id)},
     )
     return grant
+
+
+def revoke_resource_permission(*, grant: ResourceGrant, revoked_by) -> None:
+    """Removes one ResourceGrant (the counterpart of grant_resource_permission), audited."""
+    organization_id, resource_type, resource_id = (
+        grant.organization_id,
+        grant.resource_type,
+        grant.resource_id,
+    )
+    permission, user_id = grant.permission_id, grant.user_id
+    grant.delete()
+    audit.record(
+        actor=revoked_by,
+        organization_id=organization_id,
+        action="permissions.resource_grant.revoke",
+        resource_type=resource_type,
+        resource_id=resource_id,
+        context={"permission": permission, "revoked_from": str(user_id)},
+    )

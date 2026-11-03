@@ -173,10 +173,10 @@ def drop_schema(schema: str) -> None:
         raise ProvisioningError("Could not remove the application's database schema.") from exc
 
 
-def schema_summary(schema: str) -> dict:
+def schema_summary(schema: str, tables: tuple[str, ...]) -> dict:
     """Row counts of the application's main tables, for the removal preview (no row content)."""
     _check(schema)
-    wanted = ["products", "customers", "invoices", "catalogue_parts", "stock_movements", "files"]
+    wanted = list(tables)
     out = {}
     try:
         with _connect() as conn, conn.cursor() as cur:

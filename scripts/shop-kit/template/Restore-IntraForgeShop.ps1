@@ -69,21 +69,56 @@ if ($BackupFolder -ne $dataBackups) {
 
 Step 'Stopping IntraForge (the databases stay up for the restore)'
 Compose up -d --pull never postgres-control postgres-tenant valkey object-storage
-Compose stop proxy spareparts frontend backend worker beat
+# Every application service stops -- not a fixed list: an application that keeps running (IntraForge Pay was) holds
+# database connections and memory the restore needs.
+$keepRunning = @('postgres-control', 'postgres-tenant', 'valkey', 'object-storage')
+$appServices = @(& docker compose config --services | Where-Object { $_ -and $keepRunning -notcontains $_ })
+if ($appServices.Count -gt 0) { Compose stop @appServices }
+
+# A small PC may not have the memory a restore needs (a 4 GB PC gives Docker about 2 GB): say so plainly first.
+$available = $null
+$previousPreference = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+try { $available = [int]((& docker compose exec -T postgres-tenant sh -c "awk '/MemAvailable/ {print int(`$2/1024)}' /proc/meminfo" 2>$null) | Select-Object -Last 1) } catch { }
+$ErrorActionPreference = $previousPreference
+if ($available) {
+    Write-Host "Memory available to IntraForge for the restore: $available MB"
+    if ($available -lt 600) {
+        Write-Host 'That is little: close other programs (browsers, Office) during the restore. It is tried anyway, and nothing is lost if it fails.' -ForegroundColor Yellow
+    }
+}
+
+# One restore command; a step that ran out of memory is tried once more after a pause (other processes may have
+# released memory meanwhile). Any other failure stops at once, as before.
+function Invoke-RestoreStep([string[]]$Arguments) {
+    for ($attempt = 1; $attempt -le 2; $attempt++) {
+        $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        $output = & docker compose run --rm --no-deps backend @Arguments 2>&1 | ForEach-Object { "$_" }
+        $code = $LASTEXITCODE
+        $ErrorActionPreference = $previous
+        $output | Where-Object { $_ -notmatch 'Container .* (Creating|Created)' } | ForEach-Object { Write-Host $_ }
+        if ($code -eq 0) { return }
+        if ($attempt -eq 1 -and ($output -join "`n") -match 'Cannot allocate memory|MemoryError|Out of memory') {
+            Write-Host 'Not enough memory for this step: waiting 20 seconds and trying it once more ...' -ForegroundColor Yellow
+            Start-Sleep -Seconds 20
+            continue
+        }
+        throw "docker compose run --rm --no-deps backend $($Arguments -join ' ') failed (exit $code)"
+    }
+}
 
 # One backup set into the stopped system: roles first (the backup names them as owners), both databases become exactly
 # the backup (--replace: one transaction each; everything entered after the backup goes, and a backup made by an
 # earlier version restores too), the stored files are put back, then the current database structure is applied.
 function Restore-Set($files) {
-    Compose run --rm --no-deps backend python manage.py sync_service_apps
+    Invoke-RestoreStep @('python', 'manage.py', 'sync_service_apps')
     foreach ($type in 'control_db', 'tenant_db', 'object_storage') {
         # (built by assignment: an `if` expression would unwrap a one-element array into a string, and splatting a
         # string passes it character by character)
         $mode = @(); if ($type -ne 'object_storage') { $mode = @('--replace') }
-        Compose run --rm --no-deps backend python manage.py restore_backup_file "/backups/$($files[$type].Name)" --type $type @mode --yes
+        Invoke-RestoreStep (@('python', 'manage.py', 'restore_backup_file', "/backups/$($files[$type].Name)", '--type', $type) + $mode + @('--yes'))
     }
-    Compose run --rm --no-deps backend python manage.py migrate --noinput
-    Compose run --rm --no-deps backend python manage.py sync_service_apps
+    Invoke-RestoreStep @('python', 'manage.py', 'migrate', '--noinput')
+    Invoke-RestoreStep @('python', 'manage.py', 'sync_service_apps')
 }
 
 Step 'Restoring the company data, the business records and the stored files'

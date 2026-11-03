@@ -98,6 +98,16 @@ Write-Host "$checked files verified."
 
 Step 'Creating the data folder and the secret keys'
 foreach ($sub in 'backups', 'keys', 'logs') { New-Item -ItemType Directory -Force -Path (Join-Path $DataDir $sub) | Out-Null }
+# Docker Desktop writes backups as the person signed in to Windows, while this setup may run under another
+# (administrator) account: without this, every backup fails with "Permission denied" (H1). Only backups and logs;
+# the keys folder keeps its default permissions.
+$signedIn = (Get-CimInstance Win32_ComputerSystem).UserName
+foreach ($account in @($signedIn, [Security.Principal.WindowsIdentity]::GetCurrent().Name) | Where-Object { $_ } | Select-Object -Unique) {
+    foreach ($sub in 'backups', 'logs') {
+        $folder = Join-Path $DataDir $sub
+        if (-not (Test-Quiet { icacls $folder /grant "${account}:(OI)(CI)M" /T /C })) { Write-Warning "Could not give $account write access to $folder." }
+    }
+}
 $envPath = Join-Path $PSScriptRoot '.env'
 $dataDirSlash = $DataDir -replace '\\', '/'
 function New-Secret([int]$Bytes) {
@@ -106,7 +116,7 @@ function New-Secret([int]$Bytes) {
     return ([Convert]::ToBase64String($buffer)).TrimEnd('=').Replace('+', '-').Replace('/', '_')
 }
 if ($interrupted) {
-    $kept = Get-Content $envPath | Where-Object { $_ -notmatch '^(SHOP_HTTPS_PORT|SHOP_SPAREPARTS_PORT|SHOP_DATA_DIR|CSRF_TRUSTED_ORIGINS|OIDC_ISSUER|ALLOWED_HOSTS|SHOP_NETWORK|SHOP_BIND_V4|SHOP_BIND_V6|SHOP_TLS_HOSTNAMES|SHOP_DEFAULT_SNI|SHOP_LAN_ADDRESS|SHOP_LAN_NAME)=' }
+    $kept = Get-Content $envPath | Where-Object { $_ -notmatch '^(SHOP_HTTPS_PORT|SHOP_SPAREPARTS_PORT|SHOP_DATA_DIR|CSRF_TRUSTED_ORIGINS|OIDC_ISSUER|ALLOWED_HOSTS|SHOP_NETWORK|SHOP_BIND_V4|SHOP_BIND_V6|SHOP_TLS_HOSTNAMES|SHOP_DEFAULT_SNI|SHOP_LAN_ADDRESS|SHOP_LAN_NAME|SHOP_PUBLIC_URLS|SHOP_SITES_ADDRESSES)=' }
     $text = ($kept -join "`n") + "`nSHOP_HTTPS_PORT=$Port`nSHOP_DATA_DIR=$dataDirSlash`nALLOWED_HOSTS=localhost,127.0.0.1,backend`nCSRF_TRUSTED_ORIGINS=https://localhost:$Port`nOIDC_ISSUER=https://localhost:$Port`n"
     Write-Host 'Keeping the keys created by the interrupted installation.'
 }
@@ -114,7 +124,7 @@ elseif ($KeysFile) {
     Copy-Item -Path $KeysFile -Destination $envPath -Force
     # the port and data folder belong to THIS installation, the secrets to the old one; so does the network access
     # (the old PC's shop-network address must not come along: this PC starts as this-computer-only)
-    $kept = Get-Content $envPath | Where-Object { $_ -notmatch '^(SHOP_HTTPS_PORT|SHOP_SPAREPARTS_PORT|SHOP_DATA_DIR|CSRF_TRUSTED_ORIGINS|OIDC_ISSUER|ALLOWED_HOSTS|SHOP_NETWORK|SHOP_BIND_V4|SHOP_BIND_V6|SHOP_TLS_HOSTNAMES|SHOP_DEFAULT_SNI|SHOP_LAN_ADDRESS|SHOP_LAN_NAME)=' }
+    $kept = Get-Content $envPath | Where-Object { $_ -notmatch '^(SHOP_HTTPS_PORT|SHOP_SPAREPARTS_PORT|SHOP_DATA_DIR|CSRF_TRUSTED_ORIGINS|OIDC_ISSUER|ALLOWED_HOSTS|SHOP_NETWORK|SHOP_BIND_V4|SHOP_BIND_V6|SHOP_TLS_HOSTNAMES|SHOP_DEFAULT_SNI|SHOP_LAN_ADDRESS|SHOP_LAN_NAME|SHOP_PUBLIC_URLS|SHOP_SITES_ADDRESSES)=' }
     $text = ($kept -join "`n") + "`nSHOP_HTTPS_PORT=$Port`nSHOP_DATA_DIR=$dataDirSlash`nALLOWED_HOSTS=localhost,127.0.0.1,backend`nCSRF_TRUSTED_ORIGINS=https://localhost:$Port`nOIDC_ISSUER=https://localhost:$Port`n"
     Write-Host 'Using the keys of the old installation (needed to read its backups).'
 }
@@ -141,7 +151,7 @@ else {
 }
 # The Spare Parts service application's own secrets (ADR-0018): its token for IntraForge's internal API and the
 # password of its database role. Added to keys that predate them (an older keys file or an interrupted install).
-foreach ($name in 'SERVICE_APP_SPAREPARTS_TOKEN', 'SERVICE_APP_SPAREPARTS_DB_PASSWORD') {
+foreach ($name in 'SERVICE_APP_SPAREPARTS_TOKEN', 'SERVICE_APP_SPAREPARTS_DB_PASSWORD', 'SERVICE_APP_PAY1_TOKEN', 'SERVICE_APP_PAY1_DB_PASSWORD', 'SERVICE_APP_PHARMACY_TOKEN', 'SERVICE_APP_PHARMACY_DB_PASSWORD', 'SITES_RUNNER_TOKEN') {
     if ($text -notmatch "(?m)^$name=.+") { $text = $text.TrimEnd("`n") + "`n$name=$(New-Secret 36)`n" }
 }
 [IO.File]::WriteAllText($envPath, $text, (New-Object System.Text.UTF8Encoding($false)))
@@ -200,6 +210,8 @@ if ($RestoreFrom) {
 Step 'Starting IntraForge'
 Compose up -d --pull never
 if (-not (Wait-ShopReady)) { throw 'IntraForge did not become ready. Run Status-IntraForgeShop.ps1 and send its output to the project team.' }
+# Hosted Node.js apps (ADR-0020) that an earlier removal (keeping the data) stopped come back now, not at the next sign-in.
+Start-HostedApps
 
 Step 'Setting up automatic start, the daily backup and shortcuts'
 $powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"

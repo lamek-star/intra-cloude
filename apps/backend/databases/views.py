@@ -1,7 +1,10 @@
 import csv
 import io
+import uuid
 
+from django.db import IntegrityError, transaction
 from django.http import Http404, StreamingHttpResponse
+from psycopg import errors as psycopg_errors
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -14,7 +17,7 @@ from . import connections as connection_ops
 from . import rows as row_ops
 from . import services
 from .connectors import ConnectionFailed
-from .models import DBTable
+from .models import DBForeignKey, DBTable
 from .serializers import (
     ColumnCreateSerializer,
     ColumnSerializer,
@@ -205,6 +208,20 @@ class ColumnCreateView(APIView):
 class ForeignKeyCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
+    def get(self, request, table_id):
+        """The table's links to other tables -- schema metadata, so it needs database.read like the
+        table's own columns (H8: the data explorer shows a linked row's name instead of its id)."""
+        table = services.get_member_table(request.user, table_id)
+        if _environment_scope_denied(request, table):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        resource = _database_resource(table)
+        if not has_permission(
+            request.user, "database.read", organization_id=table.organization_id, resource=resource
+        ):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        foreign_keys = DBForeignKey.objects.filter(column__table=table).order_by("created_at")
+        return Response(ForeignKeySerializer(foreign_keys, many=True).data)
+
     def post(self, request, table_id):
         table = services.get_member_table(request.user, table_id)
         serializer = ForeignKeyCreateSerializer(data=request.data)
@@ -244,7 +261,22 @@ class ForeignKeyCreateView(APIView):
 # client could turn into "fetch everything."
 
 _FILTER_PREFIX = "f_"
-_RESERVED_QUERY_PARAMS = {"limit", "offset", "ordering", "search"}
+_RESERVED_QUERY_PARAMS = {"limit", "offset", "ordering", "search", "ids"}
+MAX_IDS = 100
+
+
+def _parse_ids(raw: str | None) -> list[str] | None:
+    """`?ids=a,b,c` -- fetch a few rows by id in one request (a page's linked rows), at most
+    MAX_IDS. None when absent; RowValueError when malformed."""
+    if not raw:
+        return None
+    parts = [part.strip() for part in raw.split(",") if part.strip()]
+    if len(parts) > MAX_IDS:
+        raise RowValueError(f"at most {MAX_IDS} ids per request")
+    try:
+        return [str(uuid.UUID(part)) for part in parts]
+    except ValueError as exc:
+        raise RowValueError("ids must be a comma-separated list of row ids") from exc
 
 
 def _database_resource(table: DBTable):
@@ -271,6 +303,28 @@ def _parse_filters(query_params) -> dict:
     }
 
 
+def _write_row(write):
+    """Runs one row write in a savepoint and turns a rule the database
+    refuses (a unique value, a link to a missing row, a required value)
+    into a RowValueError with a plain reason -- a 400, never a 500. The
+    shared row service keeps raising IntegrityError, because App Platform
+    records translate it themselves (app_platform/records.py::_run)."""
+    try:
+        with transaction.atomic(using="tenant"):
+            return write()
+    except IntegrityError as exc:
+        cause = exc.__cause__
+        if isinstance(cause, psycopg_errors.UniqueViolation):
+            raise RowValueError("a row with this value already exists (the value must be unique)") from exc
+        if isinstance(cause, psycopg_errors.ForeignKeyViolation):
+            raise RowValueError("the linked row does not exist") from exc
+        if isinstance(cause, psycopg_errors.NotNullViolation):
+            column = getattr(cause.diag, "column_name", None)
+            reason = f"{column!r} is required" if column else "a required value is missing"
+            raise RowValueError(reason) from exc
+        raise RowValueError("the row breaks a rule of this table") from exc
+
+
 class RowListCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -291,12 +345,16 @@ class RowListCreateView(APIView):
             return Response({"detail": "limit/offset must be integers"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
+            filters = _parse_filters(request.query_params)
+            ids = _parse_ids(request.query_params.get("ids"))
+            if ids is not None:
+                filters["id"] = ids
             result = row_ops.list_rows(
                 table=table,
                 limit=limit,
                 offset=offset,
                 ordering=request.query_params.get("ordering"),
-                filters=_parse_filters(request.query_params),
+                filters=filters,
                 search=request.query_params.get("search"),
             )
         except RowValueError as exc:
@@ -314,7 +372,7 @@ class RowListCreateView(APIView):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
         try:
-            row = row_ops.insert_row(table, request.data)
+            row = _write_row(lambda: row_ops.insert_row(table, request.data))
         except RowValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(row, status=status.HTTP_201_CREATED)
@@ -347,7 +405,7 @@ class RowDetailView(APIView):
         ):
             return Response(status=status.HTTP_403_FORBIDDEN)
         try:
-            return Response(row_ops.update_row(table, row_id, request.data))
+            return Response(_write_row(lambda: row_ops.update_row(table, row_id, request.data)))
         except row_ops.RowNotFound as exc:
             raise Http404 from exc
         except RowValueError as exc:

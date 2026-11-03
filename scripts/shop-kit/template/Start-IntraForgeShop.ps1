@@ -20,8 +20,19 @@ try {
     Start-DockerIfNeeded
     $env:SHOP_HTTPS_PORT = "$(Get-ShopPort)"; $env:SHOP_DATA_DIR = ((Get-DataDir) -replace '\\', '/')
     & docker compose up -d --pull never
-    if ($LASTEXITCODE -ne 0) { throw 'Could not start IntraForge. Run "IntraForge Status" and send its output to the project team.' }
+    $upExit = $LASTEXITCODE
+    # A recreate interrupted (e.g. by low memory) can leave a container under a hash-prefixed name such as
+    # "f766f22421cf_intraforge-shop-backend-1" (H11). Recreating the containers repairs it; data lives in volumes.
+    $stray = @(docker ps -a --filter 'label=com.docker.compose.project=intraforge-shop' --format '{{.Names}}' |
+        Where-Object { $_ -match '^[0-9a-f]{12}_' })
+    if ($stray.Count -gt 0 -or $upExit -ne 0) {
+        Write-ShopLog "repairing containers: $($stray -join ', ')"
+        & docker compose up -d --pull never --force-recreate --remove-orphans
+        $upExit = $LASTEXITCODE
+    }
+    if ($upExit -ne 0) { throw 'Could not start IntraForge. Run "IntraForge Status" and send its output to the project team.' }
     if (-not (Wait-ShopReady)) { throw 'IntraForge did not become ready within 3 minutes. Run "IntraForge Status" and send its output to the project team.' }
+    Start-HostedApps
     $seconds = [int]((Get-Date) - $started).TotalSeconds
     Write-ShopLog "start ok in ${seconds}s auto=$([bool]$Auto)"
     if ($Auto) {

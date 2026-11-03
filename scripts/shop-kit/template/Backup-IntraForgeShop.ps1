@@ -47,6 +47,10 @@ try {
         & docker compose up -d --pull never
         if (-not (Wait-ShopReady)) { throw 'IntraForge is not running and did not start, so no backup could be taken.' }
     }
+    # H1: say why and what to do, instead of three pg_dump "Permission denied" failures
+    if (-not (Test-Quiet { docker compose exec -T backend sh -c 'f=/backups/.write-test-$$ && touch "$f" && rm -f "$f"' })) {
+        throw 'IntraForge may not write to the backups folder (Permission denied). Run Repair-IntraForgeBackups.ps1 in the IntraForge folder as administrator; it repairs the folder permissions and takes a backup.'
+    }
     foreach ($type in 'control_db', 'tenant_db', 'object_storage') {
         Write-Host "Backing up $type ..."
         & docker compose exec -T backend python manage.py run_backup $type

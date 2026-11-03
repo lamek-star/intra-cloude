@@ -11,7 +11,7 @@ from rest_framework.views import APIView
 
 from audit import services as audit
 
-from . import services, sessions
+from . import pay_bridge, services, sessions
 from .authentication import IsServicePrincipal, ServiceTokenAuthentication
 from .models import ServiceApp
 from .types import get_type
@@ -154,6 +154,42 @@ class InternalFilesView(_Internal):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class InternalPayRequestsView(_Internal):
+    """Ask this shop's IntraForge Pay to take a payment (pay_bridge.py): the caller names the person,
+    the amount, what it is for and its own record; IntraForge picks the Pay and checks the person."""
+
+    def post(self, request):
+        app = self.instance(request)
+        data = request.data if isinstance(request.data, dict) else {}
+        result = pay_bridge.create_request(
+            app,
+            actor_id=data.get("actorId"),
+            amount_minor=data.get("amountMinor"),
+            reference=data.get("reference"),
+            external_id=data.get("externalId"),
+        )
+        user = result.pop("user")
+        audit.record(
+            actor=user,
+            organization_id=app.organization_id,
+            action="service_app.pay_request",
+            resource_type="service_app",
+            resource_id=result["pay"]["id"],
+            context={
+                "requested_by": {"id": str(app.id), "type": app.app_type, "name": app.display_name},
+                "pay_request_id": result["id"],
+                "amount_minor": result["amount_minor"],
+                "reference": result["reference"],
+            },
+        )
+        return Response(result, status=status.HTTP_201_CREATED)
+
+
+class InternalPayRequestDetailView(_Internal):
+    def get(self, request, request_id):
+        return Response(pay_bridge.request_status(self.instance(request), request_id))
 
 
 class InternalFileDetailView(_Internal):

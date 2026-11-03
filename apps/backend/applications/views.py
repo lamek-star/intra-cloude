@@ -6,7 +6,12 @@ from rest_framework.views import APIView
 
 from organizations.models import Membership
 from organizations.services import get_member_organization
-from permissions.services import PermissionError_, grant_resource_permission, has_permission
+from permissions.services import (
+    PermissionError_,
+    grant_resource_permission,
+    has_permission,
+    revoke_resource_permission,
+)
 
 from . import services
 from .models import Application, ApplicationCredential
@@ -61,9 +66,7 @@ class ApplicationDetailView(APIView):
 
     def get(self, request, application_id):
         application = get_member_application(request.user, application_id)
-        if not has_permission(
-            request.user, "application.read", organization_id=application.organization_id
-        ):
+        if not has_permission(request.user, "application.read", organization_id=application.organization_id):
             return Response(status=status.HTTP_403_FORBIDDEN)
         return Response(ApplicationSerializer(application).data)
 
@@ -168,3 +171,23 @@ class ApplicationResourceGrantListCreateView(APIView):
         except PermissionError_ as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(ResourceGrantSerializer(grant).data, status=status.HTTP_201_CREATED)
+
+
+class ApplicationResourceGrantDetailView(APIView):
+    """Revokes one of the application's own grants (e.g. taking IntraForge Pay away from a hosted app)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, application_id, grant_id):
+        application = get_member_application(request.user, application_id)
+        if not has_permission(
+            request.user, "permissions.manage", organization_id=application.organization_id
+        ):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        grant = application.service_account.identity_user.resource_grants.filter(
+            id=grant_id, organization_id=application.organization_id
+        ).first()
+        if grant is None:
+            raise Http404
+        revoke_resource_permission(grant=grant, revoked_by=request.user)
+        return Response(status=status.HTTP_204_NO_CONTENT)

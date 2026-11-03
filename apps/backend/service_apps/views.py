@@ -151,7 +151,7 @@ class ServiceAppRemovalPreviewView(_HumanOnly):
         if not services.can_manage(request.user, app):
             return Response(status=status.HTTP_403_FORBIDDEN)
         rows = (
-            provisioning.schema_summary(app.schema_name)
+            provisioning.schema_summary(app.schema_name, get_type(app.app_type).summary_tables)
             if provisioning.schema_exists(app.schema_name)
             else {}
         )

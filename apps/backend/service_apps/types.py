@@ -24,6 +24,8 @@ class AppType:
     open_capability: str
     settings_capability: str
     defaults: dict = field(default_factory=dict)
+    # Its main tables, counted (rows only, no content) in the removal confirmation.
+    summary_tables: tuple[str, ...] = ()
 
 
 _TEXT_FIELDS = {
@@ -66,9 +68,40 @@ SPARE_PARTS = AppType(
         "quotationTerms": "",
         "invoiceNotes": "",
     },
+    summary_tables=("products", "customers", "invoices", "catalogue_parts", "stock_movements", "files"),
 )
 
-APP_TYPES = {SPARE_PARTS.key: SPARE_PARTS}
+INTRAFORGE_PAY = AppType(
+    key="intraforge_pay",
+    product_name="IntraForge Pay",
+    description=(
+        "QR payments at the counter with simulated IF Credits (no cash value): customer wallets, "
+        "maker/checker credit, receipts stored in IntraForge, and the customer phone app."
+    ),
+    capabilities=tuple(p for p in PERMISSIONS if p.startswith("ifpay.")),
+    open_capability="ifpay.view",
+    # Pay's only setting is the shop name, changed by whoever manages the installation.
+    settings_capability="app_instance.manage",
+    defaults={"shopName": ""},
+    summary_tables=("users", "journal_transactions", "payment_requests", "receipts", "credit_allocations"),
+)
+
+# The Spare Parts engine in its pharmacy edition (APP_EDITION=pharmacy): the same configuration schema.
+PHARMACY = AppType(
+    key="pharmacy",
+    product_name="Pharmacy",
+    description=(
+        "Medicines with batches and expiry dates, a barcode till that sells the earliest expiry first, "
+        "prescription register, near-expiry and reorder alerts, and the accountant's reports."
+    ),
+    capabilities=tuple(p for p in PERMISSIONS if p.startswith("pharmacy.")),
+    open_capability="pharmacy.view",
+    settings_capability="pharmacy.settings.manage",
+    defaults={**SPARE_PARTS.defaults, "currency": "ERN", "defaultTaxBp": 0},
+    summary_tables=("products", "stock_batches", "customers", "invoices", "stock_movements", "files"),
+)
+
+APP_TYPES = {SPARE_PARTS.key: SPARE_PARTS, INTRAFORGE_PAY.key: INTRAFORGE_PAY, PHARMACY.key: PHARMACY}
 
 
 def get_type(key: str) -> AppType:

@@ -26,7 +26,9 @@ class AuditEventListView(generics.ListAPIView):
         if not has_permission(self.request.user, "audit.read", organization_id=org.id):
             raise PermissionDenied()
 
-        queryset = AuditEvent.objects.filter(organization=org)
+        queryset = AuditEvent.objects.filter(organization=org).select_related(
+            "actor", "actor__service_account__application"
+        )
 
         params = self.request.query_params
         action = params.get("action")

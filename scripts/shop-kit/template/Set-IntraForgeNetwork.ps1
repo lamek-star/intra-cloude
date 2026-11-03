@@ -3,7 +3,8 @@
 .SYNOPSIS  Lets the other PCs in this shop open IntraForge, or makes it this-computer-only again (the default).
 .DESCRIPTION
     -Mode Shop     IntraForge answers on this PC's network address too. Only on a network Windows treats as PRIVATE (the
-                   shop's own network): the Windows Firewall admits port SHOP_HTTPS_PORT from the local subnet on Private
+                   shop's own network): the Windows Firewall admits port SHOP_HTTPS_PORT (and 8445, the hosted websites)
+                   from the local subnet on Private
                    networks and BLOCKS it on Public ones (a block rule wins over any other program's allow rule). The PC's
                    name and address are added to IntraForge's certificate and allowed addresses. The certificate other PCs
                    must trust once is put in <data folder>\shop-network with a one-click script for them.
@@ -26,11 +27,13 @@ try {
     $envPath = Join-Path $PSScriptRoot '.env'
     if (-not (Test-Path $envPath)) { throw 'IntraForge is not installed in this folder (.env is missing).' }
     $port = Get-ShopPort
+    # Hosted websites (Organization > Websites) answer on their own port: a separate origin from IntraForge.
+    $sitesPort = 8445
     $folder = Join-Path (Get-DataDir) 'shop-network'
 
     # The LAN settings live in .env (kept by upgrades); everything else in it is left exactly as it is.
     function Set-NetworkSettings([System.Collections.Specialized.OrderedDictionary]$Values) {
-        $names = 'SHOP_NETWORK|SHOP_BIND_V4|SHOP_BIND_V6|SHOP_TLS_HOSTNAMES|SHOP_DEFAULT_SNI|SHOP_LAN_ADDRESS|SHOP_LAN_NAME|ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS'
+        $names = 'SHOP_NETWORK|SHOP_BIND_V4|SHOP_BIND_V6|SHOP_TLS_HOSTNAMES|SHOP_DEFAULT_SNI|SHOP_LAN_ADDRESS|SHOP_LAN_NAME|SHOP_PUBLIC_URLS|SHOP_SITES_ADDRESSES|ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS'
         $kept = [IO.File]::ReadAllLines($envPath) | Where-Object { $_ -notmatch "^($names)=" }
         $text = (($kept -join "`n").TrimEnd("`r", "`n")) + "`n" + (($Values.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join "`n") + "`n"
         [IO.File]::WriteAllText($envPath, $text, (New-Object System.Text.UTF8Encoding($false)))
@@ -65,15 +68,18 @@ try {
             SHOP_DEFAULT_SNI     = $address
             SHOP_LAN_ADDRESS     = $address
             SHOP_LAN_NAME        = $name
+            SHOP_PUBLIC_URLS     = "https://${address}:$port,https://${name}:$port"
+            SHOP_SITES_ADDRESSES = "localhost:$sitesPort 127.0.0.1:$sitesPort ${address}:$sitesPort ${name}:$sitesPort"
             ALLOWED_HOSTS        = "localhost,127.0.0.1,backend,$address,$name"
             CSRF_TRUSTED_ORIGINS = "https://localhost:$port,https://${address}:$port,https://${name}:$port"
         })
 
         Step 'Windows Firewall: shop (Private) network only'
-        New-NetFirewallRule -Group $RuleGroup -DisplayName "IntraForge - shop network (TCP $port)" -Direction Inbound -Protocol TCP `
-            -LocalPort $port -Profile Private -RemoteAddress LocalSubnet -Action Allow | Out-Null
-        New-NetFirewallRule -Group $RuleGroup -DisplayName "IntraForge - blocked on public networks (TCP $port)" -Direction Inbound -Protocol TCP `
-            -LocalPort $port -Profile Public -Action Block | Out-Null
+        $ports = @("$port", "$sitesPort")
+        New-NetFirewallRule -Group $RuleGroup -DisplayName "IntraForge - shop network (TCP $port, $sitesPort)" -Direction Inbound -Protocol TCP `
+            -LocalPort $ports -Profile Private -RemoteAddress LocalSubnet -Action Allow | Out-Null
+        New-NetFirewallRule -Group $RuleGroup -DisplayName "IntraForge - blocked on public networks (TCP $port, $sitesPort)" -Direction Inbound -Protocol TCP `
+            -LocalPort $ports -Profile Public -Action Block | Out-Null
         Write-Host "Allowed from the local subnet on Private networks; blocked on Public networks."
     }
     else {

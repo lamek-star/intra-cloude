@@ -8,7 +8,7 @@ the service simply has no slot to install into.
 import hashlib
 import hmac
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from django.conf import settings
 
@@ -28,6 +28,9 @@ class Deployment:
     db_password: str
     internal_url: str
     launch_path: str
+    # The token itself, used only when IntraForge calls this service on another application's behalf
+    # (pay_bridge.py). Never logged, printed or returned: excluded from repr and comparisons.
+    token: str = field(default="", repr=False, compare=False)
 
     def token_matches(self, presented: str) -> bool:
         digest = hashlib.sha256(presented.encode()).hexdigest()
@@ -56,6 +59,7 @@ def _load() -> dict[str, Deployment]:
             db_password=spec["db_password"],
             internal_url=spec["internal_url"].rstrip("/"),
             launch_path=spec["launch_path"],
+            token=token,
         )
     return out
 

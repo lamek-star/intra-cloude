@@ -296,3 +296,44 @@ function Register-ShopUninstallEntry {
     catch { Write-Host "Could not register IntraForge in Windows' Installed apps ($($_.Exception.Message))." -ForegroundColor Yellow }
 }
 function Unregister-ShopUninstallEntry { Remove-Item -Path $script:UninstallKey -Recurse -ErrorAction SilentlyContinue }
+
+# ---- hosted Node.js apps (ADR-0020) ------------------------------------------------------------------------------------
+# The app runner starts each hosted app in its own container. Those containers are not part of the compose project, so
+# stopping, starting and removing IntraForge handles them here (they carry the label intraforge.project).
+function Get-HostedAppContainers([switch]$Running) {
+    $all = if ($Running) { @() } else { @('-a') }
+    $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    $names = @(& docker ps @all --filter 'label=intraforge.project=intraforge-shop' --format '{{.Names}}' 2>$null | Where-Object { $_ })
+    $ErrorActionPreference = $previous
+    return $names
+}
+function Get-HostedAppsStateFile { return (Join-Path (Get-DataDir) 'logs\hosted-apps-running.txt') }
+
+# Stops the running apps and remembers which were running, so Start-HostedApps brings back exactly those (an app the
+# shop took offline stays offline).
+function Stop-HostedApps {
+    $running = Get-HostedAppContainers -Running
+    if ($running.Count -eq 0) { return }
+    $file = Get-HostedAppsStateFile
+    New-Item -ItemType Directory -Force -Path (Split-Path $file) | Out-Null
+    Set-Content -Path $file -Value $running -Encoding ASCII
+    foreach ($name in $running) { if (-not (Test-Quiet { docker stop $name })) { Write-Warning "Could not stop the hosted app $name." } }
+}
+function Start-HostedApps {
+    $file = Get-HostedAppsStateFile
+    if (-not (Test-Path $file)) { return }
+    foreach ($name in (Get-Content $file | Where-Object { $_ -match '^ifapp-[0-9a-f]{32}$' })) {
+        if (-not (Test-Quiet { docker start $name })) { Write-Warning "Could not start the hosted app $name." }
+    }
+    Remove-Item -Force $file
+}
+# Complete removal: every hosted app's container, network and image, and the Node.js runtime image.
+function Remove-HostedApps {
+    foreach ($name in (Get-HostedAppContainers)) { [void](Test-Quiet { docker rm -f $name }) }
+    $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    $networks = @(& docker network ls --filter 'label=intraforge.project=intraforge-shop' --format '{{.Name}}' 2>$null | Where-Object { $_ })
+    $images = @(& docker images --format '{{.Repository}}:{{.Tag}}' 2>$null | Where-Object { $_ -like 'ifapp-*' -or $_ -like 'intraforge-runtime-node:*' })
+    $ErrorActionPreference = $previous
+    foreach ($network in $networks) { [void](Test-Quiet { docker network rm $network }) }
+    foreach ($image in $images) { [void](Test-Quiet { docker image rm $image }) }
+}

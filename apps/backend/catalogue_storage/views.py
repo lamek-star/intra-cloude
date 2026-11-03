@@ -11,7 +11,7 @@ from storage.backends import get_client
 
 from . import services
 from .models import Diagram, OEMPart
-from .serializers import OEMPartSerializer
+from .serializers import DiagramDetailSerializer, OEMPartSerializer
 
 
 class OEMPartSearchView(APIView):
@@ -135,3 +135,71 @@ class DiagramImageView(APIView):
         response = StreamingHttpResponse(body.iter_chunks(1024 * 1024), content_type=file_obj.mime_type)
         response["Content-Length"] = str(file_obj.size)
         return response
+
+
+class DiagramDetailView(APIView):
+    """`GET /api/v1/catalogue/diagrams/{id}/` -- the diagram plus its
+    stored figure snapshot (every part number drawn on it), served from
+    this database alone so it works with no external access."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, diagram_id):
+        diagram = Diagram.objects.filter(pk=diagram_id).first()
+        if diagram is None:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        return Response(DiagramDetailSerializer(diagram).data)
+
+
+class DiagramFigureImportView(APIView):
+    """`POST /api/v1/catalogue/diagrams/import/` -- persists one whole
+    figure (see services.import_figure). Same gate as
+    OEMPartImportView: only an ApplicationCredential bearer token may
+    write; metadata only, never image bytes."""
+
+    permission_classes = [IsAuthenticated]
+
+    REQUIRED_FIELDS = ("provider", "provider_diagram_id", "manufacturer", "figure_data")
+
+    def post(self, request):
+        if not isinstance(request.auth, ApplicationCredential):
+            audit.record(
+                actor=request.user,
+                organization_id=None,
+                action="catalogue.diagram.import",
+                result=AuditEvent.Result.DENIED,
+                context={"reason": "not bearer-token authenticated"},
+            )
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        body = request.data
+        missing = [f for f in self.REQUIRED_FIELDS if not body.get(f)]
+        if missing:
+            return Response(
+                {"detail": f"Missing required field(s): {', '.join(missing)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            result = services.import_figure(
+                provider=body["provider"],
+                provider_diagram_id=body["provider_diagram_id"],
+                diagram_code=body.get("diagram_code", ""),
+                source_image_url=body.get("source_image_url", ""),
+                manufacturer=body["manufacturer"],
+                figure_data=body["figure_data"],
+            )
+        except services.FigureError as error:
+            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+        diagram = Diagram.objects.get(
+            provider=body["provider"], provider_diagram_id=body["provider_diagram_id"]
+        )
+        audit.record(
+            actor=request.user,
+            organization_id=None,
+            action="catalogue.diagram.import",
+            resource_type="diagram",
+            resource_id=diagram.id,
+        )
+        payload = DiagramDetailSerializer(diagram).data
+        payload["parts_created"] = result.parts_created
+        payload["parts_updated"] = result.parts_updated
+        return Response(payload, status=status.HTTP_201_CREATED)

@@ -41,7 +41,8 @@ else {
     $mem = docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' | Where-Object { $_ -like 'intraforge-shop*' } | ForEach-Object { ($_ -split ' ')[1] }
     $sum = 0.0; foreach ($m in $mem) { if ($m -match '([\d.]+)GiB') { $sum += [double]$Matches[1] * 1024 } elseif ($m -match '([\d.]+)MiB') { $sum += [double]$Matches[1] } }
     Line "Memory in use:    $([int]$sum) MiB (all IntraForge services)"
-    $started = docker inspect --format '{{.State.StartedAt}}' intraforge-shop-backend-1 2>$null
+    $backendId = docker compose ps -q backend 2>$null
+    $started = if ($backendId) { docker inspect --format '{{.State.StartedAt}}' $backendId 2>$null }
     if ($started) { Line "Backend started:  $started" }
 }
 $backupDir = Join-Path (Get-DataDir) 'backups'

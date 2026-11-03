@@ -46,7 +46,22 @@ if ($DeleteData -and -not $DataDeletionConfirmed) {
 }
 
 $dockerUp = Test-Quiet { docker info }
-if ($BackupFirst -or $DeleteData) {
+# A complete removal deletes the data BEFORE the images. If this version's images are already gone, an earlier
+# complete removal got that far and stopped: the data is already deleted and there is nothing to back up (trying
+# would only start an empty IntraForge). Finish the removal instead of refusing for ever.
+$finishingEarlierRemoval = $false
+if ($DeleteData -and $dockerUp) {
+    $env:SHOP_HTTPS_PORT = "$(Get-ShopPort)"; $env:SHOP_DATA_DIR = ($dataDir -replace '\\', '/')
+    $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    $backendImage = @(& docker compose config --images 2>$null | Where-Object { $_ -like 'intraforge-shop-backend:*' }) | Select-Object -First 1
+    $ErrorActionPreference = $previous
+    if ($backendImage -and -not (Test-Quiet { docker image inspect $backendImage })) {
+        $finishingEarlierRemoval = $true
+        Write-Host "IntraForge's program ($backendImage) is already gone: an earlier complete removal stopped half-way." -ForegroundColor Yellow
+        Write-Host 'Its data was deleted then; finishing the removal now (nothing is left to back up).' -ForegroundColor Yellow
+    }
+}
+if (($BackupFirst -or $DeleteData) -and -not $finishingEarlierRemoval) {
     Step 'A complete backup first'
     if (-not $dockerUp) { Start-DockerIfNeeded; $dockerUp = Test-Quiet { docker info } }
     & (Join-Path $PSScriptRoot 'Backup-IntraForgeShop.ps1')
@@ -58,28 +73,49 @@ if ($BackupFirst -or $DeleteData) {
 
 Step 'Removing automatic start, backup tasks, the shortcut and the Installed-apps entry'
 Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'IntraForgeShop' -ErrorAction SilentlyContinue
-Unregister-ScheduledTask -TaskName 'IntraForge daily backup' -Confirm:$false -ErrorAction SilentlyContinue
-Unregister-ScheduledTask -TaskName 'IntraForge weekly backup check' -Confirm:$false -ErrorAction SilentlyContinue
+$taskNames = @('IntraForge daily backup', 'IntraForge weekly backup check')
+foreach ($name in $taskNames) { Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue }
 Remove-ShopShortcuts
 Unregister-ShopUninstallEntry
-# The shop-network firewall rules, if other PCs were allowed in (changing the firewall needs one UAC prompt).
-if (Get-NetFirewallRule -Group 'IntraForge shop network' -ErrorAction SilentlyContinue) {
-    $command = "Get-NetFirewallRule -Group 'IntraForge shop network' | Remove-NetFirewallRule"
+# What only an administrator may remove: the backup tasks (setup creates them as administrator, so a normal user --
+# the Control Center -- gets "Access is denied") and the shop-network firewall rules. One UAC prompt for both.
+$leftTasks = @($taskNames | Where-Object { Get-ScheduledTask -TaskName $_ -ErrorAction SilentlyContinue })
+$hasFirewall = [bool](Get-NetFirewallRule -Group 'IntraForge shop network' -ErrorAction SilentlyContinue)
+if ($leftTasks.Count -gt 0 -or $hasFirewall) {
+    $parts = @()
+    foreach ($name in $leftTasks) { $parts += "Unregister-ScheduledTask -TaskName '$name' -Confirm:`$false -ErrorAction SilentlyContinue" }
+    if ($hasFirewall) { $parts += "Get-NetFirewallRule -Group 'IntraForge shop network' | Remove-NetFirewallRule" }
+    $command = $parts -join '; '
     if (Test-Admin) { Invoke-Expression $command }
     else {
-        Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Verb RunAs -Wait `
-            -ArgumentList "-NoProfile -Command `"$command`""
+        Write-Host 'Windows asks once for administrator permission to remove the backup tasks / firewall rules.' -ForegroundColor Yellow
+        try {
+            Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Verb RunAs -Wait `
+                -ArgumentList "-NoProfile -Command `"$command`""
+        }
+        catch { Write-Host 'The administrator permission was declined.' -ForegroundColor Yellow }
+    }
+    $stillTasks = @($taskNames | Where-Object { Get-ScheduledTask -TaskName $_ -ErrorAction SilentlyContinue })
+    if ($stillTasks.Count -gt 0) {
+        Write-Host "Still on this PC (remove them in Task Scheduler, or run this again and allow the permission): $($stillTasks -join ', ')" -ForegroundColor Yellow
     }
 }
 
 Step 'Removing the containers'
 if ($dockerUp) {
     $env:SHOP_HTTPS_PORT = "$(Get-ShopPort)"; $env:SHOP_DATA_DIR = ($dataDir -replace '\\', '/')
+    # Hosted Node.js apps (ADR-0020): removed with everything else on a complete removal; otherwise stopped, and
+    # started again by the next installation's first start.
+    if ($DeleteData) { Remove-HostedApps } else { Stop-HostedApps }
     if ($DeleteData) { & docker compose down --volumes --remove-orphans } else { & docker compose down --remove-orphans }
     if ($LASTEXITCODE -ne 0) { throw 'Could not remove the containers.' }
     if ($DeleteData) {
+        # Every IntraForge image, this version's and earlier ones'. One still used by another container is kept and
+        # named -- never a reason to stop half-way (Docker's message on stderr used to abort the whole removal).
         $images = & docker images --format '{{.Repository}}:{{.Tag}}' | Where-Object { $_ -like 'intraforge-shop-*' }
-        foreach ($image in $images) { & docker image rm $image 2>$null | Out-Null }
+        $kept = @()
+        foreach ($image in $images) { if (-not (Test-Quiet { docker image rm $image })) { $kept += $image } }
+        if ($kept.Count -gt 0) { Write-Host "Kept (still used by another container on this PC): $($kept -join ', ')" -ForegroundColor Yellow }
     }
 }
 else { Write-Host 'Docker is not running: the containers (and, for complete removal, the data volumes) could not be removed. Start Docker Desktop and run this again to finish.' -ForegroundColor Yellow }

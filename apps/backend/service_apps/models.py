@@ -1,7 +1,7 @@
 """Separately deployed service applications (ADR-0018).
 
-A ServiceApp is one installed instance of an application type (today only
-`spare_parts`) that runs as its own service but keeps its data, files,
+A ServiceApp is one installed instance of an application type (`spare_parts`,
+`intraforge_pay`, `pharmacy`) that runs as its own service but keeps its data, files,
 identity, audit and configuration in IntraForge.
 """
 
@@ -14,6 +14,8 @@ from django.db import models
 class ServiceApp(models.Model):
     class AppType(models.TextChoices):
         SPARE_PARTS = "spare_parts", "Spare Parts"
+        INTRAFORGE_PAY = "intraforge_pay", "IntraForge Pay"
+        PHARMACY = "pharmacy", "Pharmacy"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     organization = models.ForeignKey(

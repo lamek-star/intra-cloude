@@ -5,13 +5,17 @@ from .models import Diagram, DiagramPart, OEMPart
 
 class DiagramSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()
+    has_figure = serializers.SerializerMethodField()
 
     class Meta:
         model = Diagram
         fields = [
             "id", "provider", "provider_diagram_id", "diagram_code",
-            "license_status", "source_image_url", "image_url",
+            "license_status", "source_image_url", "image_url", "has_figure",
         ]
+
+    def get_has_figure(self, diagram: Diagram):
+        return bool(diagram.figure_data)
 
     def get_image_url(self, diagram: Diagram):
         # Only a locally-stored, permission-confirmed image gets a
@@ -22,6 +26,11 @@ class DiagramSerializer(serializers.ModelSerializer):
         if diagram.license_status != Diagram.LicenseStatus.LOCALLY_STORED or not diagram.file_id:
             return None
         return f"/api/v1/catalogue/diagrams/{diagram.id}/image/"
+
+
+class DiagramDetailSerializer(DiagramSerializer):
+    class Meta(DiagramSerializer.Meta):
+        fields = DiagramSerializer.Meta.fields + ["figure_data"]
 
 
 class DiagramPartSerializer(serializers.ModelSerializer):

@@ -405,3 +405,46 @@ class AppModelScopeSharingTests(SharingTestBase):
 
         resp = self._share(resource_type="app_model", resource_id=str(uuid.uuid4()))
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class OverlappingShareTests(SharingTestBase):
+    """H13: an identical share is refused, and revoking one share keeps the access that
+    another active share on the same resource still gives."""
+
+    def _files_status(self):
+        self.client.force_login(self.member)
+        code = self.client.get(reverse("file-list-create", args=[self.bucket_id])).status_code
+        self.client.force_login(self.admin)
+        return code
+
+    def test_the_same_share_twice_is_refused(self):
+        self.assertEqual(self._share(level="read").status_code, status.HTTP_201_CREATED)
+        again = self._share(level="read")
+        self.assertEqual(again.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("already shared", str(again.data))
+
+    def test_revoking_a_personal_share_keeps_access_given_through_a_team(self):
+        team = self.client.post(reverse("team-list-create", args=[self.org_id]), {"name": "Eng"})
+        self.client.post(
+            reverse("team-member-list-create", args=[team.data["id"]]), {"user_id": str(self.member.id)}
+        )
+        self._share(principal_type="team", team_id=team.data["id"], user_id=None, level="read")
+        personal = self._share(level="read")
+        revoke = self.client.delete(reverse("share-grant-detail", args=[personal.data["id"]]))
+        self.assertEqual(revoke.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(self._files_status(), status.HTTP_200_OK)
+
+    def test_revoking_a_write_share_keeps_an_overlapping_read_share(self):
+        self._share(level="read")
+        write = self._share(level="write")
+        self.client.delete(reverse("share-grant-detail", args=[write.data["id"]]))
+        self.assertEqual(self._files_status(), status.HTTP_200_OK)
+        self.client.force_login(self.member)
+        self.assertEqual(self._upload().status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_after_revoking_every_share_the_access_is_gone(self):
+        read = self._share(level="read")
+        write = self._share(level="write")
+        self.client.delete(reverse("share-grant-detail", args=[read.data["id"]]))
+        self.client.delete(reverse("share-grant-detail", args=[write.data["id"]]))
+        self.assertEqual(self._files_status(), status.HTTP_403_FORBIDDEN)

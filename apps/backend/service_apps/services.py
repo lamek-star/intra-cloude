@@ -288,8 +288,11 @@ def remove(actor, app: ServiceApp, *, confirm_name: str, delete_data: bool) -> d
             )
             raise ValidationError("The safety backup failed, so nothing was deleted. Check Backup & Restore.")
         backups[kind] = str(record.id)
+    tables = get_type(app.app_type).summary_tables
     counts = (
-        provisioning.schema_summary(app.schema_name) if provisioning.schema_exists(app.schema_name) else {}
+        provisioning.schema_summary(app.schema_name, tables)
+        if provisioning.schema_exists(app.schema_name)
+        else {}
     )
     provisioning.drop_schema(app.schema_name)
     from storage.backends import get_client
@@ -389,6 +392,11 @@ def ingest_audit(app: ServiceApp, events: list) -> list[str]:
         entity_id = str(raw.get("entityId") or "")[:64]
         if not _EVENT_ID.match(event_id) or not _ACTION.match(action) or not _ENTITY.match(entity_type):
             raise ValidationError({"events": f"Malformed event {event_id[:64]!r}."})
+        # The outcome the service recorded (a refused action must never read as a success here).
+        # Optional for services that predate it: absent means success.
+        result = str(raw.get("result") or AuditEvent.Result.SUCCESS)
+        if result not in AuditEvent.Result.values:
+            raise ValidationError({"events": f"Unknown result for event {event_id[:64]!r}."})
         metadata = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
         if len(json.dumps(metadata, default=str)) > 4000:
             metadata = {"truncated": True}
@@ -403,6 +411,7 @@ def ingest_audit(app: ServiceApp, events: list) -> list[str]:
                 action=f"{prefix}.{action}"[:100],
                 resource_type=f"{prefix}.{entity_type}"[:100],
                 resource_id=entity_id,
+                result=result,
                 context={
                     "application": {"id": str(app.id), "type": app_type.key, "name": app.display_name},
                     "summary": str(raw.get("summary", ""))[:500],

@@ -550,3 +550,18 @@ class MovementTimestampContractTests(TransactionBase):
         self.assertIn("ISO datetime", response.data["detail"])
         self.assertEqual(self._records("stock_movement"), [])
         self.assertIsNone(self._balance())
+
+    def test_a_timestamp_as_the_api_returns_it_can_be_sent_back_unchanged(self):
+        """H12: the API returns datetimes with an explicit UTC "Z"; sending that value back must work."""
+        response = self._receive_at("2026-09-19T13:35:00Z")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(self._balance(), 100)
+        movement = self._records("stock_movement")[0]
+        stored = str(movement[self._definition_id("stock_movement", "occurred_at")]).replace(" ", "T")
+        self.assertTrue(stored.startswith("2026-09-19T13:35:00"), stored)
+
+    def test_a_non_utc_offset_is_still_refused_and_commits_nothing(self):
+        response = self._receive_at("2026-09-19T13:35:00+03:00")
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(self._records("stock_movement"), [])
+        self.assertIsNone(self._balance())

@@ -71,6 +71,13 @@ PERMISSIONS = {
         "Required in addition to environment.manage/environment.secrets.manage for any mutating "
         "operation on a production-tier Environment"
     ),
+    # Hosted websites (ADR-0019).
+    "sites.read": "See the organization's hosted websites and their versions",
+    "sites.manage": "Upload, publish, switch versions of, take offline and delete hosted websites",
+    # The internet gate (ADR-0020 decision 4): held only by the Super Administrator (platform-wide).
+    "sites.internet.manage": (
+        "Switch the internet gate (Cloudflare Tunnel) on or off and publish or revoke sites on the internet"
+    ),
     # The separately deployed Spare Parts application (ADR-0018). Default-deny, granted per installed
     # service application (resource type `service_app`) or organization-wide through a role. The
     # application's own identity provider maps these onto its permission names.
@@ -95,10 +102,90 @@ PERMISSIONS = {
     "spareparts.reports.financial": "Read financial reports (outstanding invoices, payments)",
     "spareparts.audit.read": "Read the Spare Parts application's own history",
     "spareparts.settings.manage": "Change the Spare Parts application's shop and document settings",
+    # The separately deployed IntraForge Pay application (ADR-0018, amended 2026-10-13): QR checkout with
+    # simulated IF Credits. Same default-deny model as Spare Parts; Pay maps these onto its own operations.
+    "ifpay.view": "Open an installed IntraForge Pay application",
+    "ifpay.checkout": "Take QR payments at the counter and read the shop's receipts",
+    "ifpay.customers.manage": "Create and deactivate the shop's customer wallets",
+    "ifpay.allocations.request": "Request simulated credit for a customer wallet (maker)",
+    "ifpay.allocations.approve": "Approve or reject another person's credit request (checker)",
+    "ifpay.audit.read": "Read IntraForge Pay's journal, receipts and history",
+    # The Pharmacy: the Spare Parts engine in its pharmacy edition (APP_EDITION=pharmacy), its own
+    # application type with batches and expiry, the till and the prescription register. Same
+    # default-deny model; it has no reference catalogue.
+    "pharmacy.view": "Open an installed Pharmacy and read its settings and documents",
+    "pharmacy.products.read": "Read the pharmacy's medicines and products",
+    "pharmacy.products.manage": "Create and change medicines, prices, barcodes and prescription status",
+    "pharmacy.cost.read": "See purchase costs, stock value and profit",
+    "pharmacy.inventory.read": "Read stock, batches and expiry dates",
+    "pharmacy.inventory.manage": (
+        "Receive, adjust, transfer and write off (expired) stock; manage locations"
+    ),
+    "pharmacy.sales.read": "Read customers, orders, invoices and payments",
+    "pharmacy.sales.manage": "Sell at the till, invoice and record payments",
+    "pharmacy.suppliers.manage": "Create and change suppliers",
+    "pharmacy.purchasing.read": "Read suppliers and purchase orders",
+    "pharmacy.purchasing.manage": "Create purchase orders and receive goods (with batch and expiry)",
+    "pharmacy.reports.inventory": "Read stock, low-stock and expiry reports",
+    "pharmacy.reports.sales": "Read sales reports and the prescription register",
+    "pharmacy.reports.financial": (
+        "Read the daily sales book, stock value, write-offs and outstanding invoices"
+    ),
+    "pharmacy.audit.read": "Read the Pharmacy's own history",
+    "pharmacy.settings.manage": "Change the Pharmacy's shop and document settings",
 }
 
 _ALL = list(PERMISSIONS.keys())
 _SPAREPARTS_ALL = [p for p in PERMISSIONS if p.startswith("spareparts.")]
+_PHARMACY_ALL = [p for p in PERMISSIONS if p.startswith("pharmacy.")]
+# Sells and keeps the stock right; no financial reports or settings.
+_PHARMACIST = [
+    "pharmacy.view",
+    "pharmacy.products.read",
+    "pharmacy.products.manage",
+    "pharmacy.cost.read",
+    "pharmacy.inventory.read",
+    "pharmacy.inventory.manage",
+    "pharmacy.sales.read",
+    "pharmacy.sales.manage",
+    "pharmacy.suppliers.manage",
+    "pharmacy.purchasing.read",
+    "pharmacy.purchasing.manage",
+    "pharmacy.reports.inventory",
+    "pharmacy.reports.sales",
+]
+# The till only: sells, sees stock, no costs.
+_PHARMACY_CASHIER = [
+    "pharmacy.view",
+    "pharmacy.products.read",
+    "pharmacy.inventory.read",
+    "pharmacy.sales.read",
+    "pharmacy.sales.manage",
+    "pharmacy.reports.sales",
+]
+# Reads everything the accounts need; changes nothing.
+_PHARMACY_ACCOUNTANT = [
+    "pharmacy.view",
+    "pharmacy.products.read",
+    "pharmacy.cost.read",
+    "pharmacy.inventory.read",
+    "pharmacy.sales.read",
+    "pharmacy.purchasing.read",
+    "pharmacy.reports.inventory",
+    "pharmacy.reports.sales",
+    "pharmacy.reports.financial",
+    "pharmacy.audit.read",
+]
+_IFPAY_ALL = [p for p in PERMISSIONS if p.startswith("ifpay.")]
+_IFPAY_CASHIER = ["ifpay.view", "ifpay.checkout"]
+# Requests and approves, but never their own request: Pay and its database refuse self-approval.
+_IFPAY_SUPERVISOR = [
+    "ifpay.view",
+    "ifpay.customers.manage",
+    "ifpay.allocations.request",
+    "ifpay.allocations.approve",
+    "ifpay.audit.read",
+]
 # The Spare Parts application's own roles (SALES, INVENTORY, VIEWER; ADMIN = every spareparts.*
 # capability), reproduced as capability sets so its behaviour stays exactly what its qualification
 # tested. Its OWNER additionally manages people -- in IntraForge that is users.manage.
@@ -144,7 +231,12 @@ SYSTEM_ROLES: dict[str, tuple[str, list[str]]] = {
     # role in Phase 3 (an admin couldn't touch their own org's files)
     # showed that reading as an exhaustive list breaks the "Org owner/IT
     # admin" intent, so this is now the full grant.
-    "organization-administrator": ("Organization Administrator", [p for p in _ALL if p != "system.admin"]),
+    # Not the internet gate either: putting a site on the internet is the Super Administrator's
+    # decision alone.
+    "organization-administrator": (
+        "Organization Administrator",
+        [p for p in _ALL if p not in ("system.admin", "sites.internet.manage")],
+    ),
     "storage-administrator": (
         "Storage Administrator",
         [
@@ -186,6 +278,8 @@ SYSTEM_ROLES: dict[str, tuple[str, list[str]]] = {
             "environment.read",
             "environment.manage",
             "environment.secrets.manage",
+            "sites.read",
+            "sites.manage",
             # Deliberately NOT environment.production.manage: a Developer
             # can create/manage Development and Staging environments and
             # their secrets, but any mutating operation on a
@@ -194,7 +288,10 @@ SYSTEM_ROLES: dict[str, tuple[str, list[str]]] = {
         ],
     ),
     "editor": ("Editor", [*_STORAGE_RW, *_DATABASE_RW, "dataset.import"]),
-    "viewer": ("Viewer", ["storage.read", "database.read", "environment.read", "application.read"]),
+    "viewer": (
+        "Viewer",
+        ["storage.read", "database.read", "environment.read", "application.read", "sites.read"],
+    ),
     "auditor": ("Auditor", ["audit.read"]),
     # Guest and Service Account hold no role-wide permissions by design —
     # access is entirely via ResourceGrant (docs/security/PERMISSIONS.md
@@ -208,6 +305,13 @@ SYSTEM_ROLES: dict[str, tuple[str, list[str]]] = {
     "spare-parts-sales": ("Spare Parts Sales", _SPAREPARTS_SALES),
     "spare-parts-inventory": ("Spare Parts Inventory", _SPAREPARTS_INVENTORY),
     "spare-parts-viewer": ("Spare Parts Viewer", _SPAREPARTS_VIEWER),
+    "pay-manager": ("Pay Manager", _IFPAY_ALL),
+    "pay-supervisor": ("Pay Supervisor", _IFPAY_SUPERVISOR),
+    "pay-cashier": ("Pay Cashier", _IFPAY_CASHIER),
+    "pharmacy-manager": ("Pharmacy Manager", _PHARMACY_ALL),
+    "pharmacist": ("Pharmacist", _PHARMACIST),
+    "pharmacy-cashier": ("Pharmacy Cashier", _PHARMACY_CASHIER),
+    "pharmacy-accountant": ("Pharmacy Accountant", _PHARMACY_ACCOUNTANT),
 }
 
 # Only this role may be assigned with organization=None (platform-wide) —
@@ -234,11 +338,20 @@ ORGANIZATION_ROLE_SUMMARIES: dict[str, str] = {
     "spare-parts-sales": "Spare Parts selling: customers, quotations, orders, invoices. No cost prices.",
     "spare-parts-inventory": "Spare Parts stock and purchasing, with cost prices. No selling.",
     "spare-parts-viewer": "Spare Parts look-only: catalogue, products and stock levels.",
+    "pay-manager": "Everything in IntraForge Pay: counter, customer wallets, credit requests and approvals.",
+    "pay-supervisor": "IntraForge Pay customer wallets, credit requests and approvals, history. No counter.",
+    "pay-cashier": "IntraForge Pay counter: show payment QR codes and read the shop's receipts.",
+    "pharmacy-manager": "Everything in the Pharmacy, including costs, reports and settings.",
+    "pharmacist": "Pharmacy till and stock: sell, receive with batch and expiry, write off expired stock.",
+    "pharmacy-cashier": "Pharmacy till only: scan and sell, take payment. No costs.",
+    "pharmacy-accountant": (
+        "Pharmacy reports for the accounts: daily sales book, stock value, write-offs. Read-only."
+    ),
     "editor": "Read and change files and databases.",
-    "viewer": "Read files, databases, environments and applications.",
+    "viewer": "Read files, databases, environments, applications and hosted websites.",
     "storage-administrator": "Manage file storage.",
     "database-administrator": "Manage databases, imports and connections.",
-    "developer": "Build applications and manage development environments.",
+    "developer": "Build applications, manage development environments and publish hosted websites.",
     "auditor": "Read the audit log.",
     "guest": "No access of their own; only what is shared with them.",
 }

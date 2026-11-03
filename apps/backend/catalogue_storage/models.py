@@ -92,6 +92,14 @@ class Diagram(models.Model):
         "storage.FileObject", on_delete=models.SET_NULL, related_name="+", null=True, blank=True
     )
     source_image_url = models.URLField(max_length=1000, blank=True)
+    # Display-ready snapshot of the whole figure as the provider stated it
+    # -- {"hotspots": [...], "groups": [{pnc, name, callout, rect, rows:
+    # [{part_number, description, valid_from, valid_to, is_current,
+    # fitment, has_remarks}]}]}. Metadata only, never image bytes, so it
+    # is subject to exactly the same licensing posture as every other
+    # field here. Empty until a figure import supplies one; lets the
+    # spare-parts app render the complete parts list of a figure offline.
+    figure_data = models.JSONField(default=dict, blank=True)
     license_status = models.CharField(
         max_length=32, choices=LicenseStatus.choices, default=LicenseStatus.EXTERNAL_REFERENCE_ONLY
     )

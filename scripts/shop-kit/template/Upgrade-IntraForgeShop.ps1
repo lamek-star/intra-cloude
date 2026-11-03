@@ -84,10 +84,29 @@ try {
 
     Step 'Adding the settings this version needs to the keys'
     $text = [IO.File]::ReadAllText($envPath) -replace '(?m)^SHOP_SPAREPARTS_PORT=.*\r?\n?', ''
-    foreach ($name in 'SERVICE_APP_SPAREPARTS_TOKEN', 'SERVICE_APP_SPAREPARTS_DB_PASSWORD') {
+    foreach ($name in 'SERVICE_APP_SPAREPARTS_TOKEN', 'SERVICE_APP_SPAREPARTS_DB_PASSWORD', 'SERVICE_APP_PAY1_TOKEN', 'SERVICE_APP_PAY1_DB_PASSWORD', 'SERVICE_APP_PHARMACY_TOKEN', 'SERVICE_APP_PHARMACY_DB_PASSWORD', 'SITES_RUNNER_TOKEN') {
         if ($text -notmatch "(?m)^$name=.+") {
             $buffer = New-Object byte[] 36; $rng = [Security.Cryptography.RandomNumberGenerator]::Create(); $rng.GetBytes($buffer); $rng.Dispose()
             $text = $text.TrimEnd("`r", "`n") + "`n$name=" + ([Convert]::ToBase64String($buffer)).TrimEnd('=').Replace('+', '-').Replace('/', '_') + "`n"
+        }
+    }
+    # 1.4.0: hosted websites answer on port 8445. A shop that already has the shop network switched on gets the PC's
+    # name and address for that port too, and the port joins the shop-network firewall rules (same scope).
+    if ($text -match '(?m)^SHOP_NETWORK=shop' -and $text -notmatch '(?m)^SHOP_SITES_ADDRESSES=') {
+        $lanAddress = [regex]::Match($text, '(?m)^SHOP_LAN_ADDRESS=(.+)$').Groups[1].Value.Trim()
+        $lanName = [regex]::Match($text, '(?m)^SHOP_LAN_NAME=(.+)$').Groups[1].Value.Trim()
+        if ($lanAddress -and $lanName) {
+            $text = $text.TrimEnd("`r", "`n") + "`nSHOP_SITES_ADDRESSES=localhost:8445 127.0.0.1:8445 ${lanAddress}:8445 ${lanName}:8445`n"
+            $group = 'IntraForge shop network'
+            if (-not (Test-Admin)) {
+                Write-Warning 'Hosted websites: switch the shop network off and on again (Control Center > Settings) to open port 8445 to the shop.'
+            }
+            elseif (-not (Get-NetFirewallRule -Group $group -ErrorAction SilentlyContinue | Get-NetFirewallPortFilter | Where-Object { @($_.LocalPort) -contains '8445' })) {
+                New-NetFirewallRule -Group $group -DisplayName 'IntraForge - shop network (TCP 8445, websites)' -Direction Inbound -Protocol TCP `
+                    -LocalPort 8445 -Profile Private -RemoteAddress LocalSubnet -Action Allow | Out-Null
+                New-NetFirewallRule -Group $group -DisplayName 'IntraForge - blocked on public networks (TCP 8445, websites)' -Direction Inbound -Protocol TCP `
+                    -LocalPort 8445 -Profile Public -Action Block | Out-Null
+            }
         }
     }
     [IO.File]::WriteAllText($envPath, $text, (New-Object System.Text.UTF8Encoding($false)))

@@ -23,6 +23,7 @@ import uuid
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.http import Http404
 from django.utils import timezone
 
@@ -176,6 +177,16 @@ def _principal_user_ids(principal_type: str, *, user=None, team: Team | None = N
     raise SharingValidationError(f"unsupported principal_type: {principal_type!r}")
 
 
+def _active_shares(organization, resource_type: str, resource_id):
+    """Shares on one resource that still give access: not revoked and not expired."""
+    return ShareGrant.objects.filter(
+        organization=organization,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        revoked_at__isnull=True,
+    ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()))
+
+
 def create_share_grant(
     *,
     actor,
@@ -215,6 +226,13 @@ def create_share_grant(
         pass
     else:
         raise SharingValidationError(f"unsupported principal_type: {principal_type!r}")
+
+    # H13: the same share twice is refused -- two identical rows would look like two grants while
+    # revoking one of them used to remove the access both describe.
+    if _active_shares(organization, resource_type, resource_id).filter(
+        principal_type=principal_type, user=user, team=team, level=level
+    ).exists():
+        raise SharingValidationError("this is already shared with them at this level")
 
     target_users = list(
         User.objects.filter(
@@ -288,12 +306,25 @@ def revoke_share_grant(*, actor, share: ShareGrant, request_id: str = "") -> Non
         share.principal_type, user=share.user, team=share.team, organization=share.organization
     )
     permission_codes = LEVEL_PERMISSIONS[share.resource_type][share.level]
-    ResourceGrant.objects.filter(
+    # Access another active share on the same resource still gives (a team share and a personal
+    # one, a read and a write share) stays: only what no remaining share implies is removed.
+    still_given: set[tuple[str, str]] = set()
+    others = _active_shares(share.organization, share.resource_type, share.resource_id).exclude(id=share.id)
+    for other in others:
+        other_users = _principal_user_ids(
+            other.principal_type, user=other.user, team=other.team, organization=other.organization
+        )
+        for code in LEVEL_PERMISSIONS[other.resource_type][other.level]:
+            still_given.update((str(user_id), code) for user_id in other_users)
+    grants = ResourceGrant.objects.filter(
         user_id__in=target_user_ids,
         permission_id__in=permission_codes,
         organization=share.organization,
         resource_type=share.resource_type,
         resource_id=share.resource_id,
+    )
+    grants.filter(
+        id__in=[g.id for g in grants if (str(g.user_id), g.permission_id) not in still_given]
     ).delete()
 
     share.revoked_at = timezone.now()

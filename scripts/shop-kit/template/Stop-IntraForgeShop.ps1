@@ -6,6 +6,7 @@ Set-Location $PSScriptRoot
 . (Join-Path $PSScriptRoot 'IntraForgeShop.Common.ps1')
 if (-not (Test-Quiet { docker info })) { Write-Host 'Docker is not running, so IntraForge is already stopped.'; return }
 $env:SHOP_HTTPS_PORT = "$(Get-ShopPort)"; $env:SHOP_DATA_DIR = ((Get-DataDir) -replace '\\', '/')
+Stop-HostedApps
 & docker compose stop
 if ($LASTEXITCODE -ne 0) { throw 'Could not stop IntraForge.' }
 Write-ShopLog 'stopped by the user'
