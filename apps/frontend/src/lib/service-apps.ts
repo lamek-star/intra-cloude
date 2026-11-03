@@ -97,3 +97,19 @@ export function appIdFromOpenPath(next: string | null | undefined): string | nul
 export function getSignInBranding(appId: string): Promise<SignInBranding> {
   return api.get<SignInBranding>(`/service-apps/${appId}/sign-in/`);
 }
+
+export type AppHealthLine = { name: string; status: "healthy" | "warning" | "unavailable"; detail: string };
+
+/** The dashboard's System health lines for installed applications (Spare Parts, Pharmacy, Pay…), so
+ * "all checks passing" can't hide an application that is down. Kept apart from /readyz on purpose:
+ * an optional application being down must not mark the whole platform unready. Disabled and removed
+ * applications are left out -- they are off by choice, not failing. */
+export function appHealthLines(apps: ServiceApp[]): AppHealthLine[] {
+  return apps
+    .filter((a) => !a.removed && a.enabled && a.health && a.health.state !== "disabled" && a.health.state !== "removed")
+    .map((a) => {
+      const state = a.health!.state;
+      const status = state === "running" ? "healthy" : state === "degraded" ? "warning" : "unavailable";
+      return { name: a.display_name || a.name, status, detail: STATE_LABEL[state] };
+    });
+}

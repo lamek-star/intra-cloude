@@ -119,6 +119,35 @@ class ObjectStorageClient:
         )
 
 
+def check_object_storage(timeout_seconds: float = 2.0) -> None:
+    """Readiness probe for system/views.py: raises if the object store cannot be reached.
+
+    Uses its own short-timeout, single-attempt client rather than get_client() -- boto3's default
+    retries would stall /readyz for many seconds, and get_client() creates the bucket as a side
+    effect, which a health probe must not do. A missing bucket still counts as reachable: the
+    store answered, and the bucket is created on first use."""
+    client = boto3.client(
+        "s3",
+        endpoint_url=settings.OBJECT_STORAGE_ENDPOINT or None,
+        aws_access_key_id=settings.OBJECT_STORAGE_ACCESS_KEY,
+        aws_secret_access_key=settings.OBJECT_STORAGE_SECRET_KEY,
+        region_name=settings.OBJECT_STORAGE_REGION,
+        config=Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "path"},
+            connect_timeout=timeout_seconds,
+            read_timeout=timeout_seconds,
+            retries={"max_attempts": 1},
+        ),
+    )
+    try:
+        client.head_bucket(Bucket=settings.OBJECT_STORAGE_BUCKET_PREFIX)
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") in ("404", "NoSuchBucket", "NotFound"):
+            return
+        raise
+
+
 _client: ObjectStorageClient | None = None
 
 

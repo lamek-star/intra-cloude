@@ -38,6 +38,18 @@ def _dependency_checks() -> tuple[dict[str, bool], bool]:
         checks["valkey"] = False
         logger.warning("Dependency check failed for valkey: %s", exc)
 
+    # Every upload, download and backup of files goes through object storage; without this check
+    # the dashboard reported "all checks passing" while files could not be read.
+    try:
+        from storage.backends import check_object_storage
+
+        check_object_storage()
+        checks["object_storage"] = True
+    except Exception as exc:  # noqa: BLE001 - a dependency check must not crash the process
+        healthy = False
+        checks["object_storage"] = False
+        logger.warning("Dependency check failed for object storage: %s", exc)
+
     return checks, healthy
 
 

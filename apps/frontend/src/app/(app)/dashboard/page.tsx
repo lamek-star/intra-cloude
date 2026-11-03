@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { api, ApiError, type AuditEvent, type Organization, type Paginated, type Workspace } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { appHealthLines, type ServiceAppList } from "@/lib/service-apps";
 import { Badge, Card, EmptyState, ErrorBanner, PageHeader, PageLoading, Spinner, StatCard } from "@/components/ui";
 
 type OrgSummary = { org: Organization; workspaceCount: number | null };
@@ -98,6 +99,9 @@ export default function DashboardPage() {
       } else {
         checks.push({ name: "Readiness", status: readyz.ok ? "healthy" : "unavailable" });
       }
+      // Installed applications, best-effort: the platform checks above must still show if this fails.
+      const apps = await api.get<ServiceAppList>("/service-apps/").catch(() => null);
+      if (apps) checks.push(...appHealthLines(apps.results));
       setHealth(checks);
     })();
   }, []);
