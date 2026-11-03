@@ -107,6 +107,9 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
             <LinkButton href={`/orgs/${orgId}/app-templates`} variant="secondary" size="sm">
               Apps
             </LinkButton>
+            <LinkButton href={`/orgs/${orgId}/sites`} variant="secondary" size="sm">
+              Websites
+            </LinkButton>
             <LinkButton href={`/orgs/${orgId}/developer`} variant="secondary" size="sm">
               Developer
             </LinkButton>
