@@ -205,6 +205,29 @@ class FileVersioningTests(StorageTestBase):
         self.assertEqual(versions.count(), 1)
         self.assertEqual(versions.first().checksum_sha256, first_checksum)
 
+        listing = self.client.get(reverse("file-version-upload", args=[file_id]))
+        self.assertEqual(listing.status_code, status.HTTP_200_OK)
+        self.assertEqual([v["checksum_sha256"] for v in listing.data], [first_checksum])
+        self.assertEqual(listing.data[0]["size"], 2)
+        self.assertNotIn("object_key", listing.data[0])
+
+    def test_version_list_needs_storage_read(self):
+        upload_url = reverse("file-list-create", args=[self.bucket_id])
+        file_id = _upload_file(self.client, upload_url, display_filename="doc.txt").data["id"]
+        stranger = User.objects.create_user(email="versions-stranger@example.com", password="x")
+        Membership.objects.create(user=stranger, organization_id=self.org_id, status=Membership.Status.ACTIVE)
+        self.client.force_login(stranger)
+        resp = self.client.get(reverse("file-version-upload", args=[file_id]))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_version_list_of_another_organizations_file_is_not_found(self):
+        upload_url = reverse("file-list-create", args=[self.bucket_id])
+        file_id = _upload_file(self.client, upload_url, display_filename="doc.txt").data["id"]
+        outsider = User.objects.create_user(email="versions-outsider@example.com", password="x")
+        self.client.force_login(outsider)
+        resp = self.client.get(reverse("file-version-upload", args=[file_id]))
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_new_version_without_versioning_does_not_keep_history(self):
         upload_url = reverse("file-list-create", args=[self.bucket_id])
         first = _upload_file(self.client, upload_url, content=b"v1", display_filename="doc.txt")

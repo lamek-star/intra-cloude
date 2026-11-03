@@ -16,6 +16,7 @@ from .serializers import (
     BucketSerializer,
     FileObjectSerializer,
     FileUpdateSerializer,
+    FileVersionSerializer,
     FolderCreateSerializer,
     FolderSerializer,
 )
@@ -275,6 +276,16 @@ class FileRestoreView(APIView):
 class FileVersionUploadView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = _UPLOAD_PARSERS
+
+    def get(self, request, file_id):
+        """The file's kept earlier contents, newest first: metadata only, never storage keys."""
+        file_obj = get_member_file(request.user, file_id)
+        if not _require(request, "storage.read", file_obj.organization_id, bucket_id=file_obj.bucket_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, file_obj.bucket):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        versions = file_obj.versions.select_related("created_by").order_by("-created_at")
+        return Response(FileVersionSerializer(versions, many=True).data)
 
     def post(self, request, file_id):
         file_obj = get_member_file(request.user, file_id)
