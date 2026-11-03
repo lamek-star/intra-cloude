@@ -204,7 +204,7 @@ export default function BucketDetailClient({
                     {f.display_filename}
                   </span>
                 </Td>
-                <Td className="text-slate-400">{formatBytes(f.size)}</Td>
+                <Td className="text-text-muted">{formatBytes(f.size)}</Td>
                 <Td className="text-slate-500">{f.content_type}</Td>
                 <Td className="text-slate-500">{new Date(f.created_at).toLocaleString()}</Td>
                 <Td>

@@ -118,7 +118,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     tabIndex={-1}
                     className="absolute right-0 z-20 mt-1 w-48 rounded-xl border border-slate-200 bg-white py-1 shadow-xl outline-none"
                   >
-                    <div className="border-b border-slate-100 px-3 py-2 text-xs text-slate-400">
+                    <div className="border-b border-slate-100 px-3 py-2 text-xs text-text-muted">
                       Signed in as
                       <div className="truncate text-slate-700">{user?.email}</div>
                     </div>

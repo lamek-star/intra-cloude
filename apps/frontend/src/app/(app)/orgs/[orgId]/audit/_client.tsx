@@ -207,11 +207,11 @@ export default function AuditLogClient({ orgId }: { orgId: string }) {
                 <tbody>
                   {events?.map((event) => (
                     <TRow key={event.id}>
-                      <Td className="whitespace-nowrap text-slate-400">
+                      <Td className="whitespace-nowrap text-text-muted">
                         {new Date(event.timestamp).toLocaleString()}
                       </Td>
                       <Td className="font-medium text-slate-900">{event.action}</Td>
-                      <Td className="text-slate-400">
+                      <Td className="text-text-muted">
                         {event.resource_type}
                         {event.resource_id && (
                           <span className="text-slate-600"> · {event.resource_id.slice(0, 8)}</span>

@@ -310,7 +310,7 @@ export default function ImportClient({ tableId }: { tableId: string }) {
                       {files.map((f) => (
                         <TRow key={f.id}>
                           <Td>{f.display_filename}</Td>
-                          <Td className="text-slate-400">{formatBytes(f.size)}</Td>
+                          <Td className="text-text-muted">{formatBytes(f.size)}</Td>
                           <Td>
                             <Button size="sm" variant="secondary" onClick={() => handleSelectFile(f)}>
                               Use this file
@@ -360,7 +360,7 @@ export default function ImportClient({ tableId }: { tableId: string }) {
                   return (
                     <TRow key={col.csv_column}>
                       <Td className="font-medium text-slate-800">{col.csv_column}</Td>
-                      <Td className="text-slate-400">{col.inferred_type}</Td>
+                      <Td className="text-text-muted">{col.inferred_type}</Td>
                       <Td className="max-w-xs truncate text-slate-500">{samples.join(", ") || "—"}</Td>
                       <Td>
                         <Select

@@ -180,7 +180,7 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
               {members.map((m) => (
                 <TRow key={m.id}>
                   <Td>{m.user.email}</Td>
-                  <Td className="text-slate-400">
+                  <Td className="text-text-muted">
                     {[m.user.first_name, m.user.last_name].filter(Boolean).join(" ") || "—"}
                   </Td>
                   <Td>

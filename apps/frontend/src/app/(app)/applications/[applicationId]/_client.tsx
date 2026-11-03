@@ -321,7 +321,7 @@ export default function ApplicationDetailClient({ applicationId }: { application
                 const active = tone === "success";
                 return (
                   <TRow key={c.id}>
-                    <Td className="font-mono text-xs text-slate-400">{c.id.slice(0, 8)}...</Td>
+                    <Td className="font-mono text-xs text-text-muted">{c.id.slice(0, 8)}...</Td>
                     <Td>
                       <Badge tone={tone}>{label}</Badge>
                     </Td>
