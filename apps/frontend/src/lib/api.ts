@@ -433,6 +433,8 @@ export type AuditEvent = {
   id: string;
   timestamp: string;
   actor: string | null;
+  /** Who did it, readable: a member's email, "<name> (application)", or a neutral description (audit/serializers.py). */
+  actor_display: string;
   organization: string | null;
   action: string;
   resource_type: string;

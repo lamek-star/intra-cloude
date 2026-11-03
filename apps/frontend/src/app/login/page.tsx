@@ -147,7 +147,7 @@ function LoginPageInner() {
                 placeholder="123456"
               />
               <p className="mt-1.5 text-xs text-slate-500">
-                This account has MFA enabled — enter the 6-digit code from your authenticator app.
+                This account uses two-step sign-in. Enter the six-digit code from your authenticator app.
               </p>
             </div>
           )}

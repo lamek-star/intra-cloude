@@ -199,6 +199,7 @@ export default function AuditLogClient({ orgId }: { orgId: string }) {
               <Table>
                 <THead>
                   <Th>Time</Th>
+                  <Th>Who</Th>
                   <Th>Action</Th>
                   <Th>Resource</Th>
                   <Th>Result</Th>
@@ -210,6 +211,7 @@ export default function AuditLogClient({ orgId }: { orgId: string }) {
                       <Td className="whitespace-nowrap text-text-muted">
                         {new Date(event.timestamp).toLocaleString()}
                       </Td>
+                      <Td className="text-text-body">{event.actor_display}</Td>
                       <Td className="font-medium text-slate-900">{event.action}</Td>
                       <Td className="text-text-muted">
                         {event.resource_type}
