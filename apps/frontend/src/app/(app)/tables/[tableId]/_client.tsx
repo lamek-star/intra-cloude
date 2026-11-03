@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import { useProjectTrail } from "@/lib/project-trail";
 import {
   api,
   ApiError,
@@ -47,6 +48,7 @@ const PAGE_SIZE = 25;
 export default function TableDetailClient({ tableId }: { tableId: string }) {
   const [table, setTable] = useState<DBTable | null>(null);
   const [database, setDatabase] = useState<TenantDatabase | null>(null);
+  const trail = useProjectTrail(database?.project);
   const [page, setPage] = useState<RowsPage | null>(null);
   const [offset, setOffset] = useState(0);
   const [search, setSearch] = useState("");
@@ -110,6 +112,7 @@ export default function TableDetailClient({ tableId }: { tableId: string }) {
         title={table.name}
         breadcrumbs={[
           { label: "Organizations", href: "/orgs" },
+          ...trail,
           ...(database
             ? [{ label: database.name, href: `/tenant-databases/${database.id}` }]
             : []),

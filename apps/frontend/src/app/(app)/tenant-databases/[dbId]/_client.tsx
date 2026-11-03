@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import { useProjectTrail } from "@/lib/project-trail";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LayoutGrid, Table as TableIcon } from "lucide-react";
@@ -33,6 +34,7 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
   const confirm = useConfirm();
   const [db, setDb] = useState<TenantDatabase | null>(null);
   const [project, setProject] = useState<Project | null>(null);
+  const trail = useProjectTrail(project?.id);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [tables, setTables] = useState<DBTable[] | null>(null);
   const [dashboards, setDashboards] = useState<Dashboard[] | null>(null);
@@ -107,7 +109,7 @@ export default function TenantDatabaseClient({ dbId }: { dbId: string }) {
         title={db.name}
         breadcrumbs={[
           { label: "Organizations", href: "/orgs" },
-          ...(project ? [{ label: project.name, href: `/projects/${project.id}` }] : []),
+          ...trail,
           { label: db.name },
         ]}
         description="A real, isolated PostgreSQL schema — each table below is a genuine table in it."

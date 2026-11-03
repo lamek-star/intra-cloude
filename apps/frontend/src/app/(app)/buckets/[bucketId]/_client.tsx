@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { FileText } from "lucide-react";
+import { useProjectTrail } from "@/lib/project-trail";
 import { api, ApiError, ensureCsrfCookie, type FileObject, type Project, type Workspace } from "@/lib/api";
 import {
   Button,
@@ -42,6 +43,7 @@ export default function BucketDetailClient({
 }) {
   const [bucketName] = useState(initialName ?? "Bucket");
   const [project, setProject] = useState<Project | null>(null);
+  const trail = useProjectTrail(project?.id);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [files, setFiles] = useState<FileObject[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -132,7 +134,7 @@ export default function BucketDetailClient({
         title={bucketName}
         breadcrumbs={[
           { label: "Organizations", href: "/orgs" },
-          ...(project ? [{ label: project.name, href: `/projects/${project.id}` }] : []),
+          ...trail,
           { label: bucketName },
         ]}
         description="Files are streamed through the backend and checksummed/MIME-sniffed on upload."
