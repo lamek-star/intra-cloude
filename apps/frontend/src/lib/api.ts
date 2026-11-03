@@ -199,6 +199,8 @@ export type Membership = {
   team: string | null;
   status: "invited" | "active" | "suspended";
   created_at: string;
+  /** Set when this member is an application's sign-in (its service account), not a person. */
+  application: { id: string; name: string } | null;
 };
 
 export type Team = {

@@ -21,6 +21,7 @@ export function MemberRoles({
   roles,
   held,
   onChange,
+  givingRefused,
 }: {
   orgId: string;
   membershipId: string;
@@ -28,6 +29,8 @@ export function MemberRoles({
   roles: RoleOption[];
   held: string[];
   onChange: (held: string[]) => void;
+  /** Why no role may be given to this member (an application's sign-in); held roles can still be taken away. */
+  givingRefused?: string;
 }) {
   const [choice, setChoice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -85,7 +88,8 @@ export function MemberRoles({
           </span>
         ))}
       </div>
-      {available.length > 0 && (
+      {givingRefused && <p className="max-w-72 text-xs text-text-muted">{givingRefused}</p>}
+      {!givingRefused && available.length > 0 && (
         <div className="flex items-center gap-1.5">
           <Select
             aria-label={`Give ${who} a role`}

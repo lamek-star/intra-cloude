@@ -179,7 +179,16 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
             <tbody>
               {members.map((m) => (
                 <TRow key={m.id}>
-                  <Td>{m.user.email}</Td>
+                  {m.application ? (
+                    <Td>
+                      <span title={m.user.email}>Application </span>
+                      <Link href={`/applications/${m.application.id}`} className="text-brand-600 hover:underline">
+                        {m.application.name}
+                      </Link>
+                    </Td>
+                  ) : (
+                    <Td>{m.user.email}</Td>
+                  )}
                   <Td className="text-text-muted">
                     {[m.user.first_name, m.user.last_name].filter(Boolean).join(" ") || "—"}
                   </Td>
@@ -198,6 +207,9 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
                         roles={roles.roles}
                         held={heldBy(m.id)}
                         onChange={(held) => setHeld(m.id, held)}
+                        givingRefused={
+                          m.application ? "Access is given on the application's page, not as a role." : undefined
+                        }
                       />
                     </Td>
                   )}
