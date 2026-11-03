@@ -89,6 +89,37 @@ class FileUploadRoundTripTests(StorageTestBase):
         listing_after_restore = self.client.get(upload_url)
         self.assertEqual([f["id"] for f in listing_after_restore.data], [file_id])
 
+    def test_restoring_onto_a_name_now_in_use_is_a_clear_conflict(self):
+        upload_url = reverse("file-list-create", args=[self.bucket_id])
+        old_id = _upload_file(self.client, upload_url, display_filename="price-list.txt").data["id"]
+        self.client.delete(reverse("file-detail", args=[old_id]))
+        new_id = _upload_file(self.client, upload_url, display_filename="price-list.txt").data["id"]
+
+        restore = self.client.post(reverse("file-restore", args=[old_id]))
+
+        self.assertEqual(restore.status_code, status.HTTP_409_CONFLICT)
+        self.assertIn("price-list.txt", restore.data["detail"])
+        self.assertEqual(FileObject.objects.get(id=old_id).status, FileObject.Status.DELETED)
+        self.assertEqual(FileObject.objects.get(id=new_id).status, FileObject.Status.ACTIVE)
+
+    def test_restoring_a_file_that_is_not_deleted_changes_nothing(self):
+        upload_url = reverse("file-list-create", args=[self.bucket_id])
+        file_id = _upload_file(self.client, upload_url, display_filename="a.txt").data["id"]
+        restore = self.client.post(reverse("file-restore", args=[file_id]))
+        self.assertEqual(restore.status_code, status.HTTP_409_CONFLICT)
+
+    def test_trash_lists_deleted_files_only_for_people_who_can_restore(self):
+        upload_url = reverse("file-list-create", args=[self.bucket_id])
+        kept = _upload_file(self.client, upload_url, display_filename="kept.txt").data["id"]
+        gone = _upload_file(self.client, upload_url, display_filename="gone.txt").data["id"]
+        self.client.delete(reverse("file-detail", args=[gone]))
+
+        trash = self.client.get(upload_url, {"status": "deleted"})
+        self.assertEqual(trash.status_code, status.HTTP_200_OK)
+        self.assertEqual([f["id"] for f in trash.data], [gone])
+        self.assertEqual([f["id"] for f in self.client.get(upload_url).data], [kept])
+        self.assertEqual(self.client.get(upload_url, {"status": "quarantined"}).status_code, 400)
+
     def test_checksum_is_computed_correctly(self):
         import hashlib
 
@@ -227,6 +258,26 @@ class MalwareScanningTests(StorageTestBase):
         self.assertEqual(download.status_code, status.HTTP_403_FORBIDDEN)
 
     @override_settings(MALWARE_SCAN_ENABLED=True)
+    def test_restore_cannot_release_a_quarantined_file(self):
+        # "Restore" brings back a deleted file. It used to set any file active, so a quarantined
+        # upload could be restored into an ordinary download, bypassing malware scanning.
+        with patch(
+            "storage.services.scanning.scan_stream",
+            return_value=scanning.ScanResult(clean=False, signature="Test.Signature"),
+        ):
+            resp = _upload_file(
+                self.client, reverse("file-list-create", args=[self.bucket_id]), display_filename="evil.txt"
+            )
+        file_id = resp.data["id"]
+
+        restore = self.client.post(reverse("file-restore", args=[file_id]))
+
+        self.assertEqual(restore.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(FileObject.objects.get(id=file_id).status, FileObject.Status.QUARANTINED)
+        download = self.client.get(reverse("file-download", args=[file_id]))
+        self.assertEqual(download.status_code, status.HTTP_403_FORBIDDEN)
+
+    @override_settings(MALWARE_SCAN_ENABLED=True)
     def test_unreachable_scanner_fails_closed_into_quarantine(self):
         with patch(
             "storage.services.scanning.scan_stream", side_effect=scanning.ScanUnavailable("unreachable")
@@ -275,6 +326,16 @@ class StoragePermissionTests(StorageTestBase):
     def test_member_without_storage_read_cannot_list_folders(self):
         resp = self.client.get(reverse("folder-list-create", args=[self.bucket_id]))
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_a_viewer_can_list_files_but_not_the_trash(self):
+        from organizations.models import Organization
+        from permissions.services import assign_role
+
+        org = Organization.objects.get(id=self.org_id)
+        assign_role(user=self.outsider, role_slug="viewer", organization=org)
+        url = reverse("file-list-create", args=[self.bucket_id])
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_200_OK)
+        self.assertEqual(self.client.get(url, {"status": "deleted"}).status_code, status.HTTP_403_FORBIDDEN)
 
 
 class BucketListVisibilityTests(StorageTestBase):

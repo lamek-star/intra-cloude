@@ -20,6 +20,7 @@ from .serializers import (
     FolderSerializer,
 )
 from .services import (
+    RestoreRefused,
     UploadTooLarge,
     delete_file,
     get_member_bucket,
@@ -151,7 +152,18 @@ class FileListCreateView(APIView):
         if _environment_scope_denied(request, bucket):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
-        files = FileObject.objects.filter(bucket=bucket, status=FileObject.Status.ACTIVE)
+        # ?status=deleted is the bucket's Trash. Restoring needs storage.delete, so listing the Trash
+        # does too. Quarantined files are never listed here.
+        wanted = request.query_params.get("status", FileObject.Status.ACTIVE)
+        if wanted not in (FileObject.Status.ACTIVE, FileObject.Status.DELETED):
+            return Response(
+                {"detail": "status must be active or deleted."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        if wanted == FileObject.Status.DELETED and not _require(
+            request, "storage.delete", bucket.organization_id, bucket_id=bucket.id
+        ):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        files = FileObject.objects.filter(bucket=bucket, status=wanted)
 
         folder_id = request.query_params.get("folder")
         files = files.filter(folder_id=folder_id or None)
@@ -253,7 +265,10 @@ class FileRestoreView(APIView):
             return Response(status=status.HTTP_403_FORBIDDEN)
         if _environment_scope_denied(request, file_obj.bucket):
             return Response(status=status.HTTP_403_FORBIDDEN)
-        restore_file(file_obj, actor=request.user)
+        try:
+            restore_file(file_obj, actor=request.user)
+        except RestoreRefused as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         return Response(FileObjectSerializer(file_obj).data)
 
 
