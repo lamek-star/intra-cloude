@@ -82,6 +82,18 @@ class SiteNameTests(SiteTestBase):
         self.client.patch(reverse("site-detail", args=[site_id]), {"status": "disabled"}, format="json")
         self.assertEqual(self.client.get("/_sites-certificate/?domain=shop.lan").status_code, 404)
 
+    @override_settings(OWN_TLS_HOSTNAMES=["localhost", "127.0.0.1", "shop-pc", "192.168.1.20"])
+    def test_the_certificate_check_allows_intraforges_own_names(self):
+        # A browser that opens IntraForge by IP address sends no server name; the proxy then uses its
+        # default name (localhost, or the shop PC's) and, because hosted sites use on-demand TLS, asks
+        # here. Refusing made every by-address connection fail its TLS handshake (1.4.0).
+        for name in ("localhost", "127.0.0.1", "shop-pc", "192.168.1.20", "LOCALHOST"):
+            with self.subTest(name):
+                self.assertEqual(self.client.get(f"/_sites-certificate/?domain={name}").status_code, 200)
+        for name in ("", "evil.example", "localhost.evil.example"):
+            with self.subTest(name):
+                self.assertEqual(self.client.get(f"/_sites-certificate/?domain={name}").status_code, 404)
+
     @override_settings(**RUNNER)
     def test_a_node_apps_routes_follow_its_name(self):
         calls = []

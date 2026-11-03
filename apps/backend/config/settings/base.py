@@ -398,6 +398,10 @@ MAX_UPLOAD_SIZE_BYTES = int(env("MAX_UPLOAD_SIZE_BYTES", str(2 * 1024**3)))
 # --- Hosted websites (ADR-0019) ---
 # Served by the proxy on their own port; the frontend shows https://<this host>:<port>/<slug>/.
 SITES_PUBLIC_PORT = int(env("SITES_PUBLIC_PORT", "8445"))
+# IntraForge's own names, the ones the proxy serves with its internal certificate (PROXY_TLS_HOSTNAMES in the
+# shop kit, set from SHOP_TLS_HOSTNAMES; the shop network adds the PC's name and address). The on-demand
+# certificate check (sites/serve.py certificate_allowed) must say yes to them. Lower-case, space-separated.
+OWN_TLS_HOSTNAMES = [n.lower() for n in env("SHOP_TLS_HOSTNAMES", "localhost 127.0.0.1").split()]
 SITES_MAX_ZIP_BYTES = int(env("SITES_MAX_ZIP_BYTES", str(200 * 1024 * 1024)))
 SITES_MAX_TOTAL_BYTES = int(env("SITES_MAX_TOTAL_BYTES", str(500 * 1024 * 1024)))
 SITES_MAX_FILE_BYTES = int(env("SITES_MAX_FILE_BYTES", str(100 * 1024 * 1024)))

@@ -7,6 +7,7 @@ consulted.
 
 from __future__ import annotations
 
+from django.conf import settings
 from django.http import HttpResponse, HttpResponseNotAllowed, StreamingHttpResponse
 
 from storage.backends import get_client
@@ -137,10 +138,18 @@ def serve_internet(request, path: str = ""):
 
 
 def certificate_allowed(request):
-    """The proxy asks before it issues a certificate for a name (on-demand TLS): only an online site's own
-    name gets one. Reached only on the internal network; the proxy never routes this path from outside."""
+    """The proxy asks before it issues a certificate for a name (on-demand TLS): an online site's own name, or
+    one of IntraForge's own names (OWN_TLS_HOSTNAMES), gets one. The proxy already serves IntraForge's names
+    with its internal certificate; it also asks here when a browser connects by IP address and sends no
+    server name, because the default name then goes through the on-demand check. Refusing them made every
+    by-address connection fail its TLS handshake. Reached only on the internal network; the proxy never
+    routes this path from outside."""
     name = (request.GET.get("domain") or "").strip().lower()
-    allowed = bool(name) and Site.objects.filter(hostname=name, status=Site.Status.ACTIVE).exists()
+    if not name:
+        return HttpResponse(status=404)
+    allowed = name in settings.OWN_TLS_HOSTNAMES or Site.objects.filter(
+        hostname=name, status=Site.Status.ACTIVE
+    ).exists()
     return HttpResponse(status=200 if allowed else 404)
 
 
