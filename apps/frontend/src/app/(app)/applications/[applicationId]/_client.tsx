@@ -509,7 +509,9 @@ export default function ApplicationDetailClient({ applicationId }: { application
                 const resolved =
                   resources?.find((r) => r.kind === kind && r.id === g.resource_id) ??
                   (g.resource_type === SERVICE_APP_RESOURCE
-                    ? serviceApps.find((a) => a.id === g.resource_id && !a.removed)
+                    ? serviceApps
+                        .filter((a) => a.id === g.resource_id && !a.removed)
+                        .map((a) => ({ name: a.display_name || a.name }))[0]
                     : undefined);
                 return (
                   <TRow key={g.id}>
