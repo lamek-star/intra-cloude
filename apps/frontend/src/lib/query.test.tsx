@@ -12,7 +12,7 @@ vi.mock("@/lib/api", async () => {
 import { ApiError } from "@/lib/api";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { makeQueryClient } from "@/lib/query";
-import { organizationsQuery } from "@/lib/queries";
+import { organizationsQuery, prefetchRoute, serviceAppsQuery } from "@/lib/queries";
 
 function Orgs() {
   const { data } = useQuery(organizationsQuery);
@@ -48,6 +48,20 @@ describe("page data cache", () => {
       </QueryClientProvider>,
     );
     expect(screen.getByText("Test Shop")).toBeInTheDocument();
+  });
+
+  it("preloads a page's data on hover, once while it is fresh, and nothing for other pages", async () => {
+    get.mockImplementation(async (path: string) => (path === "/service-apps/" ? { results: [], available: [] } : []));
+    const client = makeQueryClient();
+    prefetchRoute(client, "/apps");
+    await waitFor(() => expect(client.getQueryData(serviceAppsQuery.queryKey)).toBeDefined());
+    expect(get.mock.calls.map((c) => c[0]).sort()).toEqual(["/organizations/", "/service-apps/"]);
+
+    prefetchRoute(client, "/apps");
+    prefetchRoute(client, "/orgs");
+    prefetchRoute(client, "/somewhere-else");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(get).toHaveBeenCalledTimes(2);
   });
 
   it("never retries a refusal", async () => {

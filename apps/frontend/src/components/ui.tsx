@@ -411,14 +411,14 @@ export function Modal({
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
+      <div className="dialog-backdrop absolute inset-0 bg-slate-900/40" onClick={onClose} />
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl outline-none"
+        className="dialog-panel relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl outline-none"
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 id={titleId} className="text-sm font-semibold text-slate-900">

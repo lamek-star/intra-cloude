@@ -159,3 +159,44 @@
   opacity: 0;
   animation: skeleton-in var(--duration-base) ease-out var(--duration-fast) forwards;
 }
+
+/* Dialogs (Modal, ConfirmProvider): the backdrop fades in and the panel rises slightly, so a dialog appears
+   rather than snapping in. Closing stays instant. */
+@keyframes dialog-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes dialog-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+.dialog-backdrop {
+  animation: dialog-backdrop-in var(--duration-base) ease-out;
+}
+.dialog-panel {
+  animation: dialog-panel-in var(--duration-base) var(--ease-emphasis);
+}
+
+/* View transitions between pages (components/PageTransition.tsx): only the page area cross-fades, quickly;
+   the rest of the window (sidebar, header) is kept still instead of the browser's whole-page fade. */
+::view-transition-old(*),
+::view-transition-new(*) {
+  animation-duration: var(--duration-menu);
+  animation-timing-function: ease-out;
+}
+/* after the rule above, so it wins for the whole-page snapshot */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-group(*) {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+  }
+}

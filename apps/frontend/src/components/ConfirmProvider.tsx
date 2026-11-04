@@ -64,14 +64,14 @@ function ConfirmDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/40" onClick={onCancel} />
+      <div className="dialog-backdrop absolute inset-0 bg-slate-900/40" onClick={onCancel} />
       <div
         ref={panelRef}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="relative w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl outline-none"
+        className="dialog-panel relative w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl outline-none"
       >
         <div className="flex items-start gap-3">
           {options.danger && (

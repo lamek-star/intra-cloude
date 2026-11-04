@@ -3,10 +3,13 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Building2, ChevronDown, LayoutDashboard, LayoutGrid, LogOut, Search, type LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { prefetchRoute } from "@/lib/queries";
 import { ConfirmProvider } from "@/components/ConfirmProvider";
 import { CommandPalette } from "@/components/CommandPalette";
+import { PageTransition } from "@/components/PageTransition";
 import { useDialogA11y } from "@/lib/use-dialog-a11y";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -148,7 +151,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </header>
           <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto p-4 sm:p-8 outline-none">
-            <div className="mx-auto max-w-6xl">{children}</div>
+            <div className="mx-auto max-w-6xl">
+              <PageTransition>{children}</PageTransition>
+            </div>
           </main>
         </div>
       </div>
@@ -166,10 +171,15 @@ function SidebarLink({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const queryClient = useQueryClient();
   const active = pathname === href || pathname?.startsWith(`${href}/`);
+  // Pointing at (or tabbing to) the link starts loading the page's data, so it is often there by the click.
+  const preload = () => prefetchRoute(queryClient, href);
   return (
     <Link
       href={href}
+      onPointerEnter={preload}
+      onFocus={preload}
       aria-current={active ? "page" : undefined}
       className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors ${
         active ? "bg-nav-active text-white shadow-sm" : "text-slate-300 hover:bg-white/5 hover:text-white"

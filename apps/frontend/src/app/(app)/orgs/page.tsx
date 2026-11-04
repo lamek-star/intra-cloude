@@ -1,9 +1,11 @@
 "use client";
 
-import { Suspense, useEffect, useState, type FormEvent } from "react";
+import { Suspense, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError, type Organization } from "@/lib/api";
+import { keys, organizationsQuery } from "@/lib/queries";
 import { isSafeNextPath } from "@/lib/safe-next";
 import {
   Button,
@@ -29,31 +31,24 @@ function OrgsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next");
-  const [orgs, setOrgs] = useState<Organization[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [errorDetail, setErrorDetail] = useState<unknown>(null);
+  // The same cached list the dashboard reads (lib/queries.ts): usually on screen at once.
+  const queryClient = useQueryClient();
+  const query = useQuery(organizationsQuery);
+  const orgs = query.data ?? null;
+  const errorDetail = query.error;
+  const error = errorDetail
+    ? errorDetail instanceof ApiError
+      ? errorDetail.message
+      : "Failed to load organizations."
+    : null;
   const [modalOpen, setModalOpen] = useState(false);
-
-  async function load() {
-    try {
-      setOrgs(await api.get<Organization[]>("/organizations/"));
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to load organizations.");
-      setErrorDetail(err);
-    }
-  }
-
-  useEffect(() => {
-    // One-shot fetch-on-mount, not a state-sync loop.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    load();
-  }, []);
 
   if (orgs === null && !error) return <PageLoading />;
 
   const skipHref = isSafeNextPath(next) ? next : "/dashboard";
 
   function onOrgCreated(org: Organization) {
+    void queryClient.invalidateQueries({ queryKey: keys.organizations });
     // Arriving here mid-external-auth-flow (welcome's "Create" button
     // forwards `next`) means creating an organization completes that
     // flow too -- return to `next` instead of the new org's own page,
