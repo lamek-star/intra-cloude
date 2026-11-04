@@ -76,3 +76,13 @@ Rule for reviews: two `await api.get` in a row with no data dependency is a bug.
 
 Skills that help when building it: `vercel-react-best-practices` (waterfalls, caching), `vercel-react-view-transitions`,
 `vercel-composition-patterns`, `web-design-guidelines` (review), `redesign-existing-projects` (visual polish pass).
+
+## Done so far
+
+**A and B — 432c7c6 (2026-11-04).** Parallel requests on sign-in, dashboard, organization page and application page;
+`PageLoading` is a delayed, page-shaped placeholder; `app/(app)/loading.tsx` added. Dashboard, warm, timed from the
+first request: organizations and workspaces on screen ~460 ms → ~235 ms; everything including health ~620 → ~490 ms;
+6 chained requests → 3 mostly parallel waves. What is slowest now is server-side: `/service-apps/` (asks every app
+whether it is alive, 70–400 ms) and `/readyz` — no longer blocking the rest of the page; a cache of the last health
+answer would be the next server-side win. Still to do: C (TanStack Query cache + optimistic toggles), D (view
+transitions, dialog motion), E (list motion / virtualisation).
