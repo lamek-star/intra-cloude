@@ -162,10 +162,37 @@ export function Spinner({ className = "" }: { className?: string }) {
   );
 }
 
+/** A page-shaped placeholder (header, a row of cards, a list) instead of a lone spinner, so the page does not
+ * blank and then jump into place. It fades in only after a short delay (globals.css .skeleton-delay): a page
+ * that loads quickly never flashes it. */
 export function PageLoading() {
+  const bar = "rounded-md bg-slate-200/70 motion-safe:animate-pulse";
   return (
-    <div className="flex h-64 items-center justify-center text-text-muted">
-      <Spinner className="h-6 w-6" />
+    <div role="status" aria-live="polite" className="skeleton-delay">
+      <span className="sr-only">Loading…</span>
+      <div aria-hidden="true">
+        <div className="mb-6 space-y-2">
+          <div className={`h-3 w-40 ${bar}`} />
+          <div className={`h-6 w-64 ${bar}`} />
+          <div className={`h-4 w-96 max-w-full ${bar}`} />
+        </div>
+        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="space-y-3 rounded-2xl border border-slate-200/70 bg-white p-5">
+              <div className={`h-4 w-1/2 ${bar}`} />
+              <div className={`h-3 w-3/4 ${bar}`} />
+            </div>
+          ))}
+        </div>
+        <div className="space-y-4 rounded-2xl border border-slate-200/70 bg-white p-5">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="flex items-center gap-4">
+              <div className={`h-4 w-1/3 ${bar}`} />
+              <div className={`h-4 flex-1 ${bar}`} />
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

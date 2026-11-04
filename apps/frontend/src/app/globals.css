@@ -147,3 +147,15 @@
     outline-offset: 2px;
   }
 }
+
+/* PageLoading's placeholder: invisible for its first 120 ms, so a page that loads quickly never flashes it,
+   then fades in. Reduced motion (above) makes the fade instant. */
+@keyframes skeleton-in {
+  to {
+    opacity: 1;
+  }
+}
+.skeleton-delay {
+  opacity: 0;
+  animation: skeleton-in var(--duration-base) ease-out var(--duration-fast) forwards;
+}

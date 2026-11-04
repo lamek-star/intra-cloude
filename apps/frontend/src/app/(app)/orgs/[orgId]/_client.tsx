@@ -36,6 +36,11 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
   const [memberModalOpen, setMemberModalOpen] = useState(false);
 
   async function load() {
+    // All five requests start together. Members and teams require users.manage — a plain member may not
+    // have it; fail soft.
+    const members = api.get<Membership[]>(`/organizations/${orgId}/members/`).catch(() => [] as Membership[]);
+    const teams = api.get<Team[]>(`/organizations/${orgId}/teams/`).catch(() => [] as Team[]);
+    const roleList = api.get<OrganizationRoles>(`/organizations/${orgId}/roles/`).catch(() => null);
     try {
       const [o, ws] = await Promise.all([
         api.get<Organization>(`/organizations/${orgId}/`),
@@ -48,23 +53,10 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
       setErrorDetail(err);
       return;
     }
-    // Members and teams require users.manage — a plain member may not have
-    // it; fail soft.
-    try {
-      setMembers(await api.get<Membership[]>(`/organizations/${orgId}/members/`));
-    } catch {
-      setMembers([]);
-    }
-    try {
-      setTeams(await api.get<Team[]>(`/organizations/${orgId}/teams/`));
-    } catch {
-      setTeams([]);
-    }
-    try {
-      setRoles(await api.get<OrganizationRoles>(`/organizations/${orgId}/roles/`));
-    } catch {
-      setRoles(null);
-    }
+    const [m, t, r] = await Promise.all([members, teams, roleList]);
+    setMembers(m);
+    setTeams(t);
+    setRoles(r);
   }
 
   function heldBy(membershipId: string): string[] {

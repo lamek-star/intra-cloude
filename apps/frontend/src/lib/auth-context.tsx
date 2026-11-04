@@ -36,9 +36,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    ensureCsrfCookie().finally(() => {
-      refresh().finally(() => setLoading(false));
-    });
+    // Together: reading /auth/me/ is a GET and needs no CSRF cookie; only later changes do.
+    // One-shot fetch-on-mount, not a state-sync loop.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    Promise.allSettled([ensureCsrfCookie(), refresh()]).finally(() => setLoading(false));
   }, [refresh]);
 
   const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {

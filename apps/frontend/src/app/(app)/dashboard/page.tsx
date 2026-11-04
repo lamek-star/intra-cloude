@@ -44,50 +44,14 @@ export default function DashboardPage() {
   const [errorDetail, setErrorDetail] = useState<unknown>(null);
 
   useEffect(() => {
+    // The organizations, the platform checks and the installed applications are independent: all three start
+    // together, and each part of the page fills in as soon as its own answer arrives.
+    const platformChecks = Promise.all([fetchHealth("/healthz"), fetchHealth("/readyz")]);
+    // Installed applications, best-effort: the platform checks must still show if this fails.
+    const installedApps = api.get<ServiceAppList>("/service-apps/").catch(() => null);
+
     (async () => {
-      try {
-        const orgs = await api.get<Organization[]>("/organizations/");
-        // One workspace-count fetch per org, in parallel -- bounded by
-        // however many organizations this user actually belongs to
-        // (typically a handful), not a deep per-org aggregate over
-        // every project/bucket/database, which would be a real N+1
-        // problem for a landing page (Section 34: avoid excessive
-        // client requests, don't preload thousands of records).
-        const summaries = await Promise.all(
-          orgs.map(async (org) => {
-            try {
-              const workspaces = await api.get<Workspace[]>(`/organizations/${org.id}/workspaces/`);
-              return { org, workspaceCount: workspaces.length };
-            } catch {
-              return { org, workspaceCount: null };
-            }
-          }),
-        );
-        setOrgSummaries(summaries);
-
-        // Recent activity is genuinely available only when there's
-        // exactly one organization to unambiguously show it for, and
-        // only if this user holds audit.read there -- fail soft
-        // (an empty section, not an error) exactly like the org detail
-        // page already does for its members list.
-        if (orgs.length === 1) {
-          try {
-            const events = await api.get<Paginated<AuditEvent>>(
-              `/organizations/${orgs[0].id}/audit/?limit=8`,
-            );
-            setRecentActivity(events.results);
-          } catch {
-            setRecentActivity([]);
-          }
-        } else {
-          setRecentActivity([]);
-        }
-      } catch (err) {
-        setError(err instanceof ApiError ? err.message : "Failed to load your organizations.");
-        setErrorDetail(err);
-      }
-
-      const [healthz, readyz] = await Promise.all([fetchHealth("/healthz"), fetchHealth("/readyz")]);
+      const [[healthz, readyz], apps] = await Promise.all([platformChecks, installedApps]);
       const checks: HealthCheck[] = [
         { name: "API", status: healthz.ok ? "healthy" : "unavailable" },
       ];
@@ -99,10 +63,48 @@ export default function DashboardPage() {
       } else {
         checks.push({ name: "Readiness", status: readyz.ok ? "healthy" : "unavailable" });
       }
-      // Installed applications, best-effort: the platform checks above must still show if this fails.
-      const apps = await api.get<ServiceAppList>("/service-apps/").catch(() => null);
       if (apps) checks.push(...appHealthLines(apps.results));
       setHealth(checks);
+    })();
+
+    (async () => {
+      try {
+        const orgs = await api.get<Organization[]>("/organizations/");
+        // One workspace-count fetch per org, in parallel -- bounded by
+        // however many organizations this user actually belongs to
+        // (typically a handful), not a deep per-org aggregate over
+        // every project/bucket/database, which would be a real N+1
+        // problem for a landing page (Section 34: avoid excessive
+        // client requests, don't preload thousands of records).
+        // Recent activity is genuinely available only when there's
+        // exactly one organization to unambiguously show it for, and
+        // only if this user holds audit.read there -- fail soft
+        // (an empty section, not an error) exactly like the org detail
+        // page already does for its members list. It is fetched
+        // alongside the workspace counts, not after them.
+        const activity =
+          orgs.length === 1
+            ? api
+                .get<Paginated<AuditEvent>>(`/organizations/${orgs[0].id}/audit/?limit=8`)
+                .then((events) => events.results)
+                .catch(() => [] as AuditEvent[])
+            : Promise.resolve([] as AuditEvent[]);
+        const summaries = await Promise.all(
+          orgs.map(async (org) => {
+            try {
+              const workspaces = await api.get<Workspace[]>(`/organizations/${org.id}/workspaces/`);
+              return { org, workspaceCount: workspaces.length };
+            } catch {
+              return { org, workspaceCount: null };
+            }
+          }),
+        );
+        setOrgSummaries(summaries);
+        setRecentActivity(await activity);
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : "Failed to load your organizations.");
+        setErrorDetail(err);
+      }
     })();
   }, []);
 

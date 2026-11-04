@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { AppShell } from "@/components/AppShell";
-import { PageLoading } from "@/components/ui";
+import { Spinner } from "@/components/ui";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -20,8 +20,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (loading || !user) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-surface-canvas">
-        <PageLoading />
+      <div role="status" className="flex min-h-screen items-center justify-center bg-surface-canvas text-text-muted">
+        <span className="sr-only">Loading…</span>
+        <Spinner className="h-6 w-6" />
       </div>
     );
   }

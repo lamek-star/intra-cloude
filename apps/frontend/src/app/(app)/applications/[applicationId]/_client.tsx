@@ -221,6 +221,9 @@ export default function ApplicationDetailClient({ applicationId }: { application
   const [createEnvOpen, setCreateEnvOpen] = useState(false);
 
   async function load() {
+    // The environments, credentials and permissions need only the application's id: they load alongside the
+    // application itself, each section filling in (or showing its own error) as soon as its answer arrives.
+    const sections = Promise.all([loadEnvironments(), loadCredentials(), loadGrants()]);
     try {
       const app = await api.get<Application>(`/applications/${applicationId}/`);
       setApplication(app);
@@ -235,8 +238,11 @@ export default function ApplicationDetailClient({ applicationId }: { application
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load application.");
       setErrorDetail(err);
-      return;
     }
+    await sections;
+  }
+
+  async function loadEnvironments() {
     try {
       setEnvironments(await api.get<Environment[]>(`/applications/${applicationId}/environments/`));
     } catch (err) {
@@ -247,6 +253,9 @@ export default function ApplicationDetailClient({ applicationId }: { application
           : "Failed to load environments.",
       );
     }
+  }
+
+  async function loadCredentials() {
     try {
       setCredentials(await api.get<ApplicationCredential[]>(`/applications/${applicationId}/credentials/`));
     } catch (err) {
@@ -257,6 +266,9 @@ export default function ApplicationDetailClient({ applicationId }: { application
           : "Failed to load credentials.",
       );
     }
+  }
+
+  async function loadGrants() {
     try {
       setGrants(await api.get<ResourceGrant[]>(`/applications/${applicationId}/resource-grants/`));
     } catch (err) {
