@@ -23,7 +23,7 @@ try {
     $upExit = $LASTEXITCODE
     # A recreate interrupted (e.g. by low memory) can leave a container under a hash-prefixed name such as
     # "f766f22421cf_intraforge-shop-backend-1" (H11). Recreating the containers repairs it; data lives in volumes.
-    $stray = @(docker ps -a --filter 'label=com.docker.compose.project=intraforge-shop' --format '{{.Names}}' |
+    $stray = @(docker ps -a --filter "label=com.docker.compose.project=$(Get-ShopProject)" --format '{{.Names}}' |
         Where-Object { $_ -match '^[0-9a-f]{12}_' })
     if ($stray.Count -gt 0 -or $upExit -ne 0) {
         Write-ShopLog "repairing containers: $($stray -join ', ')"

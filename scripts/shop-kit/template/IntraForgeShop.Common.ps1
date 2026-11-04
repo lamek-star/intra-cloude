@@ -299,13 +299,30 @@ function Unregister-ShopUninstallEntry { Remove-Item -Path $script:UninstallKey 
 
 # ---- hosted Node.js apps (ADR-0020) ------------------------------------------------------------------------------------
 # The app runner starts each hosted app in its own container. Those containers are not part of the compose project, so
-# stopping, starting and removing IntraForge handles them here (they carry the label intraforge.project).
+# stopping, starting and removing IntraForge handles them here (they carry the label intraforge.project, set to this
+# installation's compose project name -- the runner's RUNNER_PROJECT -- so another installation's apps are never touched).
+# The Cloudflare Tunnel connector (intraforge-tunnel) is one of them.
+function Get-ShopProject {
+    $file = Join-Path $script:KitDir 'docker-compose.yml'
+    if (Test-Path $file) {
+        foreach ($line in Get-Content $file) { if ($line -match '^name:\s*([a-z0-9][a-z0-9_-]*)\s*$') { return $Matches[1] } }
+    }
+    return 'intraforge-shop'
+}
 function Get-HostedAppContainers([switch]$Running) {
     $all = if ($Running) { @() } else { @('-a') }
     $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    $names = @(& docker ps @all --filter 'label=intraforge.project=intraforge-shop' --format '{{.Names}}' 2>$null | Where-Object { $_ })
+    $names = @(& docker ps @all --filter "label=intraforge.project=$(Get-ShopProject)" --format '{{.Names}}' 2>$null | Where-Object { $_ })
     $ErrorActionPreference = $previous
     return $names
+}
+# Is this container one of this installation's hosted apps (or its tunnel connector)?
+function Test-HostedAppContainer([string]$Name) {
+    if ($Name -notmatch '^[a-zA-Z0-9][a-zA-Z0-9_.-]*$') { return $false }
+    $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    $label = (& docker inspect --format '{{index .Config.Labels "intraforge.project"}}' $Name 2>$null | Select-Object -First 1)
+    $ErrorActionPreference = $previous
+    return ("$label".Trim() -eq (Get-ShopProject))
 }
 function Get-HostedAppsStateFile { return (Join-Path (Get-DataDir) 'logs\hosted-apps-running.txt') }
 
@@ -322,7 +339,9 @@ function Stop-HostedApps {
 function Start-HostedApps {
     $file = Get-HostedAppsStateFile
     if (-not (Test-Path $file)) { return }
-    foreach ($name in (Get-Content $file | Where-Object { $_ -match '^ifapp-[0-9a-f]{32}$' })) {
+    # Every container Stop-HostedApps stopped -- the apps and the tunnel connector, whose restart policy does not bring it
+    # back after an explicit stop -- provided it still belongs to this installation.
+    foreach ($name in (Get-Content $file | Where-Object { Test-HostedAppContainer $_ })) {
         if (-not (Test-Quiet { docker start $name })) { Write-Warning "Could not start the hosted app $name." }
     }
     Remove-Item -Force $file
@@ -331,7 +350,7 @@ function Start-HostedApps {
 function Remove-HostedApps {
     foreach ($name in (Get-HostedAppContainers)) { [void](Test-Quiet { docker rm -f $name }) }
     $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    $networks = @(& docker network ls --filter 'label=intraforge.project=intraforge-shop' --format '{{.Name}}' 2>$null | Where-Object { $_ })
+    $networks = @(& docker network ls --filter "label=intraforge.project=$(Get-ShopProject)" --format '{{.Name}}' 2>$null | Where-Object { $_ })
     $images = @(& docker images --format '{{.Repository}}:{{.Tag}}' 2>$null | Where-Object { $_ -like 'ifapp-*' -or $_ -like 'intraforge-runtime-node:*' })
     $ErrorActionPreference = $previous
     foreach ($network in $networks) { [void](Test-Quiet { docker network rm $network }) }

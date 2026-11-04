@@ -36,7 +36,7 @@ else {
     $spReady = Test-SparePartsReady
     Line "Spare Parts app:  $(if ($spReady) { 'answering' } else { 'NOT ANSWERING' })   opened from IntraForge > Apps (https://localhost:$(Get-ShopPort)/apps/spare-parts/)"
     Line 'Services:'
-    $rows = & docker ps -a --filter 'label=com.docker.compose.project=intraforge-shop' --format '{{.Names}}|{{.Status}}|{{.State}}'
+    $rows = & docker ps -a --filter "label=com.docker.compose.project=$(Get-ShopProject)" --format '{{.Names}}|{{.Status}}|{{.State}}'
     foreach ($row in $rows) { $p = $row -split '\|'; Line ("  {0,-38} {1}" -f $p[0], $p[1]) }
     $mem = docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' | Where-Object { $_ -like 'intraforge-shop*' } | ForEach-Object { ($_ -split ' ')[1] }
     $sum = 0.0; foreach ($m in $mem) { if ($m -match '([\d.]+)GiB') { $sum += [double]$Matches[1] * 1024 } elseif ($m -match '([\d.]+)MiB') { $sum += [double]$Matches[1] } }
