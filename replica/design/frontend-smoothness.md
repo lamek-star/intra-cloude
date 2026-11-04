@@ -86,3 +86,15 @@ first request: organizations and workspaces on screen ~460 ms → ~235 ms; every
 whether it is alive, 70–400 ms) and `/readyz` — no longer blocking the rest of the page; a cache of the last health
 answer would be the next server-side win. Still to do: C (TanStack Query cache + optimistic toggles), D (view
 transitions, dialog motion), E (list motion / virtualisation).
+
+**C — 1e38f45, d190da3 (2026-11-04).** `@tanstack/react-query` 5.104.5 (pinned, more than two weeks old). Apps, app
+Settings and the dashboard read through a cache that is emptied whenever the signed-in person changes; Enable/Disable
+and the application page's IntraForge Pay switch change on the click and roll back on a refusal. Measured in the
+test copy: Back to the dashboard 74–107 ms (a full ~700 ms reload before); Apps after the dashboard 36 ms (the
+dashboard's health line already filled the Apps cache). A page never opened before is unchanged (~1 s for
+Organizations: its code plus its first data) — prefetching on hover is the next lever. Not yet on the cache: the
+organization page and most detail pages (they keep their own loading, parallel since A).
+
+The release audit for C found **next 16.3.5 with critical advisories** (RCE in the image optimizer and `use cache`,
+SSRF, cache poisoning); upgraded to 16.4.5 in 1e38f45, production audit 0 vulnerabilities. Development-only
+advisories remain in eslint/vitest/vite tooling (not shipped).
