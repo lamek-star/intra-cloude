@@ -98,3 +98,12 @@ organization page and most detail pages (they keep their own loading, parallel s
 The release audit for C found **next 16.3.5 with critical advisories** (RCE in the image optimizer and `use cache`,
 SSRF, cache poisoning); upgraded to 16.4.5 in 1e38f45, production audit 0 vulnerabilities. Development-only
 advisories remain in eslint/vitest/vite tooling (not shipped).
+
+**D — 82baf27 (2026-11-04).** One `<ViewTransition>` around the page area (150 ms cross-fade; sidebar and header
+still; Next 16.4 needs no flag — `experimental.viewTransition` no longer exists); dialogs fade/lift in (200 ms);
+hovering or tabbing to a sidebar link preloads its data; the Organizations list shares the dashboard's cache; all of
+it instant under reduced motion. Verified live in the test copy: `document.startViewTransition` runs once per page
+change; the dialog panel runs `dialog-panel-in`; hovering Apps with 31-s-old data fetched `/service-apps/` and
+`/organizations/` before the click; Dashboard → Apps 53–87 ms, → Organizations 36–38 ms (old data shown at once,
+refreshed behind it). Right after a frontend restart the first visit to a page can still take ~1 s while its code
+warms up. Not done: E (list motion, virtualising long tables), and moving the remaining detail pages onto the cache.
