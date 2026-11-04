@@ -89,3 +89,25 @@ ESLint clean, Vitest 114 passed, production image build compiles.
 
 Open: Spare Parts / Pharmacy overview shows AED regardless of the shop's currency (their 1.4.0 source is lost);
 Pay counts "today" and receipt dates in UTC (needs a shop time zone); a real Cloudflare tunnel is untested.
+
+### Pay with every app (2026-11-04)
+
+Live in the test copy, signed in as the test owner, each payment confirmed from the test customer's wallet:
+
+| app | path into Pay | result |
+| --- | --- | --- |
+| Spare Parts | invoice → "Take payment with IntraForge Pay" (internal Pay bridge) | INV-2026-000001, ERN 94.50 paid, receipt IFP-20261104-000002 recorded on the invoice, invoice **Paid** |
+| Pharmacy | same button on its invoice | INV-2026-000001, ERN 36.00 paid, receipt IFP-20261104-000003, invoice **Paid** |
+| hosted app | application credential → `POST /api/v1/pay/payment-requests/` | ERN 25.00 paid, receipt IFP-20261104-000004, status read back as `paid` by the same credential |
+
+Refusals checked: a browser session is refused on the application endpoint; after the grant is revoked the
+credential gets 403 with Pay's "allow IntraForge Pay" message. Pay ledger: debits = credits (380.50), no
+unbalanced transaction. Audit shows `application.pay_request` with the application as actor.
+
+Fixed: f0070e4 -- that refusal points to an "allow IntraForge Pay" control that did not exist (only the raw
+grant form, with Pay's UUID typed by hand). The application page now has a Payments card that grants or
+revokes `ifpay.checkout` on the organization's Pay.
+
+Noted, not fixed: Spare Parts / Pharmacy record a Pay receipt with payment method "Other" (the reference names
+IntraForge Pay; their source is lost); new products and customers default to AED in a shop set to ERN (the
+sale itself uses the shop currency); Pay events from customers show "System" as the actor in IntraForge's log.
