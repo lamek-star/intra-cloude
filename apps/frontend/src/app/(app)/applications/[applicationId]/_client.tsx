@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { CheckCircle2, Layers3, RotateCw, ShieldOff, XCircle } from "lucide-react";
+import { CheckCircle2, Layers3, RotateCw, ShieldOff, Wallet, XCircle } from "lucide-react";
 import {
   api,
   ApiError,
@@ -14,6 +14,8 @@ import {
 } from "@/lib/api";
 import { ENVIRONMENT_TYPES, exampleEnvironmentName, namesProductionWithoutType } from "@/lib/environment-type";
 import { listOrgResources, type OrgResource } from "@/lib/org-resources";
+import { appPayAccess, PAY_CHECKOUT, SERVICE_APP_RESOURCE } from "@/lib/app-pay";
+import type { ServiceApp, ServiceAppList } from "@/lib/service-apps";
 import {
   Badge,
   Button,
@@ -110,6 +112,91 @@ function AccessSummary({ resources, grants }: { resources: OrgResource[]; grants
   );
 }
 
+/** Lets the application's credential ask this organization's IntraForge Pay for payments
+ * (service_apps/app_pay.py): the one switch Pay's own refusal message points to. */
+function PayAccessCard({
+  applicationId,
+  organizationId,
+  serviceApps,
+  grants,
+  onChange,
+}: {
+  applicationId: string;
+  organizationId: string;
+  serviceApps: ServiceApp[];
+  grants: ResourceGrant[];
+  onChange: (grants: ResourceGrant[]) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const access = appPayAccess(organizationId, serviceApps, grants);
+
+  async function change(allow: boolean) {
+    if (access.state !== "allowed" && access.state !== "not_allowed") return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (allow) {
+        const grant = await api.post<ResourceGrant>(`/applications/${applicationId}/resource-grants/`, {
+          permission_code: PAY_CHECKOUT,
+          resource_type: SERVICE_APP_RESOURCE,
+          resource_id: access.pay.id,
+        });
+        onChange([...grants, grant]);
+      } else {
+        for (const g of access.grants) await api.del(`/applications/${applicationId}/resource-grants/${g.id}/`);
+        const removed = new Set(access.grants.map((g) => g.id));
+        onChange(grants.filter((g) => !removed.has(g.id)));
+      }
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-text-primary">
+          <Wallet aria-hidden="true" className="h-4 w-4 text-brand-600" /> IntraForge Pay
+        </h3>
+        {access.state === "allowed" && <Badge tone="success">Can take payments</Badge>}
+        {access.state === "not_allowed" && <Badge>Cannot take payments</Badge>}
+      </div>
+      {error != null && (
+        <ErrorBanner message={error instanceof ApiError ? error.message : "That did not work."} error={error} />
+      )}
+      {access.state === "no_pay" && (
+        <p className="text-sm text-text-muted">IntraForge Pay is not installed in this organization.</p>
+      )}
+      {access.state === "several_pays" && (
+        <p className="text-sm text-text-muted">
+          {access.count} IntraForge Pay installations are in this organization. Keep one before letting an
+          application take payments.
+        </p>
+      )}
+      {(access.state === "allowed" || access.state === "not_allowed") && (
+        <>
+          <p className="text-sm text-slate-600">
+            {access.state === "allowed"
+              ? `This application's credentials can ask "${access.pay.display_name}" for customer payments. Customers still confirm every amount in their own wallet.`
+              : `Allow this application's credentials to ask "${access.pay.display_name}" for customer payments (for example a website's checkout). Customers confirm every amount in their own wallet.`}
+          </p>
+          <Button
+            size="sm"
+            variant={access.state === "allowed" ? "danger" : "primary"}
+            disabled={busy}
+            onClick={() => void change(access.state !== "allowed")}
+          >
+            {access.state === "allowed" ? "Stop taking payments" : "Allow IntraForge Pay"}
+          </Button>
+        </>
+      )}
+    </Card>
+  );
+}
+
 function credentialStatus(c: ApplicationCredential): { label: string; tone: "success" | "danger" | "warning" } {
   if (c.revoked_at) return { label: "Revoked", tone: "danger" };
   if (c.expires_at && new Date(c.expires_at) < new Date()) return { label: "Expired", tone: "warning" };
@@ -124,6 +211,7 @@ export default function ApplicationDetailClient({ applicationId }: { application
   const [grants, setGrants] = useState<ResourceGrant[] | null>(null);
   const [grantsError, setGrantsError] = useState<string | null>(null);
   const [resources, setResources] = useState<OrgResource[] | null>(null);
+  const [serviceApps, setServiceApps] = useState<ServiceApp[]>([]);
   const [environments, setEnvironments] = useState<Environment[] | null>(null);
   const [environmentsError, setEnvironmentsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -140,6 +228,10 @@ export default function ApplicationDetailClient({ applicationId }: { application
       listOrgResources(app.organization)
         .then(setResources)
         .catch(() => setResources([]));
+      api
+        .get<ServiceAppList>("/service-apps/")
+        .then((list) => setServiceApps(list.results))
+        .catch(() => setServiceApps([]));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load application.");
       setErrorDetail(err);
@@ -365,6 +457,19 @@ export default function ApplicationDetailClient({ applicationId }: { application
 
       {grants && (
         <section>
+          <h2 className="mb-3 text-sm font-semibold text-slate-600">Payments</h2>
+          <PayAccessCard
+            applicationId={applicationId}
+            organizationId={application.organization}
+            serviceApps={serviceApps}
+            grants={grants}
+            onChange={setGrants}
+          />
+        </section>
+      )}
+
+      {grants && (
+        <section>
           <h2 className="mb-3 text-sm font-semibold text-slate-600">Access summary</h2>
           {resources === null ? (
             <div className="flex items-center gap-2 text-sm text-text-muted">
@@ -401,7 +506,11 @@ export default function ApplicationDetailClient({ applicationId }: { application
             <tbody>
               {grants.map((g) => {
                 const kind = g.resource_type === STORAGE_RESOURCE ? "bucket" : g.resource_type === DATABASE_RESOURCE ? "database" : null;
-                const resolved = resources?.find((r) => r.kind === kind && r.id === g.resource_id);
+                const resolved =
+                  resources?.find((r) => r.kind === kind && r.id === g.resource_id) ??
+                  (g.resource_type === SERVICE_APP_RESOURCE
+                    ? serviceApps.find((a) => a.id === g.resource_id && !a.removed)
+                    : undefined);
                 return (
                   <TRow key={g.id}>
                     <Td className="font-medium text-slate-900">{g.permission}</Td>
