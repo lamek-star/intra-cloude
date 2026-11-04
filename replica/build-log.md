@@ -111,3 +111,22 @@ revokes `ifpay.checkout` on the organization's Pay.
 Noted, not fixed: Spare Parts / Pharmacy record a Pay receipt with payment method "Other" (the reference names
 IntraForge Pay; their source is lost); new products and customers default to AED in a shop set to ERN (the
 sale itself uses the shop currency); Pay events from customers show "System" as the actor in IntraForge's log.
+
+### Buttons check (2026-11-04)
+
+Test copy only. Web app, clicked live: app Settings Save, Disable (an open app session is cut off at once), Enable,
+Remove keeping data, Reinstate (settings and a paid invoice intact). Control Center actions, run as the backend
+commands their scripts call (running the kit's PowerShell scripts from here was refused by the session's permission
+check): Backup now (control_db, tenant_db, object_storage written), weekly restore test (all three "restored and
+validated"), Restore (two changes made after the backup were gone afterwards, every service healthy, Pay's ledger in
+the backup and balanced, the public site still served).
+
+Fixed: 332e5eb -- Stop / Restart services / Restore left the Cloudflare Tunnel connector stopped (Start restarted only
+`ifapp-*` containers), and the hosted-app helpers filtered on the literal project `intraforge-shop` (a second
+installation on the same PC would stop, or on complete removal delete, the other one's apps). Pester: 4 pass, all 4
+fail on the old script.
+
+Not run, and why: Uninstall (removes the PC-wide startup entry, backup tasks, shortcut, Installed-apps entry and
+firewall rules -- running it here would break the real shop on this PC; needs a VM or a spare PC), Allow other PCs
+(changes the Windows firewall), Upgrade (needs a built 1.5.0 kit), Diagnostics and Settings dialogs (Control Center
+window), Remove *and delete data* (destructive; takes a backup first by design).
