@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   Building2,
@@ -12,7 +12,8 @@ import {
 } from "lucide-react";
 import { api, ApiError, type AuditEvent, type Organization, type Paginated, type Workspace } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { appHealthLines, type ServiceAppList } from "@/lib/service-apps";
+import { organizationsQuery, serviceAppsQuery } from "@/lib/queries";
+import { appHealthLines } from "@/lib/service-apps";
 import { Badge, Card, EmptyState, ErrorBanner, PageHeader, PageLoading, Spinner, StatCard } from "@/components/ui";
 
 type OrgSummary = { org: Organization; workspaceCount: number | null };
@@ -37,24 +38,64 @@ async function fetchHealth(path: string): Promise<{ ok: boolean; body: unknown }
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const [orgSummaries, setOrgSummaries] = useState<OrgSummary[] | null>(null);
-  const [health, setHealth] = useState<HealthCheck[] | null>(null);
-  const [recentActivity, setRecentActivity] = useState<AuditEvent[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [errorDetail, setErrorDetail] = useState<unknown>(null);
+  const queryClient = useQueryClient();
+  // Three independent, cached parts (lib/queries.ts): the organizations, the platform checks and the installed
+  // applications all start together, each part of the page fills in as soon as its own answer arrives, and a
+  // return to the dashboard shows the last answers at once while they refresh.
+  const orgs = useQuery(organizationsQuery);
+  const orgList = orgs.data;
 
-  useEffect(() => {
-    // The organizations, the platform checks and the installed applications are independent: all three start
-    // together, and each part of the page fills in as soon as its own answer arrives.
-    const platformChecks = Promise.all([fetchHealth("/healthz"), fetchHealth("/readyz")]);
-    // Installed applications, best-effort: the platform checks must still show if this fails.
-    const installedApps = api.get<ServiceAppList>("/service-apps/").catch(() => null);
+  // One workspace-count fetch per org, in parallel -- bounded by
+  // however many organizations this user actually belongs to
+  // (typically a handful), not a deep per-org aggregate over
+  // every project/bucket/database, which would be a real N+1
+  // problem for a landing page (Section 34: avoid excessive
+  // client requests, don't preload thousands of records).
+  const summaries = useQuery({
+    queryKey: ["dashboard", "workspace-counts", orgList?.map((o) => o.id)],
+    enabled: orgList !== undefined,
+    queryFn: () =>
+      Promise.all(
+        orgList!.map(async (org): Promise<OrgSummary> => {
+          try {
+            const workspaces = await api.get<Workspace[]>(`/organizations/${org.id}/workspaces/`);
+            return { org, workspaceCount: workspaces.length };
+          } catch {
+            return { org, workspaceCount: null };
+          }
+        }),
+      ),
+  });
 
-    (async () => {
-      const [[healthz, readyz], apps] = await Promise.all([platformChecks, installedApps]);
-      const checks: HealthCheck[] = [
-        { name: "API", status: healthz.ok ? "healthy" : "unavailable" },
-      ];
+  // Recent activity is genuinely available only when there's
+  // exactly one organization to unambiguously show it for, and
+  // only if this user holds audit.read there -- fail soft
+  // (an empty section, not an error) exactly like the org detail
+  // page already does for its members list. It is fetched
+  // alongside the workspace counts, not after them.
+  const onlyOrg = orgList?.length === 1 ? orgList[0].id : null;
+  const activity = useQuery({
+    queryKey: ["dashboard", "recent-activity", onlyOrg],
+    enabled: orgList !== undefined,
+    queryFn: () =>
+      onlyOrg
+        ? api
+            .get<Paginated<AuditEvent>>(`/organizations/${onlyOrg}/audit/?limit=8`)
+            .then((events) => events.results)
+            .catch(() => [] as AuditEvent[])
+        : Promise.resolve([] as AuditEvent[]),
+  });
+
+  const healthQuery = useQuery({
+    queryKey: ["dashboard", "health"],
+    queryFn: async (): Promise<HealthCheck[]> => {
+      const [[healthz, readyz], apps] = await Promise.all([
+        Promise.all([fetchHealth("/healthz"), fetchHealth("/readyz")]),
+        // Installed applications, best-effort (shared with the Apps page's cache): the platform checks must
+        // still show if this fails.
+        queryClient.fetchQuery({ ...serviceAppsQuery, staleTime: 0 }).catch(() => null),
+      ]);
+      const checks: HealthCheck[] = [{ name: "API", status: healthz.ok ? "healthy" : "unavailable" }];
       const readyBody = readyz.body as { checks?: Record<string, string> } | null;
       if (readyBody?.checks) {
         for (const [name, value] of Object.entries(readyBody.checks)) {
@@ -64,49 +105,19 @@ export default function DashboardPage() {
         checks.push({ name: "Readiness", status: readyz.ok ? "healthy" : "unavailable" });
       }
       if (apps) checks.push(...appHealthLines(apps.results));
-      setHealth(checks);
-    })();
+      return checks;
+    },
+  });
 
-    (async () => {
-      try {
-        const orgs = await api.get<Organization[]>("/organizations/");
-        // One workspace-count fetch per org, in parallel -- bounded by
-        // however many organizations this user actually belongs to
-        // (typically a handful), not a deep per-org aggregate over
-        // every project/bucket/database, which would be a real N+1
-        // problem for a landing page (Section 34: avoid excessive
-        // client requests, don't preload thousands of records).
-        // Recent activity is genuinely available only when there's
-        // exactly one organization to unambiguously show it for, and
-        // only if this user holds audit.read there -- fail soft
-        // (an empty section, not an error) exactly like the org detail
-        // page already does for its members list. It is fetched
-        // alongside the workspace counts, not after them.
-        const activity =
-          orgs.length === 1
-            ? api
-                .get<Paginated<AuditEvent>>(`/organizations/${orgs[0].id}/audit/?limit=8`)
-                .then((events) => events.results)
-                .catch(() => [] as AuditEvent[])
-            : Promise.resolve([] as AuditEvent[]);
-        const summaries = await Promise.all(
-          orgs.map(async (org) => {
-            try {
-              const workspaces = await api.get<Workspace[]>(`/organizations/${org.id}/workspaces/`);
-              return { org, workspaceCount: workspaces.length };
-            } catch {
-              return { org, workspaceCount: null };
-            }
-          }),
-        );
-        setOrgSummaries(summaries);
-        setRecentActivity(await activity);
-      } catch (err) {
-        setError(err instanceof ApiError ? err.message : "Failed to load your organizations.");
-        setErrorDetail(err);
-      }
-    })();
-  }, []);
+  const orgSummaries = summaries.data ?? null;
+  const health = healthQuery.data ?? null;
+  const recentActivity = activity.data ?? null;
+  const errorDetail = orgs.error;
+  const error = errorDetail
+    ? errorDetail instanceof ApiError
+      ? errorDetail.message
+      : "Failed to load your organizations."
+    : null;
 
   if (orgSummaries === null && !error) return <PageLoading />;
 

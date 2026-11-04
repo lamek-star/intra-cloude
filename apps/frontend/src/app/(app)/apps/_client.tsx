@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useId, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, Package, Settings } from "lucide-react";
 import { api, ApiError, type Organization } from "@/lib/api";
 import {
@@ -12,8 +13,8 @@ import {
   installConfig,
   installSettings,
   type ServiceApp,
-  type ServiceAppList,
 } from "@/lib/service-apps";
+import { keys, organizationsQuery, serviceAppsQuery } from "@/lib/queries";
 import {
   Badge,
   Button,
@@ -40,45 +41,18 @@ function openError(err: unknown): string {
 }
 
 export default function AppsClient() {
-  const [data, setData] = useState<ServiceAppList | null>(null);
-  const [orgs, setOrgs] = useState<Organization[]>([]);
-  const [error, setError] = useState<unknown>(null);
+  // Cached (lib/queries.ts): coming back to Apps shows the list at once and refreshes it in the background.
+  const queryClient = useQueryClient();
+  const apps = useQuery(serviceAppsQuery);
+  const organizations = useQuery(organizationsQuery);
+  const data = apps.data ?? null;
+  const orgs = organizations.data ?? [];
+  const error = apps.error;
   const [opening, setOpening] = useState<string | null>(null);
   const [openErr, setOpenErr] = useState<string | null>(null);
   const [installing, setInstalling] = useState<InstallableApp | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const [list, organizations] = await Promise.all([
-        api.get<ServiceAppList>("/service-apps/"),
-        api.get<Organization[]>("/organizations/"),
-      ]);
-      setData(list);
-      setOrgs(organizations);
-      setError(null);
-    } catch (err) {
-      setError(err);
-    }
-  }, []);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const [list, organizations] = await Promise.all([
-          api.get<ServiceAppList>("/service-apps/"),
-          api.get<Organization[]>("/organizations/"),
-        ]);
-        if (cancelled) return;
-        setData(list);
-        setOrgs(organizations);
-      } catch (err) {
-        if (!cancelled) setError(err);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const load = useCallback(() => queryClient.invalidateQueries({ queryKey: keys.serviceApps }), [queryClient]);
 
   async function open(app: ServiceApp) {
     setOpening(app.id);

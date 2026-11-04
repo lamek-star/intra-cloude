@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import { renderWithQuery } from "@/test/render";
 
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("@/lib/api", async () => {
@@ -39,7 +40,7 @@ describe("Dashboard loading", () => {
       if (path.startsWith("/organizations/o1/audit/")) return Promise.resolve({ count: 0, results: [] });
       throw new Error(`unexpected GET ${path}`);
     });
-    render(<DashboardPage />);
+    renderWithQuery(<DashboardPage />);
 
     // Installed apps go out with the organizations, not after them.
     await waitFor(() => expect(get).toHaveBeenCalledWith("/service-apps/"));

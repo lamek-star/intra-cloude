@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
+import { renderWithQuery } from "@/test/render";
 import userEvent from "@testing-library/user-event";
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
@@ -51,7 +52,7 @@ beforeEach(() => {
 describe("Apps", () => {
   it("shows the configured shop name, never a hard-coded one, with its live status", async () => {
     serve([installed()]);
-    render(<AppsClient />);
+    renderWithQuery(<AppsClient />);
     expect(await screen.findByRole("heading", { name: "Harbour Motors" })).toBeInTheDocument();
     expect(screen.getByText("Spare Parts")).toBeInTheDocument();
     expect(screen.getByText("Running")).toBeInTheDocument();
@@ -63,7 +64,7 @@ describe("Apps", () => {
     const assign = vi.fn();
     Object.defineProperty(window, "location", { value: { assign }, writable: true });
     post.mockResolvedValue({ url: "/apps/spare-parts/" });
-    render(<AppsClient />);
+    renderWithQuery(<AppsClient />);
     await userEvent.click(await screen.findByRole("button", { name: /Open/ }));
     expect(post).toHaveBeenCalledWith("/service-apps/a1/launch/");
     await waitFor(() => expect(assign).toHaveBeenCalledWith("/apps/spare-parts/"));
@@ -71,7 +72,7 @@ describe("Apps", () => {
 
   it("a stopped application cannot be opened and says what to do", async () => {
     serve([installed({ health: { state: "stopped", reachable: false, checked_at: "" } })]);
-    render(<AppsClient />);
+    renderWithQuery(<AppsClient />);
     const open = await screen.findByRole("button", { name: /Open/ });
     expect(open).toBeDisabled();
     expect(screen.getByText(/Control Center/)).toBeInTheDocument();
@@ -80,7 +81,7 @@ describe("Apps", () => {
   it("explains a refused Open instead of failing silently", async () => {
     serve([installed()]);
     post.mockRejectedValue(new ApiError(403, { detail: "no" }));
-    render(<AppsClient />);
+    renderWithQuery(<AppsClient />);
     await userEvent.click(await screen.findByRole("button", { name: /Open/ }));
     expect(await screen.findByText(/don't have access/)).toBeInTheDocument();
   });
@@ -90,7 +91,7 @@ describe("Apps", () => {
       { deployment: "spare-parts", app_type: "spare_parts", product_name: "Spare Parts", description: "Parts shop.", organizations: ["o1"] },
     ]);
     post.mockResolvedValue({});
-    render(<AppsClient />);
+    renderWithQuery(<AppsClient />);
     await userEvent.click(await screen.findByRole("button", { name: "Install" }));
     const dialog = await screen.findByRole("dialog");
     await userEvent.type(within(dialog).getByLabelText("Shop name"), "Harbour Motors");

@@ -131,28 +131,49 @@ function PayAccessCard({
   const [error, setError] = useState<unknown>(null);
   const access = appPayAccess(organizationId, serviceApps, grants);
 
+  /** Switches on the click (optimistic); a refusal puts back what the server still holds and says why. */
   async function change(allow: boolean) {
     if (access.state !== "allowed" && access.state !== "not_allowed") return;
     setBusy(true);
     setError(null);
-    try {
-      if (allow) {
+    const before = grants;
+    if (allow) {
+      const pending: ResourceGrant = {
+        id: `pending-${access.pay.id}`,
+        permission: PAY_CHECKOUT,
+        resource_type: SERVICE_APP_RESOURCE,
+        resource_id: access.pay.id,
+        granted_by: null,
+        expires_at: null,
+        created_at: new Date().toISOString(),
+      };
+      onChange([...before, pending]);
+      try {
         const grant = await api.post<ResourceGrant>(`/applications/${applicationId}/resource-grants/`, {
           permission_code: PAY_CHECKOUT,
           resource_type: SERVICE_APP_RESOURCE,
           resource_id: access.pay.id,
         });
-        onChange([...grants, grant]);
-      } else {
-        for (const g of access.grants) await api.del(`/applications/${applicationId}/resource-grants/${g.id}/`);
-        const removed = new Set(access.grants.map((g) => g.id));
-        onChange(grants.filter((g) => !removed.has(g.id)));
+        onChange([...before, grant]);
+      } catch (err) {
+        onChange(before);
+        setError(err);
       }
-    } catch (err) {
-      setError(err);
-    } finally {
-      setBusy(false);
+    } else {
+      const removed = new Set(access.grants.map((g) => g.id));
+      onChange(before.filter((g) => !removed.has(g.id)));
+      const deleted = new Set<string>();
+      try {
+        for (const g of access.grants) {
+          await api.del(`/applications/${applicationId}/resource-grants/${g.id}/`);
+          deleted.add(g.id);
+        }
+      } catch (err) {
+        onChange(before.filter((g) => !deleted.has(g.id)));
+        setError(err);
+      }
     }
+    setBusy(false);
   }
 
   return (

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useId, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
@@ -10,6 +11,7 @@ import {
   type ServiceApp,
   type ServiceAppConfig,
 } from "@/lib/service-apps";
+import { keys, serviceAppQuery } from "@/lib/queries";
 import {
   Badge,
   Button,
@@ -43,29 +45,20 @@ const TEXT_FIELDS: { key: keyof ServiceAppConfig; label: string; long?: boolean 
 ];
 
 export default function SettingsClient({ appId }: { appId: string }) {
-  const [app, setApp] = useState<ServiceApp | null>(null);
-  const [error, setError] = useState<unknown>(null);
-  const load = useCallback(async () => {
-    try {
-      setApp(await api.get<ServiceApp>(`/service-apps/${appId}/`));
-    } catch (err) {
-      setError(err);
-    }
-  }, [appId]);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const loaded = await api.get<ServiceApp>(`/service-apps/${appId}/`);
-        if (!cancelled) setApp(loaded);
-      } catch (err) {
-        if (!cancelled) setError(err);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [appId]);
+  const queryClient = useQueryClient();
+  // Shown at once from the cache, but always re-read on opening: the form below must start from the current
+  // settings, and is not refreshed under someone typing (no refetch on window focus).
+  const query = useQuery({ ...serviceAppQuery(appId), refetchOnMount: "always", refetchOnWindowFocus: false });
+  const app = query.data ?? null;
+  const error = query.error;
+  const setApp = useCallback(
+    (saved: ServiceApp) => {
+      queryClient.setQueryData(keys.serviceApp(appId), saved);
+      void queryClient.invalidateQueries({ queryKey: keys.serviceApps, exact: true });
+    },
+    [queryClient, appId],
+  );
+  const load = useCallback(() => queryClient.invalidateQueries({ queryKey: keys.serviceApps }), [queryClient]);
 
   if (error && !app) return <ErrorBanner message="This application could not be loaded." error={error} />;
   if (!app) return <PageLoading />;
@@ -82,7 +75,10 @@ export default function SettingsClient({ appId }: { appId: string }) {
         <Reinstate app={app} onDone={load} />
       ) : (
         <>
-          {app.can_configure && app.config && <ConfigForm app={app} onSaved={setApp} />}
+          {/* Restarted once when the fresh read replaces the cached one, so it never edits stale settings. */}
+          {app.can_configure && app.config && (
+            <ConfigForm key={query.isFetchedAfterMount ? "current" : "cached"} app={app} onSaved={setApp} />
+          )}
           {app.can_manage && <Availability app={app} onSaved={setApp} />}
           {app.can_manage && <Remove app={app} />}
         </>
@@ -184,20 +180,26 @@ function ConfigForm({ app, onSaved }: { app: ServiceApp; onSaved: (a: ServiceApp
   );
 }
 
+/** Enable/Disable switches on the click (optimistic) and goes back, with the reason, if the server refuses. */
 function Availability({ app, onSaved }: { app: ServiceApp; onSaved: (a: ServiceApp) => void }) {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<unknown>(null);
-  async function toggle() {
-    setBusy(true);
-    setErr(null);
-    try {
-      onSaved(await api.patch<ServiceApp>(`/service-apps/${app.id}/`, { enabled: !app.enabled }));
-    } catch (error) {
-      setErr(error);
-    } finally {
-      setBusy(false);
-    }
-  }
+  const queryClient = useQueryClient();
+  const key = keys.serviceApp(app.id);
+  const mutation = useMutation({
+    mutationFn: (enabled: boolean) => api.patch<ServiceApp>(`/service-apps/${app.id}/`, { enabled }),
+    onMutate: async (enabled) => {
+      await queryClient.cancelQueries({ queryKey: key, exact: true });
+      const previous = queryClient.getQueryData<ServiceApp>(key);
+      queryClient.setQueryData<ServiceApp>(key, (current) => current && { ...current, enabled });
+      return { previous };
+    },
+    onError: (_error, _enabled, context) => {
+      if (context?.previous) queryClient.setQueryData(key, context.previous);
+    },
+    onSuccess: onSaved,
+  });
+  const busy = mutation.isPending;
+  const err = mutation.error;
+  const toggle = () => mutation.mutate(!app.enabled);
   return (
     <Card className="mb-6">
       <h2 className="text-sm font-semibold text-slate-900">Availability</h2>
@@ -216,6 +218,7 @@ function Availability({ app, onSaved }: { app: ServiceApp; onSaved: (a: ServiceA
 
 function Remove({ app }: { app: ServiceApp }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [preview, setPreview] = useState<Removal | null>(null);
   const [deleteData, setDeleteData] = useState(false);
   const [confirm, setConfirm] = useState("");
@@ -236,6 +239,7 @@ function Remove({ app }: { app: ServiceApp }) {
     setErr(null);
     try {
       await api.del(`/service-apps/${app.id}/`, { confirm_name: confirm, delete_data: deleteData });
+      await queryClient.invalidateQueries({ queryKey: keys.serviceApps });
       router.push("/apps");
     } catch (error) {
       setErr(error);
