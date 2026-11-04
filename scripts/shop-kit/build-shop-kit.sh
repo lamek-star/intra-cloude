@@ -47,14 +47,23 @@ echo "== 2/6 build the images from source, and the Control Center"
 docker build -q -t "intraforge-shop-backend:$TAG" "$EXPORTW/apps/backend" >/dev/null
 docker build -q -t "intraforge-shop-frontend:$TAG" "$EXPORTW/apps/frontend" >/dev/null
 
-# The Spare Parts service application (ADR-0018): a SEPARATE project, built from a committed revision of its own repository.
-SP_LINE="$(bash "$HERE/build-spareparts-image.sh" "intraforge-shop-spareparts:$TAG" "$KIT_VERSION" | tail -1)"
-export SP_COMMIT="$(sed -n 's/^commit=\([^ ]*\) .*/\1/p' <<< "$SP_LINE")"
-export SP_HASH="$(sed -n 's/.* hash=\(.*\)$/\1/p' <<< "$SP_LINE")"
-[ -n "$SP_COMMIT" ] && [ -n "$SP_HASH" ] || { echo "the Spare Parts image build did not report its provenance: $SP_LINE" >&2; exit 1; }
-SP_REPO="${SPAREPARTS_REPO:-$HOME/projects/spareparts-platform}"
-export SP_BRANCH="$(git --no-optional-locks -C "$(cygpath -m "$SP_REPO")" rev-parse --abbrev-ref "${SPAREPARTS_REF:-HEAD}" 2>/dev/null || echo "?")"
-echo "   spare parts: branch $SP_BRANCH commit $SP_COMMIT, content hash $SP_HASH"
+# The service applications (ADR-0018: Spare Parts, its Pharmacy edition, IntraForge Pay) and the hosted-app Node.js
+# runtime (ADR-0020) are separate projects whose source is not in this repository. CARRY_APPS_FROM=<earlier kit tag>
+# takes them UNCHANGED from that kit's images (already on this machine, e.g. loaded from its images tar) and records
+# each image id, so the shop runs exactly what that kit ran. With no tag the build stops: nothing is rebuilt from a
+# guess. (build-spareparts-image.sh builds Spare Parts alone from its repository, for when that source is available.)
+CARRY_APPS_FROM="${CARRY_APPS_FROM:?set CARRY_APPS_FROM to the earlier kit tag whose app images to carry over, e.g. 1.4.0-dbf44f593}"
+CARRIED=()
+for name in intraforge-shop-spareparts intraforge-shop-pharmacy intraforge-shop-pay intraforge-runtime-node; do
+  docker image inspect "$name:$CARRY_APPS_FROM" >/dev/null 2>&1 || { echo "$name:$CARRY_APPS_FROM is not on this machine" >&2; exit 1; }
+  docker tag "$name:$CARRY_APPS_FROM" "$name:$TAG"
+  CARRIED+=("$name $(docker image inspect "$name:$TAG" --format '{{.Id}}')")
+  echo "   carried over unchanged: $name:$CARRY_APPS_FROM -> $name:$TAG"
+done
+export CARRY_APPS_FROM
+# The Cloudflare Tunnel connector: the exact release the compose template names (RUNNER_TUNNEL_IMAGE).
+TUNNEL_IMAGE="$(sed -n 's/^ *RUNNER_TUNNEL_IMAGE: *//p' "$HERE/template/docker-compose.yml" | tr -d '\r')"
+docker image inspect "$TUNNEL_IMAGE" >/dev/null 2>&1 || { echo "$TUNNEL_IMAGE is not on this machine (docker pull it once)" >&2; exit 1; }
 
 CSC="/c/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe"
 [ -x "$CSC" ] || { echo "the .NET Framework C# compiler was not found at $CSC" >&2; exit 1; }
@@ -67,9 +76,14 @@ CC_TMP="$(mktemp -d)"
 echo "   control center compiled"
 
 echo "== 3/6 pin MinIO to the exact tested release"
-MINIO_TAG="$(docker image inspect minio/minio:latest --format '{{index .Config.Labels "version"}}')"
-[ -n "$MINIO_TAG" ] || { echo "cannot read the MinIO release label" >&2; exit 1; }
-docker tag minio/minio:latest "minio/minio:$MINIO_TAG"
+# MINIO_TAG=<release> keeps the release the shop already runs (an upgrade must not silently change the object store);
+# without it the newest local minio/minio:latest is pinned, as before.
+if [ -z "${MINIO_TAG:-}" ]; then
+  MINIO_TAG="$(docker image inspect minio/minio:latest --format '{{index .Config.Labels "version"}}')"
+  [ -n "$MINIO_TAG" ] || { echo "cannot read the MinIO release label" >&2; exit 1; }
+  docker tag minio/minio:latest "minio/minio:$MINIO_TAG"
+fi
+docker image inspect "minio/minio:$MINIO_TAG" >/dev/null 2>&1 || { echo "minio/minio:$MINIO_TAG is not on this machine" >&2; exit 1; }
 echo "   minio/minio:$MINIO_TAG"
 
 echo "== 4/6 assemble the kit"
@@ -83,7 +97,8 @@ cp "$REPO/docs/OWN_SHOP_PILOT_QUICKSTART.md" "$OUT/OWN_SHOP_PILOT_QUICKSTART.md"
 cp "$REPO/docs/LOCAL_EDITION_PILOT.md" "$OUT/LOCAL_EDITION_PILOT.md"
 cp "$REPO/docs/pilot/PILOT_LOG.md" "$OUT/PILOT_LOG.md"
 rm -f "$OUT/.env" "$OUT/DEMO_LOGINS.txt"
-IMAGES=("intraforge-shop-backend:$TAG" "intraforge-shop-frontend:$TAG" "intraforge-shop-spareparts:$TAG" "postgres:18" "valkey/valkey:9-alpine" "minio/minio:$MINIO_TAG" "caddy:2-alpine")
+IMAGES=("intraforge-shop-backend:$TAG" "intraforge-shop-frontend:$TAG" "intraforge-shop-spareparts:$TAG" "intraforge-shop-pharmacy:$TAG"
+  "intraforge-shop-pay:$TAG" "intraforge-runtime-node:$TAG" "$TUNNEL_IMAGE" "postgres:18" "valkey/valkey:9-alpine" "minio/minio:$MINIO_TAG" "caddy:2-alpine")
 docker save -o "$OUTW/images/intraforge-shop-images.tar" "${IMAGES[@]}"
 {
   echo "IntraForge Local Edition -- shop kit $KIT_VERSION"
@@ -93,7 +108,9 @@ docker save -o "$OUTW/images/intraforge-shop-images.tar" "${IMAGES[@]}"
   echo "Built (UTC):   $BUILT_UTC"
   echo "Architecture:  linux/amd64 containers on Windows (Docker Desktop, WSL2 backend)"
   echo "Docker build host: $(docker version --format 'Docker {{.Server.Version}}')"
-  echo "Spare Parts:   service application (ADR-0018), branch $SP_BRANCH, commit $SP_COMMIT (committed source only), content hash $SP_HASH"
+  echo "Apps carried over unchanged from kit $CARRY_APPS_FROM (their source is not in this repository):"
+  for line in "${CARRIED[@]}"; do echo "               $line"; done
+  echo "Tunnel:        $TUNNEL_IMAGE (Cloudflare Tunnel connector, used only when the Super Administrator switches internet access on)"
   echo "Control Center: IntraForgeControlCenter.exe (.NET Framework 4.x) sha256 $(sha256sum "$CC_TMP/IntraForgeControlCenter.exe" | cut -d' ' -f1)"
 } > "$OUT/BUILD_INFO.txt"
 
@@ -107,7 +124,15 @@ purpose = {
     "intraforge-shop-backend": ("IntraForge backend, workers and scheduler (Django, Celery), migrations", f"built from source at {head[:9]}", "project"),
     "intraforge-shop-frontend": ("IntraForge web interface (Next.js)", f"built from source at {head[:9]}", "project"),
     "intraforge-shop-spareparts": ("Spare Parts / Inventory & Sales service application (Next.js), served inside IntraForge at /apps/spare-parts/ (no port of its own)",
-        "separate project, branch " + os.environ.get("SP_BRANCH", "?") + " at " + os.environ.get("SP_COMMIT", "?") + " (committed source), content hash " + os.environ.get("SP_HASH", "?"), "project (its npm dependencies keep their own licences)"),
+        "separate project, image carried over unchanged from kit " + os.environ.get("CARRY_APPS_FROM", "?"), "project (its npm dependencies keep their own licences)"),
+    "intraforge-shop-pharmacy": ("Pharmacy: the Spare Parts engine built as its pharmacy edition, served at /apps/pharmacy/",
+        "separate project, image carried over unchanged from kit " + os.environ.get("CARRY_APPS_FROM", "?"), "project (its npm dependencies keep their own licences)"),
+    "intraforge-shop-pay": ("IntraForge Pay service application (simulated IF Credits), served at /apps/pay-N/",
+        "separate project, image carried over unchanged from kit " + os.environ.get("CARRY_APPS_FROM", "?"), "project (its Python dependencies keep their own licences)"),
+    "intraforge-runtime-node": ("Node.js runtime the app runner starts hosted Node.js apps in (ADR-0020)",
+        "image carried over unchanged from kit " + os.environ.get("CARRY_APPS_FROM", "?"), "project (Node.js: MIT)"),
+    "cloudflare/cloudflared": ("Cloudflare Tunnel connector, started only when the Super Administrator switches internet access on",
+        "Docker Hub cloudflare/cloudflared, pinned release", "Apache-2.0"),
     "postgres": ("Databases (company data and business records)", "Docker official image, postgres:18", "PostgreSQL licence"),
     "valkey/valkey": ("Cache and job queue", "Docker Hub valkey/valkey", "BSD-3-Clause"),
     "minio/minio": ("Stored files (object storage), PINNED to the tested release", "Docker Hub minio/minio", "AGPL-3.0 (commercial-distribution decision OPEN, see THIRD_PARTY_LICENSES.md)"),
