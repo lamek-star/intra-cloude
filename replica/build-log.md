@@ -148,3 +148,12 @@ window), Remove *and delete data* (destructive; takes a backup first by design).
 - No database migrations since 1.4.0, so the upgrade's automatic rollback runs 1.4.0 on unchanged data.
 - Not tested here: the Upgrade script itself against a 1.4.0 install (this PC runs the real shop, and the session may
   not run the kit's PowerShell scripts); it backs up first and rolls back on any failure.
+
+**Rebuilt with the new IntraForge Pay (2026-11-08) — supersedes `097d9ea61`.** `IntraForge-Local-1.5.0-d5293a2f8.zip`
+(880 MB), SHA-256 `cc2fab31f275e4433f062315f71b942dea85eab9c2dba0d26a05f22c5180131d`, built with
+`PAY_IMAGE=intraforge-shop-pay:1.5.0-cashback` and `PAY_SOURCE` = lamek-star/intraforge-pay `feature/refunds-cashback`
+at `429aca5` (refunds + supervisor-approved cashback, on the kit 1.4.0 Pay image). Checked: 7/7 checksums and the zip;
+11/11 images; no keys; Pay image id equals the cashback build, has migration 0004 and the byte-identical wallet APK;
+`pip-audit` of Pay's 24 packages: no known vulnerabilities; backend and frontend audits unchanged (clean). Pay's
+migration 0004 only widens one CHECK and adds tables, and Pay applies only unrecorded migrations, so an upgrade
+rolled back to 1.4.0 still runs on the migrated data.
