@@ -211,3 +211,23 @@ folder, without administrator rights (the shop network is off, so no firewall ch
 hosted_sites 0005-0006 applied; all 13 services up on the 1.5.1 images (Pay, Pharmacy, Spare Parts healthy);
 `/healthz` and `/readyz` 200; sign-in page 200; the catalog offers Spare Parts (Ready for use) and the Pharmacy (Pilot
 preview); 5 accounts intact; the Control Center exe is the kit's (same SHA-256); 1.5.0 kept in `C:\IntraForge\.previous`.
+
+### Kit 1.5.2 (2026-11-09)
+
+`IntraForge-Local-1.5.2-ce9b03c85.zip` (906 MB), SHA-256
+`d8dbec662e12cb0f05b0974ae4a210a7e215516776440243bcae643588f58a76`, built from `ce9b03c85` with the same settings as
+1.5.1. Full installer `IntraForge-Setup-1.5.2.exe` (1.8 GB), SHA-256
+`1192f12be2dfdc0c04c19f6f65c53ad1cf326216df8e33a942569f45ead2e466` (trailer `IFSFX003`, embedded kit identical).
+
+Two Pharmacy import fixes over 1.5.1, both found on the test copy:
+- An interrupted import, repeated, no longer copies the medicines that have no item number (`ef52b7e`): medicines
+  are recognised by their source link (or name), not only by item number.
+- A medicine that shares a catalogue id with another (netmeds gives DAPATAG M 10/500 and DAPATEN Tablet 15's the same
+  product id 1123362) is imported without an item number instead of being silently left out (`ce9b03c`). A first
+  build from `ef52b7e` was set aside (`superseded-*` in the kits folder) when the repeat check found this.
+
+Checked: 7/7 kit checksums and the zip; 12 images; no keys; frontend 162 tests pass; `npm audit` 0 (no Python
+change since 1.5.1). On the test copy (1.5.2 images): a 35-row file of 30 medicines already there (10 without an item
+number) and 5 new imported through the real dialog -- 1 new, 34 recognised (4 had come in on the check before the
+fix), no copies (3,993 -> 3,994); DAPATEN imported, with the message saying it got no item number. No migrations
+since 1.5.1.
