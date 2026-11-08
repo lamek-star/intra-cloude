@@ -1075,7 +1075,7 @@ namespace IntraForge.ControlCenter
     {
         readonly Kit kit;
         readonly RadioButton local = new RadioButton { Text = "Backups on this computer", AutoSize = true, Checked = true, Margin = Ui.Pad(0, 2, 0, 6) };
-        readonly RadioButton other = new RadioButton { Text = "A folder (for example the USB drive):", AutoSize = true, Margin = Ui.Pad(0, 5, 8, 0) };
+        readonly RadioButton other = new RadioButton { Text = "A folder (for example the USB drive)", AutoSize = true, Margin = Ui.Pad(0, 2, 0, 0) };
         readonly TextBox folder = new TextBox { Width = Ui.Px(250), ReadOnly = true, Margin = Ui.Pad(0, 3, 8, 0) };
         readonly TextBox preview = Consoles.Make(false);
         readonly Label warning = new Label { AutoSize = true, Font = Ui.Semibold, UseMnemonic = false };
@@ -1094,8 +1094,9 @@ namespace IntraForge.ControlCenter
             SuspendLayout();
             Body.Controls.Add(Section("1   Which backup?"));
             Body.Controls.Add(local);
-            FlowLayoutPanel otherRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Ui.Pad(0, 0, 0, 4) };
-            otherRow.Controls.Add(other);
+            Body.Controls.Add(other);
+            FlowLayoutPanel otherRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Ui.Pad(20, 4, 0, 4) };
+            folder.Width = Ui.Px(ContentWidth - 170);
             otherRow.Controls.Add(folder);
             UiButton browse = new UiButton("Browse...", ButtonKind.Secondary, Ui.GFolder) { Margin = Padding.Empty };
             browse.Click += (s, e) => Browse();
@@ -1424,7 +1425,7 @@ namespace IntraForge.ControlCenter
 
             Card keysCard = SectionCard("Keys file and data");
             Label keysNote = Ui.Label("Without the keys file a backup cannot be read after this PC is lost. Keep one copy on a USB drive, apart from the backups.", Ui.Regular, Ui.Muted, ContentWidth - 40);
-            keysNote.Margin = Ui.Pad(0, 0, 0, 10);
+            keysNote.Padding = Ui.Pad(0, 0, 0, 10);
             FlowLayoutPanel keyButtons = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Margin = Padding.Empty };
             UiButton keys = new UiButton("Copy the keys file to a USB drive...", ButtonKind.Secondary, Ui.GKey) { Margin = Ui.Pad(0, 0, 8, 0) };
             keys.Click += (s, e) =>
@@ -1444,7 +1445,7 @@ namespace IntraForge.ControlCenter
             data.Click += (s, e) => { try { Process.Start("explorer.exe", "\"" + kit.DataDir + "\""); } catch (Exception) { } };
             keyButtons.Controls.Add(keys);
             keyButtons.Controls.Add(data);
-            AddToCard(keysCard, keyButtons, keysNote);
+            AddToCard(keysCard, keysNote, keyButtons);
             Body.Controls.Add(keysCard);
 
             Body.Controls.Add(ShopNetworkSection(kit));
@@ -1476,7 +1477,7 @@ namespace IntraForge.ControlCenter
         {
             Card box = SectionCard("Shop network");
             Label state = Ui.Label("", Ui.Regular, Ui.Text, ContentWidth - 40);
-            state.Margin = Ui.Pad(0, 0, 0, 10);
+            state.Padding = Ui.Pad(0, 0, 0, 10);
             FlowLayoutPanel buttons = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Margin = Padding.Empty };
             if (!kit.ShopNetwork)
             {
@@ -1575,6 +1576,7 @@ namespace IntraForge.ControlCenter
             frame.Margin = Ui.Pad(0, 8, 0, 0);
             Body.Controls.Add(frame);
             UiButton close = AddButton("Close", ButtonKind.Primary, DialogResult.OK);
+            Shown += (s, e) => { text.Select(0, 0); close.Focus(); };
             AcceptButton = close;
             CancelButton = close;
             ResumeLayout(true);
