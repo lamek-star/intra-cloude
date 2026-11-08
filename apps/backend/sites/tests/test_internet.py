@@ -148,6 +148,85 @@ class InternetGateTests(SiteTestBase):
         )
         self.assertIn("already published", str(resp.data))
 
+    # --- auto-publish -------------------------------------------------------------------------------------------
+
+    def _auto(self, domain="harmongt.uk", client=None, password="Root-password-123"):
+        return (client or self.root_client).post(
+            reverse("internet-gateway-auto-publish"), {"domain": domain, "password": password}, format="json"
+        )
+
+    def _name(self, site_id):
+        return Site.objects.get(id=site_id).internet_hostname
+
+    def test_auto_publish_is_the_super_administrators_with_the_password_and_the_gate_on(self):
+        self.assertEqual(self._auto(client=self.client).status_code, 403)  # an organization administrator
+        self.assertIn("Switch internet access on first", str(self._auto().data))
+        self._enable()
+        self.assertIn("password is not correct", str(self._auto(password="wrong").data))
+        for bad in ("shop.lan", "localhost", "harmongt"):
+            with self.subTest(bad):
+                self.assertEqual(self._auto(domain=bad).status_code, 400)
+        self.assertEqual(InternetGateway.current().auto_domain, "")
+        self.assertIsNone(self._name(self.site_id))
+
+    def test_every_online_site_is_published_now_and_later_and_offline_gives_the_name_back(self):
+        self._enable()
+        offline = self._create(slug="closed-shop").data["id"]
+        self.client.patch(reverse("site-detail", args=[offline]), {"status": "disabled"}, format="json")
+
+        resp = self._auto()
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(resp.data["auto_domain"], "harmongt.uk")
+        self.assertEqual(self._name(self.site_id), "my-shop.harmongt.uk")
+        self.assertIsNone(self._name(offline))  # offline sites are not published
+        self.assertTrue(Site.objects.get(id=self.site_id).internet_auto)
+        self.assertEqual(b"".join(self._visit("my-shop.harmongt.uk").streaming_content), INDEX)
+
+        # A site created afterwards is published at once, with nobody pressing anything.
+        later = self._create(slug="menu").data["id"]
+        self.assertEqual(self._name(later), "menu.harmongt.uk")
+        # Taking it offline gives the name back; online again takes it again.
+        self.client.patch(reverse("site-detail", args=[later]), {"status": "disabled"}, format="json")
+        self.assertIsNone(self._name(later))
+        self.assertEqual(self._visit("menu.harmongt.uk").status_code, 404)
+        self.client.patch(reverse("site-detail", args=[later]), {"status": "active"}, format="json")
+        self.assertEqual(self._name(later), "menu.harmongt.uk")
+
+        events = AuditEvent.objects.filter(action="site.internet.published", context__auto=True)
+        self.assertEqual(events.count(), 3)
+        self.assertTrue(AuditEvent.objects.filter(action="internet.auto_publish.enabled").exists())
+
+    def test_switching_off_takes_back_only_automatic_names(self):
+        self._enable()
+        self.assertEqual(self._publish().status_code, 200)  # published by hand: www.myshop.com
+        other = self._create(slug="menu").data["id"]
+        self._auto()
+        self.assertEqual(self._name(self.site_id), "www.myshop.com")  # a hand-published name is not replaced
+        self.assertEqual(self._name(other), "menu.harmongt.uk")
+
+        resp = self._auto(domain="")
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(resp.data["auto_domain"], "")
+        self.assertEqual(self._name(self.site_id), "www.myshop.com")
+        self.assertIsNone(self._name(other))
+        self.assertTrue(AuditEvent.objects.filter(action="internet.auto_publish.disabled").exists())
+
+        # Switching the whole gate off also switches auto-publish off.
+        self._auto()
+        self.root_client.post(reverse("internet-gateway-disable"))
+        self.assertEqual(InternetGateway.current().auto_domain, "")
+        self.assertIsNone(self._name(other))
+
+    def test_a_name_already_published_by_hand_is_not_taken_and_the_audit_says_why(self):
+        self._enable()
+        # By hand, someone published the name auto-publish would give the "menu" site.
+        self.assertEqual(self._publish(hostname="menu.harmongt.uk").status_code, 200)
+        self._auto()
+        menu = self._create(slug="menu").data["id"]
+        self.assertIsNone(self._name(menu))
+        failed = AuditEvent.objects.get(action="site.internet.auto_failed")
+        self.assertEqual(failed.result, "error")
+        self.assertEqual(failed.context["internet_hostname"], "menu.harmongt.uk")
 
 class TunnelRecipeTests(SimpleTestCase):
     def test_the_tunnel_container_is_locked_down(self):

@@ -217,6 +217,26 @@ class InternetGatewayDisableView(APIView):
         return Response({**result, "can_manage": True})
 
 
+class InternetAutoPublishView(APIView):
+    """Auto-publish under a domain ({"domain": "harmongt.uk", "password": ...}), or off ({"domain": ""})."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        data = request.data if isinstance(request.data, dict) else {}
+        try:
+            result = internet.set_auto_publish(
+                actor=request.user,
+                domain=str(data.get("domain") or ""),
+                password=str(data.get("password") or ""),
+            )
+        except PermissionError:
+            return _forbidden()
+        except services.SiteError as exc:
+            return _bad_request(exc)
+        return Response({**result, "can_manage": True})
+
+
 class SiteInternetView(APIView):
     """Publish a site under a public name, or revoke it. The Super Administrator acts platform-wide, so the
     site is looked up directly -- but only for them; anyone else is refused before any lookup."""

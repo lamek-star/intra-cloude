@@ -145,7 +145,18 @@ def create_site(*, organization, name: str, slug: str, upload, actor, single_pag
         context={"slug": slug, "name": site.name, "version": version.number, "files": version.file_count},
     )
     _apply_version(site, version, actor)
+    _internet_follow(site)
     return site
+
+
+def _internet_follow(site: Site) -> None:
+    """Auto-publish follows the site: online, it gets its automatic public name; offline, it gives it back."""
+    from . import internet  # internet.py imports this module
+
+    if site.status == Site.Status.ACTIVE:
+        internet.auto_publish(site)
+    else:
+        internet.withdraw_auto(site)
 
 
 def upload_version(*, site: Site, upload, actor, activate: bool = True) -> SiteVersion:
@@ -212,6 +223,8 @@ def update_site(*, site: Site, actor, **fields) -> Site:
             resource_id=site.id,
             context={"slug": site.slug, **changed},
         )
+        if "status" in changed:
+            _internet_follow(site)
     return site
 
 

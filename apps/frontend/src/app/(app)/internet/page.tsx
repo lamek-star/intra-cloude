@@ -103,6 +103,14 @@ export default function InternetPage() {
             )}
           </Card>
 
+          {gate.enabled && (
+            <AutoPublishCard
+              domain={gate.auto_domain ?? ""}
+              busy={busy}
+              onChange={(domain, password) => act(() => api.post("/internet-gateway/auto-publish/", { domain, password }))}
+            />
+          )}
+
           <Card className="space-y-3">
             <h2 className="text-sm font-semibold text-text-primary">Published websites</h2>
             {(gate.published?.length ?? 0) === 0 ? (
@@ -113,7 +121,8 @@ export default function InternetPage() {
                   <li key={p.site} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                     <div>
                       <span className="font-medium text-text-primary">{p.name}</span>{" "}
-                      <span className="text-text-muted">({p.organization})</span>
+                      <span className="text-text-muted">({p.organization})</span>{" "}
+                      {p.auto && <Badge tone="info">Automatic</Badge>}
                       <p className="font-mono text-xs text-text-muted">https://{p.internet_hostname}/</p>
                     </div>
                     <Button
@@ -133,6 +142,64 @@ export default function InternetPage() {
         </>
       )}
     </div>
+  );
+}
+
+/** Auto-publish: once a domain is set, every online website and app is published as <address>.<domain>, now and
+ * whenever one comes online (a wildcard route *.domain in Cloudflare sends those names here). Off takes back only
+ * the automatic names. Both directions need the Super Administrator's password. */
+function AutoPublishCard({
+  domain,
+  busy,
+  onChange,
+}: {
+  domain: string;
+  busy: boolean;
+  onChange: (domain: string, password: string) => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const on = domain !== "";
+  return (
+    <Card className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-text-primary">Auto-publish</h2>
+        <Badge tone={on ? "success" : "default"}>{on ? `On: *.${domain}` : "Off"}</Badge>
+      </div>
+      <p className="text-sm text-slate-600">
+        {on
+          ? `Every online website and app is published as its address followed by .${domain} (for example price-list.${domain}), and new ones are published as soon as they come online. Taking a site offline takes its name back.`
+          : "Publish every online website and app automatically under your domain, instead of one by one. Set up a wildcard route (*.yourdomain) to this tunnel in Cloudflare first."}
+      </p>
+      <form
+        className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
+        onSubmit={(e: FormEvent) => {
+          e.preventDefault();
+          void onChange(on ? "" : name.trim().toLowerCase(), password).then(() => setPassword(""));
+        }}
+      >
+        {!on && (
+          <div>
+            <Label htmlFor="auto-domain">Your domain</Label>
+            <Input id="auto-domain" required placeholder="harmongt.uk" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+        )}
+        <div className={on ? "sm:col-span-2" : undefined}>
+          <Label htmlFor="auto-password">Your IntraForge password</Label>
+          <Input
+            id="auto-password"
+            type="password"
+            required
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </div>
+        <Button type="submit" variant={on ? "danger" : "primary"} disabled={busy || !password || (!on && !name.trim())}>
+          {on ? "Switch auto-publish off" : "Switch auto-publish on"}
+        </Button>
+      </form>
+    </Card>
   );
 }
 

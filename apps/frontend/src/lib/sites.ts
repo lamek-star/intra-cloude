@@ -37,6 +37,8 @@ export type InternetGateway = {
   enabled: boolean;
   can_manage: boolean;
   changed_at?: string | null;
+  /** Auto-publish domain ("" when off): every online site is published as <slug>.<auto_domain>. */
+  auto_domain?: string;
   tunnel?: { state: string; log?: string };
   published?: {
     site: string;
@@ -44,6 +46,8 @@ export type InternetGateway = {
     organization: string;
     internet_hostname: string;
     published_at: string | null;
+    /** Given by auto-publish, not typed in by hand. */
+    auto?: boolean;
   }[];
   /** Online sites without a public name, from every organization (Super Administrator only). */
   publishable?: { site: string; name: string; organization: string }[];

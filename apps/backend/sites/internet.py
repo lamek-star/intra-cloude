@@ -5,6 +5,11 @@ sign-in on their account -- and publish or revoke a site under a public name. Th
 connector runs only while the gate is on and reaches only the proxy's internet listener, which serves
 published sites and nothing else: never IntraForge itself. Every change is audited; switching the gate off
 revokes every publication.
+
+Auto-publish (optional, also Super Administrator only, with their password): once a domain is set, every online
+site is published as <slug>.<domain> -- now, and whenever a site is created or comes back online -- because a
+wildcard route in Cloudflare (*.<domain>) already sends those names to the tunnel. Taking a site offline takes its
+automatic name back; switching auto-publish off takes back every automatic name and keeps those published by hand.
 """
 
 from __future__ import annotations
@@ -71,6 +76,7 @@ def status() -> dict:
     return {
         "enabled": gate.enabled,
         "changed_at": gate.changed_at,
+        "auto_domain": gate.auto_domain,
         "tunnel": tunnel,
         "published": [
             {
@@ -79,6 +85,7 @@ def status() -> dict:
                 "organization": s.organization.name,
                 "internet_hostname": s.internet_hostname,
                 "published_at": s.internet_published_at,
+                "auto": s.internet_auto,
             }
             for s in published
         ],
@@ -133,7 +140,7 @@ def disable(*, actor) -> dict:
             raise InternetError(f"The tunnel could not be stopped: {exc}") from exc
     with transaction.atomic():
         gate = InternetGateway.current()
-        gate.enabled, gate.token_encrypted = False, None
+        gate.enabled, gate.token_encrypted, gate.auto_domain = False, None, ""
         gate.changed_by, gate.changed_at = actor, timezone.now()
         gate.save()
         revoked = list(Site.objects.filter(internet_hostname__isnull=False))
@@ -172,12 +179,14 @@ def publish(*, actor, site: Site, hostname: str) -> Site:
         actor,
         timezone.now(),
     )
+    site.internet_auto = False
     try:
         site.save(
             update_fields=[
                 "internet_hostname",
                 "internet_published_by",
                 "internet_published_at",
+                "internet_auto",
                 "updated_at",
             ]
         )
@@ -215,8 +224,130 @@ def revoke(*, actor, site: Site) -> Site:
 
 def _clear(site: Site) -> None:
     site.internet_hostname, site.internet_published_by, site.internet_published_at = None, None, None
+    site.internet_auto = False
     site.save(
-        update_fields=["internet_hostname", "internet_published_by", "internet_published_at", "updated_at"]
+        update_fields=[
+            "internet_hostname",
+            "internet_published_by",
+            "internet_published_at",
+            "internet_auto",
+            "updated_at",
+        ]
+    )
+
+
+def set_auto_publish(*, actor, domain: str, password: str) -> dict:
+    """Switches auto-publish on for a domain (publishing every online site now) or, with an empty domain, off
+    (taking back every automatic name; names published by hand stay)."""
+    _require(actor)
+    if not password or not actor.check_password(password):
+        raise InternetError("The password is not correct.")
+    domain = (domain or "").strip().lower().rstrip(".")
+    gate = InternetGateway.current()
+    if domain:
+        if not gate.enabled:
+            raise InternetError("Switch internet access on first.")
+        validate_public_name(domain)
+        gate.auto_domain = domain
+        gate.save(update_fields=["auto_domain"])
+        published = [s.internet_hostname for s in Site.objects.filter(status=Site.Status.ACTIVE) if auto_publish(s)]
+        audit.record(
+            actor=actor,
+            organization_id=None,
+            action="internet.auto_publish.enabled",
+            resource_type="internet_gateway",
+            context={"domain": domain, "published": published},
+        )
+    else:
+        previous = gate.auto_domain
+        gate.auto_domain = ""
+        gate.save(update_fields=["auto_domain"])
+        taken_back = []
+        for site in Site.objects.filter(internet_auto=True):
+            taken_back.append(site.internet_hostname)
+            withdraw_auto(site)
+        audit.record(
+            actor=actor,
+            organization_id=None,
+            action="internet.auto_publish.disabled",
+            resource_type="internet_gateway",
+            context={"domain": previous, "revoked": taken_back},
+        )
+    return status()
+
+
+def auto_publish(site: Site) -> bool:
+    """Publishes an online site as <slug>.<domain> when auto-publish is on and it has no public name yet. Never
+    raises: a site that cannot be published (its name already taken by hand, its app route not updated) stays
+    unpublished or published without its route, and the audit log says why. Returns whether it was published."""
+    gate = InternetGateway.current()
+    if not (gate.enabled and gate.auto_domain) or site.status != Site.Status.ACTIVE or site.internet_hostname:
+        return False
+    name = f"{site.slug}.{gate.auto_domain}"
+    if Site.objects.filter(internet_hostname=name).exclude(pk=site.pk).exists():
+        _auto_failed(site, name, "the name is already published for another site")
+        return False
+    site.internet_hostname, site.internet_published_by, site.internet_published_at = name, None, timezone.now()
+    site.internet_auto = True
+    try:
+        with transaction.atomic():
+            site.save(
+                update_fields=[
+                    "internet_hostname",
+                    "internet_published_by",
+                    "internet_published_at",
+                    "internet_auto",
+                    "updated_at",
+                ]
+            )
+    except IntegrityError:
+        site.refresh_from_db()
+        _auto_failed(site, name, "the name is already published for another site")
+        return False
+    try:
+        _follow_route(site)
+    except InternetError as exc:
+        _auto_failed(site, name, str(exc))
+    audit.record(
+        actor=None,
+        organization_id=site.organization_id,
+        action="site.internet.published",
+        resource_type="site",
+        resource_id=site.id,
+        context={"slug": site.slug, "internet_hostname": name, "auto": True},
+    )
+    return True
+
+
+def withdraw_auto(site: Site) -> None:
+    """Takes back an automatic public name (a name published by hand is left alone). Never raises."""
+    if not site.internet_auto or not site.internet_hostname:
+        return
+    previous = site.internet_hostname
+    _clear(site)
+    try:
+        _follow_route(site)
+    except InternetError as exc:
+        _auto_failed(site, previous, str(exc))
+    audit.record(
+        actor=None,
+        organization_id=site.organization_id,
+        action="site.internet.revoked",
+        resource_type="site",
+        resource_id=site.id,
+        context={"slug": site.slug, "internet_hostname": previous, "auto": True},
+    )
+
+
+def _auto_failed(site: Site, name: str, reason: str) -> None:
+    audit.record(
+        actor=None,
+        organization_id=site.organization_id,
+        action="site.internet.auto_failed",
+        resource_type="site",
+        resource_id=site.id,
+        result="error",
+        context={"slug": site.slug, "internet_hostname": name, "reason": reason[:300]},
     )
 
 

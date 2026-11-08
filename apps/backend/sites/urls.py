@@ -12,6 +12,11 @@ urlpatterns = [
         views.InternetGatewayDisableView.as_view(),
         name="internet-gateway-disable",
     ),
+    path(
+        "internet-gateway/auto-publish/",
+        views.InternetAutoPublishView.as_view(),
+        name="internet-gateway-auto-publish",
+    ),
     path("sites/<uuid:site_id>/internet/", views.SiteInternetView.as_view(), name="site-internet"),
     path(
         "organizations/<uuid:organization_id>/sites/",
