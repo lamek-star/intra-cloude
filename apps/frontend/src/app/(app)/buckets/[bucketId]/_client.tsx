@@ -48,7 +48,7 @@ export default function BucketDetailClient({
   initialName: string | null;
   projectId: string | null;
 }) {
-  const [bucketName] = useState(initialName ?? "Bucket");
+  const [bucketName, setBucketName] = useState(initialName ?? "Bucket");
   const [project, setProject] = useState<Project | null>(null);
   const trail = useProjectTrail(project?.id);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
@@ -98,8 +98,16 @@ export default function BucketDetailClient({
 
   async function load() {
     try {
-      if (projectId) {
-        const p = await api.get<Project>(`/projects/${projectId}/`);
+      // Opened straight from its address (a bookmark, a refresh): the link's name and project are not in the URL,
+      // so the bucket itself says them.
+      let project = projectId;
+      if (!initialName || !project) {
+        const bucket = await api.get<{ name?: string; project?: string }>(`/buckets/${bucketId}/`);
+        if (!initialName && bucket.name) setBucketName(bucket.name);
+        project = project ?? bucket.project ?? null;
+      }
+      if (project) {
+        const p = await api.get<Project>(`/projects/${project}/`);
         setProject(p);
         // Best-effort, for the Sharing section's organization scope --
         // the file list above doesn't depend on this resolving.

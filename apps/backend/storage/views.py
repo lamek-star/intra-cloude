@@ -147,6 +147,21 @@ class FolderListCreateView(APIView):
         return Response(FolderSerializer(folder).data, status=status.HTTP_201_CREATED)
 
 
+class BucketDetailView(APIView):
+    """One bucket's name and project, for a page opened straight from its address (a bookmark, a refresh):
+    the same checks as listing its files."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, bucket_id):
+        bucket = get_member_bucket(request.user, bucket_id)
+        if not _require(request, "storage.read", bucket.organization_id, bucket_id=bucket.id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, bucket):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        return Response(BucketSerializer(bucket).data)
+
+
 class FileListCreateView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = _UPLOAD_PARSERS

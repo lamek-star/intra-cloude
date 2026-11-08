@@ -381,6 +381,28 @@ class StoragePermissionTests(StorageTestBase):
         self.assertEqual(self.client.get(url, {"status": "deleted"}).status_code, status.HTTP_403_FORBIDDEN)
 
 
+class BucketDetailTests(StorageTestBase):
+    """GET buckets/<id>/ -- a bucket page opened straight from its address learns the bucket's name: the same
+    checks as listing its files (organization member, storage.read, environment scope)."""
+
+    def test_a_member_with_storage_read_gets_the_name_and_project(self):
+        resp = self.client.get(reverse("bucket-detail", args=[self.bucket_id]))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["name"], "docs")
+        self.assertEqual(str(resp.data["project"]), self.project_id)
+
+    def test_a_member_without_storage_read_is_refused(self):
+        outsider = User.objects.create_user(email="detail-outsider@example.com", password="x")
+        Membership.objects.create(user=outsider, organization_id=self.org_id, status=Membership.Status.ACTIVE)
+        self.client.force_login(outsider)
+        self.assertEqual(self.client.get(reverse("bucket-detail", args=[self.bucket_id])).status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_another_organization_cannot_read_it_by_id(self):
+        stranger = User.objects.create_user(email="detail-stranger@example.com", password="x")
+        self.client.force_login(stranger)
+        self.client.post(reverse("organization-list-create"), {"name": "Other shop"})
+        self.assertEqual(self.client.get(reverse("bucket-detail", args=[self.bucket_id])).status_code, status.HTTP_404_NOT_FOUND)
+
 class BucketListVisibilityTests(StorageTestBase):
     """BucketListCreateView.get previously listed every bucket in a
     project (name, versioning_enabled, created_by) via get_member_project

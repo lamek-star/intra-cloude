@@ -55,6 +55,16 @@ describe("Bucket page", () => {
     expect(within(path).getByText("invoices")).toHaveAttribute("aria-current", "page");
   });
 
+  it("shows the bucket's own name when opened straight from its address", async () => {
+    get.mockImplementation(async (path: string) => {
+      if (path === "/buckets/b1/") return { id: "b1", name: "scenario-files", project: null };
+      if (path.startsWith("/buckets/b1/folders/")) return [];
+      return [];
+    });
+    render(<BucketDetailClient bucketId="b1" initialName={null} projectId={null} />);
+    expect(await screen.findByRole("heading", { name: "scenario-files" })).toBeInTheDocument();
+  });
+
   it("restores from the Trash and explains a refusal", async () => {
     get.mockImplementation(async (path: string) => {
       if (path.startsWith("/buckets/b1/folders/")) return [];
