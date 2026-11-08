@@ -120,6 +120,15 @@ By default only the shop PC itself opens IntraForge. To let the other PCs in the
 4. Everyone signs in with **their own** account. Spare Parts' address there is `https://shop-pc:8443/apps/spare-parts/`; it
    shows the shop's sign-in page.
 
+**No router in the shop:** step 2 becomes **Control Center > Settings > Shop network > Create a shop Wi-Fi from this PC...**
+(Windows Mobile Hotspot, `Set-IntraForgeNetwork.ps1 -Mode Hotspot`). The PC must have Wi-Fi that supports hosting and
+*some* connection of its own (Ethernet, a phone's hotspot, any Wi-Fi; internet is not needed) because Windows only starts a
+hotspot while it has one to share. The Wi-Fi name and a generated 12-character password are kept in `.env`
+(`SHOP_HOTSPOT_SSID`/`SHOP_HOTSPOT_PASSWORD`, redacted from diagnostics) and shown in Settings; the hotspot is marked
+**Private**, IntraForge answers at `https://<pc-name>:8443` and `https://192.168.137.1:8443`, and `Start-IntraForgeShop.ps1`
+switches it back on at every start (a failure is logged, never a reason not to start). Not yet tried on the shop PC: a
+phone joining the hotspot and the restart behaviour need the hardware.
+
 What it does: IntraForge also answers on the shop PC's network address; the Windows Firewall admits the shop's **Private**
 network only and **blocks public networks**; nothing is opened to the internet. **Settings > Shop network > This computer
 only** undoes all of it. If the Control Center says *"This PC's address changed"*, press **Update the address** there (and

@@ -49,6 +49,8 @@ namespace IntraForge.ControlCenter
             GCheck = "", GWarn = "", GError = "", GInfo = "", GShield = "", GSync = "",
             GApps = "", GFolder = "", GKey = "", GNetwork = "", GUpgrade = "";
 
+        public const string GWifi = "";
+
         static readonly float scale = ReadScale();
         public static readonly string IconFamily = FirstInstalled("Segoe Fluent Icons", "Segoe MDL2 Assets");
 
@@ -524,6 +526,11 @@ namespace IntraForge.ControlCenter
             using (Form f = new ShopNetworkConfirmForm()) Save(f, folder, "3-shop-network.png");
             using (Form f = new RestoreForm(kit)) Save(f, folder, "4-restore.png");
             using (Form f = new UninstallForm(kit)) Save(f, folder, "5-uninstall.png");
+            using (Form f = new HotspotConfirmForm()) Save(f, folder, "7-shop-wifi.png");
+            Kit wifi = Kit.Locate();
+            wifi.Network = "shop"; wifi.Hotspot = true; wifi.LanName = "shop-pc"; wifi.LanAddress = "192.168.137.1";
+            wifi.HotspotSsid = "IntraForge-SHOP-PC"; wifi.HotspotPassword = "kq7m-3vtd-9x";
+            using (Form f = new SettingsForm(wifi)) Save(f, folder, "8-settings-shop-wifi.png");
             using (Form f = new OutputForm("Allowing the other PCs in this shop", "Finding the shop network\nSaving the settings\nRestarting IntraForge with the new settings\nDone.", true)) Save(f, folder, "6-output.png");
         }
 

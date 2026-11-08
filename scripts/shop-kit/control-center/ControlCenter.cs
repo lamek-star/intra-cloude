@@ -87,6 +87,10 @@ namespace IntraForge.ControlCenter
         public string Version = "unknown";
         // "shop" when other PCs in the shop may open IntraForge (Set-IntraForgeNetwork.ps1), with the PC's name/address then.
         public string Network = "", LanAddress = "", LanName = "";
+        // When the shop has no router, this PC hosts the shop's Wi-Fi (-Mode Hotspot). The Wi-Fi name and password are
+        // shown to the owner so staff phones can join; the password is redacted from diagnostics like any other.
+        public bool Hotspot;
+        public string HotspotSsid = "", HotspotPassword = "";
         // The kit's docker-compose.yml names its project "intraforge-shop"; the override exists only to rehearse the
         // Control Center against another stack.
         public static readonly string Project = Environment.GetEnvironmentVariable("INTRAFORGE_CC_PROJECT") ?? "intraforge-shop";
@@ -106,6 +110,9 @@ namespace IntraForge.ControlCenter
                     if (line.StartsWith("SHOP_NETWORK=")) k.Network = line.Substring(13).Trim();
                     if (line.StartsWith("SHOP_LAN_ADDRESS=")) k.LanAddress = line.Substring(17).Trim();
                     if (line.StartsWith("SHOP_LAN_NAME=")) k.LanName = line.Substring(14).Trim();
+                    if (line.StartsWith("SHOP_HOTSPOT=")) k.Hotspot = line.Substring(13).Trim() == "1";
+                    if (line.StartsWith("SHOP_HOTSPOT_SSID=")) k.HotspotSsid = line.Substring(18).Trim();
+                    if (line.StartsWith("SHOP_HOTSPOT_PASSWORD=")) k.HotspotPassword = line.Substring(22).Trim();
                 }
             }
             string ver = Path.Combine(k.Dir, "VERSION");
@@ -1481,9 +1488,9 @@ namespace IntraForge.ControlCenter
             FlowLayoutPanel buttons = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Margin = Padding.Empty };
             if (!kit.ShopNetwork)
             {
-                state.Text = "Only this computer can open IntraForge. You can let the other PCs and the customers' phones in the shop open it too -- " +
-                             "over the shop's own network only, never the internet.";
-                UiButton on = new UiButton("Allow other PCs in this shop...", ButtonKind.Primary, Ui.GNetwork) { Margin = Padding.Empty };
+                state.Text = "Only this computer can open IntraForge. You can let the other PCs and phones in the shop open it too -- " +
+                             "over the shop's own network only, never the internet. No router in the shop? This PC can create the shop's Wi-Fi itself.";
+                UiButton on = new UiButton("Allow other PCs in this shop...", ButtonKind.Primary, Ui.GNetwork) { Margin = Ui.Pad(0, 0, 8, 6) };
                 on.Click += (s, e) =>
                 {
                     using (ShopNetworkConfirmForm c = new ShopNetworkConfirmForm())
@@ -1491,6 +1498,45 @@ namespace IntraForge.ControlCenter
                     Apply(kit, "Shop", "Allowing the other PCs in this shop");
                 };
                 buttons.Controls.Add(on);
+                UiButton wifi = new UiButton("Create a shop Wi-Fi from this PC...", ButtonKind.Secondary, Ui.GWifi) { Margin = Ui.Pad(0, 0, 8, 6) };
+                wifi.Click += (s, e) =>
+                {
+                    using (HotspotConfirmForm c = new HotspotConfirmForm())
+                        if (c.ShowDialog(this) != DialogResult.OK) return;
+                    Apply(kit, "Hotspot", "Creating the shop's Wi-Fi on this PC");
+                };
+                buttons.Controls.Add(wifi);
+            }
+            else if (kit.Hotspot)
+            {
+                // The hotspot's address never changes (192.168.137.1), so there is nothing to update; only the Wi-Fi to share.
+                state.Text = "This PC hosts the shop's own Wi-Fi." + Environment.NewLine + "Wi-Fi name:  " + kit.HotspotSsid +
+                             Environment.NewLine + "Password:  " + kit.HotspotPassword +
+                             Environment.NewLine + "Phones and PCs that join it open IntraForge at " + kit.LanUrl + "  (or https://" + kit.LanAddress + ":" + kit.Port + ")." +
+                             Environment.NewLine + "It is switched on again at every start of IntraForge. Each PC trusts the certificate once: " +
+                             Path.Combine(kit.ShopNetworkDir, "Trust-IntraForge-on-this-PC.cmd");
+                UiButton again = new UiButton("Switch the Wi-Fi on again", ButtonKind.Secondary, Ui.GRestart) { Margin = Ui.Pad(0, 0, 8, 6) };
+                again.Click += (s, e) => Apply(kit, "Hotspot", "Switching the shop's Wi-Fi on");
+                UiButton router = new UiButton("Use the shop's router instead", ButtonKind.Secondary, Ui.GNetwork) { Margin = Ui.Pad(0, 0, 8, 6) };
+                router.Click += (s, e) =>
+                {
+                    using (ShopNetworkConfirmForm c = new ShopNetworkConfirmForm())
+                        if (c.ShowDialog(this) != DialogResult.OK) return;
+                    Apply(kit, "Shop", "Moving to the shop's router network");
+                };
+                UiButton folder = new UiButton("Open the certificate folder", ButtonKind.Secondary, Ui.GFolder) { Margin = Ui.Pad(0, 0, 8, 6) };
+                folder.Click += (s, e) => { try { Process.Start("explorer.exe", "\"" + kit.ShopNetworkDir + "\""); } catch (Exception) { } };
+                UiButton off = new UiButton("This computer only", ButtonKind.Secondary, Ui.GStop) { Margin = Ui.Pad(0, 0, 8, 6) };
+                off.Click += (s, e) =>
+                {
+                    if (MessageBox.Show(this, "Switch off this PC's shop Wi-Fi and make IntraForge reachable from this computer only?",
+                                        "IntraForge", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
+                    Apply(kit, "ThisPC", "Making IntraForge this-computer-only");
+                };
+                buttons.Controls.Add(again);
+                buttons.Controls.Add(router);
+                buttons.Controls.Add(folder);
+                buttons.Controls.Add(off);
             }
             else
             {
@@ -1556,6 +1602,33 @@ namespace IntraForge.ControlCenter
             go.Enabled = false;
             CancelButton = AddButton("Cancel", ButtonKind.Secondary, DialogResult.Cancel);
             sure.CheckedChanged += (s, e) => go.Enabled = sure.Checked;
+            AcceptButton = go;
+            ResumeLayout(true);
+            FitToContent();
+        }
+    }
+
+    // Before this PC starts its own Wi-Fi for a shop without a router.
+    sealed class HotspotConfirmForm : UiDialog
+    {
+        public HotspotConfirmForm() : base("Create a shop Wi-Fi from this PC",
+            "For a shop with no router: this PC becomes the shop's Wi-Fi, and the staff's phones and PCs join it.", Ui.GWifi, Ui.Accent)
+        {
+            SuspendLayout();
+            Body.Controls.Add(Section("What happens"));
+            Body.Controls.Add(Bullets(Ui.GCheck, Ui.Success,
+                "Windows' Mobile Hotspot is switched on with a Wi-Fi name and password, shown at the end and kept for next time.",
+                "Windows treats that Wi-Fi as the shop's Private network; the firewall lets in only it.",
+                "IntraForge answers on it at this PC's name and 192.168.137.1. It comes back on at every start.",
+                "Nothing is opened to the internet. You can switch back to this-computer-only at any time."));
+            Body.Controls.Add(Section("Before you continue"));
+            Body.Controls.Add(Bullets(Ui.GWarn, Ui.Warn,
+                "This PC needs Wi-Fi and some connection of its own (the hotspot shares it; Windows needs one to start it).",
+                "Give the password only to staff. Customers should not join the shop's Wi-Fi.",
+                "Windows lets about 8 phones and PCs join at once. Keep this PC plugged in and switched on."));
+            Body.Controls.Add(Para("Windows asks for administrator rights once (for the firewall).", Ui.Muted));
+            UiButton go = AddButton("Create the Wi-Fi", ButtonKind.Primary, DialogResult.OK);
+            CancelButton = AddButton("Cancel", ButtonKind.Secondary, DialogResult.Cancel);
             AcceptButton = go;
             ResumeLayout(true);
             FitToContent();

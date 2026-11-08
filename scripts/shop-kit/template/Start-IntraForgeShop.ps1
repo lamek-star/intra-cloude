@@ -18,6 +18,15 @@ try {
         throw 'The file .env is missing from the IntraForge folder. It holds the shop''s keys; without it IntraForge cannot start. Restore it from the copy on your USB drive (intraforge-keys.env), see README.txt.'
     }
     Start-DockerIfNeeded
+    # A shop without a router uses this PC's own Wi-Fi (Set-IntraForgeNetwork.ps1 -Mode Hotspot): switch it back on.
+    # Never a reason not to start IntraForge itself.
+    if ((Get-ShopSetting 'SHOP_HOTSPOT' '') -eq '1' -and (Get-ShopSetting 'SHOP_HOTSPOT_SSID' '') -and (Get-ShopSetting 'SHOP_HOTSPOT_PASSWORD' '')) {
+        try {
+            [void](Start-ShopHotspot -Ssid (Get-ShopSetting 'SHOP_HOTSPOT_SSID' '') -Password (Get-ShopSetting 'SHOP_HOTSPOT_PASSWORD' ''))
+            Write-ShopLog 'shop Wi-Fi on'
+        }
+        catch { Write-ShopLog "shop Wi-Fi could not be started: $($_.Exception.Message)" }
+    }
     $env:SHOP_HTTPS_PORT = "$(Get-ShopPort)"; $env:SHOP_DATA_DIR = ((Get-DataDir) -replace '\\', '/')
     & docker compose up -d --pull never
     $upExit = $LASTEXITCODE

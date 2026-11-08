@@ -356,3 +356,98 @@ function Remove-HostedApps {
     foreach ($network in $networks) { [void](Test-Quiet { docker network rm $network }) }
     foreach ($image in $images) { [void](Test-Quiet { docker image rm $image }) }
 }
+
+# ---- the shop's own Wi-Fi (Windows Mobile Hotspot) --------------------------------------------------------------------
+# When the shop has no router, this PC hosts the shop network itself: phones and the other PCs join its hotspot and open
+# IntraForge on it. Windows starts a hotspot only while the PC has some connection to share (Ethernet, a phone, any
+# Wi-Fi -- internet not needed). The hotspot's own address on this PC is always 192.168.137.1.
+$script:HotspotAddress = '192.168.137.1'
+
+function Initialize-WinRT {
+    Add-Type -AssemblyName System.Runtime.WindowsRuntime
+    $null = [Windows.Networking.Connectivity.NetworkInformation, Windows.Networking.Connectivity, ContentType = WindowsRuntime]
+    $null = [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager, Windows.Networking.NetworkOperators, ContentType = WindowsRuntime]
+}
+
+# Waits for a Windows Runtime async call (Windows PowerShell 5.1 has no await).
+function Wait-WinRT($operation, [Type]$resultType) {
+    $methods = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 }
+    if ($resultType) {
+        $asTask = ($methods | Where-Object { $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' } | Select-Object -First 1).MakeGenericMethod($resultType)
+    }
+    else { $asTask = $methods | Where-Object { $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncAction' } | Select-Object -First 1 }
+    $task = $asTask.Invoke($null, @($operation))
+    if (-not $task.Wait(60000)) { throw 'Windows did not answer within a minute (mobile hotspot).' }
+    if ($resultType) { return $task.Result }
+}
+
+function Get-HotspotManager {
+    Initialize-WinRT
+    $info = [Windows.Networking.Connectivity.NetworkInformation]
+    $connection = $info::GetInternetConnectionProfile()
+    if (-not $connection) {
+        $connection = @($info::GetConnectionProfiles() | Where-Object { $_.GetNetworkConnectivityLevel() -ne 'None' }) | Select-Object -First 1
+    }
+    if (-not $connection) {
+        throw ('This PC has no connection at all, and Windows starts a hotspot only while it has one to share (internet is not ' +
+            'needed). Connect it to anything once -- a network cable, a phone''s hotspot or any Wi-Fi -- and try again; or give the ' +
+            'shop a small Wi-Fi router.')
+    }
+    $tethering = [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager]
+    $capability = $tethering::GetTetheringCapabilityFromConnectionProfile($connection)
+    if ("$capability" -ne 'Enabled') {
+        throw "This PC cannot host a Wi-Fi hotspot ($capability). Its Wi-Fi may not support it, or a policy switches it off; use a small Wi-Fi router instead."
+    }
+    return $tethering::CreateFromConnectionProfile($connection)
+}
+
+function New-HotspotPassword {
+    # 12 characters that cannot be mixed up when typed on a phone (no l/1, o/0, i); random bytes above the last whole
+    # multiple of the alphabet's size are skipped, so every character is equally likely.
+    $alphabet = 'abcdefghjkmnpqrstuvwxyz23456789'
+    $limit = 256 - (256 % $alphabet.Length)
+    $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+    $byte = New-Object byte[] 1
+    $chars = New-Object System.Collections.Generic.List[char]
+    while ($chars.Count -lt 12) {
+        $rng.GetBytes($byte)
+        if ($byte[0] -lt $limit) { $chars.Add($alphabet[$byte[0] % $alphabet.Length]) }
+    }
+    $rng.Dispose()
+    return -join $chars
+}
+
+# Starts the hotspot with this name and password, kept on even when nobody is connected. Returns this PC's interface
+# index on it.
+function Start-ShopHotspot([string]$Ssid, [string]$Password) {
+    $manager = Get-HotspotManager
+    $config = $manager.GetCurrentAccessPointConfiguration()
+    if ($config.Ssid -ne $Ssid -or $config.Passphrase -ne $Password) {
+        $config.Ssid = $Ssid
+        $config.Passphrase = $Password
+        Wait-WinRT ($manager.ConfigureAccessPointAsync($config)) $null
+    }
+    try { [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager]::DisableNoConnectionsTimeout() } catch { }
+    if ("$($manager.TetheringOperationalState)" -ne 'On') {
+        $result = Wait-WinRT ($manager.StartTetheringAsync()) ([Windows.Networking.NetworkOperators.NetworkOperatorTetheringOperationResult])
+        if ("$($result.Status)" -ne 'Success') {
+            throw "Windows could not start the hotspot ($($result.Status)). $($result.AdditionalErrorMessage)"
+        }
+    }
+    for ($i = 0; $i -lt 30; $i++) {
+        $ip = Get-NetIPAddress -IPAddress $script:HotspotAddress -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($ip) { return $ip.InterfaceIndex }
+        Start-Sleep -Seconds 1
+    }
+    throw "The hotspot started, but this PC did not get its address ($($script:HotspotAddress)) on it."
+}
+
+function Stop-ShopHotspot {
+    try {
+        $manager = Get-HotspotManager
+        if ("$($manager.TetheringOperationalState)" -eq 'On') {
+            [void](Wait-WinRT ($manager.StopTetheringAsync()) ([Windows.Networking.NetworkOperators.NetworkOperatorTetheringOperationResult]))
+        }
+    }
+    catch { Write-Host "The hotspot could not be stopped: $($_.Exception.Message)" -ForegroundColor Yellow }
+}
