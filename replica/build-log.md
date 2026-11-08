@@ -167,3 +167,40 @@ and must never be shared. Unsigned: SmartScreen shows "Unknown publisher".
 The kit zip was repackaged with plain entry names (`IntraForge-Local-1.5.0-d5293a2f8.zip`, now SHA-256
 `8058b2675a34b987e9ab1cf6f396c203a59daba9a038d48c5b84252b30135c16`; same 27 files): Windows Explorer's "Extract All"
 reported the `tar -a`-made zip "invalid" because every name started with `./`. build-shop-kit.sh now zips with Python.
+
+### Kit 1.5.1 (2026-11-09)
+
+`IntraForge-Local-1.5.1-99150412d.zip` (906 MB), SHA-256
+`9a3d11bcbd18d830a24b718317f3ea42a57b25966fac69f34a152b1579d8362e`, built from `99150412d` with
+`KIT_VERSION=1.5.1 CARRY_APPS_FROM=1.4.0-dbf44f593 MINIO_TAG=RELEASE.2025-09-07T16-13-09Z
+PAY_IMAGE=intraforge-shop-pay:1.5.0-cashback` (Pay unchanged from the 1.5.0 rebuild, `429aca5`).
+
+New since 1.5.0: the shop PC's own Wi-Fi (hotspot), passkey sign-in (ADR-0019), the shop's names with a CoreDNS name
+server (ADR-0021, `coredns/coredns:1.15.0` added to the images), uploaded zip apps on the Apps page, the Pharmacy
+built-in app (pilot preview: medicines import, editable price and shelf, pictures, Code 128 labels), the Control
+Center's Wi-Fi and names controls, auto-publish under the internet domain.
+
+- Checked: 7/7 kit checksums and the zip; all 12 images the compose file names are in the tar; no `.env` or login
+  file. `npm audit --omit=dev --audit-level=high`: 0; `pip-audit` (prod): no known vulnerabilities.
+- Migrations since 1.5.0: accounts 0003-0004, hosted_sites 0005-0006. Every added column has a database default
+  (0004/0006, `accounts/tests/test_rollback_safety.py`), so a failed upgrade that rolls back to 1.5.0 still creates
+  users, sites and the gateway row on the migrated data.
+- Test copy (`test-1.5.0`) moved to the 1.5.1 backend and web interface; migrations applied; checked in the browser
+  at https://localhost:9543: the passkey button on sign-in, the Passkeys card, the passkey endpoints at `localhost`
+  (wrong password refused; a check without a passkey refused); uploaded apps on Apps; the Pharmacy offered as "Pilot
+  preview" (other experimental apps hidden), installed through the UI; Medicines wording; the import of the readable
+  7,846 rows (7,588 medicines) with a 0.18 rate started through the real dialog -- 1,218 imported after about ten
+  minutes and still running when this was written, so the complete run is not yet confirmed; a medicine's facts (Atrest 25mg: generic name, pack,
+  manufacturer, origin, Rx, used for, reference ₹335.68, price 60.42); Edit saving a shelf location; the label
+  preview (name, Rx, generic name, pack, `NM-847249`, `60.42 · Shelf B3`), and the barcode drawn on the page decoded
+  by zxing-cpp as Code 128 `NM-847249`.
+- Import speed: 2-5 medicines a second (each record goes through the full record service: permissions, validation,
+  journal, audit); the backend process is the bottleneck (~75% CPU, databases mostly idle). About an hour for this
+  catalogue; far too slow for a full one: a bulk import path is a follow-up.
+- Not tested here: the Upgrade script against the shop's 1.5.0 install; a phone on the hotspot or on the router's
+  name server; a passkey made with a real phone; printing on a label printer.
+
+**Full installer.** `IntraForge-Setup-1.5.1.exe` (1.8 GB), SHA-256
+`03403ea91cec404ba6a45a1d3b7c24e77dea4bcd410ed5d39fa50ac54d2dcdc8`, with the Docker Desktop installer and
+`wsl.x64.msi` from `C:\IntraForge\prerequisites`. Trailer `IFSFX003`; the embedded kit is byte-identical to the zip
+above. Embeds Docker Desktop: for the owner's own PCs only, never to be shared. Unsigned.
