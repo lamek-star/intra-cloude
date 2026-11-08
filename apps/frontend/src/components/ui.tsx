@@ -386,7 +386,7 @@ export function TRow({
       }
       tabIndex={onClick ? 0 : undefined}
       role={onClick ? "button" : undefined}
-      className={`border-b border-slate-100 last:border-0 ${onClick ? "cursor-pointer hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500 focus-visible:-outline-offset-2" : ""}`}
+      className={`list-row border-b border-slate-100 last:border-0 transition-colors ${onClick ? "cursor-pointer hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500 focus-visible:-outline-offset-2" : ""}`}
     >
       {children}
     </tr>

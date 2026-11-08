@@ -180,6 +180,18 @@
   animation: dialog-panel-in var(--duration-base) var(--ease-emphasis);
 }
 
+/* Table rows (TRow): a row fades and rises in when it appears -- a file just uploaded, a new audit entry.
+   Rows already on screen keep their place and do not animate again (React keeps them mounted). */
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+.list-row {
+  animation: row-in var(--duration-base) ease-out;
+}
+
 /* View transitions between pages (components/PageTransition.tsx): only the page area cross-fades, quickly;
    the rest of the window (sidebar, header) is kept still instead of the browser's whole-page fade. */
 ::view-transition-old(*),
