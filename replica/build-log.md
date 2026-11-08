@@ -204,3 +204,10 @@ Center's Wi-Fi and names controls, auto-publish under the internet domain.
 `03403ea91cec404ba6a45a1d3b7c24e77dea4bcd410ed5d39fa50ac54d2dcdc8`, with the Docker Desktop installer and
 `wsl.x64.msi` from `C:\IntraForge\prerequisites`. Trailer `IFSFX003`; the embedded kit is byte-identical to the zip
 above. Embeds Docker Desktop: for the owner's own PCs only, never to be shared. Unsigned.
+
+**Shop PC upgraded 1.5.0 -> 1.5.1 (2026-11-09 01:27-01:31).** `Upgrade-IntraForgeShop.ps1 -Quiet` from the 1.5.1 kit
+folder, without administrator rights (the shop network is off, so no firewall change was needed). Safety backup first
+(control database 399,050 bytes, business records 518,739, files 10,532; 46 s); migrations accounts 0003-0004 and
+hosted_sites 0005-0006 applied; all 13 services up on the 1.5.1 images (Pay, Pharmacy, Spare Parts healthy);
+`/healthz` and `/readyz` 200; sign-in page 200; the catalog offers Spare Parts (Ready for use) and the Pharmacy (Pilot
+preview); 5 accounts intact; the Control Center exe is the kit's (same SHA-256); 1.5.0 kept in `C:\IntraForge\.previous`.
