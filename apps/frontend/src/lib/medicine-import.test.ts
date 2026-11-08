@@ -3,7 +3,7 @@ import { canEncode128, code128Modules, code128Svg, code128Values, CODE128_PATTER
 import { CsvStream, itemNumberFrom, medicineFromRow, parseRupees, readMedicines, sellingPrice } from "./medicine-import";
 import { editionOf } from "./business";
 import { testSchema } from "./test-schema";
-import { importBatches } from "@/components/business/MedicineImport";
+import { importBatches, medicineKey } from "@/components/business/MedicineImport";
 
 const HEADER =
   "disease_name,disease_url,med_name,med_url,final_price,price,prescription_required,drug_varient,drug_manufacturer," +
@@ -81,6 +81,7 @@ describe("reading a medicines catalogue", () => {
 
 describe("importing into the Pharmacy", () => {
   const schema = testSchema({ pharmacy: true });
+  const none = () => ({ numbers: new Set<string>(), keys: new Set<string>() });
   const medicine = (n: number) => medicineFromRow({ med_name: `Medicine ${n}`, img_urls: `https://x.example/product-v1/600x600/${1000 + n}/a.jpg` })!;
 
   it("recognises the Pharmacy edition by its fields", () => {
@@ -89,7 +90,7 @@ describe("importing into the Pharmacy", () => {
   });
 
   it("sends at most 100 operations per transaction, each medicine with its item number", () => {
-    const { batches } = importBatches(schema, Array.from({ length: 120 }, (_, i) => medicine(i)), new Set(), 0.18);
+    const { batches } = importBatches(schema, Array.from({ length: 120 }, (_, i) => medicine(i)), none(), 0.18);
     expect(batches.every((b) => b.length <= 100)).toBe(true);
     expect(batches.flat().filter((op) => op.model === "M:part")).toHaveLength(120);
     const [first, second] = batches[0];
@@ -98,9 +99,24 @@ describe("importing into the Pharmacy", () => {
   });
 
   it("leaves medicines the Pharmacy already has as they are", () => {
-    const { batches, skipped } = importBatches(schema, [medicine(1), medicine(2), medicine(1)], new Set(["NM-1001"]), null);
+    const { batches, skipped } = importBatches(
+      schema,
+      [medicine(1), medicine(2), medicine(1)],
+      { numbers: new Set(["NM-1001"]), keys: new Set() },
+      null,
+    );
     expect(skipped).toBe(2);
     expect(batches.flat().filter((op) => op.model === "M:part")).toHaveLength(1);
+  });
+
+  it("recognises a medicine without an item number by its source link, so a repeated import adds no copy", () => {
+    const plain = medicineFromRow({ med_name: "No Picture Syrup", med_url: "https://x.example/no-picture-syrup" })!;
+    expect(plain.item_number).toBeNull();
+    const again = importBatches(schema, [plain], { numbers: new Set(), keys: new Set([medicineKey(plain.source_url, plain.name)]) }, null);
+    expect(again.skipped).toBe(1);
+    expect(again.batches).toHaveLength(0);
+    const byName = medicineFromRow({ med_name: "Plain Name" })!;
+    expect(importBatches(schema, [byName], { numbers: new Set(), keys: new Set(["plain name"]) }, null).skipped).toBe(1);
   });
 });
 

@@ -13,11 +13,19 @@ type Operation = { op: "create"; model: string; ref?: string; data: Record<strin
 // A medicine is two operations (the medicine, its item number); the server takes at most 100 per transaction.
 const MEDICINES_PER_BATCH = 50;
 
-/** The atomic batches that create these medicines, skipping any whose item number the Pharmacy already has. */
+/** What the Pharmacy already has: its item numbers, and its medicines by source link (or name when it has none) --
+ * the same key `medicineFromRow` gives, so a medicine without an item number is recognised too. */
+export type Existing = { numbers: Set<string>; keys: Set<string> };
+
+export function medicineKey(sourceUrl: string, name: string): string {
+  return sourceUrl.trim() || name.trim().toLowerCase();
+}
+
+/** The atomic batches that create these medicines, skipping any the Pharmacy already has. */
 export function importBatches(
   schema: BusinessSchema,
   medicines: Medicine[],
-  existingNumbers: Set<string>,
+  existing: Existing,
   rate: number | null,
 ): { batches: Operation[][]; skipped: number } {
   const part = schema.modelId("part");
@@ -26,12 +34,14 @@ export function importBatches(
   const batches: Operation[][] = [];
   let current: Operation[] = [];
   let skipped = 0;
-  const seen = new Set(existingNumbers);
+  const seen = new Set(existing.numbers);
+  const known = new Set(existing.keys);
   medicines.forEach((m) => {
-    if (m.item_number && seen.has(m.item_number)) {
+    if ((m.item_number && seen.has(m.item_number)) || known.has(medicineKey(m.source_url, m.name))) {
       skipped++;
       return;
     }
+    known.add(medicineKey(m.source_url, m.name));
     const ref = `m${current.length}`;
     const data: Record<string, unknown> = {
       [f("name")]: m.name,
@@ -72,13 +82,22 @@ export function importBatches(
   return { batches, skipped };
 }
 
-async function existingItemNumbers(schema: BusinessSchema): Promise<Set<string>> {
+async function existingCatalogue(schema: BusinessSchema): Promise<Existing> {
   const numbers = new Set<string>();
+  const keys = new Set<string>();
   for (let offset = 0; ; offset += 500) {
     const page = await listRecords(schema, "part_number", { limit: 500, offset });
     for (const row of page.results) numbers.add(cellText(schema, "part_number", row, "number"));
-    if (offset + 500 >= page.count || page.results.length === 0) return numbers;
+    if (offset + 500 >= page.count || page.results.length === 0) break;
   }
+  for (let offset = 0; ; offset += 500) {
+    const page = await listRecords(schema, "part", { limit: 500, offset });
+    for (const row of page.results) {
+      keys.add(medicineKey(cellText(schema, "part", row, "source_url"), cellText(schema, "part", row, "name")));
+    }
+    if (offset + 500 >= page.count || page.results.length === 0) break;
+  }
+  return { numbers, keys };
 }
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -106,7 +125,7 @@ export function MedicineImportButton({ onImported }: { onImported: () => void })
         setProgress(`Reading the file: ${Math.round((read / Math.max(file.size, 1)) * 100)}% · ${count.toLocaleString()} medicines`),
       );
       setProgress("Checking what the Pharmacy already has...");
-      const existing = await existingItemNumbers(schema);
+      const existing = await existingCatalogue(schema);
       const parsedRate = rate.trim() ? Number(rate.replace(",", ".")) : null;
       const { batches, skipped } = importBatches(schema, medicines, existing, parsedRate && parsedRate > 0 ? parsedRate : null);
       for (let i = 0; i < batches.length; i++) {
