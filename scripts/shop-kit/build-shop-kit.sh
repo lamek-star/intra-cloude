@@ -53,14 +53,26 @@ docker build -q -t "intraforge-shop-frontend:$TAG" "$EXPORTW/apps/frontend" >/de
 # each image id, so the shop runs exactly what that kit ran. With no tag the build stops: nothing is rebuilt from a
 # guess. (build-spareparts-image.sh builds Spare Parts alone from its repository, for when that source is available.)
 CARRY_APPS_FROM="${CARRY_APPS_FROM:?set CARRY_APPS_FROM to the earlier kit tag whose app images to carry over, e.g. 1.4.0-dbf44f593}"
+# PAY_IMAGE=<image> + PAY_SOURCE=<repository, branch and commit> take IntraForge Pay from a newer build instead of
+# carrying it over (for example its refunds and cashback release); both are required together, and recorded.
+if [ -n "${PAY_IMAGE:-}" ]; then
+  [ -n "${PAY_SOURCE:-}" ] || { echo "PAY_IMAGE needs PAY_SOURCE (where that Pay image was built from)" >&2; exit 1; }
+  docker image inspect "$PAY_IMAGE" >/dev/null 2>&1 || { echo "$PAY_IMAGE is not on this machine" >&2; exit 1; }
+fi
 CARRIED=()
 for name in intraforge-shop-spareparts intraforge-shop-pharmacy intraforge-shop-pay intraforge-runtime-node; do
-  docker image inspect "$name:$CARRY_APPS_FROM" >/dev/null 2>&1 || { echo "$name:$CARRY_APPS_FROM is not on this machine" >&2; exit 1; }
-  docker tag "$name:$CARRY_APPS_FROM" "$name:$TAG"
-  CARRIED+=("$name $(docker image inspect "$name:$TAG" --format '{{.Id}}')")
-  echo "   carried over unchanged: $name:$CARRY_APPS_FROM -> $name:$TAG"
+  source_ref="$name:$CARRY_APPS_FROM"
+  [ "$name" = intraforge-shop-pay ] && [ -n "${PAY_IMAGE:-}" ] && source_ref="$PAY_IMAGE"
+  docker image inspect "$source_ref" >/dev/null 2>&1 || { echo "$source_ref is not on this machine" >&2; exit 1; }
+  docker tag "$source_ref" "$name:$TAG"
+  if [ "$source_ref" = "$name:$CARRY_APPS_FROM" ]; then
+    CARRIED+=("$name $(docker image inspect "$name:$TAG" --format '{{.Id}}')")
+    echo "   carried over unchanged: $source_ref -> $name:$TAG"
+  else
+    echo "   from a newer build: $source_ref ($PAY_SOURCE) -> $name:$TAG"
+  fi
 done
-export CARRY_APPS_FROM
+export CARRY_APPS_FROM PAY_SOURCE="${PAY_SOURCE:-}"
 # The Cloudflare Tunnel connector: the exact release the compose template names (RUNNER_TUNNEL_IMAGE).
 TUNNEL_IMAGE="$(sed -n 's/^ *RUNNER_TUNNEL_IMAGE: *//p' "$HERE/template/docker-compose.yml" | tr -d '\r')"
 docker image inspect "$TUNNEL_IMAGE" >/dev/null 2>&1 || { echo "$TUNNEL_IMAGE is not on this machine (docker pull it once)" >&2; exit 1; }
@@ -110,7 +122,10 @@ docker save -o "$OUTW/images/intraforge-shop-images.tar" "${IMAGES[@]}"
   echo "Docker build host: $(docker version --format 'Docker {{.Server.Version}}')"
   echo "Apps carried over unchanged from kit $CARRY_APPS_FROM (their source is not in this repository):"
   for line in "${CARRIED[@]}"; do echo "               $line"; done
-  echo "Tunnel:        $TUNNEL_IMAGE (Cloudflare Tunnel connector, used only when the Super Administrator switches internet access on)"
+  if [ -n "$PAY_SOURCE" ]; then
+    echo "Pay:           IntraForge Pay from $PAY_SOURCE, image $(docker image inspect "intraforge-shop-pay:$TAG" --format '{{.Id}}')"
+  fi
+  echo "Tunnel:      $TUNNEL_IMAGE (Cloudflare Tunnel connector, used only when the Super Administrator switches internet access on)"
   echo "Control Center: IntraForgeControlCenter.exe (.NET Framework 4.x) sha256 $(sha256sum "$CC_TMP/IntraForgeControlCenter.exe" | cut -d' ' -f1)"
 } > "$OUT/BUILD_INFO.txt"
 
@@ -128,7 +143,9 @@ purpose = {
     "intraforge-shop-pharmacy": ("Pharmacy: the Spare Parts engine built as its pharmacy edition, served at /apps/pharmacy/",
         "separate project, image carried over unchanged from kit " + os.environ.get("CARRY_APPS_FROM", "?"), "project (its npm dependencies keep their own licences)"),
     "intraforge-shop-pay": ("IntraForge Pay service application (simulated IF Credits), served at /apps/pay-N/",
-        "separate project, image carried over unchanged from kit " + os.environ.get("CARRY_APPS_FROM", "?"), "project (its Python dependencies keep their own licences)"),
+        ("separate project, " + os.environ["PAY_SOURCE"]) if os.environ.get("PAY_SOURCE") else
+        ("separate project, image carried over unchanged from kit " + os.environ.get("CARRY_APPS_FROM", "?")),
+        "project (its Python dependencies keep their own licences)"),
     "intraforge-runtime-node": ("Node.js runtime the app runner starts hosted Node.js apps in (ADR-0020)",
         "image carried over unchanged from kit " + os.environ.get("CARRY_APPS_FROM", "?"), "project (Node.js: MIT)"),
     "cloudflare/cloudflared": ("Cloudflare Tunnel connector, started only when the Super Administrator switches internet access on",
