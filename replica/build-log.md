@@ -130,3 +130,21 @@ Not run, and why: Uninstall (removes the PC-wide startup entry, backup tasks, sh
 firewall rules -- running it here would break the real shop on this PC; needs a VM or a spare PC), Allow other PCs
 (changes the Windows firewall), Upgrade (needs a built 1.5.0 kit), Diagnostics and Settings dialogs (Control Center
 window), Remove *and delete data* (destructive; takes a backup first by design).
+
+### Kit 1.5.0 (2026-11-08)
+
+`IntraForge-Local-1.5.0-097d9ea61.zip` (873 MB), SHA-256
+`e2ba76a132494c290effbb35e5a2109cde8a3f844930a0d56a46e32b83b19d9e`, built from `097d9ea61` with
+`KIT_VERSION=1.5.0 CARRY_APPS_FROM=1.4.0-dbf44f593 MINIO_TAG=RELEASE.2025-09-07T16-13-09Z`.
+
+- Backend and web interface built from source; Spare Parts, Pharmacy, IntraForge Pay and the Node.js runtime carried
+  over unchanged from kit 1.4.0 (image ids in BUILD_INFO.txt; their source is not in this repository); MinIO kept at the
+  release the shop runs; Cloudflare connector 2026.10.0.
+- Checked: all 7 kit checksums and the zip checksum OK; all 11 images the compose file names are in the tar; no `.env`
+  or login file; Next.js 16.4.5, pyjwt 2.15.1, djangorestframework 3.18.3, urllib3 2.8.0 inside the images.
+- Release audits on the final images: `pip-audit` no known vulnerabilities (it had found 21 in pyjwt, DRF and urllib3
+  -- fixed in 097d9ea); `npm audit --omit=dev --audit-level=high` 0 (Next.js critical advisories fixed in 1e38f45).
+- Backend suite on the final pins: 1,289 passed, 2 skipped. Frontend: 125 passed, tsc and ESLint clean.
+- No database migrations since 1.4.0, so the upgrade's automatic rollback runs 1.4.0 on unchanged data.
+- Not tested here: the Upgrade script itself against a 1.4.0 install (this PC runs the real shop, and the session may
+  not run the kit's PowerShell scripts); it backs up first and rolls back on any failure.
