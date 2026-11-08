@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, type AppInstance, type RuntimeStatus } from "@/lib/api";
-import { loadSchema, type BusinessSchema } from "@/lib/business";
+import { editionOf, loadSchema, WORDS, type BusinessSchema } from "@/lib/business";
 import { Button, ErrorBanner, Input, LinkButton, PageLoading } from "@/components/ui";
 
 type BusinessContextValue = { schema: BusinessSchema; instance: AppInstance };
@@ -120,6 +120,14 @@ export default function BusinessApp({ instanceId, children }: { instanceId: stri
     );
   }
 
+  const words = WORDS[editionOf(schema)];
+  const navGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.map((item) =>
+      item.href === "/products" ? { ...item, label: words.products } : item.href === "/part-numbers" ? { ...item, label: words.numbers } : item,
+    ),
+  }));
+
   return (
     <BusinessContext.Provider value={{ schema, instance }}>
       <div>
@@ -131,7 +139,7 @@ export default function BusinessApp({ instanceId, children }: { instanceId: stri
         <h1 className="text-xl font-semibold tracking-tight text-slate-900">{instance.label}</h1>
         <form
           role="search"
-          aria-label="Part number lookup"
+          aria-label={`${words.number} lookup`}
           className="mt-4 flex max-w-lg gap-2"
           onSubmit={(e) => {
             e.preventDefault();
@@ -140,13 +148,13 @@ export default function BusinessApp({ instanceId, children }: { instanceId: stri
           }}
         >
           <label htmlFor="global-part-search" className="sr-only">
-            Find a part number
+            Find {words.number.toLowerCase()}
           </label>
           <Input
             id="global-part-search"
             type="search"
             value={searchText}
-            placeholder="Search a part number, e.g. 04465-0K290"
+            placeholder={editionOf(schema) === "pharmacy" ? "Search an item number, e.g. NM-847249" : "Search a part number, e.g. 04465-0K290"}
             onChange={(e) => setSearchText(e.target.value)}
           />
           <Button type="submit" variant="secondary">
@@ -154,7 +162,7 @@ export default function BusinessApp({ instanceId, children }: { instanceId: stri
           </Button>
         </form>
         <nav aria-label="Application sections" className="mt-4 mb-6 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-200 pb-2">
-          {NAV_GROUPS.map((group) => (
+          {navGroups.map((group) => (
             <div key={group.label || "root"} className="flex items-center gap-1">
               {group.label && (
                 <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{group.label}</span>

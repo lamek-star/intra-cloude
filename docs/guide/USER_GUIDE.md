@@ -139,6 +139,26 @@ Mark a column **Required** to forbid empty values, or **Unique** to
 forbid duplicates — both enforced by PostgreSQL itself, not just the
 form.
 
+### The Pharmacy (built-in application, pilot preview)
+
+**Project > Applications > Pharmacy > Install.** It is the Spare Parts application in its pharmacy edition: the
+same stock, receiving and selling, with medicines instead of products and item numbers instead of part numbers.
+
+- **Import a catalogue:** Medicines > *Import medicines* and choose a CSV such as `medicines.csv`. Each medicine
+  gets its name, generic name, pack, manufacturer, origin, prescription flag, what it is listed for, the
+  catalogue's price as a **reference price (INR)**, links to its pictures and an item number (`NM-847249`) for
+  its label. A medicine listed under several diseases becomes one medicine. The catalogue's descriptions are
+  not copied. Importing the same file again skips what is already there, so an interrupted import can simply
+  be repeated. Optionally give *your price per 1 INR* to fill in selling prices; otherwise you set them.
+- **Your price, shelf and pictures:** open a medicine > *Edit* to set your price, cost, shelf location and any
+  other fact. The catalogue's pictures show from its website while the PC is online; add your own photos under
+  *Files* (as many as you like), and those are kept in IntraForge and its backups.
+- **Labels:** a medicine's (or a spare part's) page > *Print label*: the item or part number as a Code 128
+  barcode with the name, generic name and pack, price, shelf and "Rx" when a prescription is needed. Choose a
+  50 × 30 mm label printer or an A4 sheet of 24, and the number of copies.
+- In the shop kit the Pharmacy is offered as a pilot preview (`BUILT_IN_APP_PREVIEWS=pharmacy`); set it empty
+  in `.env` to hide it.
+
 ## 8. Real Features With No Screen Yet
 
 The interface above covers the core workflow. Everything below is fully

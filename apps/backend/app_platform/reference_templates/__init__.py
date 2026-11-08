@@ -11,6 +11,7 @@ from .assets import assets_reference_definition
 from .crm import crm_reference_definition
 from .documents import documents_reference_definition
 from .hr import hr_reference_definition
+from .pharmacy import pharmacy_reference_definition
 from .procurement import procurement_reference_definition
 from .projects import projects_reference_definition
 from .school import school_reference_definition
@@ -21,6 +22,10 @@ REGISTRY = {
     "spare_parts": {
         "label": "Spare Parts -- Inventory & Sales",
         "builder": spare_parts_reference_definition,
+    },
+    "pharmacy": {
+        "label": "Pharmacy -- Medicines, Stock & Sales",
+        "builder": pharmacy_reference_definition,
     },
     "school": {
         "label": "School -- Enrollment & Records",
@@ -62,6 +67,7 @@ __all__ = [
     "crm_reference_definition",
     "documents_reference_definition",
     "hr_reference_definition",
+    "pharmacy_reference_definition",
     "procurement_reference_definition",
     "projects_reference_definition",
     "school_reference_definition",

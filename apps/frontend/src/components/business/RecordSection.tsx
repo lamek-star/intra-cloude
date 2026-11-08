@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useId, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { ApiError } from "@/lib/api";
 import {
   cellText,
@@ -79,6 +79,7 @@ export default function RecordSection({
   emptyHint,
   linkKey,
   rowHref,
+  actions,
 }: {
   modelKey: string;
   title: string;
@@ -91,6 +92,8 @@ export default function RecordSection({
   /** The column whose text links to the record's own page, when there is one. */
   linkKey?: string;
   rowHref?: (row: BusinessRow) => string;
+  /** More buttons beside "Add", given a function that reloads the list (e.g. after an import). */
+  actions?: (reload: () => void) => ReactNode;
 }) {
   const { schema } = useBusiness();
   const searchId = useId();
@@ -171,7 +174,10 @@ export default function RecordSection({
           </h2>
           <p className="text-sm text-slate-500">{description}</p>
         </div>
-        <Button onClick={openForm}>Add {noun.toLowerCase()}</Button>
+        <div className="flex flex-wrap gap-2">
+          {actions?.(() => void load())}
+          <Button onClick={openForm}>Add {noun.toLowerCase()}</Button>
+        </div>
       </div>
 
       <form

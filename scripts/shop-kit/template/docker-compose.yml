@@ -16,6 +16,8 @@ x-backend: &backend
   environment:
     # Hosted Node.js apps (ADR-0020) are started by the app runner below; SITES_RUNNER_TOKEN comes from .env.
     SITES_RUNNER_URL: http://runner:8700
+    # The Pharmacy (built-in, pilot preview) is offered in the shop; set BUILT_IN_APP_PREVIEWS= in .env to hide it.
+    BUILT_IN_APP_PREVIEWS: ${BUILT_IN_APP_PREVIEWS-pharmacy}
   networks: [isolated]
   volumes:
     - ${SHOP_DATA_DIR:-C:/IntraForgeData}/backups:/backups

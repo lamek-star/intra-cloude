@@ -25,6 +25,21 @@ export type BusinessSchema = {
   modelId: (modelKey: string) => string;
   /** The id of a field on the model, or of a relationship it owns, by key (e.g. "name", "part"). */
   id: (modelKey: string, key: string) => string;
+  /** Whether the model has that field or relationship (an edition's extra fields, e.g. the Pharmacy's). */
+  has: (modelKey: string, key: string) => boolean;
+};
+
+/** The Pharmacy is the same application with medicine fields on the product; the screens use its words. */
+export type Edition = "spare_parts" | "pharmacy";
+
+export function editionOf(schema: BusinessSchema): Edition {
+  return schema.has("part", "generic_name") ? "pharmacy" : "spare_parts";
+}
+
+/** The words each edition uses for the same screens. */
+export const WORDS: Record<Edition, { product: string; products: string; number: string; numbers: string }> = {
+  spare_parts: { product: "Product", products: "Products", number: "Part number", numbers: "Part numbers" },
+  pharmacy: { product: "Medicine", products: "Medicines", number: "Item number", numbers: "Item numbers" },
 };
 
 export function makeSchema(
@@ -47,7 +62,15 @@ export function makeSchema(
     if (relation) return relation.id;
     throw new Error(`"${modelKey}" has no "${key}".`);
   };
-  return { instanceId, modelId, id };
+  const has = (modelKey: string, key: string) => {
+    try {
+      id(modelKey, key);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  return { instanceId, modelId, id, has };
 }
 
 /** The whole schema arrives in ONE request (`GET /app-instances/<id>/schema/`). It used to take 2 + N
@@ -138,6 +161,18 @@ export async function createRecord(
   values: Record<string, unknown>,
 ): Promise<BusinessRow> {
   return api.post<BusinessRow>(`/app-models/${schema.modelId(modelKey)}/records/`, toPayload(schema, modelKey, values));
+}
+
+export async function updateRecord(
+  schema: BusinessSchema,
+  modelKey: string,
+  recordId: string,
+  values: Record<string, unknown>,
+): Promise<BusinessRow> {
+  return api.patch<BusinessRow>(
+    `/app-models/${schema.modelId(modelKey)}/records/${recordId}/`,
+    toPayload(schema, modelKey, values),
+  );
 }
 
 /** A record's value by field/relationship key. */

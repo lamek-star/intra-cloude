@@ -1,13 +1,46 @@
 "use client";
 
+import { editionOf } from "@/lib/business";
 import { useBusiness } from "./BusinessApp";
+import { MedicineImportButton } from "./MedicineImport";
 import RecordSection from "./RecordSection";
 
 // Simple list-and-add screens. Which fields exist is the App Platform template's business; the
 // labels and grouping here follow the reference spare-parts application's terminology.
 
 export function ProductsSection() {
-  const { instance } = useBusiness();
+  const { instance, schema } = useBusiness();
+  if (editionOf(schema) === "pharmacy") {
+    return (
+      <RecordSection
+        modelKey="part"
+        title="Medicines"
+        description="The medicines you stock and sell. Open one to see its item numbers, stock, pictures and label."
+        noun="Medicine"
+        searchPlaceholder="Search medicines by name"
+        emptyHint="Add your first medicine, or import a medicines catalogue, then receive some stock."
+        columns={[
+          { key: "name", label: "Name" },
+          { key: "generic_name", label: "Generic name" },
+          { key: "pack", label: "Pack" },
+          { key: "storage_location", label: "Shelf" },
+          { key: "list_price", label: "Price" },
+        ]}
+        fields={[
+          { key: "name", label: "Name", required: true },
+          { key: "generic_name", label: "Generic name", placeholder: "e.g. Paracetamol 500 mg" },
+          { key: "pack", label: "Pack", placeholder: "e.g. 10 tablets in a strip" },
+          { key: "manufacturer", label: "Manufacturer" },
+          { key: "storage_location", label: "Shelf location", placeholder: "e.g. Shelf B3" },
+          { key: "list_price", label: "Your price", kind: "money" },
+          { key: "standard_cost", label: "Cost", kind: "money" },
+        ]}
+        linkKey="name"
+        rowHref={(row) => `/apps/${instance.id}/products/${row.id}`}
+        actions={(reload) => <MedicineImportButton onImported={reload} />}
+      />
+    );
+  }
   return (
     <RecordSection
       modelKey="part"

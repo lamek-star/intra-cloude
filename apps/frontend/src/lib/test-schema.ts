@@ -19,6 +19,7 @@ const FIELDS: Record<string, string[]> = {
 };
 const RELS: [string, string][] = [
   ["inventory", "part"],
+  ["part_number", "part_number_part"],
   ["inventory", "warehouse"],
   ["stock_movement", "stock_movement_part"],
   ["stock_movement", "stock_movement_warehouse"],
@@ -31,13 +32,20 @@ const RELS: [string, string][] = [
   ["invoice", "invoice_sales_order"],
 ];
 
-export function testSchema() {
-  const keys = Object.keys(FIELDS);
+// The Pharmacy edition's extra product fields (app_platform/reference_templates/pharmacy.py).
+const MEDICINE_FIELDS = [
+  "generic_name", "pack", "manufacturer", "country_of_origin", "prescription_required", "used_for",
+  "storage_location", "reference_price", "reference_currency", "image_links", "source_url", "standard_cost",
+];
+
+export function testSchema({ pharmacy = false }: { pharmacy?: boolean } = {}) {
+  const FIELDS_: Record<string, string[]> = pharmacy ? { ...FIELDS, part: [...FIELDS.part, ...MEDICINE_FIELDS] } : FIELDS;
+  const keys = Object.keys(FIELDS_);
   const models: AppModelDefinition[] = keys.map((key) => ({
     id: `M:${key}`, instance: "i1", key, label: key, position: 0, source_definition_id: null,
   }));
   const fieldsByModelId: Record<string, AppFieldDefinition[]> = {};
-  for (const [model, fields] of Object.entries(FIELDS)) {
+  for (const [model, fields] of Object.entries(FIELDS_)) {
     fieldsByModelId[`M:${model}`] = fields.map((key) => ({
       id: `F:${model}.${key}`, model: `M:${model}`, key, label: key, data_type: "text", required: false,
       default_value: null, position: 0, source_definition_id: null,

@@ -113,6 +113,32 @@ CATALOG: dict[str, BuiltInApp] = {
             ),
         ),
         BuiltInApp(
+            key="pharmacy",
+            label="Pharmacy",
+            summary=(
+                "Medicines and their stock: generic name, pack, manufacturer, prescription, shelf "
+                "location, the shop's own price beside a supplier's reference price, pictures, labels, "
+                "receiving and sales."
+            ),
+            highlights=(
+                "Medicines with generic names",
+                "Prescription flag and shelf location",
+                "Import a medicines catalogue (CSV)",
+                "Stock, receiving and sales",
+                "Barcode labels",
+            ),
+            status=Status.PARTIALLY_QUALIFIED,
+            evidence=(
+                "The Spare Parts engine unchanged (same models, relationships, constraints and quantity "
+                "ledger), so stock, receiving and selling are the qualified ones; the pharmacy adds product "
+                "fields only.",
+                "app_platform/tests/test_pharmacy_template.py (provisions; the medicine fields round-trip; "
+                "the ledger still refuses overselling).",
+                "Not yet run end to end through the UI with the shop's own staff; offered as a pilot "
+                "preview (BUILT_IN_APP_PREVIEWS).",
+            ),
+        ),
+        BuiltInApp(
             key="hr",
             label="Employee Management",
             summary=(
@@ -248,7 +274,8 @@ def _shown_to_customers(app: BuiltInApp) -> bool:
         return True
     if app.status == Status.DEFERRED:
         return False  # outside v1.0: the preview flag must not be a way around that
-    return settings.SHOW_UNQUALIFIED_BUILT_IN_APPS
+    # One named preview (e.g. the Pharmacy for the own-shop pilot) without listing every experimental app.
+    return settings.SHOW_UNQUALIFIED_BUILT_IN_APPS or app.key in settings.BUILT_IN_APP_PREVIEWS
 
 
 def visible_apps() -> list[BuiltInApp]:

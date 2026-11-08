@@ -483,6 +483,9 @@ FEATURE_INTERNET_GATEWAY_ENABLED = env_bool("FEATURE_INTERNET_GATEWAY_ENABLED", 
 # (app_platform/built_in_apps.py). Turn this on for development, demos and the pilot
 # preview to also list PARTIALLY_QUALIFIED / EXPERIMENTAL ones, clearly labelled.
 SHOW_UNQUALIFIED_BUILT_IN_APPS = env_bool("SHOW_UNQUALIFIED_BUILT_IN_APPS", False)
+# Named pilot previews shown on their own (comma-separated catalog keys, e.g. "pharmacy"), still labelled as
+# previews. A DEFERRED application is never shown, whatever this says.
+BUILT_IN_APP_PREVIEWS = env_list("BUILT_IN_APP_PREVIEWS", "")
 
 # --- Logging: structured, request-ID-aware (Section 20) ---
 LOGGING = {
