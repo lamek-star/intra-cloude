@@ -2,7 +2,7 @@
 
 import { useCallback, useId, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Package, Settings } from "lucide-react";
+import { ExternalLink, FileArchive, Globe, Package, Settings, Server } from "lucide-react";
 import { api, ApiError, type Organization } from "@/lib/api";
 import {
   openServiceApp,
@@ -14,7 +14,8 @@ import {
   installSettings,
   type ServiceApp,
 } from "@/lib/service-apps";
-import { keys, organizationsQuery, serviceAppsQuery } from "@/lib/queries";
+import { keys, organizationsQuery, serviceAppsQuery, uploadedAppsQuery, type UploadedApp } from "@/lib/queries";
+import { runtimeLabel, siteAddress } from "@/lib/sites";
 import {
   Badge,
   Button,
@@ -51,6 +52,7 @@ export default function AppsClient() {
   const [opening, setOpening] = useState<string | null>(null);
   const [openErr, setOpenErr] = useState<string | null>(null);
   const [installing, setInstalling] = useState<InstallableApp | null>(null);
+  const uploaded = useQuery(uploadedAppsQuery(orgs));
 
   const load = useCallback(() => queryClient.invalidateQueries({ queryKey: keys.serviceApps }), [queryClient]);
 
@@ -132,6 +134,21 @@ export default function AppsClient() {
         )}
       </section>
 
+      {(uploaded.data?.length ?? 0) > 0 && (
+        <section aria-labelledby="uploaded-heading" className="mb-8">
+          <h2 id="uploaded-heading" className="mb-3 text-sm font-semibold text-slate-900">
+            Your uploaded apps
+          </h2>
+          <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {uploaded.data!.map((site) => (
+              <li key={site.id}>
+                <UploadedAppCard site={site} showOrganization={orgs.length > 1} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {data.available.length > 0 && (
         <section aria-labelledby="available-heading">
           <h2 id="available-heading" className="mb-3 text-sm font-semibold text-slate-900">
@@ -168,6 +185,62 @@ export default function AppsClient() {
         />
       )}
     </div>
+  );
+}
+
+/** The state of an uploaded website or Node.js app, in the same words and colours as an installed app's. */
+export function uploadedState(site: UploadedApp): { label: string; tone: "success" | "warning" | "danger" | "default"; online: boolean } {
+  if (site.status === "disabled") return { label: "Offline", tone: "default", online: false };
+  if (site.kind === "static") return { label: "Online", tone: "success", online: true };
+  const label = runtimeLabel(site) ?? "";
+  if (site.runtime_state === "running") return { label, tone: "success", online: true };
+  if (site.runtime_state === "failed") return { label, tone: "danger", online: false };
+  return { label, tone: "warning", online: false };
+}
+
+function UploadedAppCard({ site, showOrganization }: { site: UploadedApp; showOrganization: boolean }) {
+  const state = uploadedState(site);
+  const Icon = site.kind === "node" ? Server : Globe;
+  const host = (typeof window === "undefined" ? "" : window.location.hostname) || "localhost";
+  return (
+    <Card className="flex h-full flex-col gap-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-2.5">
+          <Icon className="mt-1 h-4 w-4 shrink-0 text-brand-600" aria-hidden="true" />
+          <div className="min-w-0">
+            <h3 className="truncate text-base font-semibold text-slate-900">{site.name}</h3>
+            <p className="text-sm text-slate-500">
+              {site.kind === "node" ? "Node.js app" : "Website"}
+              {showOrganization ? ` · ${site.organization_name}` : ""}
+            </p>
+          </div>
+        </div>
+        <Badge tone={state.tone}>{state.label}</Badge>
+      </div>
+      {site.active_version && (
+        <p className="flex items-center gap-1.5 text-xs text-text-muted">
+          <FileArchive className="h-3.5 w-3.5" aria-hidden="true" />
+          Version {site.active_version.number} · {site.active_version.original_filename}
+        </p>
+      )}
+      <div className="mt-auto flex flex-wrap gap-2 pt-1">
+        {state.online && (
+          <a
+            href={siteAddress(site, host)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-500"
+          >
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
+            Open
+          </a>
+        )}
+        <LinkButton href={`/orgs/${site.organization}/sites`}>
+          <Settings className="h-4 w-4" />
+          Manage
+        </LinkButton>
+      </div>
+    </Card>
   );
 }
 

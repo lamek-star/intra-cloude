@@ -36,10 +36,13 @@ function installed(overrides: Record<string, unknown> = {}) {
   };
 }
 
+let sites: unknown[] = [];
+
 function serve(results: unknown[], available: unknown[] = []) {
   get.mockImplementation(async (path: string) => {
     if (path === "/service-apps/") return { results, available };
     if (path === "/organizations/") return [ORG];
+    if (path === "/organizations/o1/sites/") return sites;
     throw new Error(`unexpected GET ${path}`);
   });
 }
@@ -47,6 +50,7 @@ function serve(results: unknown[], available: unknown[] = []) {
 beforeEach(() => {
   get.mockReset();
   post.mockReset();
+  sites = [];
 });
 
 describe("Apps", () => {
@@ -104,5 +108,53 @@ describe("Apps", () => {
         config: { currency: "AED" },
       }),
     );
+  });
+});
+
+describe("Apps: uploaded apps", () => {
+  function site(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "s1", organization: "o1", name: "Price checker", slug: "prices", status: "active", single_page_app: false,
+      hostname: null, internet_hostname: null, lan_address: "", kind: "node", runtime_state: "running", runtime_log: "",
+      application: null, path: "/prices/", public_port: 8445, created_at: "", updated_at: "",
+      active_version: { id: "v1", number: 3, original_filename: "prices.zip", file_count: 4, total_bytes: 900, notes: "",
+        uploaded_by_email: "", created_at: "" },
+      ...overrides,
+    };
+  }
+
+  it("shows an uploaded Node.js app beside the installed ones, with its state, version and address", async () => {
+    sites = [site()];
+    serve([installed()]);
+    renderWithQuery(<AppsClient />);
+    expect(await screen.findByRole("heading", { name: "Your uploaded apps" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Price checker" })).toBeInTheDocument();
+    expect(screen.getByText("Node.js app")).toBeInTheDocument();
+    expect(screen.getByText(/Version 3 · prices\.zip/)).toBeInTheDocument();
+    const open = screen.getAllByRole("link", { name: /Open/ }).find((l) => l.getAttribute("href")?.includes("8445"));
+    expect(open).toHaveAttribute("href", "https://localhost:8445/prices/");
+    expect(screen.getByRole("link", { name: /Manage/ })).toHaveAttribute("href", "/orgs/o1/sites");
+  });
+
+  it("offers no Open for an app that is offline or failed", async () => {
+    sites = [site({ status: "disabled" }), site({ id: "s2", name: "Broken", runtime_state: "failed" })];
+    serve([]);
+    renderWithQuery(<AppsClient />);
+    expect(await screen.findByText("Offline")).toBeInTheDocument();
+    expect(screen.getByText("Failed to start")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Open/ })).not.toBeInTheDocument();
+  });
+
+  it("shows no uploaded section where the person may not read websites", async () => {
+    serve([installed()]);
+    get.mockImplementation(async (path: string) => {
+      if (path === "/service-apps/") return { results: [installed()], available: [] };
+      if (path === "/organizations/") return [ORG];
+      throw new ApiError(403, { detail: "no" });
+    });
+    renderWithQuery(<AppsClient />);
+    expect(await screen.findByRole("heading", { name: "Harbour Motors" })).toBeInTheDocument();
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/organizations/o1/sites/"));
+    expect(screen.queryByRole("heading", { name: "Your uploaded apps" })).not.toBeInTheDocument();
   });
 });
