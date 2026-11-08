@@ -157,3 +157,13 @@ at `429aca5` (refunds + supervisor-approved cashback, on the kit 1.4.0 Pay image
 `pip-audit` of Pay's 24 packages: no known vulnerabilities; backend and frontend audits unchanged (clean). Pay's
 migration 0004 only widens one CHECK and adds tables, and Pay applies only unrecorded migrations, so an upgrade
 rolled back to 1.4.0 still runs on the migrated data.
+
+**Full installer (2026-11-08).** `IntraForge-Setup-1.5.0.exe` (1.7 GB), SHA-256
+`6e94ab8f761c6ddecb6d1a77352557d355b6b86d44589ca68c8d178c4fa4adc4`, built with `build-setup-exe.sh` from the kit zip
+plus the Docker Desktop installer (signed Docker Inc) and `wsl.x64.msi` (signed Microsoft Corporation) kept by the 1.4.0
+installation; trailer IFSFX003 and the kit hash checked. It embeds Docker Desktop, so it is for the owner's own PCs only
+and must never be shared. Unsigned: SmartScreen shows "Unknown publisher".
+
+The kit zip was repackaged with plain entry names (`IntraForge-Local-1.5.0-d5293a2f8.zip`, now SHA-256
+`8058b2675a34b987e9ab1cf6f396c203a59daba9a038d48c5b84252b30135c16`; same 27 files): Windows Explorer's "Extract All"
+reported the `tar -a`-made zip "invalid" because every name started with `./`. build-shop-kit.sh now zips with Python.

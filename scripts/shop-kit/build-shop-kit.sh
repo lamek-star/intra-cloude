@@ -200,7 +200,18 @@ rm -rf "$EXPORT" "$CC_TMP"
 echo "== 6/6 package"
 ZIP="$(dirname "$OUT")/IntraForge-Local-$KIT_VERSION-$HEAD_SHORT.zip"
 rm -f "$ZIP" "$ZIP.sha256"
-/c/Windows/System32/tar.exe -a -c -f "$(cygpath -m "$ZIP")" -C "$OUTW" .
+# Plain entry names (VERSION, images/...): Windows Explorer's "Extract All" refuses a zip whose names start with "./",
+# which is what `tar -a -c -C <dir> .` writes.
+python - "$OUTW" "$(cygpath -m "$ZIP")" <<'PY'
+import os, sys, zipfile
+src, dst = sys.argv[1:3]
+with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+    for root, dirs, files in os.walk(src):
+        dirs.sort()
+        for name in sorted(files):
+            path = os.path.join(root, name)
+            z.write(path, os.path.relpath(path, src).replace(os.sep, "/"))
+PY
 ( cd "$(dirname "$ZIP")" && sha256sum --binary "$(basename "$ZIP")" > "$(basename "$ZIP").sha256" )
 echo
 echo "Kit folder : $OUT"
