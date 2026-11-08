@@ -52,6 +52,10 @@ class User(AbstractBaseUser):
     mfa_secret_encrypted = models.BinaryField(null=True, blank=True)
     mfa_confirmed_at = models.DateTimeField(null=True, blank=True)
 
+    # Passkeys (ADR-0019). When True, password sign-in is refused for this account and only a passkey signs
+    # in; it can only be True while the account has at least one passkey (accounts/passkeys.py).
+    passkey_only = models.BooleanField(default=False)
+
     objects = UserManager()
 
     USERNAME_FIELD = "email"
@@ -68,3 +72,27 @@ class User(AbstractBaseUser):
 
     def get_short_name(self):
         return self.first_name or self.email
+
+
+class Passkey(models.Model):
+    """A WebAuthn credential (ADR-0019). Belongs to one user and to one relying-party ID -- the host name the
+    browser used when it was made (`localhost`, the shop-network name): it signs in only at that name."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="passkeys")
+    name = models.CharField(max_length=80)
+    rp_id = models.CharField(max_length=253)
+    credential_id = models.BinaryField(unique=True)
+    public_key = models.BinaryField()
+    sign_count = models.PositiveBigIntegerField(default=0)
+    transports = models.JSONField(default=list, blank=True)
+    # Synced passkeys (a phone's password manager) are backed up; a USB security key is not.
+    backed_up = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.name} ({self.rp_id})"

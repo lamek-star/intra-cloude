@@ -181,6 +181,8 @@ export type User = {
   last_name: string;
   date_joined: string;
   mfa_enabled: boolean;
+  /** Password sign-in is off for this account: only a passkey signs in (ADR-0019). */
+  passkey_only?: boolean;
 };
 
 export type Organization = {

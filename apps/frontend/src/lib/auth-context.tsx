@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, ensureCsrfCookie, type User } from "@/lib/api";
+import { checkWithPasskey, type PasskeyWhere } from "@/lib/passkeys";
 
 type MfaRequiredResult = { mfaRequired: true };
 type LoginResult = User | MfaRequiredResult;
@@ -16,6 +17,7 @@ type AuthContextValue = {
   loading: boolean;
   login: (email: string, password: string) => Promise<LoginResult>;
   verifyMfa: (code: string) => Promise<User>;
+  signInWithPasskey: (where?: PasskeyWhere) => Promise<User>;
   register: (email: string, password: string, firstName: string) => Promise<User>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -74,6 +76,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return result;
   }, [setUser]);
 
+  const signInWithPasskey = useCallback(async (where?: PasskeyWhere): Promise<User> => {
+    const result = await checkWithPasskey(where);
+    setUser(result);
+    return result;
+  }, [setUser]);
+
   const register = useCallback(async (email: string, password: string, firstName: string) => {
     const result = await api.post<User>("/auth/register/", {
       email,
@@ -96,7 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [setUser]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, verifyMfa, register, logout, refresh }}>
+    <AuthContext.Provider value={{ user, loading, login, verifyMfa, signInWithPasskey, register, logout, refresh }}>
       {children}
     </AuthContext.Provider>
   );

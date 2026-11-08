@@ -12,4 +12,21 @@ urlpatterns = [
     path("auth/mfa/confirm/", views.MFAConfirmView.as_view(), name="mfa-confirm"),
     path("auth/mfa/disable/", views.MFADisableView.as_view(), name="mfa-disable"),
     path("auth/mfa/verify/", views.MFALoginVerifyView.as_view(), name="mfa-verify"),
+    path("auth/passkeys/", views.PasskeyListView.as_view(), name="passkey-list"),
+    path(
+        "auth/passkeys/register/options/",
+        views.PasskeyRegisterOptionsView.as_view(),
+        name="passkey-register-options",
+    ),
+    path(
+        "auth/passkeys/register/verify/",
+        views.PasskeyRegisterVerifyView.as_view(),
+        name="passkey-register-verify",
+    ),
+    path("auth/passkeys/<uuid:passkey_id>/remove/", views.PasskeyRemoveView.as_view(), name="passkey-remove"),
+    path("auth/passkeys/only/", views.PasskeyOnlyView.as_view(), name="passkey-only"),
+    path(
+        "auth/passkeys/check/options/", views.PasskeyCheckOptionsView.as_view(), name="passkey-check-options"
+    ),
+    path("auth/passkeys/check/verify/", views.PasskeyCheckVerifyView.as_view(), name="passkey-check-verify"),
 ]

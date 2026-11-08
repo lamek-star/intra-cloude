@@ -55,6 +55,23 @@ organizations — you'll create your first one from an empty state.
 If a login asks for a 6-digit code, that account has two-factor
 authentication enabled (Section 6) — the demo account doesn't.
 
+### Passkeys: sign in with your phone
+
+**Your account > Passkeys > Add a passkey.** Enter your password (and your authenticator code, if two-step
+sign-in is on); the browser then shows a QR code. Scan it with your phone's camera and confirm with your
+fingerprint or face. From then on, **Sign in with a passkey** on the sign-in page does the same: scan, confirm,
+and you are in -- no password, and no authenticator code (the passkey counts as both).
+
+- Bluetooth must be on, on both the phone and the PC, and both need an internet connection for the phone link
+  (the browsers relay it). Without that, keep the passkey on the PC itself (Windows Hello) or a USB security key.
+- A passkey belongs to the address it was made at: `https://localhost:8443` on the shop PC, or the shop-network
+  name. Addresses made of numbers (`https://192.168.1.20:8443`) cannot use passkeys.
+- **Sign in with passkey only** switches password sign-in off for your account: even the right password is
+  refused. Use it for the owner's Super Administrator account, which also runs IntraForge Pay. To switch it back,
+  confirm with your passkey. Lost the phone? On the shop PC, an administrator runs
+  `docker compose exec backend python manage.py passkey_reset <email>` (add `--remove-all` to delete the lost
+  passkeys too), and the password works again.
+
 ## 4. Organizations
 
 The Organizations page is what you land on after signing in — every

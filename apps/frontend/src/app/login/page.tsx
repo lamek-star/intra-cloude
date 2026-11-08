@@ -2,13 +2,16 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState, type FormEvent } from "react";
-import { Package } from "lucide-react";
+import { Suspense, useEffect, useState, useSyncExternalStore, type FormEvent } from "react";
+import { Fingerprint, Package } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { isMfaRequired, useAuth } from "@/lib/auth-context";
+import { passkeyErrorMessage, passkeysSupported } from "@/lib/passkeys";
 import { isSafeNextPath } from "@/lib/safe-next";
 import { appIdFromOpenPath, getSignInBranding, type SignInBranding } from "@/lib/service-apps";
 import { Button, ErrorBanner, Input, Label, PageLoading } from "@/components/ui";
+
+const noSubscription = () => () => undefined;
 
 export default function LoginPage() {
   return (
@@ -19,7 +22,7 @@ export default function LoginPage() {
 }
 
 function LoginPageInner() {
-  const { login, verifyMfa } = useAuth();
+  const { login, verifyMfa, signInWithPasskey } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next");
@@ -29,6 +32,8 @@ function LoginPageInner() {
   const [needsMfa, setNeedsMfa] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Known only in the browser; false while rendering on the server.
+  const canUsePasskey = useSyncExternalStore(noSubscription, passkeysSupported, () => false);
   // Sent here by an application (its "open" page): show that application's own sign-in.
   const appId = isSafeNextPath(next) ? appIdFromOpenPath(next) : null;
   const [branding, setBranding] = useState<SignInBranding | null>(null);
@@ -62,17 +67,38 @@ function LoginPageInner() {
           return;
         }
       }
-      if (isSafeNextPath(next)) {
-        // A real, full navigation -- `next` may point outside the
-        // Next.js app entirely (e.g. back into /oauth/authorize on the
-        // same origin, for an external application's sign-in flow),
-        // which router.push() cannot reach.
-        window.location.assign(next);
-      } else {
-        router.push("/dashboard");
-      }
+      goOn();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong.");
+      if (err instanceof ApiError && (err.body as { passkey_only?: boolean } | null)?.passkey_only) {
+        setError("This account signs in with a passkey only. Use the passkey button below.");
+      } else {
+        setError(err instanceof ApiError ? err.message : "Something went wrong.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function goOn() {
+    if (isSafeNextPath(next)) {
+      // A real, full navigation -- `next` may point outside the
+      // Next.js app entirely (e.g. back into /oauth/authorize on the
+      // same origin, for an external application's sign-in flow),
+      // which router.push() cannot reach.
+      window.location.assign(next);
+    } else {
+      router.push("/dashboard");
+    }
+  }
+
+  async function passkeySignIn() {
+    setError(null);
+    setSubmitting(true);
+    try {
+      await signInWithPasskey("phone");
+      goOn();
+    } catch (err) {
+      setError(passkeyErrorMessage(err) ?? (err instanceof ApiError ? err.message : "Something went wrong."));
     } finally {
       setSubmitting(false);
     }
@@ -156,6 +182,23 @@ function LoginPageInner() {
             {submitting ? "..." : needsMfa ? "Verify" : "Sign in"}
           </Button>
         </form>
+
+        {canUsePasskey && !needsMfa && (
+          <div className="mt-4">
+            <div className="mb-4 flex items-center gap-3 text-xs text-text-muted" aria-hidden="true">
+              <span className="h-px flex-1 bg-slate-200" />
+              or
+              <span className="h-px flex-1 bg-slate-200" />
+            </div>
+            <Button variant="secondary" className="w-full" onClick={() => void passkeySignIn()} disabled={submitting}>
+              <Fingerprint size={16} aria-hidden="true" />
+              Sign in with a passkey
+            </Button>
+            <p className="mt-2 text-center text-xs text-text-muted">
+              Scan the QR code with your phone and confirm with your fingerprint or face.
+            </p>
+          </div>
+        )}
 
         {branding && (
           <p className="mt-4 text-center text-xs text-text-muted">Staff accounts are managed in IntraForge.</p>

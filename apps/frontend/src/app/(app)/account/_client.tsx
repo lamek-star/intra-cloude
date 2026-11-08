@@ -5,6 +5,7 @@ import { ShieldCheck, ShieldOff } from "lucide-react";
 import { api, ApiError, ensureCsrfCookie, type User } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Badge, Button, Card, CopyButton, ErrorBanner, Input, Label, PageHeader, PageLoading } from "@/components/ui";
+import { PasskeysCard } from "./passkeys-card";
 
 type Enrollment = { secret: string; provisioning_uri: string };
 
@@ -19,7 +20,7 @@ export default function AccountClient() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <PageHeader title="Your account" description="Your sign-in details and two-step sign-in." />
+      <PageHeader title="Your account" description="Your sign-in details, passkeys and two-step sign-in." />
 
       <Card>
         <dl className="grid gap-4 sm:grid-cols-2">
@@ -36,6 +37,7 @@ export default function AccountClient() {
         </dl>
       </Card>
 
+      <PasskeysCard user={user} onChanged={refresh} />
       <TwoStepSignIn user={user} onChanged={refresh} />
     </div>
   );
