@@ -231,3 +231,8 @@ change since 1.5.1). On the test copy (1.5.2 images): a 35-row file of 30 medici
 number) and 5 new imported through the real dialog -- 1 new, 34 recognised (4 had come in on the check before the
 fix), no copies (3,993 -> 3,994); DAPATEN imported, with the message saying it got no item number. No migrations
 since 1.5.1.
+
+**Shop PC upgraded 1.5.1 -> 1.5.2 (2026-11-09 02:02-02:05).** Same way as 1.5.1. Safety backup first (control database
+402,252 bytes, business records 518,739, files 10,532; 31 s); no migrations; all 13 services up on the 1.5.2 images
+(Pay, Pharmacy, Spare Parts healthy); `/healthz`, `/readyz` and the sign-in page 200; catalog: Spare Parts (Ready for
+use), Pharmacy (Pilot preview); 5 accounts intact; the Control Center exe is the kit's; 1.5.1 kept in `.previous`.
