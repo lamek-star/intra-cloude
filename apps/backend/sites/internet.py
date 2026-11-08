@@ -6,10 +6,11 @@ connector runs only while the gate is on and reaches only the proxy's internet l
 published sites and nothing else: never IntraForge itself. Every change is audited; switching the gate off
 revokes every publication.
 
-Auto-publish (optional, also Super Administrator only, with their password): once a domain is set, every online
-site is published as <slug>.<domain> -- now, and whenever a site is created or comes back online -- because a
-wildcard route in Cloudflare (*.<domain>) already sends those names to the tunnel. Taking a site offline takes its
-automatic name back; switching auto-publish off takes back every automatic name and keeps those published by hand.
+Auto-publish (optional, also Super Administrator only, with their password): once a domain is set, every
+online site is published as <slug>.<domain> -- now, and whenever a site is created or comes back online --
+because a wildcard route in Cloudflare (*.<domain>) already sends those names to the tunnel. Taking a site
+offline takes its automatic name back; switching auto-publish off takes back every automatic name and keeps
+those published by hand.
 """
 
 from __future__ import annotations
@@ -250,7 +251,9 @@ def set_auto_publish(*, actor, domain: str, password: str) -> dict:
         validate_public_name(domain)
         gate.auto_domain = domain
         gate.save(update_fields=["auto_domain"])
-        published = [s.internet_hostname for s in Site.objects.filter(status=Site.Status.ACTIVE) if auto_publish(s)]
+        published = [
+            s.internet_hostname for s in Site.objects.filter(status=Site.Status.ACTIVE) if auto_publish(s)
+        ]
         audit.record(
             actor=actor,
             organization_id=None,
@@ -277,9 +280,10 @@ def set_auto_publish(*, actor, domain: str, password: str) -> dict:
 
 
 def auto_publish(site: Site) -> bool:
-    """Publishes an online site as <slug>.<domain> when auto-publish is on and it has no public name yet. Never
-    raises: a site that cannot be published (its name already taken by hand, its app route not updated) stays
-    unpublished or published without its route, and the audit log says why. Returns whether it was published."""
+    """Publishes an online site as <slug>.<domain> when auto-publish is on and it has no public name yet.
+    Never raises: a site that cannot be published (its name already taken by hand, its app route not updated)
+    stays unpublished or published without its route, and the audit log says why. Returns whether it was
+    published."""
     gate = InternetGateway.current()
     if not (gate.enabled and gate.auto_domain) or site.status != Site.Status.ACTIVE or site.internet_hostname:
         return False
@@ -287,7 +291,11 @@ def auto_publish(site: Site) -> bool:
     if Site.objects.filter(internet_hostname=name).exclude(pk=site.pk).exists():
         _auto_failed(site, name, "the name is already published for another site")
         return False
-    site.internet_hostname, site.internet_published_by, site.internet_published_at = name, None, timezone.now()
+    site.internet_hostname, site.internet_published_by, site.internet_published_at = (
+        name,
+        None,
+        timezone.now(),
+    )
     site.internet_auto = True
     try:
         with transaction.atomic():

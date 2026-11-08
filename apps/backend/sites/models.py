@@ -49,7 +49,8 @@ class Site(models.Model):
     internet_published_at = models.DateTimeField(null=True, blank=True)
     # True when the public name was given by auto-publish (<slug>.<domain>), not typed in by hand: switching
     # auto-publish off, or taking the site offline, takes back only these.
-    internet_auto = models.BooleanField(default=False)
+    # db_default: the previous release, run on this data after a failed upgrade rolls back, leaves it out.
+    internet_auto = models.BooleanField(default=False, db_default=False)
     # The runner's last answer about a server app ("running", "exited", "failed: ...").
     runtime_state = models.CharField(max_length=40, blank=True)
     runtime_log = models.TextField(blank=True)
@@ -106,9 +107,9 @@ class InternetGateway(models.Model):
     id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
     enabled = models.BooleanField(default=False)
     token_encrypted = models.BinaryField(null=True, blank=True)
-    # Auto-publish: every online site is published as <slug>.<auto_domain> (a wildcard route in Cloudflare sends
-    # those names to the tunnel). Empty: off -- sites are published one by one.
-    auto_domain = models.CharField(max_length=200, blank=True, default="")
+    # Auto-publish: every online site is published as <slug>.<auto_domain> (a wildcard route in Cloudflare
+    # sends those names to the tunnel). Empty: off -- sites are published one by one.
+    auto_domain = models.CharField(max_length=200, blank=True, default="", db_default="")
     changed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )

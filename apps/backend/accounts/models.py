@@ -54,7 +54,8 @@ class User(AbstractBaseUser):
 
     # Passkeys (ADR-0019). When True, password sign-in is refused for this account and only a passkey signs
     # in; it can only be True while the account has at least one passkey (accounts/passkeys.py).
-    passkey_only = models.BooleanField(default=False)
+    # db_default: the previous release, run on this data after a failed upgrade rolls back, leaves it out.
+    passkey_only = models.BooleanField(default=False, db_default=False)
 
     objects = UserManager()
 

@@ -148,7 +148,7 @@ class InternetGateTests(SiteTestBase):
         )
         self.assertIn("already published", str(resp.data))
 
-    # --- auto-publish -------------------------------------------------------------------------------------------
+    # --- auto-publish ---------------------------------------------------------------------------------------
 
     def _auto(self, domain="harmongt.uk", client=None, password="Root-password-123"):
         return (client or self.root_client).post(
@@ -227,6 +227,7 @@ class InternetGateTests(SiteTestBase):
         failed = AuditEvent.objects.get(action="site.internet.auto_failed")
         self.assertEqual(failed.result, "error")
         self.assertEqual(failed.context["internet_hostname"], "menu.harmongt.uk")
+
 
 class TunnelRecipeTests(SimpleTestCase):
     def test_the_tunnel_container_is_locked_down(self):
