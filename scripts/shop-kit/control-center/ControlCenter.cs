@@ -39,6 +39,15 @@ namespace IntraForge.ControlCenter
         [STAThread]
         static int Main(string[] args)
         {
+            string renderTo = Environment.GetEnvironmentVariable("INTRAFORGE_CC_RENDER_UI");
+            if (!string.IsNullOrEmpty(renderTo))
+            {
+                // Design review only (Ui.cs UiPreview): every window drawn to PNG with sample data; nothing runs.
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                UiPreview.Render(Kit.Locate(), renderTo);
+                return 0;
+            }
             bool created;
             using (Mutex single = new Mutex(true, "Local\\IntraForgeControlCenter", out created))
             {
@@ -607,153 +616,206 @@ namespace IntraForge.ControlCenter
     }
 
     // ---------------------------------------------------------------------------------------------------- the window
+    // A dark sidebar of actions (grouped: the shop, its data, the system) beside the shop's state: a status card with
+    // a large sign, the installed applications, the checks and the activity log. Look and feel: Ui.cs.
     sealed class MainForm : Form
     {
         readonly Kit kit;
         readonly bool startWithUninstall;
-        readonly Label statusDot = new Label();
-        readonly Label statusText = new Label();
-        readonly Label summary = new Label();
-        readonly ListView checks = new ListView();
-        readonly FlowLayoutPanel appsPanel = new FlowLayoutPanel();
-        readonly FlowLayoutPanel upgradePanel = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Visible = false, Margin = new Padding(3, 0, 3, 10) };
-        readonly TextBox log = new TextBox();
+        readonly bool preview;
+        readonly StatusBadge badge = new StatusBadge(64, Ui.Accent, Ui.GSync);
+        readonly Label statusTitle = Ui.Label("Checking...", Ui.H1, Ui.Text, 0);
+        readonly Label summary = Ui.Label("", Ui.Regular, Ui.Muted, 560);
+        readonly Label checkedAt = Ui.Label("", Ui.Small, Ui.Muted, 0);
+        readonly ProgressBar progress = new ProgressBar { Style = ProgressBarStyle.Marquee, MarqueeAnimationSpeed = 25, Visible = false };
+        readonly FlowLayoutPanel appsPanel = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, Margin = Padding.Empty };
+        readonly TableLayoutPanel checksTable = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 3 };
+        readonly Card upgradeCard = new Card { Dock = DockStyle.Top, AutoSize = true, Visible = false, BackColor = Ui.WarnSoft, Line = Color.FromArgb(253, 230, 138) };
+        readonly TextBox log = Consoles.Make(true);
         readonly List<Button> actionButtons = new List<Button>();
         readonly System.Windows.Forms.Timer refreshTimer = new System.Windows.Forms.Timer();
         bool busy;
         HealthReport last;
 
-        static readonly Color Brand = Color.FromArgb(15, 23, 42);
-        static readonly Color Accent = Color.FromArgb(37, 99, 235);
-
-        public MainForm(Kit kit, bool startWithUninstall)
+        public MainForm(Kit kit, bool startWithUninstall, bool preview = false)
         {
             this.kit = kit;
             this.startWithUninstall = startWithUninstall;
+            this.preview = preview;
             Text = "IntraForge Control Center";
-            Font = new Font("Segoe UI", 9.5f);
-            ClientSize = new Size(980, 700);
-            MinimumSize = new Size(820, 600);
+            Font = Ui.Regular;
+            AutoScaleMode = AutoScaleMode.None;
+            ClientSize = Ui.Sz(1060, 740);
+            MinimumSize = Ui.Sz(920, 640);
             StartPosition = FormStartPosition.CenterScreen;
-            BackColor = Color.FromArgb(248, 250, 252);
+            BackColor = Ui.Canvas;
+            DoubleBuffered = true;
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
-
-            Panel header = new Panel { Dock = DockStyle.Top, Height = 92, BackColor = Brand, Padding = new Padding(22, 14, 22, 10) };
-            Label title = new Label { Text = "IntraForge", ForeColor = Color.White, Font = new Font("Segoe UI Semibold", 20f), AutoSize = true, Location = new Point(20, 12) };
-            Label sub = new Label { Text = "Control Center   ·   version " + kit.Version, ForeColor = Color.FromArgb(148, 163, 184), AutoSize = true, Location = new Point(24, 56) };
-            statusDot.Text = "●";
-            statusDot.Font = new Font("Segoe UI", 18f);
-            statusDot.AutoSize = true;
-            statusDot.ForeColor = Color.Gray;
-            statusDot.BackColor = Brand;
-            statusText.Font = new Font("Segoe UI Semibold", 13f);
-            statusText.ForeColor = Color.White;
-            statusText.AutoSize = true;
-            statusText.BackColor = Brand;
-            FlowLayoutPanel statusBox = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, BackColor = Brand, Anchor = AnchorStyles.Top | AnchorStyles.Right };
-            statusBox.Controls.Add(statusDot);
-            statusBox.Controls.Add(statusText);
-            header.Controls.Add(title);
-            header.Controls.Add(sub);
-            header.Controls.Add(statusBox);
-            header.Resize += (s, e) => { statusBox.Location = new Point(header.Width - statusBox.Width - 24, 26); };
-
-            TableLayoutPanel body = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Padding = new Padding(16) };
-            body.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 230));
-            body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-
-            FlowLayoutPanel actions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true };
-            actions.Controls.Add(PrimaryButton("Open IntraForge", (s, e) => Proc.OpenInBrowser(kit.Url("/"))));
-            actions.Controls.Add(Spacer());
-            actions.Controls.Add(ActionButton("Start", (s, e) => RunAction("Starting IntraForge", "Start-IntraForgeShop.ps1", "-NoBrowser", 20 * 60000)));
-            actions.Controls.Add(ActionButton("Restart services", (s, e) => RestartServices()));
-            actions.Controls.Add(ActionButton("Stop", (s, e) => { if (Confirm("Stop IntraForge? Nobody can use it until it is started again.")) RunAction("Stopping IntraForge", "Stop-IntraForgeShop.ps1", "", 10 * 60000); }));
-            actions.Controls.Add(Spacer());
-            actions.Controls.Add(ActionButton("Backup now", (s, e) => RunAction("Backing up", "Backup-IntraForgeShop.ps1", "", 60 * 60000)));
-            actions.Controls.Add(ActionButton("Backup to a folder / USB...", (s, e) => BackupToFolder()));
-            actions.Controls.Add(ActionButton("Restore...", (s, e) => OpenRestore()));
-            actions.Controls.Add(Spacer());
-            actions.Controls.Add(ActionButton("Settings", (s, e) => OpenSettings()));
-            actions.Controls.Add(ActionButton("Diagnostics...", (s, e) => ExportDiagnostics()));
-            actions.Controls.Add(ActionButton("Uninstall...", (s, e) => OpenUninstall()));
-
-            TableLayoutPanel right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 7 };
-            right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            right.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
-            right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            right.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
-            summary.AutoSize = true;
-            summary.MaximumSize = new Size(700, 0);
-            summary.Font = new Font("Segoe UI", 10.5f);
-            summary.Margin = new Padding(3, 0, 3, 10);
-            right.Controls.Add(summary);
-            right.Controls.Add(upgradePanel);
-            right.Controls.Add(SectionLabel("Applications"));
-            appsPanel.AutoSize = true;
-            appsPanel.FlowDirection = FlowDirection.TopDown;
-            appsPanel.Margin = new Padding(3, 0, 3, 10);
-            right.Controls.Add(appsPanel);
-            checks.View = View.Details;
-            checks.FullRowSelect = true;
-            checks.HeaderStyle = ColumnHeaderStyle.Nonclickable;
-            checks.Dock = DockStyle.Fill;
-            checks.Columns.Add("", 26);
-            checks.Columns.Add("Check", 170);
-            checks.Columns.Add("Result", 520);
-            checks.Resize += (s, e) => { if (checks.Columns.Count == 3) checks.Columns[2].Width = Math.Max(200, checks.ClientSize.Width - 200); };
-            right.Controls.Add(checks);
-            right.Controls.Add(SectionLabel("Activity"));
-            log.Multiline = true;
-            log.ReadOnly = true;
-            log.ScrollBars = ScrollBars.Vertical;
-            log.Dock = DockStyle.Fill;
-            log.Font = new Font("Consolas", 9f);
-            log.BackColor = Color.White;
-            right.Controls.Add(log);
-
-            body.Controls.Add(actions, 0, 0);
-            body.Controls.Add(right, 1, 0);
-            Controls.Add(body);
-            Controls.Add(header);
+            SuspendLayout();
+            Controls.Add(BuildContent());
+            Controls.Add(BuildSidebar());
+            ResumeLayout(true);
 
             refreshTimer.Interval = 20000;
             refreshTimer.Tick += (s, e) => { if (!busy) Refresh2(); };
             Shown += (s, e) =>
             {
+                if (this.preview) return;
                 Refresh2();
                 refreshTimer.Start();
                 if (this.startWithUninstall) OpenUninstall();
             };
         }
 
-        static Label SectionLabel(string text)
+        // Paints the whole window in one pass while it is resized or refreshed, instead of control by control (no flicker).
+        protected override CreateParams CreateParams
         {
-            return new Label { Text = text, Font = new Font("Segoe UI Semibold", 10.5f), AutoSize = true, Margin = new Padding(3, 6, 3, 4) };
+            get { CreateParams cp = base.CreateParams; cp.ExStyle |= 0x02000000; return cp; }
         }
 
-        static Control Spacer() { return new Panel { Height = 10, Width = 200 }; }
-
-        Button PrimaryButton(string text, EventHandler click)
+        Control BuildSidebar()
         {
-            Button b = ActionButton(text, click);
-            b.BackColor = Accent;
-            b.ForeColor = Color.White;
-            b.FlatAppearance.BorderSize = 0;
-            b.Font = new Font("Segoe UI Semibold", 10f);
-            b.Height = 42;
-            return b;
+            Panel side = new Panel { Dock = DockStyle.Left, Width = Ui.Px(248), BackColor = Ui.Navy, Padding = Ui.Pad(14, 18, 14, 14) };
+
+            TableLayoutPanel brand = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 2, BackColor = Ui.Navy, Padding = Ui.Pad(4, 0, 0, 18) };
+            brand.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            brand.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            PictureBox logo = new PictureBox { Size = Ui.Sz(36, 36), SizeMode = PictureBoxSizeMode.Zoom, Margin = Ui.Pad(0, 2, 10, 0), BackColor = Ui.Navy };
+            try { using (Icon ico = new Icon(Icon.ExtractAssociatedIcon(Application.ExecutablePath), Ui.Px(48), Ui.Px(48))) logo.Image = ico.ToBitmap(); } catch (Exception) { }
+            brand.Controls.Add(logo, 0, 0);
+            brand.SetRowSpan(logo, 2);
+            Label name = Ui.Label("IntraForge", Ui.H3, Color.White, 0);
+            name.Margin = Padding.Empty;
+            brand.Controls.Add(name, 1, 0);
+            Label sub = Ui.Label("Control Center", Ui.Small, Ui.OnNavyMuted, 0);
+            sub.Margin = Padding.Empty;
+            brand.Controls.Add(sub, 1, 1);
+
+            FlowLayoutPanel nav = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, BackColor = Ui.Navy };
+            int w = Ui.Px(248 - 28);
+            Action<string> group = text =>
+            {
+                Label l = Ui.Label(text.ToUpperInvariant(), Ui.Caption, Ui.OnNavyMuted, 0);
+                l.Margin = Ui.Pad(12, 14, 0, 6);
+                nav.Controls.Add(l);
+            };
+            Action<UiButton, EventHandler> add = (b, click) => { b.Width = w; b.Click += click; actionButtons.Add(b); nav.Controls.Add(b); };
+
+            add(new UiButton("Open IntraForge", ButtonKind.NavPrimary, Ui.GOpen), (s, e) => Proc.OpenInBrowser(kit.Url("/")));
+            group("Shop");
+            add(new UiButton("Start", ButtonKind.Nav, Ui.GPlay), (s, e) => RunAction("Starting IntraForge", "Start-IntraForgeShop.ps1", "-NoBrowser", 20 * 60000));
+            add(new UiButton("Restart services", ButtonKind.Nav, Ui.GRestart), (s, e) => RestartServices());
+            add(new UiButton("Stop", ButtonKind.Nav, Ui.GStop), (s, e) => { if (Confirm("Stop IntraForge? Nobody can use it until it is started again.")) RunAction("Stopping IntraForge", "Stop-IntraForgeShop.ps1", "", 10 * 60000); });
+            group("Data");
+            add(new UiButton("Backup now", ButtonKind.Nav, Ui.GBackup), (s, e) => RunAction("Backing up", "Backup-IntraForgeShop.ps1", "", 60 * 60000));
+            add(new UiButton("Backup to a folder / USB...", ButtonKind.Nav, Ui.GUsb), (s, e) => BackupToFolder());
+            add(new UiButton("Restore...", ButtonKind.Nav, Ui.GRestore), (s, e) => OpenRestore());
+            group("System");
+            add(new UiButton("Settings", ButtonKind.Nav, Ui.GSettings), (s, e) => OpenSettings());
+            add(new UiButton("Diagnostics...", ButtonKind.Nav, Ui.GDiagnostics), (s, e) => ExportDiagnostics());
+
+            FlowLayoutPanel bottom = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Ui.Navy, Padding = Ui.Pad(0, 10, 0, 0) };
+            bottom.Paint += (s, e) => { using (Pen p = new Pen(Ui.NavyLine)) e.Graphics.DrawLine(p, 0, 0, bottom.Width, 0); };
+            UiButton uninstall = new UiButton("Uninstall...", ButtonKind.NavDanger, Ui.GDelete) { Width = w };
+            uninstall.Click += (s, e) => OpenUninstall();
+            actionButtons.Add(uninstall);
+            bottom.Controls.Add(uninstall);
+            Label version = Ui.Label("Version " + kit.Version, Ui.Small, Ui.OnNavyMuted, 0);
+            version.Margin = Ui.Pad(12, 8, 0, 0);
+            bottom.Controls.Add(version);
+
+            side.Controls.Add(nav);
+            side.Controls.Add(bottom);
+            side.Controls.Add(brand);
+            return side;
         }
 
-        Button ActionButton(string text, EventHandler click)
+        Control BuildContent()
         {
-            Button b = new Button { Text = text, Width = 206, Height = 34, FlatStyle = FlatStyle.Flat, BackColor = Color.White, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(8, 0, 0, 0), Margin = new Padding(0, 0, 0, 6) };
-            b.FlatAppearance.BorderColor = Color.FromArgb(203, 213, 225);
-            b.Click += click;
-            actionButtons.Add(b);
-            return b;
+            Panel content = new Panel { Dock = DockStyle.Fill, BackColor = Ui.Canvas, Padding = Ui.Pad(26, 22, 26, 22) };
+            TableLayoutPanel grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5, BackColor = Ui.Canvas };
+            grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            grid.RowStyles.Add(new RowStyle(SizeType.Percent, 52));
+            grid.RowStyles.Add(new RowStyle(SizeType.Percent, 48));
+
+            // The status card: the large sign, what it means, and a progress bar while an action runs.
+            Card hero = new Card { Dock = DockStyle.Top, AutoSize = true, Padding = Ui.Pad(22, 20, 22, 20) };
+            TableLayoutPanel heroGrid = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 3, RowCount = 3 };
+            heroGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            heroGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            heroGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            badge.Margin = Ui.Pad(0, 0, 20, 0);
+            heroGrid.Controls.Add(badge, 0, 0);
+            heroGrid.SetRowSpan(badge, 3);
+            statusTitle.Margin = Ui.Pad(0, 2, 0, 2);
+            heroGrid.Controls.Add(statusTitle, 1, 0);
+            heroGrid.Controls.Add(summary, 1, 1);
+            progress.Height = Ui.Px(4);
+            progress.Dock = DockStyle.Top;
+            progress.Margin = Ui.Pad(0, 8, 0, 0);
+            heroGrid.Controls.Add(progress, 1, 2);
+            FlowLayoutPanel heroSide = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Anchor = AnchorStyles.Top | AnchorStyles.Right, Margin = Padding.Empty };
+            UiButton refresh = new UiButton("Check again", ButtonKind.Ghost, Ui.GRestart);
+            refresh.Margin = Padding.Empty;
+            refresh.Click += (s, e) => Refresh2();
+            actionButtons.Add(refresh);
+            heroSide.Controls.Add(refresh);
+            checkedAt.Margin = Ui.Pad(12, 2, 0, 0);
+            heroSide.Controls.Add(checkedAt);
+            heroGrid.Controls.Add(heroSide, 2, 0);
+            heroGrid.SetRowSpan(heroSide, 3);
+            hero.Controls.Add(heroGrid);
+            grid.Controls.Add(hero, 0, 0);
+
+            upgradeCard.Margin = Ui.Pad(0, 0, 0, 12);
+            grid.Controls.Add(upgradeCard, 0, 1);
+
+            FlowLayoutPanel apps = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = Ui.Pad(0, 2, 0, 4) };
+            apps.Controls.Add(SectionTitle("Applications"));
+            apps.Controls.Add(appsPanel);
+            grid.Controls.Add(apps, 0, 2);
+
+            // The checks: one row each -- a coloured sign, the name, and the detail, wrapping (never cut off).
+            checksTable.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Ui.Px(30)));
+            checksTable.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Ui.Px(150)));
+            checksTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            Panel checksScroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Ui.Card };
+            checksScroll.Controls.Add(checksTable);
+            Card checksCard = new Card { Dock = DockStyle.Fill, Padding = Ui.Pad(18, 14, 10, 12) };
+            checksCard.Controls.Add(checksScroll);
+            checksCard.Controls.Add(CardTitle("System checks"));
+            grid.Controls.Add(checksCard, 0, 3);
+
+            // The activity log: what the actions print, as in a terminal.
+            Card logCard = new Card { Dock = DockStyle.Fill, BackColor = Ui.Console, Line = Ui.Console, Padding = Ui.Pad(16, 12, 8, 12), Margin = Padding.Empty };
+            log.Dock = DockStyle.Fill;
+            Label logTitle = CardTitle("Activity");
+            logTitle.ForeColor = Ui.OnNavyMuted;
+            logTitle.BackColor = Ui.Console;
+            logCard.Controls.Add(log);
+            logCard.Controls.Add(logTitle);
+            grid.Controls.Add(logCard, 0, 4);
+
+            content.Controls.Add(grid);
+            return content;
+        }
+
+        static Label SectionTitle(string text)
+        {
+            Label l = Ui.Label(text, Ui.H3, Ui.Text, 0);
+            l.Margin = Ui.Pad(2, 4, 0, 8);
+            return l;
+        }
+
+        static Label CardTitle(string text)
+        {
+            Label l = Ui.Label(text, Ui.H3, Ui.Text, 0);
+            l.Dock = DockStyle.Top;
+            l.AutoSize = false;
+            l.Height = Ui.Px(30);
+            return l;
         }
 
         bool Confirm(string message)
@@ -772,13 +834,27 @@ namespace IntraForge.ControlCenter
         {
             busy = value;
             foreach (Button b in actionButtons) b.Enabled = !value;
+            progress.Visible = value;
             UseWaitCursor = value;
+        }
+
+        void SetStatus(string title, Color color, string glyph)
+        {
+            statusTitle.Text = title;
+            badge.Set(color, glyph);
+        }
+
+        /// <summary>Sample data for UiPreview; nothing is checked or run.</summary>
+        public void Preview(HealthReport r, string logText)
+        {
+            ShowReport(r);
+            Log(logText);
         }
 
         async void Refresh2()
         {
             if (busy) return;
-            statusText.Text = last == null ? "Checking..." : statusText.Text;
+            if (last == null) SetStatus("Checking...", Ui.Accent, Ui.GSync);
             HealthReport r = await Task.Run(() => Health.Examine(kit));
             last = r;
             ShowReport(r);
@@ -786,60 +862,105 @@ namespace IntraForge.ControlCenter
 
         void ShowReport(HealthReport r)
         {
-            statusText.Text = r.State;
-            switch (r.State)
-            {
-                case "Healthy": statusDot.ForeColor = Color.FromArgb(34, 197, 94); break;
-                case "Starting": statusDot.ForeColor = Color.FromArgb(96, 165, 250); break;
-                case "Degraded": statusDot.ForeColor = Color.FromArgb(245, 158, 11); break;
-                case "Stopped": statusDot.ForeColor = Color.FromArgb(148, 163, 184); break;
-                default: statusDot.ForeColor = Color.FromArgb(239, 68, 68); break;
-            }
+            Color color;
+            string glyph, title;
+            Ui.ForState(r.State, out color, out glyph, out title);
+            SetStatus(title, color, glyph);
             summary.Text = r.Summary;
+            checkedAt.Text = "Checked at " + DateTime.Now.ToString("HH:mm");
             ShowUpgrade(r);
-            checks.BeginUpdate();
-            checks.Items.Clear();
+            ShowChecks(r);
+            ShowApps(r);
+        }
+
+        void ShowChecks(HealthReport r)
+        {
+            checksTable.SuspendLayout();
+            checksTable.Controls.Clear();
+            checksTable.RowStyles.Clear();
+            checksTable.RowCount = r.Checks.Count;
+            int row = 0;
             foreach (Check c in r.Checks)
             {
-                ListViewItem item = new ListViewItem(c.Level == Level.Ok ? "✓" : c.Level == Level.Warn ? "!" : c.Level == Level.Bad ? "✗" : "·");
-                item.ForeColor = c.Level == Level.Ok ? Color.FromArgb(22, 163, 74) : c.Level == Level.Warn ? Color.FromArgb(180, 83, 9) : c.Level == Level.Bad ? Color.FromArgb(220, 38, 38) : Color.Gray;
-                item.SubItems.Add(c.Name);
-                item.SubItems.Add(c.Detail);
-                checks.Items.Add(item);
+                string glyph;
+                Color color = Ui.ForLevel(c.Level, out glyph);
+                checksTable.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+                Label sign = new Label
+                {
+                    Text = Ui.IconFamily != null ? glyph : (c.Level == Level.Ok ? "OK" : c.Level == Level.Warn ? "!" : c.Level == Level.Bad ? "X" : "-"),
+                    Font = Ui.IconFamily != null ? Ui.IconSmall : Ui.Semibold, ForeColor = color, AutoSize = true, Margin = Ui.Pad(0, 7, 0, 7),
+                };
+                Label name = Ui.Label(c.Name, Ui.Semibold, Ui.Text, 0);
+                name.Margin = Ui.Pad(0, 6, 8, 6);
+                Label detail = new Label { Text = c.Detail, Font = Ui.Regular, ForeColor = c.Level == Level.Bad ? Ui.Danger : Ui.Muted, AutoSize = true, Dock = DockStyle.Fill, UseMnemonic = false, Margin = Ui.Pad(0, 6, 4, 6) };
+                checksTable.Controls.Add(sign, 0, row);
+                checksTable.Controls.Add(name, 1, row);
+                checksTable.Controls.Add(detail, 2, row);
+                row++;
             }
-            checks.EndUpdate();
+            checksTable.ResumeLayout(true);
+        }
+
+        void ShowApps(HealthReport r)
+        {
+            appsPanel.SuspendLayout();
             appsPanel.Controls.Clear();
             if (!r.AppsKnown)
-                appsPanel.Controls.Add(new Label { Text = r.State == "Healthy" || r.State == "Degraded" ? "Could not read the installed applications." : "Shown when IntraForge is running.", AutoSize = true, ForeColor = Color.Gray });
+                appsPanel.Controls.Add(Ui.Label(r.State == "Healthy" || r.State == "Degraded" ? "Could not read the installed applications." : "Shown when IntraForge is running.", Ui.Regular, Ui.Muted, 0));
             else if (r.Apps.Count == 0)
-                appsPanel.Controls.Add(new LinkLabel { Text = "No applications installed yet. Install Spare Parts in IntraForge > Apps.", AutoSize = true });
-            foreach (AppInfo app in r.Apps)
-            {
-                FlowLayoutPanel row = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
-                string status = !app.Enabled ? "Disabled" : r.SparePartsOk ? "Running" : "Not answering";
-                row.Controls.Add(new Label { Text = app.DisplayName + "  —  " + app.Product, Font = new Font("Segoe UI Semibold", 10f), AutoSize = true, Margin = new Padding(0, 7, 12, 0) });
-                row.Controls.Add(new Label { Text = status, AutoSize = true, ForeColor = status == "Running" ? Color.FromArgb(22, 163, 74) : Color.FromArgb(180, 83, 9), Margin = new Padding(0, 8, 12, 0) });
-                Button open = new Button { Text = "Open", Width = 80, Height = 30, FlatStyle = FlatStyle.Flat, BackColor = Accent, ForeColor = Color.White, Enabled = app.Enabled };
-                open.FlatAppearance.BorderSize = 0;
-                string path = app.OpenPath;
-                open.Click += (s, e) => Proc.OpenInBrowser(kit.Url(path));
-                row.Controls.Add(open);
-                appsPanel.Controls.Add(row);
-            }
+                appsPanel.Controls.Add(Ui.Label("No applications installed yet. Install one in IntraForge > Apps.", Ui.Regular, Ui.Muted, 0));
+            foreach (AppInfo app in r.Apps) appsPanel.Controls.Add(AppCard(app, r));
+            appsPanel.ResumeLayout(true);
+        }
+
+        Control AppCard(AppInfo app, HealthReport r)
+        {
+            string status = !app.Enabled ? "Disabled" : r.SparePartsOk ? "Running" : "Not answering";
+            Card card = new Card { FixedWidth = 232, Padding = Ui.Pad(16, 14, 14, 14), Margin = Ui.Pad(0, 0, 12, 12) };
+            TableLayoutPanel t = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 3 };
+            t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            t.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            Label name = Ui.Label(app.DisplayName, Ui.Semibold, Ui.Text, 196);
+            name.Margin = Padding.Empty;
+            t.Controls.Add(name, 0, 0);
+            t.SetColumnSpan(name, 2);
+            Label product = Ui.Label(app.Product, Ui.Small, Ui.Muted, 196);
+            product.Margin = Ui.Pad(0, 1, 0, 6);
+            t.Controls.Add(product, 0, 1);
+            t.SetColumnSpan(product, 2);
+            Color fore = status == "Running" ? Ui.Success : status == "Disabled" ? Ui.Muted : Ui.Warn;
+            Color back = status == "Running" ? Ui.SuccessSoft : status == "Disabled" ? Ui.Canvas : Ui.WarnSoft;
+            t.Controls.Add(new Pill(status, fore, back), 0, 2);
+            UiButton open = new UiButton("Open", ButtonKind.Primary, null) { Enabled = app.Enabled, Height = Ui.Px(30) };
+            open.Width = Ui.Px(76);
+            open.Margin = Padding.Empty;
+            string path = app.OpenPath;
+            open.Click += (s, e) => Proc.OpenInBrowser(kit.Url(path));
+            t.Controls.Add(open, 1, 2);
+            card.Controls.Add(t);
+            return card;
         }
 
         void ShowUpgrade(HealthReport r)
         {
-            upgradePanel.Controls.Clear();
-            upgradePanel.Visible = r.NewerSetup != null;
+            upgradeCard.Controls.Clear();
+            upgradeCard.Visible = r.NewerSetup != null;
             if (r.NewerSetup == null) return;
-            upgradePanel.Controls.Add(new Label { Text = "A newer IntraForge is ready: " + kit.Version + "  ->  " + r.NewerVersion, Font = new Font("Segoe UI Semibold", 10f), AutoSize = true, Margin = new Padding(0, 8, 12, 0) });
-            Button go = new Button { Text = "Upgrade to " + r.NewerVersion + "...", AutoSize = true, Height = 32, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(245, 158, 11), ForeColor = Color.White };
-            go.FlatAppearance.BorderSize = 0;
+            TableLayoutPanel t = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 3, BackColor = Ui.WarnSoft };
+            t.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            t.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            t.Controls.Add(new StatusBadge(36, Ui.Warn, Ui.GUpgrade) { Margin = Ui.Pad(0, 0, 14, 0) }, 0, 0);
+            Label text = Ui.Label("A newer IntraForge is ready: " + kit.Version + "  ->  " + r.NewerVersion + ". Your data is kept, and a backup is taken first.", Ui.Semibold, Ui.Text, 520);
+            text.Anchor = AnchorStyles.Left;
+            t.Controls.Add(text, 1, 0);
+            UiButton go = new UiButton("Upgrade to " + r.NewerVersion + "...", ButtonKind.Primary, Ui.GUpgrade);
+            go.Anchor = AnchorStyles.Right;
             FileInfo setup = r.NewerSetup;
             System.Version version = r.NewerVersion;
             go.Click += (s, e) => StartUpgrade(setup, version);
-            upgradePanel.Controls.Add(go);
+            t.Controls.Add(go, 2, 0);
+            upgradeCard.Controls.Add(t);
         }
 
         // The upgrade itself is the setup file's job (backup first, previous version put back on failure). The Control
@@ -876,8 +997,7 @@ namespace IntraForge.ControlCenter
         async Task<int> RunActionAsync(string title, string script, string arguments, int timeoutMs)
         {
             SetBusy(true);
-            statusText.Text = title + "...";
-            statusDot.ForeColor = Color.FromArgb(96, 165, 250);
+            SetStatus(title + "...", Ui.Accent, Ui.GSync);
             Log("");
             Log("=== " + title + "  (" + DateTime.Now.ToString("HH:mm:ss") + ")");
             ProcResult res = await Task.Run(() => Proc.PowerShell(kit, script, arguments, timeoutMs, Log));
@@ -951,63 +1071,67 @@ namespace IntraForge.ControlCenter
     }
 
     // ------------------------------------------------------------------------------------------------ guided restore
-    sealed class RestoreForm : Form
+    sealed class RestoreForm : UiDialog
     {
         readonly Kit kit;
-        readonly RadioButton local = new RadioButton { Text = "Backups on this computer", AutoSize = true, Checked = true };
-        readonly RadioButton other = new RadioButton { Text = "A folder (for example the USB drive):", AutoSize = true };
-        readonly TextBox folder = new TextBox { Width = 380, ReadOnly = true };
-        readonly TextBox preview = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Width = 640, Height = 260, Font = new Font("Consolas", 9f) };
-        readonly Label warning = new Label { AutoSize = true, MaximumSize = new Size(640, 0), ForeColor = Color.FromArgb(185, 28, 28), Font = new Font("Segoe UI Semibold", 10f) };
-        readonly TextBox confirm = new TextBox { Width = 160 };
-        readonly Button check = new Button { Text = "Check this backup", Width = 150, Height = 32 };
-        readonly Button restore = new Button { Text = "Restore", Width = 120, Height = 32, Enabled = false, BackColor = Color.FromArgb(220, 38, 38), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+        readonly RadioButton local = new RadioButton { Text = "Backups on this computer", AutoSize = true, Checked = true, Margin = Ui.Pad(0, 2, 0, 6) };
+        readonly RadioButton other = new RadioButton { Text = "A folder (for example the USB drive):", AutoSize = true, Margin = Ui.Pad(0, 5, 8, 0) };
+        readonly TextBox folder = new TextBox { Width = Ui.Px(250), ReadOnly = true, Margin = Ui.Pad(0, 3, 8, 0) };
+        readonly TextBox preview = Consoles.Make(false);
+        readonly Label warning = new Label { AutoSize = true, Font = Ui.Semibold, UseMnemonic = false };
+        readonly TextBox confirm = new TextBox { Width = Ui.Px(180), Margin = Ui.Pad(0, 3, 0, 0) };
+        readonly UiButton check = new UiButton("Check this backup", ButtonKind.Secondary, Ui.GCheck);
+        readonly UiButton restore;
         bool checkedOk;
         public string ChosenFolder;
         public string ChosenFiles;
 
-        public RestoreForm(Kit kit)
+        public RestoreForm(Kit kit) : base("Restore a backup",
+            "Puts the shop back to how it was when a backup was taken. You check the backup first: nothing changes until you type RESTORE.",
+            Ui.GRestore, Ui.Accent)
         {
             this.kit = kit;
-            Text = "Restore a backup";
-            Font = new Font("Segoe UI", 9.5f);
-            ClientSize = new Size(690, 620);
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
-            MinimizeBox = false;
-            StartPosition = FormStartPosition.CenterParent;
-            FlowLayoutPanel p = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, Padding = new Padding(18), WrapContents = false, AutoScroll = true };
-            p.Controls.Add(new Label { Text = "1. Which backup?", Font = new Font("Segoe UI Semibold", 10.5f), AutoSize = true });
-            p.Controls.Add(local);
-            FlowLayoutPanel otherRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
+            SuspendLayout();
+            Body.Controls.Add(Section("1   Which backup?"));
+            Body.Controls.Add(local);
+            FlowLayoutPanel otherRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Ui.Pad(0, 0, 0, 4) };
             otherRow.Controls.Add(other);
             otherRow.Controls.Add(folder);
-            Button browse = new Button { Text = "Browse...", Width = 90, Height = 28 };
+            UiButton browse = new UiButton("Browse...", ButtonKind.Secondary, Ui.GFolder) { Margin = Padding.Empty };
             browse.Click += (s, e) => Browse();
             otherRow.Controls.Add(browse);
-            p.Controls.Add(otherRow);
-            p.Controls.Add(new Label { Text = "2. Check it (nothing is changed yet)", Font = new Font("Segoe UI Semibold", 10.5f), AutoSize = true, Margin = new Padding(3, 12, 3, 3) });
+            Body.Controls.Add(otherRow);
+
+            Body.Controls.Add(Section("2   Check it (nothing is changed yet)"));
+            check.Margin = Ui.Pad(0, 0, 0, 10);
             check.Click += async (s, e) => await CheckBackup();
-            p.Controls.Add(check);
-            p.Controls.Add(preview);
-            p.Controls.Add(warning);
+            Body.Controls.Add(check);
+            Card frame = Consoles.Framed(preview, false);
+            frame.Size = Ui.Sz(ContentWidth, 190);
+            Body.Controls.Add(frame);
+            Card banner = Banner(warning, Ui.Danger, Ui.DangerSoft, Ui.GWarn, ContentWidth);
+            banner.Visible = false;
+            warning.TextChanged += (s, e) => banner.Visible = warning.Text.Length > 0;
+            Body.Controls.Add(banner);
+
+            Body.Controls.Add(Section("3   Confirm"));
             FlowLayoutPanel confirmRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
-            confirmRow.Controls.Add(new Label { Text = "3. To restore, type RESTORE:", AutoSize = true, Margin = new Padding(3, 8, 6, 3) });
+            Label typeIt = Ui.Label("To restore, type RESTORE:", Ui.Regular, Ui.Text, 0);
+            typeIt.Margin = Ui.Pad(0, 6, 10, 0);
+            confirmRow.Controls.Add(typeIt);
             confirm.TextChanged += (s, e) => UpdateButtons();
             confirmRow.Controls.Add(confirm);
-            p.Controls.Add(confirmRow);
-            FlowLayoutPanel buttons = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(3, 12, 3, 3) };
-            restore.FlatAppearance.BorderSize = 0;
+            Body.Controls.Add(confirmRow);
+
+            restore = AddButton("Restore", ButtonKind.Danger, DialogResult.None);
+            restore.Enabled = false;
             restore.Click += (s, e) => { DialogResult = DialogResult.OK; Close(); };
-            Button cancel = new Button { Text = "Cancel", Width = 100, Height = 32, DialogResult = DialogResult.Cancel };
-            buttons.Controls.Add(restore);
-            buttons.Controls.Add(cancel);
-            p.Controls.Add(buttons);
-            Controls.Add(p);
-            CancelButton = cancel;
+            CancelButton = AddButton("Cancel", ButtonKind.Secondary, DialogResult.Cancel);
             local.CheckedChanged += (s, e) => { checkedOk = false; UpdateButtons(); };
             other.CheckedChanged += (s, e) => { checkedOk = false; UpdateButtons(); };
             warning.Text = "";
+            ResumeLayout(true);
+            FitToContent();
         }
 
         void Browse()
@@ -1152,55 +1276,53 @@ namespace IntraForge.ControlCenter
     }
 
     // ------------------------------------------------------------------------------------------------------ uninstall
-    sealed class UninstallForm : Form
+    sealed class UninstallForm : UiDialog
     {
-        readonly RadioButton a = new RadioButton { AutoSize = true, Checked = true, Text = "A. Remove IntraForge, keep all data (reinstalling brings the shop back as it was)" };
-        readonly RadioButton b = new RadioButton { AutoSize = true, Text = "B. Take a complete backup, then remove IntraForge (data kept too)" };
-        readonly RadioButton c = new RadioButton { AutoSize = true, Text = "C. Complete removal: also DELETE the shop's data on this PC" };
-        readonly TextBox confirm = new TextBox { Width = 220, Enabled = false };
-        readonly Button go = new Button { Text = "Remove", Width = 120, Height = 32, BackColor = Color.FromArgb(220, 38, 38), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+        readonly RadioButton a = Choice("A.  Remove IntraForge, keep all data", true);
+        readonly RadioButton b = Choice("B.  Take a complete backup, then remove IntraForge", false);
+        readonly RadioButton c = Choice("C.  Complete removal: also DELETE the shop's data on this PC", false);
+        readonly TextBox confirm = new TextBox { Width = Ui.Px(220), Enabled = false, Margin = Ui.Pad(0, 3, 0, 0) };
+        readonly UiButton go;
+        readonly List<Card> optionCards = new List<Card>();
         public char Option = 'A';
 
-        public UninstallForm(Kit kit)
+        static RadioButton Choice(string text, bool selected)
         {
-            Text = "Uninstall IntraForge";
-            Font = new Font("Segoe UI", 9.5f);
-            ClientSize = new Size(700, 470);
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
-            MinimizeBox = false;
-            StartPosition = FormStartPosition.CenterParent;
-            FlowLayoutPanel p = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, Padding = new Padding(18), WrapContents = false };
-            p.Controls.Add(new Label { Text = "How should IntraForge be removed?", Font = new Font("Segoe UI Semibold", 11f), AutoSize = true });
-            p.Controls.Add(a);
-            p.Controls.Add(b);
-            p.Controls.Add(c);
-            p.Controls.Add(new Label
-            {
-                AutoSize = true,
-                MaximumSize = new Size(650, 0),
-                Margin = new Padding(3, 12, 3, 3),
-                Text = "Removed in every option: automatic start, backup tasks, the IntraForge shortcut, the Installed-apps entry and IntraForge's containers." + Environment.NewLine + Environment.NewLine +
-                       "Option C also deletes: the databases and stored files (customers, products, stock, invoices, documents, catalogue, users), IntraForge's images and the program folder " + kit.Dir + ". A backup is taken first; nothing is deleted if it fails." + Environment.NewLine + Environment.NewLine +
-                       "NEVER deleted: " + kit.BackupsDir + " (and copies on USB drives), " + Path.Combine(kit.DataDir, "keys") + " (needed to read the backups) and " + kit.LogsDir + ".",
-            });
-            FlowLayoutPanel confirmRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(3, 12, 3, 3) };
-            confirmRow.Controls.Add(new Label { Text = "For option C type DELETE-MY-SHOP-DATA:", AutoSize = true, Margin = new Padding(3, 8, 6, 3) });
+            return new RadioButton { Text = text, AutoSize = true, Checked = selected, Font = Ui.Semibold, Margin = Padding.Empty };
+        }
+
+        public UninstallForm(Kit kit) : base("Uninstall IntraForge",
+            "Choose what happens to the shop's data. Backups and the keys file are never deleted.", Ui.GDelete, Ui.Danger)
+        {
+            SuspendLayout();
+            Body.Controls.Add(Option_(a, "Reinstalling later brings the shop back exactly as it was.", false));
+            Body.Controls.Add(Option_(b, "A complete backup is taken first; the data is kept on this PC too.", false));
+            Body.Controls.Add(Option_(c, "Also deletes the databases and stored files (customers, products, stock, invoices, documents, catalogue, users), " +
+                "IntraForge's images and the program folder " + kit.Dir + ". A backup is taken first; nothing is deleted if it fails.", true));
+
+            Body.Controls.Add(Section("In every option"));
+            Body.Controls.Add(Bullets(Ui.GInfo, Ui.Muted,
+                "Removed: automatic start, backup tasks, the IntraForge shortcut, the Installed-apps entry and IntraForge's containers."));
+            Body.Controls.Add(Bullets(Ui.GShield, Ui.Success,
+                "Never deleted: " + kit.BackupsDir + " (and copies on USB drives), " + Path.Combine(kit.DataDir, "keys") +
+                " (needed to read the backups) and " + kit.LogsDir + "."));
+
+            FlowLayoutPanel confirmRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Ui.Pad(0, 10, 0, 0) };
+            Label typeIt = Ui.Label("For option C type DELETE-MY-SHOP-DATA:", Ui.Regular, Ui.Text, 0);
+            typeIt.Margin = Ui.Pad(0, 6, 10, 0);
+            confirmRow.Controls.Add(typeIt);
             confirmRow.Controls.Add(confirm);
-            p.Controls.Add(confirmRow);
-            FlowLayoutPanel buttons = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(3, 16, 3, 3) };
-            go.FlatAppearance.BorderSize = 0;
-            Button cancel = new Button { Text = "Cancel", Width = 100, Height = 32, DialogResult = DialogResult.Cancel };
-            buttons.Controls.Add(go);
-            buttons.Controls.Add(cancel);
-            p.Controls.Add(buttons);
-            Controls.Add(p);
-            CancelButton = cancel;
+            Body.Controls.Add(confirmRow);
+
+            go = AddButton("Remove", ButtonKind.Danger, DialogResult.None);
+            CancelButton = AddButton("Cancel", ButtonKind.Secondary, DialogResult.Cancel);
             EventHandler update = (s, e) =>
             {
                 confirm.Enabled = c.Checked;
                 go.Enabled = !c.Checked || confirm.Text == "DELETE-MY-SHOP-DATA";
                 go.Text = c.Checked ? "Back up, then delete" : b.Checked ? "Back up, then remove" : "Remove";
+                go.Width = Math.Max(Ui.Px(92), TextRenderer.MeasureText(go.Text, go.Font).Width + Ui.Px(34));
+                foreach (Card card in optionCards) card.Invalidate();
             };
             a.CheckedChanged += update;
             b.CheckedChanged += update;
@@ -1216,34 +1338,74 @@ namespace IntraForge.ControlCenter
                 DialogResult = DialogResult.OK;
                 Close();
             };
+            ResumeLayout(true);
+            FitToContent();
+        }
+
+        // One option: a card around its choice and what it means; the selected card is outlined (red for deletion).
+        Card Option_(RadioButton choice, string detail, bool dangerous)
+        {
+            OptionCard card = new OptionCard(choice, dangerous) { FixedWidth = ContentWidth, Padding = Ui.Pad(14, 12, 14, 12), Margin = Ui.Pad(0, 0, 0, 8), Radius = 8 };
+            FlowLayoutPanel f = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
+            if (dangerous) choice.ForeColor = Ui.Danger;
+            f.Controls.Add(choice);
+            Label d = Ui.Label(detail, Ui.Regular, Ui.Muted, ContentWidth - 60);
+            d.Margin = Ui.Pad(20, 2, 0, 0);
+            d.Click += (s, e) => choice.Checked = true;
+            f.Controls.Add(d);
+            card.Controls.Add(f);
+            card.Click += (s, e) => choice.Checked = true;
+            optionCards.Add(card);
+            return card;
+        }
+
+        sealed class OptionCard : Card
+        {
+            readonly RadioButton choice;
+            readonly bool dangerous;
+            public OptionCard(RadioButton choice, bool dangerous) { this.choice = choice; this.dangerous = dangerous; }
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                Line = choice.Checked ? (dangerous ? Ui.Danger : Ui.Accent) : Ui.Border;
+                BackColor = choice.Checked ? (dangerous ? Ui.DangerSoft : Ui.AccentSoft) : Ui.Card;
+                foreach (Control child in Controls) child.BackColor = BackColor;
+                base.OnPaint(e);
+            }
         }
     }
 
     // ------------------------------------------------------------------------------------------------------- settings
-    sealed class SettingsForm : Form
+    sealed class SettingsForm : UiDialog
     {
         const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
 
-        public SettingsForm(Kit kit)
+        public SettingsForm(Kit kit) : base("Settings", "This installation, starting with Windows, the keys file and the shop network.", Ui.GSettings, Ui.Accent)
         {
-            Text = "IntraForge settings";
-            Font = new Font("Segoe UI", 9.5f);
-            ClientSize = new Size(660, 640);
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
-            MinimizeBox = false;
-            StartPosition = FormStartPosition.CenterParent;
-            FlowLayoutPanel p = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, Padding = new Padding(18), WrapContents = false, AutoScroll = true };
-            Func<string, string, Label> row = (k, v) => new Label { Text = k.PadRight(22) + v, AutoSize = true, Font = new Font("Consolas", 9.5f), Margin = new Padding(3, 2, 3, 2) };
-            p.Controls.Add(new Label { Text = "This installation", Font = new Font("Segoe UI Semibold", 10.5f), AutoSize = true });
-            p.Controls.Add(row("Address", kit.Url("/")));
-            p.Controls.Add(row("Access", kit.ShopNetwork ? "this PC and the shop network (" + kit.LanUrl + ")" : "this computer only"));
-            p.Controls.Add(row("Version", kit.Version));
-            p.Controls.Add(row("Program folder", kit.Dir));
-            p.Controls.Add(row("Data folder", kit.DataDir));
-            p.Controls.Add(row("Keys file", kit.KeysFile));
-            p.Controls.Add(row("Daily backup", "every day at 19:00 (and at the next start if the PC was off)"));
-            CheckBox autostart = new CheckBox { Text = "Start IntraForge when I sign in to Windows (recommended)", AutoSize = true, Margin = new Padding(3, 12, 3, 3) };
+            SuspendLayout();
+            Card install = SectionCard("This installation");
+            TableLayoutPanel facts = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2 };
+            facts.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Ui.Px(130)));
+            facts.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            Action<string, string> fact = (k, v) =>
+            {
+                Label key = Ui.Label(k, Ui.Regular, Ui.Muted, 0);
+                key.Margin = Ui.Pad(0, 3, 8, 3);
+                Label val = new Label { Text = v, Font = Ui.Regular, ForeColor = Ui.Text, AutoSize = true, Dock = DockStyle.Fill, UseMnemonic = false, Margin = Ui.Pad(0, 3, 0, 3) };
+                facts.Controls.Add(key);
+                facts.Controls.Add(val);
+            };
+            fact("Address", kit.Url("/"));
+            fact("Access", kit.ShopNetwork ? "this PC and the shop network (" + kit.LanUrl + ")" : "this computer only");
+            fact("Version", kit.Version);
+            fact("Program folder", kit.Dir);
+            fact("Data folder", kit.DataDir);
+            fact("Keys file", kit.KeysFile);
+            fact("Daily backup", "every day at 19:00 (and at the next start if the PC was off)");
+            AddToCard(install, facts);
+            Body.Controls.Add(install);
+
+            Card start = SectionCard("Starting with Windows");
+            CheckBox autostart = new CheckBox { Text = "Start IntraForge when I sign in to Windows (recommended)", AutoSize = true, Margin = Ui.Pad(0, 2, 0, 2) };
             using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RunKey)) autostart.Checked = key != null && key.GetValue("IntraForgeShop") != null;
             autostart.CheckedChanged += (s, e) =>
             {
@@ -1257,9 +1419,14 @@ namespace IntraForge.ControlCenter
                     else key.DeleteValue("IntraForgeShop", false);
                 }
             };
-            p.Controls.Add(autostart);
-            FlowLayoutPanel buttons = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Width = 600, Margin = new Padding(3, 12, 3, 3) };
-            Button keys = new Button { Text = "Copy the keys file to a USB drive...", Width = 260, Height = 32 };
+            AddToCard(start, autostart);
+            Body.Controls.Add(start);
+
+            Card keysCard = SectionCard("Keys file and data");
+            Label keysNote = Ui.Label("Without the keys file a backup cannot be read after this PC is lost. Keep one copy on a USB drive, apart from the backups.", Ui.Regular, Ui.Muted, ContentWidth - 40);
+            keysNote.Margin = Ui.Pad(0, 0, 0, 10);
+            FlowLayoutPanel keyButtons = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Margin = Padding.Empty };
+            UiButton keys = new UiButton("Copy the keys file to a USB drive...", ButtonKind.Secondary, Ui.GKey) { Margin = Ui.Pad(0, 0, 8, 0) };
             keys.Click += (s, e) =>
             {
                 using (FolderBrowserDialog d = new FolderBrowserDialog { Description = "Choose the USB drive (NOT the one you keep backups on). Without this file a backup cannot be read after the PC is lost." })
@@ -1273,37 +1440,49 @@ namespace IntraForge.ControlCenter
                     catch (Exception ex) { MessageBox.Show(this, "Could not copy: " + ex.Message, "IntraForge"); }
                 }
             };
-            Button data = new Button { Text = "Open the data folder", Width = 180, Height = 32 };
+            UiButton data = new UiButton("Open the data folder", ButtonKind.Secondary, Ui.GFolder) { Margin = Padding.Empty };
             data.Click += (s, e) => { try { Process.Start("explorer.exe", "\"" + kit.DataDir + "\""); } catch (Exception) { } };
-            Button close = new Button { Text = "Close", Width = 100, Height = 32, DialogResult = DialogResult.Cancel };
-            buttons.Controls.Add(keys);
-            buttons.Controls.Add(data);
-            buttons.Controls.Add(close);
-            p.Controls.Add(buttons);
-            p.Controls.Add(ShopNetworkSection(kit));
-            p.Controls.Add(new Label
-            {
-                AutoSize = true,
-                MaximumSize = new Size(600, 0),
-                ForeColor = Color.Gray,
-                Margin = new Padding(3, 12, 3, 3),
-                Text = "Shop name, documents and people are set inside IntraForge (Apps > Settings, Organization > Members, where each person gets their role).",
-            });
-            Controls.Add(p);
-            CancelButton = close;
+            keyButtons.Controls.Add(keys);
+            keyButtons.Controls.Add(data);
+            AddToCard(keysCard, keyButtons, keysNote);
+            Body.Controls.Add(keysCard);
+
+            Body.Controls.Add(ShopNetworkSection(kit));
+            Body.Controls.Add(Para("Shop name, documents and people are set inside IntraForge (Apps > Settings, Organization > Members, where each person gets their role).", Ui.Muted));
+            CancelButton = AddButton("Close", ButtonKind.Secondary, DialogResult.Cancel);
+            ResumeLayout(true);
+            FitToContent();
+        }
+
+        static Card SectionCard(string title)
+        {
+            Card c = new Card { FixedWidth = ContentWidth, Padding = Ui.Pad(18, 14, 18, 16), Margin = Ui.Pad(0, 0, 0, 12) };
+            c.Tag = title;
+            return c;
+        }
+
+        // Children are docked top: added in reverse, so they show in the order given, under the card's title.
+        static void AddToCard(Card card, params Control[] top)
+        {
+            for (int i = top.Length - 1; i >= 0; i--) { top[i].Dock = DockStyle.Top; card.Controls.Add(top[i]); }
+            Label title = Ui.Label((string)card.Tag, Ui.H3, Ui.Text, 0);
+            title.Dock = DockStyle.Top;
+            title.Margin = Padding.Empty;
+            title.Padding = Ui.Pad(0, 0, 0, 8);
+            card.Controls.Add(title);
         }
 
         Control ShopNetworkSection(Kit kit)
         {
-            FlowLayoutPanel box = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = new Padding(3, 16, 3, 3) };
-            box.Controls.Add(new Label { Text = "Shop network", Font = new Font("Segoe UI Semibold", 10.5f), AutoSize = true });
-            Label state = new Label { AutoSize = true, MaximumSize = new Size(600, 0), Margin = new Padding(3, 4, 3, 6) };
-            FlowLayoutPanel buttons = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Width = 610 };
+            Card box = SectionCard("Shop network");
+            Label state = Ui.Label("", Ui.Regular, Ui.Text, ContentWidth - 40);
+            state.Margin = Ui.Pad(0, 0, 0, 10);
+            FlowLayoutPanel buttons = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Margin = Padding.Empty };
             if (!kit.ShopNetwork)
             {
-                state.Text = "Only this computer can open IntraForge. You can let the other PCs in the shop open it too -- over the shop's own " +
-                             "network only, never the internet.";
-                Button on = new Button { Text = "Allow other PCs in this shop...", Width = 240, Height = 32 };
+                state.Text = "Only this computer can open IntraForge. You can let the other PCs and the customers' phones in the shop open it too -- " +
+                             "over the shop's own network only, never the internet.";
+                UiButton on = new UiButton("Allow other PCs in this shop...", ButtonKind.Primary, Ui.GNetwork) { Margin = Padding.Empty };
                 on.Click += (s, e) =>
                 {
                     using (ShopNetworkConfirmForm c = new ShopNetworkConfirmForm())
@@ -1318,12 +1497,12 @@ namespace IntraForge.ControlCenter
                 state.Text = "The other PCs in the shop open IntraForge at " + kit.LanUrl + "  (or https://" + kit.LanAddress + ":" + kit.Port + ")." +
                              Environment.NewLine + "Each of them trusts IntraForge's certificate once: " + Path.Combine(kit.ShopNetworkDir, "Trust-IntraForge-on-this-PC.cmd") +
                              (now != null && now != kit.LanAddress ? Environment.NewLine + "This PC's address is now " + now + ": press Update the address." : "");
-                if (now != null && now != kit.LanAddress) state.ForeColor = Color.FromArgb(180, 83, 9);
-                Button update = new Button { Text = "Update the address", Width = 170, Height = 32 };
+                if (now != null && now != kit.LanAddress) state.ForeColor = Ui.Warn;
+                UiButton update = new UiButton("Update the address", ButtonKind.Secondary, Ui.GRestart) { Margin = Ui.Pad(0, 0, 8, 6) };
                 update.Click += (s, e) => Apply(kit, "Shop", "Updating the shop-network address");
-                Button folder = new Button { Text = "Open the certificate folder", Width = 210, Height = 32 };
+                UiButton folder = new UiButton("Open the certificate folder", ButtonKind.Secondary, Ui.GFolder) { Margin = Ui.Pad(0, 0, 8, 6) };
                 folder.Click += (s, e) => { try { Process.Start("explorer.exe", "\"" + kit.ShopNetworkDir + "\""); } catch (Exception) { } };
-                Button off = new Button { Text = "This computer only", Width = 170, Height = 32 };
+                UiButton off = new UiButton("This computer only", ButtonKind.Secondary, Ui.GStop) { Margin = Ui.Pad(0, 0, 8, 6) };
                 off.Click += (s, e) =>
                 {
                     if (MessageBox.Show(this, "Make IntraForge reachable from this computer only? The other PCs in the shop can no longer open it.",
@@ -1334,8 +1513,7 @@ namespace IntraForge.ControlCenter
                 buttons.Controls.Add(folder);
                 buttons.Controls.Add(off);
             }
-            box.Controls.Add(state);
-            box.Controls.Add(buttons);
+            AddToCard(box, state, buttons);
             return box;
         }
 
@@ -1353,74 +1531,54 @@ namespace IntraForge.ControlCenter
     }
 
     // Before IntraForge is opened to the shop's network: what that means, and that it must be the shop's own network.
-    sealed class ShopNetworkConfirmForm : Form
+    sealed class ShopNetworkConfirmForm : UiDialog
     {
-        public ShopNetworkConfirmForm()
+        public ShopNetworkConfirmForm() : base("Allow other PCs in this shop",
+            "The other PCs in the shop will open IntraForge in their browser, and everyone signs in with their own account.", Ui.GNetwork, Ui.Accent)
         {
-            Text = "Allow other PCs in this shop";
-            Font = new Font("Segoe UI", 9.5f);
-            ClientSize = new Size(600, 430);
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
-            MinimizeBox = false;
-            StartPosition = FormStartPosition.CenterParent;
-            FlowLayoutPanel p = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, Padding = new Padding(18), WrapContents = false };
-            p.Controls.Add(new Label
-            {
-                AutoSize = true,
-                MaximumSize = new Size(560, 0),
-                Text = "The other PCs in the shop will open IntraForge in their browser, and everyone signs in with their own account." + Environment.NewLine + Environment.NewLine +
-                       "What happens:" + Environment.NewLine +
-                       "  - IntraForge also answers on this PC's network address (port 8443 or your chosen port)." + Environment.NewLine +
-                       "  - Windows Firewall lets in the shop's PRIVATE network only, and blocks public networks." + Environment.NewLine +
-                       "  - A certificate file and a one-click script for the staff PCs are put in the data folder." + Environment.NewLine +
-                       "  - Nothing is opened to the internet. You can switch back to this-computer-only at any time." + Environment.NewLine + Environment.NewLine +
-                       "Before you continue:" + Environment.NewLine +
-                       "  - This PC must be on the shop's own network, marked Private in Windows (not a public or customer Wi-Fi)." + Environment.NewLine +
-                       "  - Customers use a separate guest Wi-Fi that cannot reach the shop's PCs." + Environment.NewLine +
-                       "  - Give this PC a fixed address in the router (DHCP reservation)." + Environment.NewLine + Environment.NewLine +
-                       "Windows asks for administrator rights (the firewall).",
-            });
-            CheckBox sure = new CheckBox { Text = "This PC is on the shop's own network, not a public or customer Wi-Fi", AutoSize = true, Margin = new Padding(3, 14, 3, 3) };
-            p.Controls.Add(sure);
-            FlowLayoutPanel buttons = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(3, 12, 3, 3) };
-            Button go = new Button { Text = "Allow", Width = 120, Height = 32, Enabled = false, DialogResult = DialogResult.OK };
-            Button cancel = new Button { Text = "Cancel", Width = 100, Height = 32, DialogResult = DialogResult.Cancel };
+            SuspendLayout();
+            Body.Controls.Add(Section("What happens"));
+            Body.Controls.Add(Bullets(Ui.GCheck, Ui.Success,
+                "IntraForge also answers on this PC's network address (port 8443 or your chosen port).",
+                "Windows Firewall lets in the shop's PRIVATE network only, and blocks public networks.",
+                "A certificate file and a one-click script for the staff PCs are put in the data folder.",
+                "Nothing is opened to the internet. You can switch back to this-computer-only at any time."));
+            Body.Controls.Add(Section("Before you continue"));
+            Body.Controls.Add(Bullets(Ui.GWarn, Ui.Warn,
+                "This PC must be on the shop's own network, marked Private in Windows (not a public or customer Wi-Fi).",
+                "Customers use a separate guest Wi-Fi that cannot reach the shop's PCs.",
+                "Give this PC a fixed address in the router (DHCP reservation)."));
+            Body.Controls.Add(Para("Windows asks for administrator rights once (for the firewall).", Ui.Muted));
+            CheckBox sure = new CheckBox { Text = "This PC is on the shop's own network, not a public or customer Wi-Fi", AutoSize = true, Font = Ui.Semibold, Margin = Ui.Pad(0, 6, 0, 0) };
+            Body.Controls.Add(sure);
+            UiButton go = AddButton("Allow", ButtonKind.Primary, DialogResult.OK);
+            go.Enabled = false;
+            CancelButton = AddButton("Cancel", ButtonKind.Secondary, DialogResult.Cancel);
             sure.CheckedChanged += (s, e) => go.Enabled = sure.Checked;
-            buttons.Controls.Add(go);
-            buttons.Controls.Add(cancel);
-            p.Controls.Add(buttons);
-            Controls.Add(p);
             AcceptButton = go;
-            CancelButton = cancel;
+            ResumeLayout(true);
+            FitToContent();
         }
     }
 
     // The output of an elevated script (it ran in its own window).
-    sealed class OutputForm : Form
+    sealed class OutputForm : UiDialog
     {
-        public OutputForm(string title, string output, bool ok)
+        public OutputForm(string title, string output, bool ok) : base(title,
+            ok ? "Done." : "Not done -- the lines below say why. Nothing else was changed.", ok ? Ui.GCheck : Ui.GError, ok ? Ui.Success : Ui.Danger)
         {
-            Text = title + (ok ? " -- done" : " -- not done");
-            Font = new Font("Segoe UI", 9.5f);
-            ClientSize = new Size(760, 460);
-            StartPosition = FormStartPosition.CenterParent;
-            Label head = new Label
-            {
-                Dock = DockStyle.Top,
-                Height = 34,
-                Padding = new Padding(10, 8, 10, 0),
-                Font = new Font("Segoe UI Semibold", 10.5f),
-                ForeColor = ok ? Color.FromArgb(22, 163, 74) : Color.FromArgb(220, 38, 38),
-                Text = ok ? "Done." : "Not done -- the lines below say why. Nothing else was changed.",
-            };
-            TextBox text = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Font = new Font("Consolas", 9f), BackColor = Color.White, Text = (output ?? "").Trim() };
-            Button close = new Button { Text = "Close", Dock = DockStyle.Bottom, Height = 34, DialogResult = DialogResult.OK };
-            Controls.Add(text);
-            Controls.Add(head);
-            Controls.Add(close);
+            SuspendLayout();
+            TextBox text = Consoles.Make(true);
+            text.Text = (output ?? "").Trim().Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
+            Card frame = Consoles.Framed(text, true);
+            frame.Size = Ui.Sz(ContentWidth, 260);
+            frame.Margin = Ui.Pad(0, 8, 0, 0);
+            Body.Controls.Add(frame);
+            UiButton close = AddButton("Close", ButtonKind.Primary, DialogResult.OK);
             AcceptButton = close;
             CancelButton = close;
+            ResumeLayout(true);
+            FitToContent();
         }
     }
 

@@ -84,7 +84,7 @@ CC_TMP="$(mktemp -d)"
   -win32icon:"$(cygpath -w "$REPO/installer/assets/icon.ico")" -win32manifest:"$(cygpath -w "$HERE/control-center/app.manifest")" \
   -reference:System.Windows.Forms.dll -reference:System.Drawing.dll -reference:System.Management.dll \
   -reference:System.Web.Extensions.dll -reference:System.IO.Compression.dll -reference:System.IO.Compression.FileSystem.dll \
-  "$(cygpath -w "$HERE/control-center/ControlCenter.cs")"
+  "$(cygpath -w "$HERE/control-center/ControlCenter.cs")" "$(cygpath -w "$HERE/control-center/Ui.cs")"
 echo "   control center compiled"
 
 echo "== 3/6 pin MinIO to the exact tested release"
