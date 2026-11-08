@@ -21,27 +21,32 @@ export function medicineKey(sourceUrl: string, name: string): string {
   return sourceUrl.trim() || name.trim().toLowerCase();
 }
 
-/** The atomic batches that create these medicines, skipping any the Pharmacy already has. */
+/** The atomic batches that create these medicines, skipping any the Pharmacy already has (by source link or name).
+ * An item number goes to one medicine only: a catalogue sometimes gives two different medicines the same product id
+ * (it reuses a picture), and the second is then imported without one rather than left out. */
 export function importBatches(
   schema: BusinessSchema,
   medicines: Medicine[],
   existing: Existing,
   rate: number | null,
-): { batches: Operation[][]; skipped: number } {
+): { batches: Operation[][]; skipped: number; withoutNumber: number } {
   const part = schema.modelId("part");
   const numberModel = schema.modelId("part_number");
   const f = (key: string) => schema.id("part", key);
   const batches: Operation[][] = [];
   let current: Operation[] = [];
   let skipped = 0;
+  let withoutNumber = 0;
   const seen = new Set(existing.numbers);
   const known = new Set(existing.keys);
   medicines.forEach((m) => {
-    if ((m.item_number && seen.has(m.item_number)) || known.has(medicineKey(m.source_url, m.name))) {
+    if (known.has(medicineKey(m.source_url, m.name))) {
       skipped++;
       return;
     }
     known.add(medicineKey(m.source_url, m.name));
+    const number = m.item_number && !seen.has(m.item_number) ? m.item_number : null;
+    if (m.item_number && !number) withoutNumber++;
     const ref = `m${current.length}`;
     const data: Record<string, unknown> = {
       [f("name")]: m.name,
@@ -61,13 +66,13 @@ export function importBatches(
     const price = sellingPrice(m.reference_price, rate);
     if (price) data[f("list_price")] = price;
     current.push({ op: "create", model: part, ref, data });
-    if (m.item_number) {
-      seen.add(m.item_number);
+    if (number) {
+      seen.add(number);
       current.push({
         op: "create",
         model: numberModel,
         data: {
-          [schema.id("part_number", "number")]: m.item_number,
+          [schema.id("part_number", "number")]: number,
           [schema.id("part_number", "source")]: "catalogue import",
           [schema.id("part_number", "part_number_part")]: { $ref: ref },
         },
@@ -79,7 +84,7 @@ export function importBatches(
     }
   });
   if (current.length) batches.push(current);
-  return { batches, skipped };
+  return { batches, skipped, withoutNumber };
 }
 
 async function existingCatalogue(schema: BusinessSchema): Promise<Existing> {
@@ -127,7 +132,12 @@ export function MedicineImportButton({ onImported }: { onImported: () => void })
       setProgress("Checking what the Pharmacy already has...");
       const existing = await existingCatalogue(schema);
       const parsedRate = rate.trim() ? Number(rate.replace(",", ".")) : null;
-      const { batches, skipped } = importBatches(schema, medicines, existing, parsedRate && parsedRate > 0 ? parsedRate : null);
+      const { batches, skipped, withoutNumber } = importBatches(
+        schema,
+        medicines,
+        existing,
+        parsedRate && parsedRate > 0 ? parsedRate : null,
+      );
       for (let i = 0; i < batches.length; i++) {
         const key = newIdempotencyKey();
         for (let attempt = 0; ; attempt++) {
@@ -150,7 +160,10 @@ export function MedicineImportButton({ onImported }: { onImported: () => void })
       }
       setDone(
         `${imported.toLocaleString()} medicines imported from ${rows.toLocaleString()} rows` +
-          (skipped ? `; ${skipped.toLocaleString()} were already here and were left as they are.` : "."),
+          (skipped ? `; ${skipped.toLocaleString()} were already here and were left as they are.` : ".") +
+          (withoutNumber
+            ? ` ${withoutNumber.toLocaleString()} got no item number because the catalogue gives another medicine the same one: add theirs by hand.`
+            : ""),
       );
       onImported();
     } catch (err) {

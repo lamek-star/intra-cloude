@@ -102,11 +102,28 @@ describe("importing into the Pharmacy", () => {
     const { batches, skipped } = importBatches(
       schema,
       [medicine(1), medicine(2), medicine(1)],
-      { numbers: new Set(["NM-1001"]), keys: new Set() },
+      { numbers: new Set(["NM-1001"]), keys: new Set(["medicine 1"]) },
       null,
     );
     expect(skipped).toBe(2);
     expect(batches.flat().filter((op) => op.model === "M:part")).toHaveLength(1);
+  });
+
+  it("imports two different medicines that share a catalogue id, the second without an item number", () => {
+    const first = medicineFromRow({ med_name: "DAPATAG M", med_url: "https://x.example/dapatag", img_urls: "https://x.example/product-v1/600x600/1123362/a.jpg" })!;
+    const second = medicineFromRow({ med_name: "DAPATEN", med_url: "https://x.example/dapaten", img_urls: "https://x.example/product-v1/600x600/1123362/b.jpg" })!;
+    const { batches, skipped, withoutNumber } = importBatches(schema, [first, second], none(), null);
+    const ops = batches.flat();
+    expect(skipped).toBe(0);
+    expect(withoutNumber).toBe(1);
+    expect(ops.filter((op) => op.model === "M:part")).toHaveLength(2);
+    expect(ops.filter((op) => op.model === "M:part_number").map((op) => op.data["F:part_number.number"])).toEqual(["NM-1123362"]);
+  });
+
+  it("a number the Pharmacy already uses goes to no new medicine", () => {
+    const { batches, withoutNumber } = importBatches(schema, [medicine(5)], { numbers: new Set(["NM-1005"]), keys: new Set() }, null);
+    expect(withoutNumber).toBe(1);
+    expect(batches.flat().filter((op) => op.model === "M:part_number")).toHaveLength(0);
   });
 
   it("recognises a medicine without an item number by its source link, so a repeated import adds no copy", () => {
