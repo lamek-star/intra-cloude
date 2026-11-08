@@ -91,6 +91,9 @@ namespace IntraForge.ControlCenter
         // shown to the owner so staff phones can join; the password is redacted from diagnostics like any other.
         public bool Hotspot;
         public string HotspotSsid = "", HotspotPassword = "";
+        // The shop's own names (ADR-0021): their ending ("lan"), the apps that have one ("pharmacy=/apps/pharmacy/,..."),
+        // and whether this PC runs the name server for a router network.
+        public string NameDomain = "lan", AppNames = "", Profiles = "";
         // The kit's docker-compose.yml names its project "intraforge-shop"; the override exists only to rehearse the
         // Control Center against another stack.
         public static readonly string Project = Environment.GetEnvironmentVariable("INTRAFORGE_CC_PROJECT") ?? "intraforge-shop";
@@ -113,6 +116,9 @@ namespace IntraForge.ControlCenter
                     if (line.StartsWith("SHOP_HOTSPOT=")) k.Hotspot = line.Substring(13).Trim() == "1";
                     if (line.StartsWith("SHOP_HOTSPOT_SSID=")) k.HotspotSsid = line.Substring(18).Trim();
                     if (line.StartsWith("SHOP_HOTSPOT_PASSWORD=")) k.HotspotPassword = line.Substring(22).Trim();
+                    if (line.StartsWith("SHOP_NAME_DOMAIN=") && line.Length > 17) k.NameDomain = line.Substring(17).Trim();
+                    if (line.StartsWith("SHOP_APP_NAMES=")) k.AppNames = line.Substring(15).Trim();
+                    if (line.StartsWith("COMPOSE_PROFILES=")) k.Profiles = line.Substring(17).Trim();
                 }
             }
             string ver = Path.Combine(k.Dir, "VERSION");
@@ -130,6 +136,26 @@ namespace IntraForge.ControlCenter
         public bool ShopNetwork { get { return Network == "shop"; } }
         public string LanUrl { get { return "https://" + LanName + ":" + Port; } }
         public string ShopNetworkDir { get { return Path.Combine(DataDir, "shop-network"); } }
+        public bool NameServer { get { return Profiles.Contains("names"); } }
+        // The names' addresses, IntraForge first: "https://intraforge.lan:8443", "https://pharmacy.lan:8443", ...
+        public List<string> NameUrls()
+        {
+            List<string> urls = new List<string>();
+            foreach (string entry in AppNames.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string name = entry.Split('=')[0].Trim();
+                if (Regex.IsMatch(name, "^[a-z0-9-]+$")) urls.Add("https://" + name + "." + NameDomain + ":" + Port);
+            }
+            return urls;
+        }
+        // The same rule as Set-IntraForgeNetwork.ps1's Test-ShopNameDomain; it also keeps the value safe on a command line.
+        public static bool IsNameDomain(string domain)
+        {
+            if (domain == null || domain.Length > 200) return false;
+            if (!Regex.IsMatch(domain, @"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\z")) return false;
+            if (domain == "local" || domain.EndsWith(".local")) return false;
+            return !Regex.IsMatch(domain, @"^[0-9.]+$");
+        }
 
         // This PC's address on the network that leads to the router (not a virtual WSL/Hyper-V adapter), or null.
         public static string CurrentLanAddress()
@@ -1560,16 +1586,40 @@ namespace IntraForge.ControlCenter
                 buttons.Controls.Add(folder);
                 buttons.Controls.Add(off);
             }
+            if (kit.ShopNetwork)
+            {
+                List<string> urls = kit.NameUrls();
+                if (urls.Count > 0)
+                    state.Text += Environment.NewLine + Environment.NewLine + "Names: " + string.Join("   ", urls.ToArray()) +
+                                  (kit.NameServer ? Environment.NewLine + "Phones and PCs find these names once the router's DNS server is set to " +
+                                                    kit.LanAddress + " (router settings > DHCP / LAN). Keep this PC on." : "");
+                UiButton rename = new UiButton("Change the names' ending...", ButtonKind.Secondary, Ui.GSettings) { Margin = Ui.Pad(0, 0, 8, 6) };
+                rename.Click += (s, e) =>
+                {
+                    using (NameDomainForm f = new NameDomainForm(kit.NameDomain))
+                    {
+                        if (f.ShowDialog(this) != DialogResult.OK) return;
+                        Apply(kit, kit.Hotspot ? "Hotspot" : "Shop", "Changing the shop's names", f.Domain);
+                    }
+                };
+                buttons.Controls.Add(rename);
+            }
             AddToCard(box, state, buttons);
             return box;
         }
 
-        void Apply(Kit kit, string mode, string title)
+        void Apply(Kit kit, string mode, string title, string nameDomain = null)
         {
+            string args = "-Mode " + mode;
+            if (nameDomain != null)
+            {
+                if (!Kit.IsNameDomain(nameDomain)) return;
+                args += " -NameDomain " + nameDomain;
+            }
             Enabled = false;
             UseWaitCursor = true;
             ProcResult res;
-            try { res = Proc.PowerShellElevated(kit, "Set-IntraForgeNetwork.ps1", "-Mode " + mode, 15 * 60000); }
+            try { res = Proc.PowerShellElevated(kit, "Set-IntraForgeNetwork.ps1", args, 15 * 60000); }
             finally { UseWaitCursor = false; Enabled = true; }
             using (OutputForm o = new OutputForm(title, res.TimedOut ? res.Output + Environment.NewLine + "Stopped after the time limit." : res.Output, res.ExitCode == 0))
                 o.ShowDialog(this);
@@ -1588,6 +1638,8 @@ namespace IntraForge.ControlCenter
             Body.Controls.Add(Bullets(Ui.GCheck, Ui.Success,
                 "IntraForge also answers on this PC's network address (port 8443 or your chosen port).",
                 "Windows Firewall lets in the shop's PRIVATE network only, and blocks public networks.",
+                "IntraForge and each app get a name, e.g. https://pharmacy.lan:8443; this PC answers those names for the shop " +
+                "once the router's DNS server is set to this PC.",
                 "A certificate file and a one-click script for the staff PCs are put in the data folder.",
                 "Nothing is opened to the internet. You can switch back to this-computer-only at any time."));
             Body.Controls.Add(Section("Before you continue"));
@@ -1602,6 +1654,36 @@ namespace IntraForge.ControlCenter
             go.Enabled = false;
             CancelButton = AddButton("Cancel", ButtonKind.Secondary, DialogResult.Cancel);
             sure.CheckedChanged += (s, e) => go.Enabled = sure.Checked;
+            AcceptButton = go;
+            ResumeLayout(true);
+            FitToContent();
+        }
+    }
+
+    // What the shop's names end in (ADR-0021): "lan", or a name under the shop's own domain.
+    sealed class NameDomainForm : UiDialog
+    {
+        readonly TextBox box;
+        public string Domain { get { return box.Text.Trim().ToLowerInvariant().TrimStart('.'); } }
+
+        public NameDomainForm(string current) : base("The shop's names",
+            "IntraForge and each app get a name on the shop network: intraforge, pharmacy, spare-parts, pay ...", Ui.GNetwork, Ui.Accent)
+        {
+            SuspendLayout();
+            Body.Controls.Add(Para("What the names end in. \"lan\" gives https://pharmacy.lan:8443. A name under your own domain, " +
+                                   "for example shop.harmongt.uk, gives https://pharmacy.shop.harmongt.uk:8443 and stays on the shop network.", Ui.Text));
+            box = new TextBox { Text = current, Font = Ui.Regular, Width = Ui.Px(320), Margin = Ui.Pad(0, 8, 0, 4) };
+            Body.Controls.Add(box);
+            Label hint = Para("Letters, digits, dots and dashes. Not .local.", Ui.Muted);
+            Body.Controls.Add(hint);
+            UiButton go = AddButton("Change", ButtonKind.Primary, DialogResult.OK);
+            CancelButton = AddButton("Cancel", ButtonKind.Secondary, DialogResult.Cancel);
+            box.TextChanged += (s, e) =>
+            {
+                bool ok = Kit.IsNameDomain(Domain);
+                go.Enabled = ok;
+                hint.ForeColor = ok ? Ui.Muted : Ui.Danger;
+            };
             AcceptButton = go;
             ResumeLayout(true);
             FitToContent();

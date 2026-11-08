@@ -451,3 +451,92 @@ function Stop-ShopHotspot {
     }
     catch { Write-Host "The hotspot could not be stopped: $($_.Exception.Message)" -ForegroundColor Yellow }
 }
+
+# ---- the shop's own names (ADR-0021) ---------------------------------------------------------------------------------
+# Phones and PCs find IntraForge and its apps by name: https://pharmacy.lan:8443 instead of an address. On a router network
+# the "names" service (CoreDNS) on this PC answers every name ending in the shop's domain with this PC's address and passes
+# all other names on; the router hands this PC out as the shop's name server. On the shop's own Wi-Fi (hotspot), Windows'
+# hotspot already answers the phones' name lookups from this PC's hosts file, so the names are written there.
+$script:HostsMarkerBegin = '# IntraForge shop names -- begin (written by Set-IntraForgeNetwork.ps1; do not edit)'
+$script:HostsMarkerEnd = '# IntraForge shop names -- end'
+
+# A domain the shop's names end in: "lan" or a name under the shop's own domain, e.g. "shop.harmongt.uk". Never ".local"
+# (multicast DNS: phones would not ask the name server) and never an address.
+function Test-ShopNameDomain([string]$Domain) {
+    if ($Domain -notmatch '^(?=.{1,200}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$') { return $false }
+    if ($Domain -eq 'local' -or $Domain.EndsWith('.local')) { return $false }
+    if ($Domain -match '^[0-9.]+$') { return $false }
+    return $true
+}
+
+# The names and the page each one opens, for the apps this installation runs ("running services" from docker compose).
+function Get-ShopAppNames([string[]]$RunningServices) {
+    $names = [ordered]@{ intraforge = '/' }
+    if ($RunningServices -contains 'spareparts') { $names['spare-parts'] = '/apps/spare-parts/' }
+    if ($RunningServices -contains 'pharmacy') { $names['pharmacy'] = '/apps/pharmacy/' }
+    $pay = @($RunningServices | Where-Object { $_ -match '^pay-[1-3]$' } | Sort-Object) | Select-Object -First 1
+    if ($pay) { $names['pay'] = "/apps/$pay/" }
+    return $names
+}
+
+# CoreDNS configuration: every name in the shop's domain is this PC (IPv4; no IPv6 answer, so phones do not wait for one),
+# everything else goes to the upstream name servers (the router's).
+function New-ShopNamesCorefile([string]$Domain, [string]$Address, [string[]]$Upstreams) {
+    if (-not (Test-ShopNameDomain $Domain)) { throw "Not a usable domain for the shop's names: '$Domain'." }
+    if (-not ($Address -as [ipaddress])) { throw "Not an address: '$Address'." }
+    $up = @($Upstreams | Where-Object { $_ -as [ipaddress] -and $_ -ne $Address })
+    if ($up.Count -eq 0) { throw 'No name server to pass other names on to (the router''s address was not found).' }
+    return @"
+# Written by Set-IntraForgeNetwork.ps1 (ADR-0021). Every name ending in .$Domain is this PC.
+$Domain {
+    template IN A {
+        answer "{{ .Name }} 60 IN A $Address"
+    }
+    template IN AAAA {
+        rcode NOERROR
+    }
+    errors
+}
+. {
+    forward . $($up -join ' ')
+    cache 300
+    errors
+}
+"@
+}
+
+# Proxy rules: each app's name opens that app (a redirect from the name's front page to the app's page).
+function New-ShopNamesCaddy([string]$Domain, [System.Collections.Specialized.OrderedDictionary]$Names) {
+    $lines = @('# Written by Set-IntraForgeNetwork.ps1 (ADR-0021): each app''s own name opens that app.')
+    foreach ($entry in $Names.GetEnumerator()) {
+        if ($entry.Value -eq '/') { continue }
+        if ($entry.Key -notmatch '^[a-z0-9-]+$' -or $entry.Value -notmatch '^/apps/[a-z0-9-]+/$') { throw "Not a usable app name: $($entry.Key)" }
+        $id = $entry.Key -replace '-', '_'
+        $lines += "@ifname_$id {", "`thost $($entry.Key).$Domain", "`tpath /", '}', "redir @ifname_$id $($entry.Value) 302"
+    }
+    return ($lines -join "`n") + "`n"
+}
+
+# Replaces IntraForge's block in a hosts file (only that block; everything else in the file is kept).
+function Set-ShopHostsEntries([string]$Address, [string[]]$HostNames, [string]$HostsFile = "$env:SystemRoot\System32\drivers\etc\hosts") {
+    $lines = @()
+    if (Test-Path $HostsFile) { $lines = @([IO.File]::ReadAllLines($HostsFile)) }
+    $kept = New-Object System.Collections.Generic.List[string]
+    $inside = $false
+    foreach ($line in $lines) {
+        if ($line -eq $script:HostsMarkerBegin) { $inside = $true; continue }
+        if ($line -eq $script:HostsMarkerEnd) { $inside = $false; continue }
+        if (-not $inside) { $kept.Add($line) }
+    }
+    while ($kept.Count -gt 0 -and $kept[$kept.Count - 1].Trim() -eq '') { $kept.RemoveAt($kept.Count - 1) }
+    if ($Address -and $HostNames) {
+        $kept.Add(''); $kept.Add($script:HostsMarkerBegin)
+        foreach ($h in $HostNames) { $kept.Add("$Address`t$h") }
+        $kept.Add($script:HostsMarkerEnd)
+    }
+    [IO.File]::WriteAllText($HostsFile, (($kept -join "`r`n") + "`r`n"), (New-Object System.Text.ASCIIEncoding))
+}
+
+function Remove-ShopHostsEntries([string]$HostsFile = "$env:SystemRoot\System32\drivers\etc\hosts") {
+    Set-ShopHostsEntries -Address '' -HostNames @() -HostsFile $HostsFile
+}

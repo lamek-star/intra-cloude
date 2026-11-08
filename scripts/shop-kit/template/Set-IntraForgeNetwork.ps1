@@ -13,12 +13,19 @@
                    does follows on that network (this PC is 192.168.137.1 on it). It comes back by itself at every start.
     -Mode ThisPC   Back to this computer only: the firewall rules, the extra names and the shop-network folder are removed
                    (and this PC's hotspot is switched off).
+    Names (ADR-0021): in both shop modes IntraForge and each app also get a name ending in the shop's domain (default
+    "lan"): https://intraforge.lan:8443, https://pharmacy.lan:8443 ... On a router network the "names" service on this PC
+    answers them (the router must hand this PC out as the name server); on the hotspot, Windows answers them from this
+    PC's hosts file.
     Nothing is opened to the internet in either mode. Needs administrator rights (the firewall); the Control Center asks.
+.PARAMETER NameDomain
+    What the shop's names end in: "lan" (the default) or a name under the shop's own domain, e.g. "shop.harmongt.uk".
+    Kept in .env for the next time.
 .PARAMETER ResultFile
     The Control Center passes a file to receive this script's output (it runs elevated, in its own window).
 #>
 [CmdletBinding()]
-param([Parameter(Mandatory = $true)][ValidateSet('Shop', 'Hotspot', 'ThisPC')][string]$Mode, [string]$ResultFile)
+param([Parameter(Mandatory = $true)][ValidateSet('Shop', 'Hotspot', 'ThisPC')][string]$Mode, [string]$NameDomain, [string]$ResultFile)
 
 Set-Location $PSScriptRoot
 . (Join-Path $PSScriptRoot 'IntraForgeShop.Common.ps1')
@@ -37,7 +44,7 @@ try {
 
     # The LAN settings live in .env (kept by upgrades); everything else in it is left exactly as it is.
     function Set-NetworkSettings([System.Collections.Specialized.OrderedDictionary]$Values) {
-        $names = 'SHOP_NETWORK|SHOP_HOTSPOT|SHOP_BIND_V4|SHOP_BIND_V6|SHOP_TLS_HOSTNAMES|SHOP_DEFAULT_SNI|SHOP_LAN_ADDRESS|SHOP_LAN_NAME|SHOP_PUBLIC_URLS|SHOP_SITES_ADDRESSES|ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS'
+        $names = 'SHOP_NETWORK|SHOP_HOTSPOT|SHOP_BIND_V4|SHOP_BIND_V6|SHOP_TLS_HOSTNAMES|SHOP_DEFAULT_SNI|SHOP_LAN_ADDRESS|SHOP_LAN_NAME|SHOP_PUBLIC_URLS|SHOP_SITES_ADDRESSES|ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS|SHOP_APP_NAMES|COMPOSE_PROFILES'
         $kept = [IO.File]::ReadAllLines($envPath) | Where-Object { $_ -notmatch "^($names)=" }
         $text = (($kept -join "`n").TrimEnd("`r", "`n")) + "`n" + (($Values.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join "`n") + "`n"
         [IO.File]::WriteAllText($envPath, $text, (New-Object System.Text.UTF8Encoding($false)))
@@ -57,8 +64,18 @@ try {
 
     Get-NetFirewallRule -Group $RuleGroup -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 
+    $namesFolder = Join-Path $folder 'names'
+    # The name server runs only on a router network; it is stopped whenever that is not the mode any more.
+    function Stop-NamesService {
+        & docker compose --profile names rm -s -f names 2>&1 | Out-Null
+    }
+
     if ($Mode -eq 'Shop' -or $Mode -eq 'Hotspot') {
         $name = $env:COMPUTERNAME.ToLowerInvariant()
+        $domain = if ($NameDomain) { $NameDomain.Trim().ToLowerInvariant().TrimStart('.') } else { Get-ShopSetting 'SHOP_NAME_DOMAIN' 'lan' }
+        if (-not (Test-ShopNameDomain $domain)) {
+            throw "'$domain' cannot be the ending of the shop's names. Use lan, or a name under your own domain such as shop.example.com (never .local)."
+        }
         if ($Mode -eq 'Hotspot') {
             Step "Starting the shop's own Wi-Fi on this PC"
             # Name and password are kept in .env, so phones that joined once join again after every restart.
@@ -89,7 +106,29 @@ try {
             if (-not $address) { throw 'This PC has no usable address on the shop network (check the cable / Wi-Fi and the router).' }
             Write-Host "Network: $($config.NetProfile.Name) ($category)   this PC: $name  $address"
             if ((Get-ShopSetting 'SHOP_HOTSPOT' '') -eq '1') { Stop-ShopHotspot }
+            # Where the name server passes every other name: the name servers this PC uses now, else the router.
+            $upstreams = @((Get-DnsClientServerAddress -InterfaceIndex $config.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).ServerAddresses) +
+                @($config.IPv4DefaultGateway.NextHop) | Where-Object { $_ -and $_ -ne $address } | Select-Object -Unique
         }
+
+        Step "The shop's names (ending in .$domain)"
+        Start-DockerIfNeeded
+        $running = @(& docker compose ps --services --status running 2>$null)
+        $appNames = Get-ShopAppNames $running
+        $hostNames = @($appNames.Keys | ForEach-Object { "$_.$domain" })
+        New-Item -ItemType Directory -Force (Join-Path $namesFolder 'proxy'), (Join-Path $namesFolder 'dns') | Out-Null
+        [IO.File]::WriteAllText((Join-Path $namesFolder 'proxy\names.caddy'), (New-ShopNamesCaddy $domain $appNames), (New-Object System.Text.UTF8Encoding($false)))
+        if ($Mode -eq 'Shop') {
+            [IO.File]::WriteAllText((Join-Path $namesFolder 'dns\Corefile'), (New-ShopNamesCorefile $domain $address $upstreams), (New-Object System.Text.UTF8Encoding($false)))
+        }
+        else {
+            Remove-Item -Force (Join-Path $namesFolder 'dns\Corefile') -ErrorAction SilentlyContinue
+            Stop-NamesService
+        }
+        # This PC finds the names through its hosts file; on the hotspot, so do the phones (Windows answers them from it).
+        try { Set-ShopHostsEntries $address $hostNames }
+        catch { Write-Host "The names could not be written to this PC's hosts file: $($_.Exception.Message)" -ForegroundColor Yellow }
+        Write-Host ($hostNames -join '   ')
 
         Step 'Saving the settings'
         $settings = [ordered]@{
@@ -97,16 +136,19 @@ try {
             SHOP_HOTSPOT         = $(if ($Mode -eq 'Hotspot') { '1' } else { '0' })
             SHOP_BIND_V4         = '0.0.0.0'
             SHOP_BIND_V6         = '::'
-            SHOP_TLS_HOSTNAMES   = "localhost 127.0.0.1 $address $name"
+            SHOP_TLS_HOSTNAMES   = "localhost 127.0.0.1 $address $name $($hostNames -join ' ')"
             SHOP_DEFAULT_SNI     = $address
             SHOP_LAN_ADDRESS     = $address
             SHOP_LAN_NAME        = $name
-            SHOP_PUBLIC_URLS     = "https://${address}:$port,https://${name}:$port"
+            SHOP_PUBLIC_URLS     = "https://${address}:$port,https://${name}:$port,https://intraforge.${domain}:$port"
             SHOP_SITES_ADDRESSES = "localhost:$sitesPort 127.0.0.1:$sitesPort ${address}:$sitesPort ${name}:$sitesPort"
-            ALLOWED_HOSTS        = "localhost,127.0.0.1,backend,$address,$name"
-            CSRF_TRUSTED_ORIGINS = "https://localhost:$port,https://${address}:$port,https://${name}:$port"
+            ALLOWED_HOSTS        = "localhost,127.0.0.1,backend,$address,$name,.$domain"
+            CSRF_TRUSTED_ORIGINS = "https://localhost:$port,https://${address}:$port,https://${name}:$port,https://*.${domain}:$port"
+            SHOP_APP_NAMES       = (($appNames.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ',')
+            COMPOSE_PROFILES     = $(if ($Mode -eq 'Shop') { 'names' } else { '' })
         }
         Set-NetworkSettings $settings
+        Set-EnvValues ([ordered]@{ SHOP_NAME_DOMAIN = $domain })
         if ($Mode -eq 'Hotspot') { Set-EnvValues ([ordered]@{ SHOP_HOTSPOT_SSID = $ssid; SHOP_HOTSPOT_PASSWORD = $password }) }
 
         Step 'Windows Firewall: shop (Private) network only'
@@ -115,11 +157,22 @@ try {
             -LocalPort $ports -Profile Private -RemoteAddress LocalSubnet -Action Allow | Out-Null
         New-NetFirewallRule -Group $RuleGroup -DisplayName "IntraForge - blocked on public networks (TCP $port, $sitesPort)" -Direction Inbound -Protocol TCP `
             -LocalPort $ports -Profile Public -Action Block | Out-Null
+        if ($Mode -eq 'Shop') {
+            foreach ($protocol in 'UDP', 'TCP') {
+                New-NetFirewallRule -Group $RuleGroup -DisplayName "IntraForge - shop names ($protocol 53)" -Direction Inbound -Protocol $protocol `
+                    -LocalPort 53 -Profile Private -RemoteAddress LocalSubnet -Action Allow | Out-Null
+                New-NetFirewallRule -Group $RuleGroup -DisplayName "IntraForge - shop names blocked on public networks ($protocol 53)" -Direction Inbound `
+                    -Protocol $protocol -LocalPort 53 -Profile Public -Action Block | Out-Null
+            }
+        }
         Write-Host "Allowed from the local subnet on Private networks; blocked on Public networks."
     }
     else {
         Step 'Back to this computer only'
         if ((Get-ShopSetting 'SHOP_HOTSPOT' '') -eq '1') { Stop-ShopHotspot; Write-Host "This PC's shop Wi-Fi was switched off." }
+        Start-DockerIfNeeded
+        Stop-NamesService
+        try { Remove-ShopHostsEntries } catch { Write-Host "The hosts file could not be tidied: $($_.Exception.Message)" -ForegroundColor Yellow }
         Set-NetworkSettings ([ordered]@{
             ALLOWED_HOSTS        = 'localhost,127.0.0.1,backend'
             CSRF_TRUSTED_ORIGINS = "https://localhost:$port"
@@ -145,6 +198,19 @@ try {
             if ($code -ne '200') { throw "IntraForge does not answer on https://${host_}:$port (answered '$code')." }
             Write-Host "Shop network: https://${host_}:$port  OK"
         }
+        $code = & curl.exe -sk -o NUL -w '%{http_code}' --max-time 15 "https://intraforge.${domain}:$port/healthz"
+        if ($code -ne '200') { throw "IntraForge does not answer at its name https://intraforge.${domain}:$port (answered '$code')." }
+        Write-Host "Name: https://intraforge.${domain}:$port  OK"
+        if ($Mode -eq 'Shop') {
+            $answer = $null
+            for ($i = 0; $i -lt 10 -and -not $answer; $i++) {
+                $answer = Resolve-DnsName "intraforge.$domain" -Server $address -Type A -DnsOnly -QuickTimeout -ErrorAction SilentlyContinue |
+                    Where-Object { $_.IPAddress -eq $address }
+                if (-not $answer) { Start-Sleep -Seconds 2 }
+            }
+            if (-not $answer) { throw "The shop's name server on $address does not answer (port 53). Another program may be using it." }
+            Write-Host "Name server on ${address}: intraforge.$domain -> $address  OK"
+        }
 
         Step 'The certificate the other PCs trust once'
         New-Item -ItemType Directory -Force $folder | Out-Null
@@ -159,9 +225,9 @@ rem signed-in Windows user, so the browser opens IntraForge without a security w
 certutil -user -addstore Root "%~dp0IntraForge-shop-certificate.crt"
 if errorlevel 1 (echo The certificate was not added. & pause & exit /b 1)
 echo.
-echo Done. Open IntraForge at:  https://${name}:$port
-echo (or https://${address}:$port if the name does not work)
-start "" "https://${name}:$port"
+echo Done. Open IntraForge at:  https://intraforge.${domain}:$port
+echo (or https://${name}:$port  or  https://${address}:$port  if the name does not work)
+start "" "https://${address}:$port"
 pause
 "@
         [IO.File]::WriteAllText((Join-Path $folder 'Trust-IntraForge-on-this-PC.cmd'), ($trust -replace "`r?`n", "`r`n"), (New-Object System.Text.ASCIIEncoding))
@@ -172,7 +238,8 @@ IntraForge on the other PCs in this shop
 On each staff PC (once):
   1. Copy this folder to the PC (USB drive), or open it from a shared folder.
   2. Double-click Trust-IntraForge-on-this-PC.cmd and confirm Windows' question.
-  3. Open  https://${name}:$port   (or  https://${address}:$port )
+  3. Open  https://intraforge.${domain}:$port   (or  https://${name}:$port  or  https://${address}:$port )
+     The apps have names too: $(($hostNames | Where-Object { $_ -ne "intraforge.$domain" } | ForEach-Object { "https://${_}:$port" }) -join '  ')
   4. Everyone signs in with THEIR OWN account. Never share the owner's sign-in.
 
 Keep in mind
@@ -181,6 +248,8 @@ Keep in mind
   - Give the shop PC a fixed address in the router (DHCP reservation for $address). If its address changes,
     open the Control Center > Settings > Shop network > Update.
   - This certificate is IntraForge's own. Trust it only on the shop's PCs.
+  - The names work when the router hands out $address as the shop's name server (DNS) -- or, on this PC's own
+    shop Wi-Fi, by themselves.
 "@
         [IO.File]::WriteAllText((Join-Path $folder 'README.txt'), ($readme -replace "`r?`n", "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
         Write-Host "Saved in $folder"
@@ -188,6 +257,12 @@ Keep in mind
         Write-Host ''
         Write-Host "Other PCs in the shop can now open:  https://${name}:$port   (or https://${address}:$port)" -ForegroundColor Green
         Write-Host "On each of them, run once: $folder\Trust-IntraForge-on-this-PC.cmd" -ForegroundColor Green
+        Write-Host ''
+        Write-Host "Names: $(($hostNames | ForEach-Object { "https://${_}:$port" }) -join '  ')" -ForegroundColor Green
+        if ($Mode -eq 'Shop') {
+            Write-Host "For phones and other PCs to find these names: in the router's settings (DHCP / LAN), set the DNS server to $address." -ForegroundColor Yellow
+            Write-Host "Keep this PC switched on: while it is off, devices that use it as their name server cannot look up names." -ForegroundColor Yellow
+        }
         if ($Mode -eq 'Hotspot') {
             Write-Host ''
             Write-Host "Phones and PCs join the shop's Wi-Fi:  $ssid   password: $password" -ForegroundColor Green

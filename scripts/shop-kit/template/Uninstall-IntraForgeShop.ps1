@@ -81,10 +81,14 @@ Unregister-ShopUninstallEntry
 # the Control Center -- gets "Access is denied") and the shop-network firewall rules. One UAC prompt for both.
 $leftTasks = @($taskNames | Where-Object { Get-ScheduledTask -TaskName $_ -ErrorAction SilentlyContinue })
 $hasFirewall = [bool](Get-NetFirewallRule -Group 'IntraForge shop network' -ErrorAction SilentlyContinue)
-if ($leftTasks.Count -gt 0 -or $hasFirewall) {
+# The shop's names in this PC's hosts file (ADR-0021), written by Set-IntraForgeNetwork.ps1.
+$hostsFile = "$env:SystemRoot\System32\drivers\etc\hosts"
+$hasNames = (Test-Path $hostsFile) -and ([IO.File]::ReadAllText($hostsFile)).Contains($script:HostsMarkerBegin)
+if ($leftTasks.Count -gt 0 -or $hasFirewall -or $hasNames) {
     $parts = @()
     foreach ($name in $leftTasks) { $parts += "Unregister-ScheduledTask -TaskName '$name' -Confirm:`$false -ErrorAction SilentlyContinue" }
     if ($hasFirewall) { $parts += "Get-NetFirewallRule -Group 'IntraForge shop network' | Remove-NetFirewallRule" }
+    if ($hasNames) { $parts += ". '$(Join-Path $PSScriptRoot 'IntraForgeShop.Common.ps1')'; Remove-ShopHostsEntries" }
     $command = $parts -join '; '
     if (Test-Admin) { Invoke-Expression $command }
     else {

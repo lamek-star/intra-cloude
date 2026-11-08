@@ -129,6 +129,13 @@ hotspot while it has one to share. The Wi-Fi name and a generated 12-character p
 switches it back on at every start (a failure is logged, never a reason not to start). Not yet tried on the shop PC: a
 phone joining the hotspot and the restart behaviour need the hardware.
 
+**Names for the apps (ADR-0021):** in both modes IntraForge and each app get a name: `https://intraforge.lan:8443`,
+`https://pharmacy.lan:8443`, `https://spare-parts.lan:8443`, `https://pay.lan:8443` (the ending can be changed to a name
+under the shop's own domain, Settings > Shop network > *Change the names' ending...*). With a router, the shop PC runs a
+small name server (CoreDNS) for the shop: **in the router's settings set the DHCP / LAN DNS server to the shop PC's
+address** (and no second one), and keep the PC on. On the PC's own Wi-Fi nothing more is needed. Not yet tried with a
+phone on the shop's router.
+
 What it does: IntraForge also answers on the shop PC's network address; the Windows Firewall admits the shop's **Private**
 network only and **blocks public networks**; nothing is opened to the internet. **Settings > Shop network > This computer
 only** undoes all of it. If the Control Center says *"This PC's address changed"*, press **Update the address** there (and

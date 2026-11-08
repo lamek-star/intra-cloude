@@ -96,6 +96,7 @@ if [ -z "${MINIO_TAG:-}" ]; then
   docker tag minio/minio:latest "minio/minio:$MINIO_TAG"
 fi
 docker image inspect "minio/minio:$MINIO_TAG" >/dev/null 2>&1 || { echo "minio/minio:$MINIO_TAG is not on this machine" >&2; exit 1; }
+docker image inspect "coredns/coredns:1.15.0" >/dev/null 2>&1 || { echo "coredns/coredns:1.15.0 is not on this machine (docker pull it once)" >&2; exit 1; }
 echo "   minio/minio:$MINIO_TAG"
 
 echo "== 4/6 assemble the kit"
@@ -110,7 +111,7 @@ cp "$REPO/docs/LOCAL_EDITION_PILOT.md" "$OUT/LOCAL_EDITION_PILOT.md"
 cp "$REPO/docs/pilot/PILOT_LOG.md" "$OUT/PILOT_LOG.md"
 rm -f "$OUT/.env" "$OUT/DEMO_LOGINS.txt"
 IMAGES=("intraforge-shop-backend:$TAG" "intraforge-shop-frontend:$TAG" "intraforge-shop-spareparts:$TAG" "intraforge-shop-pharmacy:$TAG"
-  "intraforge-shop-pay:$TAG" "intraforge-runtime-node:$TAG" "$TUNNEL_IMAGE" "postgres:18" "valkey/valkey:9-alpine" "minio/minio:$MINIO_TAG" "caddy:2-alpine")
+  "intraforge-shop-pay:$TAG" "intraforge-runtime-node:$TAG" "$TUNNEL_IMAGE" "postgres:18" "valkey/valkey:9-alpine" "minio/minio:$MINIO_TAG" "caddy:2-alpine" "coredns/coredns:1.15.0")
 docker save -o "$OUTW/images/intraforge-shop-images.tar" "${IMAGES[@]}"
 {
   echo "IntraForge Local Edition -- shop kit $KIT_VERSION"
@@ -154,6 +155,8 @@ purpose = {
     "valkey/valkey": ("Cache and job queue", "Docker Hub valkey/valkey", "BSD-3-Clause"),
     "minio/minio": ("Stored files (object storage), PINNED to the tested release", "Docker Hub minio/minio", "AGPL-3.0 (commercial-distribution decision OPEN, see THIRD_PARTY_LICENSES.md)"),
     "caddy": ("Local web server / HTTPS proxy", "Docker official image, caddy:2-alpine", "Apache-2.0"),
+    "coredns/coredns": ("The shop's name server (ADR-0021), started only on a router network with the shop network on",
+        "Docker Hub coredns/coredns, pinned release 1.15.0", "Apache-2.0"),
 }
 rows = []
 for ref in images:

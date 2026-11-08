@@ -167,7 +167,28 @@ services:
       - certificates:/data
       # Hosted Node.js apps' routes, written by the app runner.
       - site-routes:/etc/caddy/apps:ro
+      # The shop's own names (ADR-0021), written by Set-IntraForgeNetwork.ps1.
+      - ${SHOP_DATA_DIR:-C:/IntraForgeData}/shop-network/names/proxy:/etc/caddy/names:ro
     networks: [isolated, edge]
+
+  # The shop's name server (ADR-0021): only on a router network with the shop network on (COMPOSE_PROFILES=names in .env,
+  # set by Set-IntraForgeNetwork.ps1). It answers every name ending in the shop's domain with this PC's address and passes
+  # all other names on to the router; it listens on this PC's shop-network address only, never the internet.
+  names:
+    image: coredns/coredns:1.15.0
+    profiles: [names]
+    pull_policy: never
+    restart: unless-stopped
+    command: ["-conf", "/etc/coredns/Corefile"]
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    ports:
+      - "${SHOP_LAN_ADDRESS:-127.0.0.1}:53:53/udp"
+      - "${SHOP_LAN_ADDRESS:-127.0.0.1}:53:53/tcp"
+    volumes:
+      - ${SHOP_DATA_DIR:-C:/IntraForgeData}/shop-network/names/dns:/etc/coredns:ro
+    networks: [edge]
 
 networks:
   isolated:

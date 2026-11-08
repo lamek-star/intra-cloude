@@ -530,7 +530,13 @@ namespace IntraForge.ControlCenter
             Kit wifi = Kit.Locate();
             wifi.Network = "shop"; wifi.Hotspot = true; wifi.LanName = "shop-pc"; wifi.LanAddress = "192.168.137.1";
             wifi.HotspotSsid = "IntraForge-SHOP-PC"; wifi.HotspotPassword = "kq7m-3vtd-9x";
+            wifi.AppNames = "intraforge=/,pharmacy=/apps/pharmacy/,spare-parts=/apps/spare-parts/,pay=/apps/pay-1/";
             using (Form f = new SettingsForm(wifi)) Save(f, folder, "8-settings-shop-wifi.png");
+            Kit router = Kit.Locate();
+            router.Network = "shop"; router.LanName = "shop-pc"; router.LanAddress = "192.168.1.20"; router.Profiles = "names";
+            router.AppNames = wifi.AppNames;
+            using (Form f = new SettingsForm(router)) Save(f, folder, "9-settings-shop-names.png");
+            using (Form f = new NameDomainForm("lan")) Save(f, folder, "10-names-ending.png");
             using (Form f = new OutputForm("Allowing the other PCs in this shop", "Finding the shop network\nSaving the settings\nRestarting IntraForge with the new settings\nDone.", true)) Save(f, folder, "6-output.png");
         }
 

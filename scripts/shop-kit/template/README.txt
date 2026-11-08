@@ -62,6 +62,9 @@ THE SHOP'S OTHER PCS (optional)
   No router in the shop? "Create a shop Wi-Fi from this PC..." switches on Windows' Mobile Hotspot (this PC needs Wi-Fi and
   some connection of its own to share), marks it Private, and opens IntraForge on it only. The Wi-Fi name and password are
   shown in Settings; the hotspot comes back on at every start. About 8 phones and PCs can join; give the password to staff only.
+  Names: IntraForge and each app also get a name, e.g. https://intraforge.lan:8443 and https://pharmacy.lan:8443 (Settings >
+  Shop network > "Change the names' ending..." for e.g. shop.yourdomain.com). On the PC's own Wi-Fi they work at once. With a
+  router: in the router's settings (DHCP / LAN) set the DNS server to the shop PC's address, once; keep the PC switched on.
 
 RECOVERY ON A NEW OR REBUILT PC
   The backups can only be read with the shop's OWN keys file, so the installation must start from it (a new installation
