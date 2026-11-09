@@ -5,7 +5,7 @@ from django.db import connections
 from django.db.utils import OperationalError
 from django.http import HttpResponse
 from rest_framework.authentication import BaseAuthentication
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -107,3 +107,16 @@ class MetricsView(APIView):
         return HttpResponse(
             "\n".join(lines) + "\n", content_type="text/plain; version=0.0.4; charset=utf-8"
         )
+
+
+class VersionView(APIView):
+    """The installed IntraForge version (the repo-root VERSION file, as the portable export records
+    it), for the web app's footer and welcome tour. Signed-in callers only: an anonymous caller is
+    never told the version."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from exports.manifest import PRODUCT_VERSION
+
+        return Response({"version": PRODUCT_VERSION})

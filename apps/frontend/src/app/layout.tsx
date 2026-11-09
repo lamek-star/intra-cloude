@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { AuthProvider } from "@/lib/auth-context";
 import { QueryProvider } from "@/lib/query";
+import { TourRequestCapture } from "@/components/TourRequestCapture";
 import "./globals.css";
 
 // next/font self-hosts the font files at build time (downloaded once,
@@ -37,6 +38,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="en" className={`h-full antialiased ${inter.variable}`}>
       <body className="min-h-full flex flex-col bg-surface-canvas text-text-primary font-sans">
         <QueryProvider>
+          <TourRequestCapture />
           <AuthProvider>{children}</AuthProvider>
         </QueryProvider>
       </body>

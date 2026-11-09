@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Setup icon</title>
+<link rel="stylesheet" href="installer.css"><script src="icons.js"></script>
+<style>
+  body { display: block; padding: 44px 56px; }
+  .title { font-family: "Segoe UI Variable Display", "Segoe UI", sans-serif; font-size: 26px; font-weight: 600; color: var(--navy); letter-spacing: -.01em; }
+  .note { font-size: 14px; color: #334155; margin-top: 4px; }
+  .grid { display: grid; grid-template-columns: 470px 1fr; gap: 28px; margin-top: 26px; }
+  .panel { background: rgba(255,255,255,.92); border-radius: 12px; box-shadow: 0 0 0 1px rgba(15,23,42,.08), 0 18px 40px rgba(15,23,42,.18); padding: 22px 24px; }
+  .panel h4 { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+  .pair { display: flex; gap: 22px; margin-top: 16px; }
+  .ico { flex: 1; text-align: center; }
+  .ico .stage { height: 168px; border-radius: 10px; display: grid; place-items: center; position: relative; background: var(--canvas); box-shadow: inset 0 0 0 1px var(--border); }
+  .ico .stage.dark { background: #1f2937; }
+  .badge { position: absolute; width: 38px; height: 38px; border-radius: 50%; background: var(--brand); color: #fff; display: grid; place-items: center; box-shadow: 0 0 0 3px #fff, 0 4px 10px rgba(15,23,42,.3); }
+  .ico b { display: block; margin-top: 10px; font-size: 13.5px; }
+  .ico span { font-size: 12px; color: var(--text-3); }
+  .sizes { display: flex; align-items: flex-end; gap: 22px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+  .sizes div { text-align: center; font-size: 11px; color: var(--text-3); }
+  .sizes img { display: block; margin: 0 auto 6px; }
+  /* File Explorer, Windows 11 */
+  .ex { border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px rgba(15,23,42,.12), 0 18px 40px rgba(15,23,42,.22); background: #fff; }
+  .ex .tb { height: 40px; background: #f3f3f3; display: flex; align-items: center; gap: 10px; padding: 0 14px; font-size: 12.5px; color: #1f2937; border-bottom: 1px solid #e5e5e5; }
+  .ex .addr { flex: 1; height: 26px; border-radius: 5px; background: #fff; box-shadow: inset 0 0 0 1px #e1e1e1; display: flex; align-items: center; padding: 0 10px; color: #374151; gap: 6px; }
+  .ex .body { display: grid; grid-template-columns: 150px 1fr; height: 272px; }
+  .ex .nav { background: #fafafa; border-right: 1px solid #ececec; padding: 10px 8px; font-size: 12.5px; color: #374151; display: flex; flex-direction: column; gap: 2px; }
+  .ex .nav div { padding: 5px 8px; border-radius: 4px; display: flex; gap: 8px; align-items: center; }
+  .ex .nav .on { background: #e6eefb; }
+  .files { padding: 18px; display: flex; gap: 18px; align-items: flex-start; }
+  .tile { width: 112px; text-align: center; font-size: 12px; color: #111827; padding: 10px 6px; border-radius: 6px; line-height: 1.3; }
+  .tile.sel { background: #dbeafe; box-shadow: inset 0 0 0 1px #93c5fd; }
+  .tile .im { width: 72px; height: 72px; margin: 0 auto 8px; position: relative; display: grid; place-items: center; }
+  .tile .im .badge { width: 26px; height: 26px; right: -2px; bottom: -2px; box-shadow: 0 0 0 2px #fff; }
+  .tile small { display: block; color: #6b7280; margin-top: 2px; }
+  .plain { width: 60px; height: 72px; border-radius: 4px; background: #fff; box-shadow: inset 0 0 0 1px #d1d5db; display: grid; place-items: center; color: #9ca3af; }
+  .task { margin-top: 18px; height: 52px; border-radius: 10px; background: rgba(243,243,243,.92); box-shadow: 0 0 0 1px rgba(15,23,42,.08); display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .task .t { width: 42px; height: 42px; border-radius: 6px; display: grid; place-items: center; position: relative; }
+  .task .t.on { background: rgba(255,255,255,.9); }
+  .task .t.on::after { content: ""; position: absolute; bottom: 2px; width: 16px; height: 3px; border-radius: 3px; background: var(--brand); }
+  .task .win { width: 22px; height: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+  .task .win i { background: #2b7cd3; border-radius: 1px; }
+  .caption { font-size: 12px; color: var(--text-3); margin-top: 10px; }
+</style></head>
+<body data-size="1200,760">
+  <div class="title">Setup icon</div>
+  <div class="note">The IntraForge mark, compiled into the exe at every Windows size (16 to 256 px). The installer gets a small "install" badge so it is never confused with the installed app.</div>
+  <div class="grid">
+    <div class="panel">
+      <h4>Two variants</h4>
+      <div class="pair">
+        <div class="ico"><div class="stage"><img src="../brand/generated/icon-128.png" width="104"></div><b>App</b><span>Control Center, shortcuts, taskbar</span></div>
+        <div class="ico"><div class="stage"><img src="../brand/generated/icon-128.png" width="104"><span class="badge" style="right:62px;bottom:30px"><i data-i="download" data-s="20" data-w="2.5"></i></span></div><b>Setup</b><span>IntraForge-Setup.exe</span></div>
+      </div>
+      <div class="pair">
+        <div class="ico"><div class="stage dark" style="height:96px"><img src="../brand/generated/icon-64.png" width="56"></div><span>On a dark taskbar</span></div>
+        <div class="ico"><div class="stage dark" style="height:96px"><img src="../brand/generated/icon-64.png" width="56"><span class="badge" style="width:24px;height:24px;right:72px;bottom:18px;box-shadow:0 0 0 2px #1f2937"><i data-i="download" data-s="13" data-w="2.5"></i></span></div><span>Setup on dark</span></div>
+      </div>
+      <div class="sizes">
+        <div><img src="../brand/generated/icon-128.png" width="64">64</div>
+        <div><img src="../brand/generated/icon-48.png" width="48">48</div>
+        <div><img src="../brand/generated/icon-32.png" width="32">32</div>
+        <div><img src="../brand/generated/icon-24.png" width="24">24</div>
+        <div><img src="../brand/generated/icon-16.png" width="16">16</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="ex">
+        <div class="tb"><i data-i="chevronright" data-s="14"></i><div class="addr"><i data-i="download" data-s="14"></i>This PC › Downloads</div></div>
+        <div class="body">
+          <div class="nav">
+            <div><i data-i="monitor" data-s="14"></i>Desktop</div>
+            <div class="on"><i data-i="download" data-s="14"></i>Downloads</div>
+            <div><i data-i="file" data-s="14"></i>Documents</div>
+            <div><i data-i="harddrive" data-s="14"></i>This PC</div>
+          </div>
+          <div class="files">
+            <div class="tile sel"><div class="im"><img src="../brand/generated/icon-128.png" width="68"><span class="badge"><i data-i="download" data-s="14" data-w="2.5"></i></span></div>IntraForge-Setup-1.5.2.exe<small>Application · 2.1 GB</small></div>
+            <div class="tile"><div class="im"><img src="../brand/generated/icon-128.png" width="68"></div>IntraForge Control Center<small>Shortcut</small></div>
+            <div class="tile"><div class="im"><div class="plain"><i data-i="file" data-s="28"></i></div></div>IntraForge-Setup-1.5.2.exe.sha256<small>SHA256 file</small></div>
+          </div>
+        </div>
+      </div>
+      <div class="task">
+        <div class="t"><div class="win"><i></i><i></i><i></i><i></i></div></div>
+        <div class="t"><i data-i="folder" data-s="22"></i></div>
+        <div class="t on"><img src="../brand/generated/icon-32.png" width="26"></div>
+      </div>
+      <div class="caption">Today the exe shows the generic Windows icon; with the change it shows the mark in Explorer, the taskbar and the Windows security prompt.</div>
+    </div>
+  </div>
+</body></html>

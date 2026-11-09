@@ -50,8 +50,8 @@ WHERE THINGS ARE
 
 UPGRADING
   Put the newer setup file in Downloads (or on the Desktop) and press "Upgrade to <version>..." in the Control Center, or
-  run the file yourself. It shows the installed and the new version and asks "Upgrade now? Type Y" -- nothing changes before
-  you answer. It takes a safety backup, keeps your data, keys and shop-network setting, and puts the previous version back by
+  run the file yourself. It shows the installed and the new version with an Upgrade button -- nothing changes before
+  you press it. It takes a safety backup, keeps your data, keys and shop-network setting, and puts the previous version back by
   itself if the upgrade fails. An older setup file is refused. See the quickstart for going back to an older version by hand.
 
 THE SHOP'S OTHER PCS (optional)

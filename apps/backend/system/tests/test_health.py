@@ -45,3 +45,19 @@ class ReadyzTests(APITestCase):
     def test_metrics_exposes_object_storage_gauge(self):
         response = self.client.get(reverse("metrics"))
         self.assertIn('pdc_dependency_up{dependency="object_storage"} 1', response.content.decode())
+
+
+class VersionTests(APITestCase):
+    def test_a_signed_in_user_reads_the_installed_version(self):
+        from accounts.models import User
+        from exports.manifest import PRODUCT_VERSION
+
+        self.client.force_authenticate(User.objects.create_user(email="version-reader@example.com"))
+        response = self.client.get(reverse("system-version"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"version": PRODUCT_VERSION})
+
+    def test_an_anonymous_caller_is_not_told_the_version(self):
+        response = self.client.get(reverse("system-version"))
+        self.assertIn(response.status_code, (401, 403))
+        self.assertNotIn("version", response.json())

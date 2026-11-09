@@ -8,7 +8,7 @@
 # Docker Desktop's licence does not allow redistribution: an exe that embeds it is for the owner's own PCs only and must never be
 # shared. Setup runs each embedded installer only after checking its publisher signature (Docker Inc / Microsoft Corporation).
 #
-# The stub (setup-stub/Program.cs) is compiled with the C# compiler that ships with Windows (.NET Framework 4.x), so the build
+# The stub (setup-stub/, a Windows Forms window; setup-stub/build-stub.sh) is compiled with the C# compiler that ships with Windows (.NET Framework 4.x), so the build
 # needs no SDK and the resulting exe needs nothing on the shop PC. Layout of the output:
 #   [stub exe][kit zip][docker installer][wsl msi][SHA-256 kit][SHA-256 docker][SHA-256 wsl][kit len][docker len][wsl len][magic "IFSFX003"]
 # (each optional payload may be absent: length 0, hash zeros). The exe is UNSIGNED (no certificate exists): Windows SmartScreen
@@ -23,9 +23,7 @@ CSC="/c/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe"
 [ -f "$ZIP" ] || { echo "kit zip not found: $ZIP" >&2; exit 1; }
 
 STUB="$(mktemp -d)/IntraForgeSetupStub.exe"
-"$CSC" -nologo -target:exe -optimize+ -out:"$(cygpath -w "$STUB")" \
-  -reference:System.IO.Compression.dll -reference:System.IO.Compression.FileSystem.dll -reference:System.Management.dll \
-  "$(cygpath -w "$HERE/setup-stub/Program.cs")"
+SETUP_VERSION="$(python -c "import sys, zipfile; z = zipfile.ZipFile(sys.argv[1]); n = [x for x in z.namelist() if x.lstrip('./') == 'VERSION']; print(z.read(n[0]).decode().strip() if n else '0.0.0')" "$(cygpath -m "$ZIP")")"   bash "$HERE/setup-stub/build-stub.sh" "$STUB"
 
 python - "$(cygpath -m "$STUB")" "$(cygpath -m "$ZIP")" "$(cygpath -m "$OUT")" "${DOCKER:+$(cygpath -m "$DOCKER")}" "${WSL:+$(cygpath -m "$WSL")}" <<'PY'
 import hashlib, pathlib, shutil, struct, sys

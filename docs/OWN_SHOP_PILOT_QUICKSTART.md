@@ -25,14 +25,14 @@ Spare Parts application, Windows' WSL package and Docker Desktop, so a PC with n
 There is now **one shortcut**, **IntraForge**, on the desktop and in the Start menu. It opens the Control Center. IntraForge
 also appears in Windows **Settings > Apps > Installed apps** (its Uninstall opens the Control Center's removal options).
 
-If a PC already has Docker Desktop, Setup skips those steps. If Setup shows a red `[X]` in the PC check (for example
-virtualization switched off in the BIOS), it says how to fix it. The file is for your own PCs only (Docker Desktop's licence does
+If a PC already has Docker Desktop, Setup skips those steps. If Setup's PC check shows a red box (for example
+virtualization switched off in the BIOS), it says how to fix it, and Install stays off until it is fixed. The file is for your own PCs only (Docker Desktop's licence does
 not allow passing it on).
 
 **Upgrading** (from 1.1.0, or from the earlier pilot installer `IntraForge-Setup-Complete.exe`): put the new file in
 **Downloads**, on the **Desktop** or in `C:\IntraForgeData\updates`. The Control Center then shows **"A newer IntraForge is
 ready"** with an **Upgrade to ...** button (or double-click the file yourself). Setup shows the installed version and the new
-one and asks **"Upgrade now? Type Y"** -- nothing changes until you answer Y. It closes the Control Center, takes a complete
+one with an **Upgrade** button -- nothing changes until you press it. It closes the Control Center, takes a complete
 backup, installs the new version over the old one (keeping your data and keys) and checks it is healthy; if anything fails it
 puts the previous version back by itself. An **older** setup file is refused (go back with Restore instead). The old desktop icons are replaced by the one
 **IntraForge** shortcut. (The old demo Spare Parts at port 3000 kept its data in the browser only; there is nothing on the PC

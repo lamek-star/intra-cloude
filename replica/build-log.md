@@ -236,3 +236,34 @@ since 1.5.1.
 402,252 bytes, business records 518,739, files 10,532; 31 s); no migrations; all 13 services up on the 1.5.2 images
 (Pay, Pharmacy, Spare Parts healthy); `/healthz`, `/readyz` and the sign-in page 200; catalog: Spare Parts (Ready for
 use), Pharmacy (Pilot preview); 5 accounts intact; the Control Center exe is the kit's; 1.5.1 kept in `.previous`.
+
+### Setup window, welcome tour, copyright (2026-11-09, not in a kit yet)
+
+**Setup is now a window, not a console.** `scripts/shop-kit/setup-stub/` (C# 5, still compiled with the .NET Framework
+csc that ships with Windows, `build-stub.sh`): Choose (install and data folders, start with Windows, backup time, a live
+PC check that keeps Install off when the PC cannot run IntraForge), Install (progress bar, the step list driven by the
+kit scripts' own `==>` headings, "12 of 19 parts" from `docker load`, five "while you wait" slides, Show details), and
+Finish / Restart / Failed / Upgrade / Already installed. The kit's scripts are unchanged except that
+`Setup-IntraForge.ps1` now passes `-BackupTime` and `-NoStartup` to the installer. The window runs them quietly with
+`-NoRestart` and asks before restarting; after the restart the same window carries on (RunOnce), when the setup file is
+on a fixed drive. Cancel exists only while the setup file is checked and unpacked (nothing installed yet); later,
+closing is refused with an explanation. `/check`, `/quiet` and `/extractonly` keep the console output (attached to the
+console that started Setup). New: the setup icon (the mark with an install badge, `generate_setup_icon.py`), an
+`asInvoker` manifest (no automatic elevation of an exe named "Setup"), and the version and copyright in the exe's file
+properties.
+
+**Welcome tour** (`components/WelcomeTour.tsx`): five slides after the first sign-in, once per person per browser;
+"Take the tour" in the sidebar reopens it. Setup's "Show me a quick tour" opens IntraForge with `?tour=1` / `?tour=off`,
+kept until sign-in. New signed-in endpoint `GET /api/v1/system/version/` (anonymous callers are not told the version).
+
+**Copyright** "© 2026 lamek-rusoom" with the version: Setup's brand panel, the exe's Details tab, the tour's last slide
+and the foot of the sidebar.
+
+Checked: every Setup screen rendered from the real exe (`/uipreview=`, screenshots in
+`design-references/installer-mockups/screens/`); a real windowed run against a stand-in kit whose scripts print the
+real step names (unpacked, steps advanced from the script's output, port 9555 / backup 21:00 / autostart off carried
+through to Finish); `/check` and `/extractonly` in a console; the exe's version resource (`© 2026 lamek-rusoom`,
+product version from the kit's VERSION). Frontend 174 tests pass (7 new for the tour, 3 for the ToyoDIY link), tsc and
+eslint clean; backend system tests 8 pass (2 new). On the test copy, with images built from this tree: signed in as the
+test administrator, the tour opened by itself and its last slide read the version from the new endpoint. Not checked:
+a real installation on a clean PC with this window (needs a kit build and a spare PC or the test VM).

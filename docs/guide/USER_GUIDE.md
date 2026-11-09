@@ -72,6 +72,14 @@ and you are in -- no password, and no authenticator code (the passkey counts as 
   `docker compose exec backend python manage.py passkey_reset <email>` (add `--remove-all` to delete the lost
   passkeys too), and the password works again.
 
+### The welcome tour
+
+The first time you reach IntraForge after signing in, a five-slide tour shows what it does: storing files, building
+databases and apps, connecting other apps, and who sees what. It opens once per person on each browser. **Skip tour** or
+**Esc** closes it; **Take the tour** in the sidebar (or the account menu on a phone) opens it again. Setup's last screen
+has a "Show me a quick tour" box: unticked, the tour does not open by itself. The foot of the sidebar shows the installed
+version and the copyright (© 2026 lamek-rusoom).
+
 ## 4. Organizations
 
 The Organizations page is what you land on after signing in — every

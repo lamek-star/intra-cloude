@@ -2,15 +2,19 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { Building2, ChevronDown, LayoutDashboard, LayoutGrid, LogOut, Search, type LucideIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Building2, ChevronDown, Compass, LayoutDashboard, LayoutGrid, LogOut, Search, type LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { prefetchRoute } from "@/lib/queries";
 import { ConfirmProvider } from "@/components/ConfirmProvider";
 import { CommandPalette } from "@/components/CommandPalette";
 import { PageTransition } from "@/components/PageTransition";
 import { useDialogA11y } from "@/lib/use-dialog-a11y";
+import { api } from "@/lib/api";
+import { versionLine } from "@/lib/brand";
+import { markTourSeen, readTourState, shouldShowTour } from "@/lib/tour";
+import { WelcomeTour } from "@/components/WelcomeTour";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
@@ -20,6 +24,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
   useDialogA11y(menuOpen, () => setMenuOpen(false), accountMenuRef);
+  // The welcome tour opens by itself once per person on this browser (lib/tour.ts). This shell only renders for a signed-in
+  // user (app/(app)/layout.tsx), so the decision is made once, on the first render.
+  const [tourOpen, setTourOpen] = useState(() => {
+    if (!user) return false;
+    const { seen, request } = readTourState(user.id);
+    return shouldShowTour(seen, request);
+  });
+  const { data: about } = useQuery({
+    queryKey: ["system", "version"],
+    queryFn: () => api.get<{ version: string }>("/system/version/"),
+    staleTime: Infinity,
+    retry: false,
+  });
+
+  // Setup's "no tour" wish is used up once the person is signed in.
+  const userId = user?.id;
+  useEffect(() => {
+    if (userId && !tourOpen && readTourState(userId).request === "off") markTourSeen(userId);
+  }, [userId, tourOpen]);
+
+  function closeTour() {
+    if (userId) markTourSeen(userId);
+    setTourOpen(false);
+  }
 
   async function handleLogout() {
     setMenuOpen(false);
@@ -36,6 +64,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         Skip to main content
       </a>
       <CommandPalette open={paletteOpen} setOpen={setPaletteOpen} />
+      <WelcomeTour open={tourOpen} onClose={closeTour} version={about?.version} />
       <div className="flex min-h-screen bg-surface-canvas text-text-primary">
         <aside className="hidden w-60 shrink-0 flex-col bg-navy p-4 sm:flex">
           <div className="mb-6 flex items-center gap-2.5 px-1">
@@ -91,6 +120,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </button>
             </div>
           )}
+          <button
+            onClick={() => setTourOpen(true)}
+            className="mt-1 flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-slate-300 hover:bg-white/5 hover:text-white"
+          >
+            <Compass aria-hidden="true" className="h-3.5 w-3.5" />
+            Take the tour
+          </button>
+          <p className="mt-3 px-2.5 text-[11px] leading-snug text-on-chrome-muted">{versionLine(about?.version)}</p>
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
@@ -138,6 +175,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     >
                       Your account
                     </Link>
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setTourOpen(true);
+                      }}
+                      className="block w-full px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    >
+                      Take the tour
+                    </button>
                     <button
                       role="menuitem"
                       onClick={handleLogout}

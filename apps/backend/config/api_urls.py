@@ -23,4 +23,5 @@ urlpatterns: list[URLPattern | URLResolver] = [
     path("", include("analytics.urls")),
     path("", include("service_apps.urls")),
     path("", include("sites.urls")),
+    path("", include("system.api_urls")),
 ]

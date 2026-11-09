@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Welcome tour</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tour.css"><script src="icons.js"></script><script src="tour.js"></script></head>
+<body data-size="1440,900" style="width:1440px;height:900px;position:relative">
+<div class="app">
+  <nav class="rail">
+    <img src="../brand/generated/intraforge-lockup-dark.png" alt="IntraForge">
+    <div class="on"><i data-i="layout" data-s="16"></i>Dashboard</div>
+    <div><i data-i="folder" data-s="16"></i>Storage</div>
+    <div><i data-i="database" data-s="16"></i>Databases</div>
+    <div><i data-i="box" data-s="16"></i>Apps</div>
+    <div><i data-i="link" data-s="16"></i>Developer</div>
+    <div><i data-i="users" data-s="16"></i>Teams</div>
+    <div><i data-i="scroll" data-s="16"></i>Audit log</div>
+  </nav>
+  <main class="page"><h1>Dashboard</h1>
+    <div class="cards"><div class="c"><b></b><i></i></div><div class="c"><b></b><i></i></div><div class="c"><b></b><i></i></div></div>
+    <div class="wide"></div></main>
+</div>
+<div class="scrim" id="s"></div>
+<script>document.getElementById("s").innerHTML = tourHtml(1); document.addEventListener("DOMContentLoaded", fillMeshes);</script>
+</body></html>

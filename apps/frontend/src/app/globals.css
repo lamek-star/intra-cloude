@@ -192,6 +192,17 @@
   animation: row-in var(--duration-base) ease-out;
 }
 
+/* The welcome tour (components/WelcomeTour.tsx): each slide's drawing fades in. */
+@keyframes tour-art-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+}
+.tour-art {
+  animation: tour-art-in 260ms ease-out;
+}
+
 /* View transitions between pages (components/PageTransition.tsx): only the page area cross-fades, quickly;
    the rest of the window (sidebar, header) is kept still instead of the browser's whole-page fade. */
 ::view-transition-old(*),

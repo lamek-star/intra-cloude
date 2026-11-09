@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Setup: Installing</title>
+<link rel="stylesheet" href="installer.css"><script src="icons.js"></script>
+<style>
+  /* Slide 2 of 5 in the hero: "Store" -- a tiny file browser drawn in the brand's dark palette */
+  .fb { position: absolute; left: 18px; right: 18px; top: 18px; bottom: -10px; background: #fff; border-radius: 10px 10px 0 0; box-shadow: 0 12px 30px rgba(0,0,0,.35); color: var(--text); padding: 12px 14px; }
+  .fb .bar { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-3); }
+  .fb .bar b { color: var(--text); font-size: 11.5px; }
+  .fb .r { display: flex; align-items: center; gap: 8px; font-size: 11.5px; padding: 6px 0; border-top: 1px solid var(--border); }
+  .fb .r:first-of-type { margin-top: 8px; }
+  .fb .r .m { margin-left: auto; font-size: 10.5px; color: var(--text-3); }
+  .fb .f { color: #2563eb; } .fb .x { color: #0d9488; } .fb .p { color: #64748b; }
+  .ver { position: absolute; right: 8px; top: 92px; width: 132px; background: #fff; border-radius: 8px; padding: 8px 10px; box-shadow: 0 10px 24px rgba(0,0,0,.35), 0 0 0 1px rgba(15,23,42,.06); color: var(--text); font-size: 10.5px; }
+  .ver .h { display: flex; align-items: center; gap: 5px; font-weight: 600; font-size: 11px; margin-bottom: 4px; }
+  .ver div.v { display: flex; justify-content: space-between; padding: 3px 0; color: var(--text-2); }
+  .ver div.v b { color: var(--brand-700); font-weight: 600; }
+</style></head>
+<body>
+<div class="window">
+  <aside class="hero">
+    <div class="mesh"></div>
+    <img class="lockup" src="../brand/generated/intraforge-lockup-dark.png" alt="IntraForge">
+    <div class="slide-art">
+      <div class="fb">
+        <div class="bar"><i data-i="folder" data-s="13"></i><b>Shop documents</b><span>› Invoices</span></div>
+        <div class="r"><span class="f"><i data-i="folder" data-s="14"></i></span>2026 receipts<span class="m">48 files</span></div>
+        <div class="r"><span class="x"><i data-i="table" data-s="14"></i></span>Price list.xlsx<span class="m">v3</span></div>
+        <div class="r"><span class="p"><i data-i="file" data-s="14"></i></span>Supplier contract.pdf<span class="m">1.2 MB</span></div>
+        <div class="r"><span class="p"><i data-i="trash" data-s="14"></i></span>Trash<span class="m">kept 30 days</span></div>
+      </div>
+      <div class="ver">
+        <div class="h"><i data-i="history" data-s="12"></i>Price list.xlsx</div>
+        <div class="v"><b>v3</b><span>Today 10:42</span></div>
+        <div class="v"><span>v2</span><span>Yesterday</span></div>
+        <div class="v"><span>v1</span><span>3 Nov</span></div>
+      </div>
+    </div>
+    <div class="eyebrow">While you wait · Store</div>
+    <h3>Every file, every version</h3>
+    <p class="p">Folders and buckets like a cloud drive. Older versions are kept, and deleted files wait in Trash before they are gone.</p>
+    <div class="dots"><i></i><i class="on"></i><i></i><i></i><i></i></div>
+  </aside>
+
+  <section class="main">
+    <div class="chrome"><div><i data-i="minus" data-s="16"></i></div><div><i data-i="x" data-s="16"></i></div></div>
+    <div class="steps">
+      <div class="s done"><span class="n"><i data-i="check" data-s="12" data-w="3"></i></span>Choose</div><span class="bar"></span>
+      <div class="s on"><span class="n">2</span>Install</div><span class="bar"></span>
+      <div class="s"><span class="n">3</span>Finish</div>
+    </div>
+    <h1>Installing IntraForge</h1>
+    <p class="sub">This takes about 10 minutes and needs no internet. You can keep using your computer.</p>
+
+    <div class="progress">
+      <div class="top"><b>62%</b><span>About 4 minutes left</span></div>
+      <div class="track"><div class="fill" style="width:62%"></div></div>
+    </div>
+
+    <div class="tasks">
+      <div class="task ok"><span class="st"><i data-i="check" data-s="13" data-w="3"></i></span>Checked this computer<span class="time">4 s</span></div>
+      <div class="task ok"><span class="st"><i data-i="check" data-s="13" data-w="3"></i></span>Turned on Windows features (WSL 2)<span class="time">1 min 12 s</span></div>
+      <div class="task ok"><span class="st"><i data-i="check" data-s="13" data-w="3"></i></span>Installed the container engine<span class="time">2 min 40 s</span></div>
+      <div class="task now"><span class="st"></span>Loading IntraForge<span class="mini">12 of 19 parts<span class="track"><span class="fill" style="display:block;width:63%"></span></span></span></div>
+      <div class="task wait"><span class="st"></span>Starting the services</div>
+      <div class="task wait"><span class="st"></span>Creating secret keys and the first backup</div>
+    </div>
+
+    <div class="foot">
+      <span class="legal"><a href="#" class="link">Show details <i data-i="chevrondown" data-s="14"></i></a></span>
+      <button class="btn">Cancel</button>
+    </div>
+  </section>
+</div>
+</body></html>
