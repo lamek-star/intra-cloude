@@ -286,3 +286,21 @@ every shared button eases its colours and presses in slightly when clicked.
 Checked: frontend 177 tests pass (3 new for the demo and walkthrough), tsc and eslint clean on the whole app; the page
 captured in Edge at 1440 x 900, at phone width (390) and with reduced motion (a first capture found the demo blank
 with reduced motion -- the pause rule froze the entrance animations at their first frame; fixed and re-checked).
+
+### Kit 1.5.3 (2026-11-09)
+
+`IntraForge-Local-1.5.3-1a15275f3.zip` (907 MB), SHA-256
+`923b06228d9b8b5a690d42da9532901bfe14b20b4820626476220d38fb927775`, built from `1a15275f3` with the same settings as
+1.5.2. Full installer `IntraForge-Setup-1.5.3.exe` (1.8 GB), SHA-256
+`938ca1fb4cf0efb14b9b02cfebe2c5742ce96cabb40b235c14a403a6719b9e6f` (trailer `IFSFX003`; embedded kit, Docker Desktop
+installer and WSL package checked by the build).
+
+New over 1.5.2: the Setup window (and its icon, version and copyright in the file properties), the welcome tour, the
+signed-in version endpoint, the animated home page, the two-line copyright in the sidebar, smoother buttons, and the
+ToyoDIY lookup link in the built-in Spare Parts. No migrations since 1.5.2.
+
+Checked: 7/7 kit checksums and both files' `.sha256`; VERSION `1.5.3`; no keys in the kit or the zip; `npm audit` 0;
+`pip-audit` no known vulnerabilities (the backend test environment); the exe's file properties read IntraForge 1.5.3,
+(c) 2026 lamek-rusoom. Started on the shop PC itself, the real installer read its own package and the installed
+version and offered **Upgrade 1.5.2 -> 1.5.3** (screenshot taken, closed with nothing changed). Not done: the upgrade
+itself, and a first installation on a clean PC with this window.
