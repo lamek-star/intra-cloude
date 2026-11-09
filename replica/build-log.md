@@ -304,3 +304,13 @@ Checked: 7/7 kit checksums and both files' `.sha256`; VERSION `1.5.3`; no keys i
 (c) 2026 lamek-rusoom. Started on the shop PC itself, the real installer read its own package and the installed
 version and offered **Upgrade 1.5.2 -> 1.5.3** (screenshot taken, closed with nothing changed). Not done: the upgrade
 itself, and a first installation on a clean PC with this window.
+
+**Shop PC upgraded 1.5.2 -> 1.5.3 (2026-11-09 15:07-15:10)**, this time with the 1.5.3 installer itself in its
+unattended mode (`IntraForge-Setup-1.5.3.exe /quiet /dir=C:\IntraForge`, log `kits\upgrade-1.5.3.log`): it checked the
+PC and its own package, then unpacked the kit next to the installation and ran its upgrade. Safety backup first
+(control database 403,056 bytes, business records 518,960, files 10,532; 22 s); no migrations; all 13 services up on
+the 1.5.3 images (Pay, Pharmacy, Spare Parts healthy); `/healthz`, `/readyz`, `/`, `/login` 200; the home page's Setup
+screenshot served; `/api/v1/system/version/` refuses an anonymous caller (403) and the backend reads VERSION 1.5.3;
+5 accounts intact (5 before); the Control Center exe is the kit's (same SHA-256), reopened after the upgrade; the
+installer's marker now names the 1.5.3 kit, so opening the same setup file again says "already installed"; 1.5.2 kept
+in `.previous`.
