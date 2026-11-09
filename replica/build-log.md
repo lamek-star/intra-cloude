@@ -267,3 +267,22 @@ product version from the kit's VERSION). Frontend 174 tests pass (7 new for the 
 eslint clean; backend system tests 8 pass (2 new). On the test copy, with images built from this tree: signed in as the
 test administrator, the tour opened by itself and its last slide read the version from the new endpoint. Not checked:
 a real installation on a clean PC with this window (needs a kit build and a spare PC or the test VM).
+
+### Animated home page and smoother controls (2026-11-09, not in a kit yet)
+
+The public home page (`app/page.tsx`, the page Setup opens) is rebuilt around a **running demo**
+(`components/home/ProductDemo.tsx`, `DemoScenes.tsx`): a browser window with IntraForge inside, played as four
+scenes with a moving pointer and sample data -- the dashboard filling in, a file uploading and keeping its versions,
+the Pharmacy installed in one click, a person invited with a role and the audit log recording it. It pauses on hover,
+off screen, in a hidden tab and with a Pause button; with reduced motion it shows each scene's finished state and
+changes scene only when asked. Below it, **"From download to running in about 15 minutes"**
+(`SetupWalkthrough.tsx`) walks the four steps of an installation with the real Setup screenshots (the last two steps
+are labelled as illustrations), then the features (revealed on scroll), a call to action, and the copyright in the
+footer. Sticky header with in-page links that scroll smoothly.
+
+Also: the sidebar shows the version and "© 2026 lamek-rusoom" on two lines (the name no longer breaks at its hyphen);
+every shared button eases its colours and presses in slightly when clicked.
+
+Checked: frontend 177 tests pass (3 new for the demo and walkthrough), tsc and eslint clean on the whole app; the page
+captured in Edge at 1440 x 900, at phone width (390) and with reduced motion (a first capture found the demo blank
+with reduced motion -- the pause rule froze the entrance animations at their first frame; fixed and re-checked).

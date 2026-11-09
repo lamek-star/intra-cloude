@@ -12,7 +12,7 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { PageTransition } from "@/components/PageTransition";
 import { useDialogA11y } from "@/lib/use-dialog-a11y";
 import { api } from "@/lib/api";
-import { versionLine } from "@/lib/brand";
+import { COPYRIGHT, versionLabel } from "@/lib/brand";
 import { markTourSeen, readTourState, shouldShowTour } from "@/lib/tour";
 import { WelcomeTour } from "@/components/WelcomeTour";
 
@@ -127,7 +127,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Compass aria-hidden="true" className="h-3.5 w-3.5" />
             Take the tour
           </button>
-          <p className="mt-3 px-2.5 text-[11px] leading-snug text-on-chrome-muted">{versionLine(about?.version)}</p>
+          {/* Two lines: the narrow rail would otherwise break the owner's name at its hyphen. */}
+          <p className="mt-3 px-2.5 text-[11px] leading-snug text-on-chrome-muted">
+            <span className="block">{versionLabel(about?.version)}</span>
+            <span className="block whitespace-nowrap">{COPYRIGHT}</span>
+          </p>
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">

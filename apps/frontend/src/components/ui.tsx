@@ -15,7 +15,7 @@ export function Button({
   size?: "sm" | "md";
 }) {
   const base =
-    "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas";
+    "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-[color,background-color,border-color,box-shadow,transform] duration-150 ease-out active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas";
   const sizes = { sm: "px-2.5 py-1.5 text-xs", md: "px-3.5 py-2 text-sm" };
   const variants = {
     primary: "bg-brand-600 text-white shadow-sm hover:bg-accent-hover focus-visible:ring-brand-500",
@@ -42,7 +42,7 @@ export function LinkButton({
   className?: string;
   children: ReactNode;
 }) {
-  const base = "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors";
+  const base = "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-[color,background-color,border-color,box-shadow,transform] duration-150 ease-out active:scale-[0.98]";
   const sizes = { sm: "px-2.5 py-1.5 text-xs", md: "px-3.5 py-2 text-sm" };
   const variants = {
     primary: "bg-brand-600 text-white shadow-sm hover:bg-accent-hover",

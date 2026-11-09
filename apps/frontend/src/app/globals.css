@@ -112,6 +112,10 @@
 }
 
 @layer base {
+  /* In-page links (the home page's Demo / How setup works / Features) glide instead of jumping. */
+  html {
+    scroll-behavior: smooth;
+  }
   /* Reduced motion: instant state changes instead of removed feedback
      (DESIGN.md SS16). The one exception, Spinner's rotation, opts back
      in explicitly via its own rule below. */
