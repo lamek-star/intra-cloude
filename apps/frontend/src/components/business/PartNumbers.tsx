@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useId, useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
-import { cellText, createRecord, listRecords, normalizeSearchKey, type BusinessRow } from "@/lib/business";
+import { cellText, createRecord, editionOf, listRecords, normalizeSearchKey, type BusinessRow } from "@/lib/business";
 import {
   Badge,
   Button,
@@ -20,6 +20,7 @@ import {
   THead,
 } from "@/components/ui";
 import { useBusiness } from "./BusinessApp";
+import { ToyoDiyLookup } from "./ToyoDiyLookup";
 import { useNames } from "./hooks";
 import ProductPicker, { type PickedProduct } from "./ProductPicker";
 import { Pager } from "./RecordSection";
@@ -151,6 +152,7 @@ function PartNumbersInner() {
                   <tr key={String(row.id)} className="border-b border-slate-100 last:border-0">
                     <Td className="font-medium tabular-nums">
                       {number} {exact && <Badge tone="success">Exact</Badge>}
+                      {editionOf(schema) === "spare_parts" && <ToyoDiyLookup number={number} />}
                     </Td>
                     <Td>{cellText(schema, "part_number", row, "source")}</Td>
                     <Td>

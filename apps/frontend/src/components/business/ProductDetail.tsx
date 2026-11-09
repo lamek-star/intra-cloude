@@ -21,6 +21,7 @@ import { Badge, Button, Card, EmptyState, ErrorBanner, Input, Label, PageLoading
 import { useBusiness } from "./BusinessApp";
 import { MovementHistory, StockTable } from "./Inventory";
 import { PrintLabelsButton, type LabelData } from "./Labels";
+import { ToyoDiyLookup } from "./ToyoDiyLookup";
 import { AddPartNumber } from "./PartNumbers";
 import { Pager } from "./RecordSection";
 
@@ -407,7 +408,10 @@ function ProductNumbers({ partId, name }: { partId: string; name: string }) {
             <tbody>
               {rows.map((r) => (
                 <tr key={String(r.id)} className="border-b border-slate-100 last:border-0">
-                  <Td className="font-medium tabular-nums">{cellText(schema, "part_number", r, "number")}</Td>
+                  <Td className="font-medium tabular-nums">
+                    {cellText(schema, "part_number", r, "number")}
+                    {editionOf(schema) === "spare_parts" && <ToyoDiyLookup number={cellText(schema, "part_number", r, "number")} />}
+                  </Td>
                   <Td>{cellText(schema, "part_number", r, "source")}</Td>
                 </tr>
               ))}
