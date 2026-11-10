@@ -63,12 +63,14 @@ export type SaleLine = {
   copy_status: "waiting" | "copying" | "copied" | "failed";
   copied_bytes: number;
   copy_message: string;
+  free: boolean;
 };
 
 export type Sale = {
   id: string;
+  shop: string;
   number: string;
-  status: "awaiting_payment" | "paid" | "done" | "cancelled";
+  status: "ordered" | "awaiting_payment" | "paid" | "done" | "cancelled";
   method: "ifpay" | "cash";
   customer_name: string;
   total: number;
@@ -79,7 +81,39 @@ export type Sale = {
   paid_at: string | null;
   created_at: string;
   lines: SaleLine[];
+  /** The portal customer a sale is for (their points and free titles apply). */
+  customer: { id: string; name: string; phone: string } | null;
+  use_points: boolean;
+  points_used: number;
+  discount: number;
 };
+
+export type PortalSettings = {
+  portal_open: boolean;
+  welcome_points: number;
+  referral_points: number;
+  birthday_points: number;
+  every_nth_free: number;
+  path: string;
+  waiting: number;
+};
+
+export type ShopCustomer = {
+  id: string;
+  name: string;
+  phone: string;
+  status: "pending" | "approved" | "rejected" | "blocked";
+  points: number;
+  referral_code: string | null;
+  birthday: string | null;
+  created_at: string;
+  pay_username: string;
+  has_wallet: boolean;
+  referred_by: string | null;
+  approved_at: string | null;
+};
+
+export type ApprovedWallet = { username: string | null; created: boolean; first_password: string | null; path: string | null };
 
 export type Destination = { root: string; label: string; kind: MovieLibrary["kind"]; total_bytes: number | null; free_bytes: number | null };
 
@@ -111,6 +145,17 @@ export const movies = {
   sales: (id: string, offset = 0) => api.get<Paginated<Sale>>(`/movie-shops/${id}/sales/?limit=25&offset=${offset}`),
   sale: (saleId: string) => api.get<Sale>(`/movie-sales/${saleId}/`),
   saleAction: (saleId: string, action: "cash" | "cancel" | "retry") => api.post<Sale>(`/movie-sales/${saleId}/${action}/`),
+  charge: (saleId: string, destination: string, method: Sale["method"]) =>
+    api.post<Sale>(`/movie-sales/${saleId}/charge/`, { destination, method }),
+  portal: (id: string) => api.get<PortalSettings>(`/movie-shops/${id}/portal/`),
+  setPortal: (id: string, body: Partial<Omit<PortalSettings, "path" | "waiting">>) => api.put<PortalSettings>(`/movie-shops/${id}/portal/`, body),
+  customers: (id: string, status?: ShopCustomer["status"]) =>
+    api.get<Paginated<ShopCustomer>>(`/movie-shops/${id}/customers/?limit=100${status ? `&status=${status}` : ""}`),
+  approve: (customerId: string) => api.post<{ customer: ShopCustomer; wallet: ApprovedWallet }>(`/movie-customers/${customerId}/approve/`),
+  customerAction: (customerId: string, action: "reject" | "block" | "unblock") =>
+    api.post<{ customer: ShopCustomer }>(`/movie-customers/${customerId}/${action}/`),
+  adjustPoints: (customerId: string, delta: number, note: string) =>
+    api.post<{ customer: ShopCustomer }>(`/movie-customers/${customerId}/points/`, { delta, note }),
 };
 
 /** "1 title", "4 titles". */
@@ -183,6 +228,7 @@ export function copyProgress(sale: Sale): number {
 }
 
 export const SALE_STATUS: Record<Sale["status"], string> = {
+  ordered: "Ordered on the portal",
   awaiting_payment: "Waiting for payment",
   paid: "Paid · copying",
   done: "Copied",

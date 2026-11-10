@@ -73,6 +73,16 @@ def pay_for(caller: ServiceApp, *, reading: bool = False) -> tuple[ServiceApp, D
 
 def _cashier(pay: ServiceApp, actor_id):
     """The person, if they are an active member of Pay's organization and may take payments there."""
+    return _member_holding(
+        pay,
+        actor_id,
+        "ifpay.checkout",
+        "This person may not take IntraForge Pay payments. Give them the Pay Cashier role.",
+    )
+
+
+def _member_holding(pay: ServiceApp, actor_id, capability: str, refusal: str):
+    """The person, if they are an active member of Pay's organization and hold `capability` on that Pay."""
     try:
         uid = uuid.UUID(str(actor_id))
     except (TypeError, ValueError) as exc:
@@ -90,10 +100,8 @@ def _cashier(pay: ServiceApp, actor_id):
     if membership is None:
         raise PermissionDenied("This person is not a member of this shop.")
     caps = capabilities_for(membership.user, pay)
-    if "ifpay.checkout" not in caps:
-        raise PermissionDenied(
-            "This person may not take IntraForge Pay payments. Give them the Pay Cashier role."
-        )
+    if capability not in caps:
+        raise PermissionDenied(refusal)
     return membership.user, caps
 
 
@@ -197,3 +205,62 @@ def request_status(caller: ServiceApp, request_id) -> dict:
     _, deployment = pay_for(caller, reading=True)
     data = _call(deployment, "GET", f"payment-requests/{rid}?source_app_id={caller.id}")
     return _public(data, with_code=False)
+
+
+# ---- customer wallets opened for an application (ADR-0022: the Movie Shop's portal customers) --------------
+_CUSTOMER = (
+    "id",
+    "username",
+    "display_name",
+    "active",
+    "must_change_password",
+    "balance_minor",
+    "wallet_path",
+)
+
+
+def open_customer_wallet(caller, *, actor_id, username: str, customer_name: str, external_id: str) -> dict:
+    """Asks the shop's Pay to open a customer wallet for one of the caller's records. The person approving
+    must hold ifpay.customers.manage on that Pay. Asking again for the same record returns the same wallet.
+    The answer carries the one-time first password only when the wallet was just opened: show it once, never
+    store it."""
+    pay, deployment = pay_for(caller)
+    user, caps = _member_holding(
+        pay,
+        actor_id,
+        "ifpay.customers.manage",
+        "This person may not open IntraForge Pay wallets. Give them the Pay Manager role.",
+    )
+    external_id = str(external_id or "").strip()
+    if not external_id or len(external_id) > MAX_REFERENCE:
+        raise ValidationError({"externalId": "Name the record the wallet is for."})
+    data = _call(
+        deployment,
+        "POST",
+        "customers",
+        {
+            "actor": {"id": str(user.pk), "display_name": display_name(user), "capabilities": caps},
+            "username": str(username or "customer")[:40],
+            "display_name": str(customer_name or "Customer")[:80],
+            "source": {
+                "app_id": str(caller.id),
+                "app_name": _caller_name(caller),
+                "external_id": external_id,
+            },
+        },
+    )
+    out = {k: data.get(k) for k in _CUSTOMER}
+    out["created"] = bool(data.get("created"))
+    out["first_password"] = data.get("first_password") if out["created"] else None
+    return out
+
+
+def customer_wallet(caller, wallet_id) -> dict:
+    """A wallet the caller opened (username, balance, address); Pay answers 404 for any other."""
+    try:
+        wid = uuid.UUID(str(wallet_id))
+    except ValueError as exc:
+        raise NotFound("No such wallet.") from exc
+    _, deployment = pay_for(caller, reading=True)
+    data = _call(deployment, "GET", f"customers/{wid}?source_app_id={caller.id}")
+    return {k: data.get(k) for k in _CUSTOMER}

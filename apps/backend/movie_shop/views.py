@@ -399,6 +399,7 @@ def _sale_json(sale) -> dict:
     lines = list(sale.lines.all())
     return {
         "id": str(sale.id),
+        "shop": str(sale.shop_id),
         "number": sale.number,
         "status": sale.status,
         "method": sale.method,
@@ -418,6 +419,14 @@ def _sale_json(sale) -> dict:
         "receipt_number": sale.receipt_number,
         "paid_at": sale.paid_at.isoformat() if sale.paid_at else None,
         "created_at": sale.created_at.isoformat(),
+        "customer": (
+            {"id": str(sale.customer_id), "name": sale.customer.name, "phone": sale.customer.phone}
+            if sale.customer_id
+            else None
+        ),
+        "use_points": sale.use_points,
+        "points_used": sale.points_used,
+        "discount": sale.discount,
         "lines": [
             {
                 "id": str(line.id),
@@ -430,6 +439,7 @@ def _sale_json(sale) -> dict:
                 "copy_status": line.copy_status,
                 "copied_bytes": line.copied_bytes,
                 "copy_message": line.copy_message,
+                "free": line.free,
             }
             for line in lines
         ],
@@ -511,3 +521,134 @@ class AgentCopyProgressView(AgentView):
 
         line = sales.copy_progress(shop=self.shop(request), line_id=line_id, data=request.data)
         return Response({"status": line.copy_status, "sale_status": line.sale.status})
+
+
+class SaleChargeView(OwnerView):
+    """The counter charges a portal order: the customer's drive, IF Pay or cash; their rewards apply now."""
+
+    def post(self, request, sale_id):
+        from . import sales
+
+        sale = _member_sale(request.user, sale_id)
+        if not _can_sell(request.user, sale.shop):
+            return _forbidden()
+        data = request.data if isinstance(request.data, dict) else {}
+        sale = sales.charge_order(
+            sale, actor=request.user, destination=data.get("destination"), method=data.get("method", "ifpay")
+        )
+        return Response(_sale_json(sale))
+
+
+# ---- the customer portal, the owner's side (phase 3) -------------------------------------------------------
+def _portal_json(shop: MovieShop) -> dict:
+    from .models import PortalCustomer
+
+    return {
+        "portal_open": shop.portal_open,
+        "welcome_points": shop.welcome_points,
+        "referral_points": shop.referral_points,
+        "birthday_points": shop.birthday_points,
+        "every_nth_free": shop.every_nth_free,
+        "path": f"/portal/{shop.id}",
+        "waiting": shop.customers.filter(status=PortalCustomer.Status.PENDING).count(),
+    }
+
+
+class PortalSettingsView(OwnerView):
+    def get(self, request, shop_id):
+        shop = get_member_shop(request.user, shop_id)
+        if not _can(request.user, "movies.manage", shop):
+            return _forbidden()
+        return Response(_portal_json(shop))
+
+    def put(self, request, shop_id):
+        from . import portal
+
+        shop = get_member_shop(request.user, shop_id)
+        if not _can(request.user, "movies.manage", shop):
+            return _forbidden()
+        portal.set_portal(
+            shop, actor=request.user, data=request.data if isinstance(request.data, dict) else {}
+        )
+        return Response(_portal_json(shop))
+
+
+def _owner_customer_json(customer) -> dict:
+    from .portal_views import customer_json
+
+    return {
+        **customer_json(customer),
+        "pay_username": customer.pay_username,
+        "has_wallet": customer.pay_wallet_id is not None,
+        "referred_by": customer.referred_by.name if customer.referred_by_id else None,
+        "approved_at": customer.approved_at.isoformat() if customer.approved_at else None,
+    }
+
+
+class CustomerListView(OwnerView):
+    def get(self, request, shop_id):
+        shop = get_member_shop(request.user, shop_id)
+        if not _can(request.user, "movies.manage", shop):
+            return _forbidden()
+        qs = shop.customers.select_related("referred_by")
+        if request.query_params.get("status"):
+            qs = qs.filter(status=request.query_params["status"])
+        if request.query_params.get("q"):
+            q = request.query_params["q"][:80]
+            qs = qs.filter(Q(name__icontains=q) | Q(phone__icontains=q))
+        paginator = LimitOffsetPagination()
+        page = paginator.paginate_queryset(qs, request, view=self)
+        return paginator.get_paginated_response([_owner_customer_json(c) for c in page])
+
+
+def _member_customer(user, customer_id):
+    from .models import PortalCustomer
+
+    customer = (
+        PortalCustomer.objects.select_related("shop", "referred_by").filter(id=customer_id).first()
+        if _is_uuid(customer_id)
+        else None
+    )
+    if customer is None:
+        raise Http404
+    get_member_organization(user, customer.shop.organization_id)
+    return customer
+
+
+class CustomerActionView(OwnerView):
+    action_name = ""
+
+    def post(self, request, customer_id):
+        from . import portal
+
+        customer = _member_customer(request.user, customer_id)
+        if not _can(request.user, "movies.manage", customer.shop):
+            return _forbidden()
+        if self.action_name == "approve":
+            wallet = portal.approve(customer, actor=request.user)
+            return Response(
+                {
+                    "customer": _owner_customer_json(customer),
+                    "wallet": {
+                        "username": wallet.get("username"),
+                        "created": wallet["created"],
+                        # Shown once to the owner to hand to the customer; IntraForge never stores it.
+                        "first_password": wallet.get("first_password"),
+                        "path": wallet.get("wallet_path"),
+                    },
+                }
+            )
+        portal.set_status(customer, actor=request.user, status=self.action_name)
+        return Response({"customer": _owner_customer_json(customer)})
+
+
+class CustomerPointsView(OwnerView):
+    def post(self, request, customer_id):
+        from . import portal
+
+        customer = _member_customer(request.user, customer_id)
+        if not _can(request.user, "movies.manage", customer.shop):
+            return _forbidden()
+        data = request.data if isinstance(request.data, dict) else {}
+        portal.adjust_points(customer, actor=request.user, delta=data.get("delta"), note=data.get("note"))
+        return Response({"customer": _owner_customer_json(customer)})

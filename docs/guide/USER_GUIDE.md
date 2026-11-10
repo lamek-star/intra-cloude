@@ -196,8 +196,22 @@ files never move into IntraForge: it keeps their names, sizes, covers and prices
      again** restarts any title that failed (for example, the drive was pulled out).
    - **Sales** in the header lists the shop's sales; open one to see its payment and copying again.
 
-The customer portal on the shop Wi-Fi and its ads come in the next phases. Sell only films and series you hold the
-rights or a licence to sell.
+6. **The customer portal** (needs `movies.manage`): **Customers** in the header opens it. **Open the portal**, then
+   give customers the address shown (`https://<shop PC>:8443/portal/...`; on a phone use the shop PC's network name or
+   IP address, not `localhost`). It works on the shop network only, never through the internet gateway. Set the
+   rewards there: welcome points, every Nth title free, points for inviting a friend, birthday points (1 point = 1
+   credit off a Movie Shop purchase; 0 switches a reward off).
+   - Customers sign up with their name, phone number and a password (optionally a birthday and a friend's code). They
+     can look around at once; they order once you approve them.
+   - **Add to IF Pay** approves a customer: IntraForge Pay opens their wallet and shows its username and a one-time
+     first password **once**. Give both to the customer; the wallet makes them choose their own password at the
+     first sign-in. You need the Pay Manager role (`ifpay.customers.manage`) in Pay. **Reject**, **Block** (signs
+     them out and cancels their waiting orders) and **Unblock** are there too.
+   - A customer's order appears in **Sales** marked PORTAL. When they come with their USB drive, open it, choose the
+     drive and IF Pay or cash, and press **Charge this order**: the free titles and their points apply then. A
+     cancelled or expired sale gives the points back.
+
+Ads on the portal come in the next phase. Sell only films and series you hold the rights or a licence to sell.
 
 ## 8. Real Features With No Screen Yet
 

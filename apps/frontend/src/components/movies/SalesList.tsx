@@ -6,6 +6,7 @@ import { copyProgress, movies, SALE_STATUS, type Sale } from "@/lib/movies";
 import { dark, DarkDialog, message } from "./Dialogs";
 
 const TONE: Record<Sale["status"], string> = {
+  ordered: "border-violet-400/30 bg-violet-400/10 text-violet-200",
   awaiting_payment: "border-amber-400/30 bg-amber-400/10 text-amber-200",
   paid: "border-sky-400/30 bg-sky-400/10 text-sky-200",
   done: "border-emerald-400/30 bg-emerald-400/10 text-emerald-200",
@@ -55,7 +56,8 @@ export function SalesDialog({ shopId, onClose, onOpen }: { shopId: string; onClo
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-semibold">
-                  {sale.customer_name || "Customer"} · {sale.lines.length} title{sale.lines.length === 1 ? "" : "s"}
+                  {sale.customer?.name || sale.customer_name || "Customer"} · {sale.lines.length} title{sale.lines.length === 1 ? "" : "s"}
+                  {sale.customer && <span className="ml-2 text-[10.5px] font-semibold text-violet-300">PORTAL</span>}
                 </span>
                 <span className="block font-mono text-[11px] text-slate-500">
                   {sale.number} · {new Date(sale.created_at).toLocaleString()}

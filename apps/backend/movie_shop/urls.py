@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import portal_views, views
 
 urlpatterns = [
     path(
@@ -81,5 +81,45 @@ urlpatterns = [
     ),
     path(
         "movie-agent/copies/<uuid:line_id>/", views.AgentCopyProgressView.as_view(), name="movie-agent-copy"
+    ),
+    path("movie-sales/<uuid:sale_id>/charge/", views.SaleChargeView.as_view(), name="movie-sale-charge"),
+    # The customer portal, the owner's side (phase 3)
+    path("movie-shops/<uuid:shop_id>/portal/", views.PortalSettingsView.as_view(), name="movie-shop-portal"),
+    path(
+        "movie-shops/<uuid:shop_id>/customers/", views.CustomerListView.as_view(), name="movie-shop-customers"
+    ),
+    *[
+        path(
+            f"movie-customers/<uuid:customer_id>/{name}/",
+            views.CustomerActionView.as_view(action_name=name),
+            name=f"movie-customer-{name}",
+        )
+        for name in ("approve", "reject", "block", "unblock")
+    ],
+    path(
+        "movie-customers/<uuid:customer_id>/points/",
+        views.CustomerPointsView.as_view(),
+        name="movie-customer-points",
+    ),
+    # The customer portal itself (no IntraForge sign-in; its own cookie)
+    path("portal/<shop_id>/", portal_views.PortalHomeView.as_view(), name="portal-home"),
+    path("portal/<shop_id>/signup/", portal_views.PortalSignUpView.as_view(), name="portal-signup"),
+    path("portal/<shop_id>/login/", portal_views.PortalSignInView.as_view(), name="portal-login"),
+    path("portal/<shop_id>/logout/", portal_views.PortalSignOutView.as_view(), name="portal-logout"),
+    path("portal/<shop_id>/me/", portal_views.PortalMeView.as_view(), name="portal-me"),
+    path(
+        "portal/<shop_id>/categories/", portal_views.PortalCategoriesView.as_view(), name="portal-categories"
+    ),
+    path("portal/<shop_id>/titles/", portal_views.PortalTitlesView.as_view(), name="portal-titles"),
+    path(
+        "portal/<shop_id>/titles/<title_id>/cover/",
+        portal_views.PortalCoverView.as_view(),
+        name="portal-cover",
+    ),
+    path("portal/<shop_id>/orders/", portal_views.PortalOrdersView.as_view(), name="portal-orders"),
+    path(
+        "portal/<shop_id>/orders/<sale_id>/cancel/",
+        portal_views.PortalOrderCancelView.as_view(),
+        name="portal-order-cancel",
     ),
 ]

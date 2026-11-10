@@ -37,6 +37,13 @@
 		Content-Security-Policy "frame-ancestors 'none'"
 	}
 
+	# The Movie Shop's customer portal (ADR-0022 decision 7) is for the shop network only: through the
+	# internet gateway it does not exist.
+	@shoponly path /portal /portal/* /api/v1/portal/*
+	handle @shoponly {
+		respond 404
+	}
+
 	@backend path /api/* /healthz /readyz
 	handle @backend {
 		reverse_proxy backend:8000

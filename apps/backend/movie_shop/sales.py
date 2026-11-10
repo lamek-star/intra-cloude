@@ -31,7 +31,7 @@ def folder_name(shop_name: str) -> str:
     return re.sub(r"\s+", " ", name)[:120]
 
 
-def _caller(shop: MovieShop) -> ApplicationCaller:
+def caller(shop: MovieShop) -> ApplicationCaller:
     """Who asks Pay: the shop (its agent application), on behalf of the person at the counter."""
     return ApplicationCaller(
         id=shop.agent_application_id,
@@ -41,7 +41,7 @@ def _caller(shop: MovieShop) -> ApplicationCaller:
     )
 
 
-def _new_number() -> str:
+def new_number() -> str:
     return f"MOV-{timezone.now():%Y%m%d}-{secrets.token_hex(3).upper()}"
 
 
@@ -49,13 +49,36 @@ def _drive_roots(shop: MovieShop) -> dict[str, dict]:
     return {d["root"].lower(): d for d in (shop.agent_report or {}).get("drives", [])}
 
 
-def create_sale(
-    *, shop: MovieShop, actor, title_ids, destination, method: str, customer_name: str = ""
-) -> Sale:
-    if method not in Sale.Method.values:
-        raise ValidationError({"method": "ifpay or cash."})
+def _check_titles(title_ids) -> None:
     if not isinstance(title_ids, list) or not 1 <= len(title_ids) <= MAX_TITLES_PER_SALE:
         raise ValidationError({"titles": f"Choose 1 to {MAX_TITLES_PER_SALE} titles."})
+
+
+def build_lines(shop: MovieShop, title_ids) -> list[SaleLine]:
+    """One unsaved line per title, as it is now (visible titles of this shop only), at its current price."""
+    _check_titles(title_ids)
+    titles = list(shop.titles.filter(id__in=title_ids, hidden=False).select_related("library"))
+    if len(titles) != len(set(map(str, title_ids))):
+        raise ValidationError({"titles": "Some titles are not in this shop's catalogue."})
+    prices = {p.category.lower(): p.price for p in shop.category_prices.all()}
+    return [
+        SaleLine(
+            title=t,
+            library=t.library,
+            title_name=t.title,
+            category=t.category,
+            relative_path=t.relative_path,
+            kind=t.kind,
+            price=services.price_of(t, prices, shop.default_price),
+            size_bytes=t.size_bytes,
+        )
+        for t in titles
+    ]
+
+
+def _destination(shop: MovieShop, destination, needed_bytes: int) -> str:
+    """The customer's drive, as the media agent reports it: not a shop library disk, with room for the
+    titles."""
     destination = scanning.clean_windows_path(destination, "destination")
     drive = _drive_roots(shop).get(destination.lower())
     if drive is None:
@@ -70,54 +93,91 @@ def create_sale(
         raise ValidationError(
             {"destination": "Choose the customer's drive, not one of the shop's library drives."}
         )
-    titles = list(shop.titles.filter(id__in=title_ids, hidden=False).select_related("library"))
-    if len(titles) != len(set(map(str, title_ids))):
-        raise ValidationError({"titles": "Some titles are not in this shop's catalogue."})
-    prices = {p.category.lower(): p.price for p in shop.category_prices.all()}
-    lines = [
-        SaleLine(
-            title=t,
-            library=t.library,
-            title_name=t.title,
-            category=t.category,
-            relative_path=t.relative_path,
-            kind=t.kind,
-            price=services.price_of(t, prices, shop.default_price),
-            size_bytes=t.size_bytes,
-        )
-        for t in titles
-    ]
-    total = sum(line.price for line in lines)
-    needed = sum(line.size_bytes for line in lines)
-    if drive.get("free_bytes") is not None and needed > drive["free_bytes"]:
+    if drive.get("free_bytes") is not None and needed_bytes > drive["free_bytes"]:
         raise ValidationError({"destination": "The customer's drive does not have room for these titles."})
+    return drive["root"]
+
+
+def create_sale(
+    *, shop: MovieShop, actor, title_ids, destination, method: str, customer_name: str = ""
+) -> Sale:
+    if method not in Sale.Method.values:
+        raise ValidationError({"method": "ifpay or cash."})
+    lines = build_lines(shop, title_ids)
+    root = _destination(shop, destination, sum(line.size_bytes for line in lines))
     name = scanning.clean_text(customer_name, "customer_name", max_length=120, required=False)
     with transaction.atomic():
         sale = Sale.objects.create(
             shop=shop,
-            number=_new_number(),
+            number=new_number(),
             method=method,
             customer_name=name,
-            total=total,
-            destination=drive["root"],
+            total=sum(line.price for line in lines),
+            destination=root,
             folder=folder_name(shop.name),
             created_by=actor,
         )
         for line in lines:
             line.sale = sale
         SaleLine.objects.bulk_create(lines)
-    if method == Sale.Method.IFPAY:
-        if total == 0:
-            _mark_paid(sale, receipt="", actor=actor)
-        else:
-            _request_payment(sale, actor)
+    _start_payment(sale, actor)
     audit.record(
         actor=actor,
         organization_id=shop.organization_id,
         action="movie_shop.sale.create",
         resource_type="movie_shop",
         resource_id=shop.id,
-        context={"sale": sale.number, "titles": len(lines), "total": total, "method": method},
+        context={"sale": sale.number, "titles": len(lines), "total": sale.total, "method": method},
+    )
+    return sale
+
+
+def _start_payment(sale: Sale, actor) -> None:
+    """Nothing to pay: paid at once. IF Pay: ask Pay for the payment request. Cash: wait for "Paid in
+    cash"."""
+    if sale.total == 0:
+        _mark_paid(sale, receipt="", actor=actor)
+    elif sale.method == Sale.Method.IFPAY:
+        _request_payment(sale, actor)
+
+
+def charge_order(sale: Sale, *, actor, destination, method: str) -> Sale:
+    """The counter charges a portal order once the customer brings their drive: the customer's rewards apply
+    now (every Nth title free, then their points if they chose to use them), then the payment as for any
+    sale."""
+    from .portal import apply_rewards
+
+    if method not in Sale.Method.values:
+        raise ValidationError({"method": "ifpay or cash."})
+    with transaction.atomic():
+        sale = Sale.objects.select_for_update(of=("self",)).select_related("shop", "customer").get(pk=sale.pk)
+        if sale.status != Sale.Status.ORDERED:
+            raise ValidationError({"status": "This order has already been charged or cancelled."})
+        lines = list(sale.lines.all())
+        sale.destination = _destination(sale.shop, destination, sum(line.size_bytes for line in lines))
+        sale.method = method
+        sale.created_by = actor
+        apply_rewards(sale, lines)
+        sale.status = Sale.Status.AWAITING_PAYMENT
+        sale.save(
+            update_fields=[
+                "destination",
+                "method",
+                "created_by",
+                "status",
+                "total",
+                "discount",
+                "points_used",
+            ]
+        )
+    _start_payment(sale, actor)
+    audit.record(
+        actor=actor,
+        organization_id=sale.shop.organization_id,
+        action="movie_shop.order.charge",
+        resource_type="movie_shop",
+        resource_id=sale.shop_id,
+        context={"sale": sale.number, "total": sale.total, "points_used": sale.points_used, "method": method},
     )
     return sale
 
@@ -126,7 +186,7 @@ def _request_payment(sale: Sale, actor) -> None:
     """Asks the shop's IntraForge Pay for the payment; the person at the counter must hold ifpay.checkout
     there."""
     result = pay_bridge.create_request(
-        _caller(sale.shop),
+        caller(sale.shop),
         actor_id=actor.pk,
         amount_minor=sale.total * 100,
         reference=f"{sale.shop.name} · {sale.number}"[:120],
@@ -163,7 +223,7 @@ def refresh_payment(sale: Sale, *, actor) -> Sale:
         or not sale.pay_request_id
     ):
         return sale
-    status = pay_bridge.request_status(_caller(sale.shop), sale.pay_request_id)
+    status = pay_bridge.request_status(caller(sale.shop), sale.pay_request_id)
     if status.get("status") == "paid":
         with transaction.atomic():
             locked = Sale.objects.select_for_update().get(pk=sale.pk)
@@ -171,8 +231,7 @@ def refresh_payment(sale: Sale, *, actor) -> Sale:
                 _mark_paid(locked, receipt=str(status.get("receipt_number") or ""), actor=actor)
         sale.refresh_from_db()
     elif status.get("status") in ("expired", "cancelled"):
-        sale.status = Sale.Status.CANCELLED
-        sale.save(update_fields=["status"])
+        _cancel(sale, reason="payment " + str(status.get("status")))
     return sale
 
 
@@ -191,11 +250,25 @@ def mark_cash(sale: Sale, *, actor) -> Sale:
     return sale
 
 
+def _cancel(sale: Sale, *, reason: str) -> bool:
+    """Cancels a sale not yet paid and gives back any points it used. False when it was no longer
+    cancellable."""
+    from .portal import return_points
+
+    with transaction.atomic():
+        locked = Sale.objects.select_for_update().get(pk=sale.pk)
+        if locked.status not in (Sale.Status.ORDERED, Sale.Status.AWAITING_PAYMENT):
+            return False
+        locked.status = Sale.Status.CANCELLED
+        locked.save(update_fields=["status"])
+        return_points(locked, note=reason)
+    sale.refresh_from_db()
+    return True
+
+
 def cancel(sale: Sale, *, actor) -> Sale:
-    if sale.status != Sale.Status.AWAITING_PAYMENT:
+    if not _cancel(sale, reason="cancelled at the counter"):
         raise ValidationError({"status": "Only a sale still waiting for its payment can be cancelled."})
-    sale.status = Sale.Status.CANCELLED
-    sale.save(update_fields=["status"])
     audit.record(
         actor=actor,
         organization_id=sale.shop.organization_id,

@@ -27,6 +27,13 @@ class MovieShop(models.Model):
     # What the agent last reported: the PC's drives and their top folders (display data, re-validated on use).
     agent_report = models.JSONField(default=dict, blank=True)
     agent_seen_at = models.DateTimeField(null=True, blank=True)
+    # The customer portal on the shop network (phase 3): closed until the owner opens it.
+    portal_open = models.BooleanField(default=False)
+    # Movie Shop points (ADR-0022 decision 6): 1 point takes 1 credit off a Movie Shop purchase. 0 = off.
+    welcome_points = models.PositiveIntegerField(default=0)
+    referral_points = models.PositiveIntegerField(default=0)
+    birthday_points = models.PositiveIntegerField(default=0)
+    every_nth_free = models.PositiveSmallIntegerField(default=0)  # every Nth title a customer buys is free
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="movie_shops_created"
     )
@@ -135,12 +142,94 @@ class Title(models.Model):
         return self.title
 
 
+class PortalCustomer(models.Model):
+    """A customer of one shop's portal (ADR-0022 decision 7). Not an IntraForge user: signs in only to this
+    shop's portal, with a phone number and a password, and can do nothing else in IntraForge."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending"  # signed up, waiting for the owner
+        APPROVED = "approved"  # the owner added them to IF Pay
+        REJECTED = "rejected"
+        BLOCKED = "blocked"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    shop = models.ForeignKey(MovieShop, on_delete=models.CASCADE, related_name="customers")
+    name = models.CharField(max_length=80)
+    phone = models.CharField(max_length=16)  # digits, with a leading + when given
+    password = models.CharField(max_length=128)  # Django's password hash
+    birthday = models.DateField(null=True, blank=True)
+    referral_code = models.CharField(max_length=8)
+    referred_by = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    # The IF Pay wallet the owner opened for them (Pay keeps the money and the wallet's password).
+    pay_wallet_id = models.UUIDField(null=True, blank=True)
+    pay_username = models.CharField(max_length=40, blank=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    birthday_points_year = models.PositiveSmallIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["shop", "phone"], name="unique_portal_phone_per_shop"),
+            models.UniqueConstraint(fields=["shop", "referral_code"], name="unique_portal_referral_per_shop"),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class PortalSession(models.Model):
+    """A portal sign-in: the cookie holds a random token, this table only its SHA-256."""
+
+    token_hash = models.CharField(max_length=64, primary_key=True)
+    customer = models.ForeignKey(PortalCustomer, on_delete=models.CASCADE, related_name="sessions")
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self) -> str:
+        return f"session of {self.customer_id}"
+
+
+class PointsEntry(models.Model):
+    """The points ledger: a customer's points are the sum of their entries. Never edited; a reversal is an
+    entry."""
+
+    class Reason(models.TextChoices):
+        WELCOME = "welcome"
+        REFERRAL = "referral"
+        BIRTHDAY = "birthday"
+        REDEEM = "redeem"  # used on a purchase (negative)
+        RETURNED = "returned"  # a purchase that used points was cancelled
+        ADJUST = "adjust"
+
+    customer = models.ForeignKey(PortalCustomer, on_delete=models.CASCADE, related_name="points")
+    delta = models.IntegerField()
+    reason = models.CharField(max_length=10, choices=Reason.choices)
+    sale = models.ForeignKey("Sale", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    note = models.CharField(max_length=120, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self) -> str:
+        return f"{self.delta:+d} {self.reason}"
+
+
 class Sale(models.Model):
     """A counter sale: titles for one customer, paid with IntraForge Pay (or cash), then copied by the media
     agent onto the customer's drive. Nothing here holds money: Pay keeps the payment and its receipt
     (ADR-0022 decision 6)."""
 
     class Status(models.TextChoices):
+        ORDERED = "ordered"  # placed on the portal; the counter charges it when the customer brings a drive
         AWAITING_PAYMENT = "awaiting_payment"
         PAID = "paid"  # paid; the agent is copying (or will)
         DONE = "done"  # every title copied
@@ -166,8 +255,16 @@ class Sale(models.Model):
     pay_expires_at = models.DateTimeField(null=True, blank=True)
     receipt_number = models.CharField(max_length=60, blank=True)
     paid_at = models.DateTimeField(null=True, blank=True)
+    # The portal customer it is for (their points and free titles apply), if any.
+    customer = models.ForeignKey(
+        PortalCustomer, on_delete=models.SET_NULL, null=True, blank=True, related_name="sales"
+    )
+    use_points = models.BooleanField(default=False)
+    points_used = models.PositiveIntegerField(default=0)
+    discount = models.PositiveIntegerField(default=0)  # the free titles' prices
+    # Who charged it at the counter (empty while a portal order waits).
     created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="movie_sales"
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="movie_sales"
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -199,6 +296,7 @@ class SaleLine(models.Model):
     kind = models.CharField(max_length=10)
     price = models.PositiveIntegerField()
     size_bytes = models.BigIntegerField(default=0)
+    free = models.BooleanField(default=False)  # the customer's every-Nth-title-free reward
     copy_status = models.CharField(max_length=10, choices=Copy.choices, default=Copy.WAITING)
     copied_bytes = models.BigIntegerField(default=0)
     copy_message = models.CharField(max_length=300, blank=True)

@@ -76,9 +76,11 @@ describe("the counter sale helpers", () => {
     copy_status: status,
     copied_bytes: copied,
     copy_message: "",
+    free: false,
   });
   const sale = (lines: Sale["lines"]): Sale => ({
     id: "s1",
+    shop: "shop-1",
     number: "MOV-1",
     status: "paid",
     method: "cash",
@@ -91,6 +93,10 @@ describe("the counter sale helpers", () => {
     paid_at: null,
     created_at: "2026-11-10T10:00:00Z",
     lines,
+    customer: null,
+    use_points: false,
+    points_used: 0,
+    discount: 0,
   });
 
   it("measures copying by bytes, counting a copied title in full", () => {

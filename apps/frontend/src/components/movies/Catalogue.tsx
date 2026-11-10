@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useId, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, Coins, Folder, HardDrive, Pencil, Play, Plus, Receipt, RefreshCw, Search, Server, ShoppingCart, Star, Tag, Trash2, Usb } from "lucide-react";
+import { ChevronLeft, Coins, Folder, HardDrive, Pencil, Play, Plus, Receipt, RefreshCw, Search, Server, ShoppingCart, Star, Tag, Trash2, Usb, Users } from "lucide-react";
 import { agentOnline, formatBytes, movies, titlesLabel, type MovieLibrary, type MovieTitle, type Sale } from "@/lib/movies";
 import { PageLoading, ErrorBanner } from "@/components/ui";
 import { useConfirm } from "@/components/ConfirmProvider";
@@ -11,6 +11,7 @@ import { MovieCover } from "./MovieCover";
 import { dark, EditTitleDialog, message, PricesDialog, SetupDialog } from "./Dialogs";
 import { CartPanel, SaleDialog } from "./Checkout";
 import { SalesDialog } from "./SalesList";
+import { CustomersDialog } from "./Customers";
 
 const KIND_ICON = { fixed: HardDrive, removable: Usb, network: Server };
 const PAGE = 60;
@@ -25,7 +26,7 @@ export function Catalogue({ shopId }: { shopId: string }) {
   const [q, setQ] = useState("");
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(PAGE);
-  const [dialog, setDialog] = useState<"setup" | "prices" | "sales" | null>(null);
+  const [dialog, setDialog] = useState<"setup" | "prices" | "sales" | "customers" | null>(null);
   const [cart, setCart] = useState<MovieTitle[]>([]);
   const [openSale, setOpenSale] = useState<{ id: string; initial?: Sale } | null>(null);
   const [editing, setEditing] = useState<MovieTitle | null>(null);
@@ -37,6 +38,12 @@ export function Catalogue({ shopId }: { shopId: string }) {
     queryKey: ["movies", shopId, "libraries"],
     queryFn: () => movies.libraries(shopId),
     refetchInterval: (query) => (query.state.data?.some((l) => l.scan_requested) ? 3000 : 20000),
+  });
+  const portalInfo = useQuery({
+    queryKey: ["movies", shopId, "portal"],
+    queryFn: () => movies.portal(shopId),
+    enabled: shop.data?.can_manage === true,
+    refetchInterval: 30000,
   });
   const categories = useQuery({ queryKey: ["movies", shopId, "categories", library], queryFn: () => movies.categories(shopId, library ?? undefined) });
   const titles = useQuery({
@@ -106,6 +113,14 @@ export function Catalogue({ shopId }: { shopId: string }) {
           )}
           {s.can_manage && (
             <>
+              <button className={`${dark.btn} relative`} onClick={() => setDialog("customers")}>
+                <Users className="h-4 w-4" /> Customers
+                {(portalInfo.data?.waiting ?? 0) > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-amber-400 px-1 text-[11px] font-bold text-amber-950">
+                    {portalInfo.data?.waiting}
+                  </span>
+                )}
+              </button>
               <button className={dark.btn} onClick={() => setDialog("prices")}>
                 <Tag className="h-4 w-4" /> Prices
               </button>
@@ -277,6 +292,7 @@ export function Catalogue({ shopId }: { shopId: string }) {
       {dialog === "setup" && <SetupDialog shop={s} onClose={() => setDialog(null)} onChanged={refresh} />}
       {dialog === "prices" && <PricesDialog shop={s} categories={cats} onClose={() => setDialog(null)} onSaved={refresh} />}
       {editing && <EditTitleDialog title={editing} onClose={() => setEditing(null)} onSaved={refresh} />}
+      {dialog === "customers" && <CustomersDialog shopId={s.id} onClose={() => setDialog(null)} onChanged={refresh} />}
       {dialog === "sales" && <SalesDialog shopId={s.id} onClose={() => setDialog(null)} onOpen={(id) => setOpenSale({ id })} />}
       {openSale && <SaleDialog saleId={openSale.id} initial={openSale.initial} onClose={() => setOpenSale(null)} />}
     </div>

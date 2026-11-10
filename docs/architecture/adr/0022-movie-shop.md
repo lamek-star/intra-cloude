@@ -1,6 +1,6 @@
 # ADR-0022 — Movie Shop: a catalogue of the shop's own video library, sold at the counter and on the shop Wi-Fi
 
-Status: accepted; phases 1 and 2 implemented (2026-11-10), phases 3-4 planned.
+Status: accepted; phases 1-3 implemented (2026-11-10), phase 4 planned.
 Date: 2026-11-10. Builds on ADR-0001 (control plane / data plane), ADR-0008 (capabilities), ADR-0018 (service
 applications and the Pay bridge), ADR-0021 (shop names). Adds one Django app (`movie_shop`) and one Windows helper
 (the media agent); no new datastore, identity provider or container image.
@@ -58,13 +58,39 @@ drives, a USB stick plugged in at the counter, or a NAS share mapped in Windows.
    The portal is reached on the shop network only (`/portal/<shop>`), never through the internet gateway.
 8. **Ads** (phase 4) are the shop's own records (picture, title, link, dates) shown on its portal only.
 
+### Phase 3 as built
+
+- **Portal sessions.** `PortalSession` keeps the SHA-256 of a random token; the cookie `ifportal` is HttpOnly,
+  SameSite=Strict, Secure in production, path `/api/v1/portal/`, 30 days. No IntraForge authentication runs on the
+  portal API; every change must carry `X-Portal-Request: 1` (a custom header another site cannot send without a CORS
+  preflight). Sign-up and sign-in use the `auth` throttle (10/minute). An unknown phone number is checked against a
+  dummy hash so both answers take as long. A customer is looked up only among the named shop's customers.
+- **Ordering, not paying, on the portal.** A portal order is a `Sale` in status `ordered` with no drive. The counter
+  (a person holding `movies.sell`) charges it when the customer brings a USB drive: the drive, IF Pay or cash, and only
+  then the rewards apply. So every payment request is still made on behalf of a staff member holding
+  `ifpay.checkout`, exactly as in phase 2; the portal never asks Pay for money. At most 3 orders wait per customer.
+- **Rewards, applied at charge time under a lock on the customer row:** every Nth title the customer buys is free (the
+  cheapest in the cart first; counted over their paid sales), then their points if they chose to use them (1 point =
+  1 credit, never more than what is left). Points spent are a `redeem` entry; a sale cancelled or expired gives them
+  back (`returned`). Welcome points on approval, invite points to the referrer when the invited customer is approved,
+  birthday points once a year in the birthday month at the first visit.
+- **"Add to IF Pay"** calls Pay's new `POST /internal/customers` through the Pay bridge with the approving person's
+  capabilities (they must hold `ifpay.customers.manage`), keyed by `movie-customer:<id>` so a retry opens the same
+  wallet. Pay answers once with a one-time first password, shown to the owner once and never stored by IntraForge;
+  the wallet makes the customer choose their own password before anything else. The portal shows the wallet's
+  username and balance from `GET /internal/customers/<id>`, which Pay answers only to the application that opened it.
+- **Limits:** a lost first password cannot be reset yet (neither Pay nor IntraForge has a reset); counter sales cannot
+  yet be linked to a portal customer, so only portal orders earn and use rewards; the portal address is the shop PC's
+  own (`https://<pc>:8443/portal/<shop>`) and shows the local certificate warning until the shop's root certificate is
+  trusted on the phone.
+
 ## Phases
 
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 1 | `movie_shop` app (shop, libraries, titles, covers, prices), agent credential, media agent (drives, scan, covers), owner catalogue page | implemented |
 | 2 | Counter sale: cart, Pay payment request, copy jobs carried out by the agent with progress, sales list | implemented |
-| 3 | Customer portal: sign-up on the shop Wi-Fi, approval and Pay wallet, browse, buy, wallet and points, reward rules | planned (needs the Pay endpoint) |
+| 3 | Customer portal: sign-up on the shop Wi-Fi, approval and Pay wallet, browse, buy, wallet and points, reward rules | implemented (Pay: `feature/shop-app-customers`) |
 | 4 | Ads on the portal | planned |
 
 ## Consequences

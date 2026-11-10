@@ -65,7 +65,11 @@ function Motif({ motif, accent }: { motif: ReturnType<typeof drawnCover>["motif"
 }
 
 /** A title's cover: the picture found beside it, or a drawn one, with its price and the title over a dark fade. */
-export function MovieCover({ title, showPrice = true, className = "" }: { title: MovieTitle; showPrice?: boolean; className?: string }) {
+type CoverTitle = Pick<MovieTitle, "id" | "title" | "has_cover" | "price" | "kind" | "episodes">;
+
+/** A title's cover: the shop's picture when there is one (from `src`, or the owner's cover address), else a cover
+ * drawn from the title. */
+export function MovieCover({ title, showPrice = true, className = "", src }: { title: CoverTitle; showPrice?: boolean; className?: string; src?: string }) {
   const [broken, setBroken] = useState(false);
   const drawn = drawnCover(title.title);
   const picture = title.has_cover && !broken;
@@ -76,7 +80,7 @@ export function MovieCover({ title, showPrice = true, className = "" }: { title:
     >
       {picture ? (
         // eslint-disable-next-line @next/next/no-img-element -- the shop's own cover, served by IntraForge
-        <img src={movies.coverUrl(title.id)} alt="" loading="lazy" onError={() => setBroken(true)} className="absolute inset-0 h-full w-full object-cover" />
+        <img src={src ?? movies.coverUrl(title.id)} alt="" loading="lazy" onError={() => setBroken(true)} className="absolute inset-0 h-full w-full object-cover" />
       ) : (
         <svg viewBox="0 0 200 300" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" aria-hidden="true">
           <Motif motif={drawn.motif} accent={drawn.accent} />

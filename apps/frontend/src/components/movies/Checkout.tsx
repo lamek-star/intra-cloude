@@ -5,6 +5,35 @@ import { Banknote, Check, CircleAlert, Clock, Coins, RefreshCw, ShieldCheck, Tra
 import { copyProgress, formatBytes, movies, qrDataUrl, type Destination, type MovieShop, type MovieTitle, type Sale } from "@/lib/movies";
 import { dark, DarkDialog, message } from "./Dialogs";
 
+/** The drives a sold title can go to, as the media agent sees them now (refreshed every 5 s): plug in, it appears. */
+function useDestinations(shopId: string) {
+  const [drives, setDrives] = useState<Destination[]>([]);
+  const [destination, setDestination] = useState("");
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      movies
+        .destinations(shopId)
+        .then((r) => {
+          if (!alive) return;
+          setDrives(r.drives);
+          setDestination((current) => (r.drives.some((d) => d.root === current) ? current : (r.drives[0]?.root ?? "")));
+        })
+        .catch(() => undefined);
+    load();
+    const t = window.setInterval(load, 5000);
+    return () => {
+      alive = false;
+      window.clearInterval(t);
+    };
+  }, [shopId]);
+  return { drives, destination, setDestination };
+}
+
+function driveLabel(d: Destination): string {
+  return `${d.label ? `${d.label} (${d.root.replace("\\", "")})` : d.root} · ${formatBytes(d.free_bytes)} free${d.kind === "removable" ? " · USB" : ""}`;
+}
+
 /** The cart: the titles chosen for one customer, their drive, how they pay. Docked on the right of the catalogue. */
 export function CartPanel({
   shop,
@@ -19,32 +48,12 @@ export function CartPanel({
   onClear: () => void;
   onSold: (sale: Sale) => void;
 }) {
-  const [drives, setDrives] = useState<Destination[]>([]);
-  const [destination, setDestination] = useState("");
+  const { drives, destination, setDestination } = useDestinations(shop.id);
   const [customer, setCustomer] = useState("");
   const [method, setMethod] = useState<Sale["method"]>("ifpay");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const ids = { drive: useId(), customer: useId() };
-
-  useEffect(() => {
-    let alive = true;
-    const load = () =>
-      movies
-        .destinations(shop.id)
-        .then((r) => {
-          if (!alive) return;
-          setDrives(r.drives);
-          setDestination((current) => (r.drives.some((d) => d.root === current) ? current : (r.drives[0]?.root ?? "")));
-        })
-        .catch(() => undefined);
-    load();
-    const t = window.setInterval(load, 5000);
-    return () => {
-      alive = false;
-      window.clearInterval(t);
-    };
-  }, [shop.id]);
 
   const total = items.reduce((a, t) => a + t.price, 0);
   const size = items.reduce((a, t) => a + t.size_bytes, 0);
@@ -99,7 +108,7 @@ export function CartPanel({
         {drives.length === 0 && <option value="">Plug in the customer&apos;s USB...</option>}
         {drives.map((d) => (
           <option key={d.root} value={d.root}>
-            {d.label ? `${d.label} (${d.root.replace("\\", "")})` : d.root} · {formatBytes(d.free_bytes)} free{d.kind === "removable" ? " · USB" : ""}
+            {driveLabel(d)}
           </option>
         ))}
       </select>
@@ -149,7 +158,7 @@ export function SaleDialog({ saleId, initial, onClose }: { saleId: string; initi
         const s = await movies.sale(saleId);
         if (!alive) return;
         setSale(s);
-        if (s.status === "awaiting_payment" || s.status === "paid") timer = window.setTimeout(load, 2000);
+        if (s.status === "ordered" || s.status === "awaiting_payment" || s.status === "paid") timer = window.setTimeout(load, 2000);
       } catch (err) {
         if (alive) setError(message(err));
       }
@@ -184,12 +193,15 @@ export function SaleDialog({ saleId, initial, onClose }: { saleId: string; initi
               return (
                 <li key={l.id} className="border-b border-[#252e47] py-2.5">
                   <div className="flex items-center gap-2 text-sm">
-                    <span className="min-w-0 flex-1 truncate font-semibold">{l.title}</span>
+                    <span className="min-w-0 flex-1 truncate font-semibold">
+                      {l.title}
+                      {l.free && <span className="ml-2 rounded-full bg-emerald-400/15 px-2 py-px text-[10.5px] font-bold text-emerald-200">FREE</span>}
+                    </span>
                     <span className="text-xs text-slate-500">
                       {l.category} · {formatBytes(l.size_bytes)} · <b className="text-amber-200">{l.price}</b>
                     </span>
                   </div>
-                  {sale.status !== "awaiting_payment" && sale.status !== "cancelled" && (
+                  {sale.status !== "ordered" && sale.status !== "awaiting_payment" && sale.status !== "cancelled" && (
                     <div className="mt-1.5 flex items-center gap-2">
                       <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#252e47]">
                         <span
@@ -215,12 +227,26 @@ export function SaleDialog({ saleId, initial, onClose }: { saleId: string; initi
 
         <div className="flex flex-col gap-3">
           <div className="rounded-xl border border-[#252e47] bg-[#0f1422] p-3">
-            <p className="text-xs text-slate-500">{sale.customer_name || "Customer"}</p>
-            <p className="text-2xl font-extrabold">
-              {sale.total} <span className="text-xs font-semibold text-slate-400">credits</span>
+            <p className="text-xs text-slate-500">
+              {sale.customer ? `${sale.customer.name} · ${sale.customer.phone} · portal customer` : sale.customer_name || "Customer"}
             </p>
+            <p className="text-2xl font-extrabold">
+              {sale.total} <span className="text-xs font-semibold text-slate-400">credits{sale.status === "ordered" ? " (estimate)" : ""}</span>
+            </p>
+            {(sale.discount > 0 || sale.points_used > 0 || (sale.status === "ordered" && sale.use_points)) && (
+              <p className="mt-1 text-[11px] text-amber-200">
+                {[
+                  sale.discount > 0 ? `${sale.discount} off for free titles` : null,
+                  sale.points_used > 0 ? `${sale.points_used} points used` : null,
+                  sale.status === "ordered" && sale.use_points ? "uses their points when charged" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            )}
           </div>
 
+          {sale.status === "ordered" && <ChargeOrder sale={sale} onCharged={setSale} />}
           {sale.status === "awaiting_payment" && sale.pay && (
             <div className="rounded-xl border border-teal-400/30 bg-teal-400/5 p-3 text-center">
               <p className="text-xs font-semibold text-teal-200">Scan with the IF Pay wallet</p>
@@ -284,5 +310,63 @@ export function SaleDialog({ saleId, initial, onClose }: { saleId: string; initi
         </div>
       </div>
     </DarkDialog>
+  );
+}
+
+/** A portal order at the counter: the customer's drive and how they pay; their rewards apply when charged. */
+function ChargeOrder({ sale, onCharged }: { sale: Sale; onCharged: (sale: Sale) => void }) {
+  const { drives, destination, setDestination } = useDestinations(sale.shop);
+  const [method, setMethod] = useState<Sale["method"]>("ifpay");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const driveId = useId();
+  async function charge() {
+    setBusy(true);
+    setError(null);
+    try {
+      onCharged(await movies.charge(sale.id, destination, method));
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-amber-400/30 bg-amber-400/5 p-3">
+      <p className="text-xs font-semibold text-amber-200">Ordered on the portal: plug in the customer&apos;s drive, then charge.</p>
+      <label htmlFor={driveId} className={dark.label}>
+        Copy to
+      </label>
+      <select id={driveId} className={dark.input} value={destination} onChange={(e) => setDestination(e.target.value)}>
+        {drives.length === 0 && <option value="">Plug in the customer&apos;s USB...</option>}
+        {drives.map((d) => (
+          <option key={d.root} value={d.root}>
+            {driveLabel(d)}
+          </option>
+        ))}
+      </select>
+      <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Payment">
+        {(
+          [
+            ["ifpay", Wallet, "IF Pay"],
+            ["cash", Banknote, "Cash"],
+          ] as const
+        ).map(([value, Icon, label]) => (
+          <button
+            key={value}
+            role="radio"
+            aria-checked={method === value}
+            onClick={() => setMethod(value)}
+            className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg border text-sm font-semibold ${method === value ? "border-amber-400 bg-amber-400/10 text-amber-200" : "border-[#323c5a] text-slate-300"}`}
+          >
+            <Icon className="h-4 w-4" /> {label}
+          </button>
+        ))}
+      </div>
+      {error && <p className="text-xs text-red-300">{error}</p>}
+      <button className={dark.amber} disabled={busy || !destination} onClick={() => void charge()}>
+        <Coins className="h-4 w-4" /> {busy ? "Charging..." : "Charge this order"}
+      </button>
+    </div>
   );
 }

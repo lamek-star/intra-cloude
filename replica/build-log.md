@@ -387,3 +387,42 @@ its signature off (now a text field); Pay sends the QR as a data URL and it was 
 copy. Docker Desktop's VM stopped once during the image builds (three stacks running); a restart brought every stack
 back, the shop's included. Phases 3 and 4 (the customer portal on the shop Wi-Fi with rewards, then ads) are next; phase
 3 needs a new endpoint in the Pay repository.
+
+### Movie Shop, phase 3: the customer portal (2026-11-10, not in a kit yet)
+
+Customers of a shop sign up at `/portal/<shop>` on the shop Wi-Fi (phone number and password; not IntraForge users),
+browse the catalogue, order, and collect Movie Shop points; the owner opens the portal and sets the rewards under
+**Customers**, and approves a customer with **Add to IF Pay**. ADR-0022 "Phase 3 as built" records the decisions:
+the portal's own HttpOnly/SameSite=Strict cookie and `X-Portal-Request` header, orders the counter charges (so a Pay
+request is still always made for a staff member holding `ifpay.checkout`), rewards applied at charge time under a lock
+on the customer, and points given back when a sale is cancelled or expires. The opt-in internet gateway's Caddyfile
+now answers 404 for the portal.
+
+**IntraForge Pay change** (asked for and approved; branch `feature/shop-app-customers` at `b738f48` of
+lamek-star/intraforge-pay, on `feature/refunds-cashback`): `POST /internal/customers` opens a customer wallet for an
+application in the shop (the approving person must hold `ifpay.customers.manage`; keyed by the application and its
+record, so asking twice opens one wallet), returns a one-time first password once (only its hash is kept), and
+`GET /internal/customers/<id>?source_app_id=` answers only the application that opened it. The wallet asks for the
+customer's own password before anything else. Migration 0005 adds the columns with database checks. Pay's 18 refund
+and cashback tests and 9 new ones pass on a throwaway PostgreSQL (Pay's older `tests/` folder does not import on that
+branch; it already did not before this change). Image `intraforge-shop-pay:1.5.4-portal` = the 1.5.0 cashback image
+with `ifpay` replaced by `b738f48` (the shipped code was first confirmed identical to `429aca5` apart from line
+endings).
+
+Checked: backend 18 new tests (portal closed is 404 and only `movies.manage` opens it; the cookie's flags; sign-up
+rules; a change without the header refused; sign-in, sign-out and the 10/minute limit; a customer of one shop is
+unknown at another; waiting customers browse but cannot order and never see file paths; approval through the Pay
+stand-in once, with welcome and invite points given once; customers need `movies.manage` and stay in their
+organization; blocking signs out and cancels orders; an order charged with points then every 3rd title free; the
+cheapest title is the free one; points back on cancel and on an expired IF Pay request; at most 3 waiting orders and
+only one's own order cancelled; birthday points once; the wallet balance from Pay); 40 Movie Shop and 70 service-app
+and permission tests pass; ruff clean. Frontend 200 tests (4 new), tsc and eslint clean. Live on the test copy with
+preview images and the new Pay image: the owner opened the portal and set rewards; a phone-sized browser signed up;
+**Add to IF Pay** opened a real wallet in the test copy's Pay and showed its username and first password once; the
+customer (30 welcome points) ordered two titles using the points (50 to pay), the counter charged it in cash and the
+media agent copied both; the customer then signed in to the Pay wallet with the first password, was asked to choose
+their own, and reached the wallet. Faults found and fixed on the way: locking a sale through its optional customer
+join (PostgreSQL refuses `FOR UPDATE` on an outer join), "not signed in" answered 403 instead of 401 on the portal,
+Block and Reject not mapped to their statuses, and the portal header's points not refreshing after a purchase. The
+test copy was put back on its 1.5.2 images afterwards (its Pay database keeps migration 0005, which the old Pay code
+ignores). Phase 4 (ads) is next.
