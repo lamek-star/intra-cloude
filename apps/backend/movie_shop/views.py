@@ -42,7 +42,7 @@ def get_member_shop(user, shop_id) -> MovieShop:
     return shop
 
 
-def _shop_json(shop: MovieShop, *, can_manage: bool) -> dict:
+def _shop_json(shop: MovieShop, *, can_manage: bool, can_sell: bool = False) -> dict:
     return {
         "id": str(shop.id),
         "organization": str(shop.organization_id),
@@ -57,6 +57,7 @@ def _shop_json(shop: MovieShop, *, can_manage: bool) -> dict:
         },
         "titles": shop.titles.filter(hidden=False).count(),
         "can_manage": can_manage,
+        "can_sell": can_sell,
         "created_at": shop.created_at.isoformat(),
     }
 
@@ -126,7 +127,32 @@ class ShopDetailView(OwnerView):
         shop = get_member_shop(request.user, shop_id)
         if not _can(request.user, "movies.read", shop):
             return _forbidden()
-        return Response(_shop_json(shop, can_manage=_can(request.user, "movies.manage", shop)))
+        return Response(
+            _shop_json(
+                shop,
+                can_manage=_can(request.user, "movies.manage", shop),
+                can_sell=_can(request.user, "movies.sell", shop),
+            )
+        )
+
+
+class DestinationsView(OwnerView):
+    """The drives a sold title can be copied to (what the media agent sees now), for the person at the
+    counter."""
+
+    def get(self, request, shop_id):
+        shop = get_member_shop(request.user, shop_id)
+        if not _can(request.user, "movies.sell", shop):
+            return _forbidden()
+        library_roots = {lib.path[:3].lower() for lib in shop.libraries.all()}
+        drives = [
+            {k: d.get(k) for k in ("root", "label", "kind", "total_bytes", "free_bytes")}
+            for d in (shop.agent_report or {}).get("drives", [])
+            if d.get("kind") == "removable" or d.get("root", "").lower() not in library_roots
+        ]
+        drives.sort(key=lambda d: d["kind"] != "removable")
+        seen = shop.agent_seen_at.isoformat() if shop.agent_seen_at else None
+        return Response({"agent_seen_at": seen, "drives": drives})
 
 
 class ShopPricesView(OwnerView):
@@ -366,3 +392,122 @@ class AgentCoverView(AgentView):
             upload=request.FILES.get("file"),
         )
         return Response({"id": str(title.id)}, status=status.HTTP_201_CREATED)
+
+
+# ---- counter sales (phase 2) ---------------------------------------------------------------------------
+def _sale_json(sale) -> dict:
+    lines = list(sale.lines.all())
+    return {
+        "id": str(sale.id),
+        "number": sale.number,
+        "status": sale.status,
+        "method": sale.method,
+        "customer_name": sale.customer_name,
+        "total": sale.total,
+        "destination": sale.destination,
+        "folder": sale.folder,
+        "pay": (
+            {
+                "code": sale.pay_code,
+                "qr_svg": sale.pay_qr_svg,
+                "expires_at": sale.pay_expires_at.isoformat() if sale.pay_expires_at else None,
+            }
+            if sale.status == "awaiting_payment" and sale.method == "ifpay"
+            else None
+        ),
+        "receipt_number": sale.receipt_number,
+        "paid_at": sale.paid_at.isoformat() if sale.paid_at else None,
+        "created_at": sale.created_at.isoformat(),
+        "lines": [
+            {
+                "id": str(line.id),
+                "title": line.title_name,
+                "title_id": str(line.title_id) if line.title_id else None,
+                "category": line.category,
+                "kind": line.kind,
+                "price": line.price,
+                "size_bytes": line.size_bytes,
+                "copy_status": line.copy_status,
+                "copied_bytes": line.copied_bytes,
+                "copy_message": line.copy_message,
+            }
+            for line in lines
+        ],
+    }
+
+
+def _can_sell(user, shop) -> bool:
+    return _can(user, "movies.sell", shop)
+
+
+def _member_sale(user, sale_id):
+    from .models import Sale
+
+    sale = Sale.objects.select_related("shop").filter(id=sale_id).first() if _is_uuid(sale_id) else None
+    if sale is None:
+        raise Http404
+    get_member_organization(user, sale.shop.organization_id)
+    return sale
+
+
+class SaleListCreateView(OwnerView):
+    def get(self, request, shop_id):
+        shop = get_member_shop(request.user, shop_id)
+        if not (_can_sell(request.user, shop) or _can(request.user, "movies.manage", shop)):
+            return _forbidden()
+        qs = shop.sales.all()
+        if request.query_params.get("status"):
+            qs = qs.filter(status=request.query_params["status"])
+        paginator = LimitOffsetPagination()
+        page = paginator.paginate_queryset(qs.prefetch_related("lines"), request, view=self)
+        return paginator.get_paginated_response([_sale_json(s) for s in page])
+
+    def post(self, request, shop_id):
+        from . import sales
+
+        shop = get_member_shop(request.user, shop_id)
+        if not _can_sell(request.user, shop):
+            return _forbidden()
+        data = request.data if isinstance(request.data, dict) else {}
+        sale = sales.create_sale(
+            shop=shop,
+            actor=request.user,
+            title_ids=data.get("titles"),
+            destination=data.get("destination"),
+            method=data.get("method", "ifpay"),
+            customer_name=data.get("customer_name", ""),
+        )
+        return Response(_sale_json(sale), status=status.HTTP_201_CREATED)
+
+
+class SaleDetailView(OwnerView):
+    def get(self, request, sale_id):
+        from . import sales
+
+        sale = _member_sale(request.user, sale_id)
+        if not (_can_sell(request.user, sale.shop) or _can(request.user, "movies.manage", sale.shop)):
+            return _forbidden()
+        if _can_sell(request.user, sale.shop):
+            sale = sales.refresh_payment(sale, actor=request.user)
+        return Response(_sale_json(sale))
+
+
+class SaleActionView(OwnerView):
+    action_name = ""
+
+    def post(self, request, sale_id):
+        from . import sales
+
+        sale = _member_sale(request.user, sale_id)
+        if not _can_sell(request.user, sale.shop):
+            return _forbidden()
+        act = {"cash": sales.mark_cash, "cancel": sales.cancel, "retry": sales.retry_failed}[self.action_name]
+        return Response(_sale_json(act(sale, actor=request.user)))
+
+
+class AgentCopyProgressView(AgentView):
+    def post(self, request, line_id):
+        from . import sales
+
+        line = sales.copy_progress(shop=self.shop(request), line_id=line_id, data=request.data)
+        return Response({"status": line.copy_status, "sale_status": line.sale.status})

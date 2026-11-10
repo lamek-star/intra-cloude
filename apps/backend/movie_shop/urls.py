@@ -35,6 +35,28 @@ urlpatterns = [
     ),
     path("movie-titles/<uuid:title_id>/", views.TitleDetailView.as_view(), name="movie-title-detail"),
     path("movie-titles/<uuid:title_id>/cover/", views.TitleCoverView.as_view(), name="movie-title-cover"),
+    path("movie-shops/<uuid:shop_id>/sales/", views.SaleListCreateView.as_view(), name="movie-shop-sales"),
+    path(
+        "movie-shops/<uuid:shop_id>/destinations/",
+        views.DestinationsView.as_view(),
+        name="movie-shop-destinations",
+    ),
+    path("movie-sales/<uuid:sale_id>/", views.SaleDetailView.as_view(), name="movie-sale-detail"),
+    path(
+        "movie-sales/<uuid:sale_id>/cash/",
+        views.SaleActionView.as_view(action_name="cash"),
+        name="movie-sale-cash",
+    ),
+    path(
+        "movie-sales/<uuid:sale_id>/cancel/",
+        views.SaleActionView.as_view(action_name="cancel"),
+        name="movie-sale-cancel",
+    ),
+    path(
+        "movie-sales/<uuid:sale_id>/retry/",
+        views.SaleActionView.as_view(action_name="retry"),
+        name="movie-sale-retry",
+    ),
     # The media agent (its own credential only)
     path("movie-agent/report/", views.AgentReportView.as_view(), name="movie-agent-report"),
     path(
@@ -56,5 +78,8 @@ urlpatterns = [
         "movie-agent/libraries/<uuid:library_id>/covers/",
         views.AgentCoverView.as_view(),
         name="movie-agent-cover",
+    ),
+    path(
+        "movie-agent/copies/<uuid:line_id>/", views.AgentCopyProgressView.as_view(), name="movie-agent-copy"
     ),
 ]

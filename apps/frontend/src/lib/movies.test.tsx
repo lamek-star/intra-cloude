@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { agentOnline, drawnCover, formatBytes, pairCommand, titlesLabel, type MovieTitle } from "./movies";
+import { agentOnline, copyProgress, drawnCover, formatBytes, pairCommand, qrDataUrl, titlesLabel, type MovieTitle, type Sale } from "./movies";
 import { MovieCover } from "@/components/movies/MovieCover";
 
 const TITLE: MovieTitle = {
@@ -61,5 +61,55 @@ describe("MovieCover", () => {
     render(<MovieCover title={{ ...TITLE, has_cover: true, kind: "series", episodes: 30 }} />);
     expect(document.querySelector("img")?.getAttribute("src")).toBe("/api/v1/movie-titles/t1/cover/");
     expect(screen.getByText("30 EP")).toBeInTheDocument();
+  });
+});
+
+describe("the counter sale helpers", () => {
+  const line = (size: number, status: Sale["lines"][number]["copy_status"], copied = 0) => ({
+    id: `l${size}`,
+    title: "T",
+    title_id: null,
+    category: "Action",
+    kind: "movie" as const,
+    price: 50,
+    size_bytes: size,
+    copy_status: status,
+    copied_bytes: copied,
+    copy_message: "",
+  });
+  const sale = (lines: Sale["lines"]): Sale => ({
+    id: "s1",
+    number: "MOV-1",
+    status: "paid",
+    method: "cash",
+    customer_name: "",
+    total: 100,
+    destination: "E:\\",
+    folder: "Shop",
+    pay: null,
+    receipt_number: "",
+    paid_at: null,
+    created_at: "2026-11-10T10:00:00Z",
+    lines,
+  });
+
+  it("measures copying by bytes, counting a copied title in full", () => {
+    expect(copyProgress(sale([line(300, "copied", 0), line(100, "copying", 50)]))).toBeCloseTo(350 / 400);
+    expect(copyProgress(sale([line(100, "waiting")]))).toBe(0);
+    expect(copyProgress(sale([line(100, "copying", 999)]))).toBe(1);
+  });
+
+  it("uses Pay's QR data URL as it is and encodes a bare SVG, including non-ASCII text", () => {
+    expect(qrDataUrl("data:image/svg+xml;base64,PHN2Zy8+")).toBe("data:image/svg+xml;base64,PHN2Zy8+");
+    const url = qrDataUrl("<svg><title>ብር</title></svg>") ?? "";
+    expect(url.startsWith("data:image/svg+xml;base64,")).toBe(true);
+    const decoded = new TextDecoder().decode(Uint8Array.from(atob(url.split(",")[1]), (c) => c.charCodeAt(0)));
+    expect(decoded).toBe("<svg><title>ብር</title></svg>");
+  });
+
+  it("gives no picture for anything that is not an SVG", () => {
+    expect(qrDataUrl("javascript:alert(1)")).toBeNull();
+    expect(qrDataUrl("data:text/html;base64,PHNjcmlwdD4=")).toBeNull();
+    expect(qrDataUrl('data:image/svg+xml;base64,PHN2Zy8+" onerror="x')).toBeNull();
   });
 });

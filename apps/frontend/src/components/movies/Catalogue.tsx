@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useEffect, useId, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, Coins, Folder, HardDrive, Pencil, Play, Plus, RefreshCw, Search, Server, Star, Tag, Trash2, Usb } from "lucide-react";
-import { agentOnline, formatBytes, movies, titlesLabel, type MovieLibrary, type MovieTitle } from "@/lib/movies";
+import { ChevronLeft, Coins, Folder, HardDrive, Pencil, Play, Plus, Receipt, RefreshCw, Search, Server, ShoppingCart, Star, Tag, Trash2, Usb } from "lucide-react";
+import { agentOnline, formatBytes, movies, titlesLabel, type MovieLibrary, type MovieTitle, type Sale } from "@/lib/movies";
 import { PageLoading, ErrorBanner } from "@/components/ui";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { MovieCover } from "./MovieCover";
 import { dark, EditTitleDialog, message, PricesDialog, SetupDialog } from "./Dialogs";
+import { CartPanel, SaleDialog } from "./Checkout";
+import { SalesDialog } from "./SalesList";
 
 const KIND_ICON = { fixed: HardDrive, removable: Usb, network: Server };
 const PAGE = 60;
@@ -23,7 +25,9 @@ export function Catalogue({ shopId }: { shopId: string }) {
   const [q, setQ] = useState("");
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(PAGE);
-  const [dialog, setDialog] = useState<"setup" | "prices" | null>(null);
+  const [dialog, setDialog] = useState<"setup" | "prices" | "sales" | null>(null);
+  const [cart, setCart] = useState<MovieTitle[]>([]);
+  const [openSale, setOpenSale] = useState<{ id: string; initial?: Sale } | null>(null);
   const [editing, setEditing] = useState<MovieTitle | null>(null);
   const [error, setError] = useState<string | null>(null);
   const searchId = useId();
@@ -95,6 +99,11 @@ export function Catalogue({ shopId }: { shopId: string }) {
             <span className={`h-1.5 w-1.5 rounded-full ${online ? "bg-emerald-400" : "bg-slate-500"}`} />
             {online ? `Media agent on ${s.agent.computer || "the shop PC"}` : "Media agent not running"}
           </span>
+          {s.can_sell && (
+            <button className={dark.btn} onClick={() => setDialog("sales")}>
+              <Receipt className="h-4 w-4" /> Sales
+            </button>
+          )}
           {s.can_manage && (
             <>
               <button className={dark.btn} onClick={() => setDialog("prices")}>
@@ -126,7 +135,7 @@ export function Catalogue({ shopId }: { shopId: string }) {
           )}
         </div>
       ) : (
-        <div className="mt-5 grid gap-6 lg:grid-cols-[240px_1fr]">
+        <div className={`mt-5 grid gap-6 ${cart.length ? "lg:grid-cols-[220px_1fr_300px]" : "lg:grid-cols-[240px_1fr]"}`}>
           {/* Storage */}
           <aside aria-label="Storage" className="flex flex-col gap-1.5">
             <p className="px-2 pb-1 text-[11px] font-semibold tracking-[.08em] text-slate-500 uppercase">Storage</p>
@@ -228,9 +237,17 @@ export function Catalogue({ shopId }: { shopId: string }) {
             ) : titles.data && titles.data.results.length === 0 ? (
               <p className="mt-6 text-sm text-slate-500">{scanning ? "The media agent is scanning the folders..." : "No titles here yet."}</p>
             ) : (
-              <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+              <div className={`mt-4 grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-3 md:grid-cols-4 ${cart.length ? "xl:grid-cols-5" : "xl:grid-cols-6"}`}>
                 {titles.data?.results.map((t) => (
-                  <TitleCard key={t.id} title={t} canManage={s.can_manage} onEdit={() => setEditing(t)} />
+                  <TitleCard
+                    key={t.id}
+                    title={t}
+                    canManage={s.can_manage}
+                    canSell={s.can_sell}
+                    inCart={cart.some((c) => c.id === t.id)}
+                    onEdit={() => setEditing(t)}
+                    onToggleCart={() => setCart((c) => (c.some((x) => x.id === t.id) ? c.filter((x) => x.id !== t.id) : [...c, t]))}
+                  />
                 ))}
               </div>
             )}
@@ -242,12 +259,26 @@ export function Catalogue({ shopId }: { shopId: string }) {
               </div>
             )}
           </section>
+          {cart.length > 0 && (
+            <CartPanel
+              shop={s}
+              items={cart}
+              onRemove={(id) => setCart((c) => c.filter((x) => x.id !== id))}
+              onClear={() => setCart([])}
+              onSold={(sale) => {
+                setCart([]);
+                setOpenSale({ id: sale.id, initial: sale });
+              }}
+            />
+          )}
         </div>
       )}
 
       {dialog === "setup" && <SetupDialog shop={s} onClose={() => setDialog(null)} onChanged={refresh} />}
       {dialog === "prices" && <PricesDialog shop={s} categories={cats} onClose={() => setDialog(null)} onSaved={refresh} />}
       {editing && <EditTitleDialog title={editing} onClose={() => setEditing(null)} onSaved={refresh} />}
+      {dialog === "sales" && <SalesDialog shopId={s.id} onClose={() => setDialog(null)} onOpen={(id) => setOpenSale({ id })} />}
+      {openSale && <SaleDialog saleId={openSale.id} initial={openSale.initial} onClose={() => setOpenSale(null)} />}
     </div>
   );
 }
@@ -270,11 +301,25 @@ function FolderTile({ name, count, active, onClick }: { name: string; count: num
   );
 }
 
-function TitleCard({ title, canManage, onEdit }: { title: MovieTitle; canManage: boolean; onEdit: () => void }) {
+type TitleCardProps = {
+  title: MovieTitle;
+  canManage: boolean;
+  canSell: boolean;
+  inCart: boolean;
+  onEdit: () => void;
+  onToggleCart: () => void;
+};
+
+function TitleCard({ title, canManage, canSell, inCart, onEdit, onToggleCart }: TitleCardProps) {
   return (
     <div className="group relative">
-      <div className="transition duration-300 group-hover:-translate-y-1.5 group-hover:scale-[1.04] group-hover:drop-shadow-[0_24px_30px_rgba(0,0,0,.6)]">
+      <div className="relative transition duration-300 group-hover:-translate-y-1.5 group-hover:scale-[1.04] group-hover:drop-shadow-[0_24px_30px_rgba(0,0,0,.6)]">
         <MovieCover title={title} />
+        {inCart && (
+          <span className="absolute right-2 bottom-2 grid h-7 w-7 place-items-center rounded-full bg-emerald-400 text-emerald-950 shadow-lg" aria-hidden>
+            <ShoppingCart className="h-3.5 w-3.5" />
+          </span>
+        )}
         <div className="absolute inset-0 flex flex-col justify-end rounded-xl bg-gradient-to-t from-black/95 via-black/75 to-transparent p-2.5 opacity-0 transition duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
           <p className="truncate text-[11px] font-semibold text-white">{title.title}</p>
           <p className="mt-0.5 flex items-center gap-1 truncate text-[10.5px] text-slate-300">
@@ -286,12 +331,34 @@ function TitleCard({ title, canManage, onEdit }: { title: MovieTitle; canManage:
             <span className="inline-flex h-7 items-center gap-1 rounded-md bg-amber-400/15 px-2 text-[11px] font-bold text-amber-200" title={title.relative_path}>
               <Coins className="h-3 w-3" /> {title.price}
             </span>
+            <span className="ml-auto" />
             {canManage && (
-              <button onClick={onEdit} className="ml-auto inline-flex h-7 items-center gap-1 rounded-md bg-amber-400 px-2.5 text-[11px] font-bold text-amber-950">
-                <Pencil className="h-3 w-3" /> Edit
+              <button
+                onClick={onEdit}
+                aria-label={`Edit ${title.title}`}
+                className="inline-flex h-7 items-center rounded-md bg-white/10 px-2 text-[11px] font-semibold text-white hover:bg-white/20"
+              >
+                <Pencil className="h-3 w-3" />
               </button>
             )}
           </div>
+          {canSell && (
+            <button
+              onClick={onToggleCart}
+              aria-pressed={inCart}
+              className={`mt-1.5 inline-flex h-7 w-full items-center justify-center gap-1 rounded-md text-[11px] font-bold ${inCart ? "bg-emerald-400 text-emerald-950" : "bg-amber-400 text-amber-950"}`}
+            >
+              {inCart ? (
+                <>
+                  <ShoppingCart className="h-3 w-3" /> In cart
+                </>
+              ) : (
+                <>
+                  <Plus className="h-3 w-3" strokeWidth={3} /> Add
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
       <p className="mt-2 truncate text-[13px] font-semibold">{title.title}</p>

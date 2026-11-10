@@ -108,12 +108,18 @@ def record_agent_report(*, shop: MovieShop, data) -> dict:
 
 
 def agent_work(shop: MovieShop) -> dict:
-    """What the agent should do now: every library, and which ones to scan."""
+    """What the agent should do now: every library (and which ones to scan), and the paid titles to copy.
+    While there is copying to do the agent comes back every 2 seconds instead of 15."""
+    from .sales import copy_work
+
+    copies = copy_work(shop)
     return {
         "libraries": [
             {"id": str(lib.id), "path": lib.path, "scan": lib.scan_requested_at is not None}
             for lib in shop.libraries.all()
-        ]
+        ],
+        "copies": copies,
+        "poll_seconds": 2 if copies else 15,
     }
 
 

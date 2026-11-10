@@ -9,7 +9,7 @@
 //   IntraForgeMediaAgent.exe pair https://localhost:8443 <credential>   remember the shop, start at sign-in, start now
 //                                     (add --no-start to only remember the shop: for tests and trying it out)
 //   IntraForgeMediaAgent.exe run          keep working (started at sign-in, no window)
-//   IntraForgeMediaAgent.exe once         report and scan what is waiting, then stop (prints what it did)
+//   IntraForgeMediaAgent.exe once         report, scan and copy what is waiting, then stop (prints what it did)
 //   IntraForgeMediaAgent.exe unpair       forget the shop and stop starting at sign-in
 using System;
 using System.Collections;
@@ -132,8 +132,8 @@ static class MediaAgent
     static int RunOnce()
     {
         Agent agent = Agent.Load();
-        int scanned = agent.Work();
-        Say("Reported the drives; scanned " + scanned + " librar" + (scanned == 1 ? "y" : "ies") + ".");
+        agent.Work();
+        Say("Reported the drives; scanned " + agent.Scanned + " librar" + (agent.Scanned == 1 ? "y" : "ies") + ", copied " + agent.Copied + " title" + (agent.Copied == 1 ? "" : "s") + ".");
         return 0;
     }
 
@@ -146,9 +146,10 @@ static class MediaAgent
             Log("started " + Version);
             while (true)
             {
-                try { Agent.Load().Work(); }
+                int wait = PollSeconds;
+                try { wait = Agent.Load().Work(); }
                 catch (Exception ex) { Log("could not reach IntraForge: " + ex.Message); }
-                Thread.Sleep(PollSeconds * 1000);
+                Thread.Sleep(Math.Max(1, Math.Min(60, wait)) * 1000);
             }
         }
     }
@@ -218,18 +219,131 @@ static class MediaAgent
             });
         }
 
-        /// <summary>Reports the drives, then scans every library IntraForge asks for. Returns how many it scanned.</summary>
+        public int Scanned, Copied;
+
+        /// <summary>Reports the drives, scans every library IntraForge asks for, then copies the paid titles. Returns
+        /// how many seconds to wait before the next round (IntraForge asks for 2 while there is copying to do).</summary>
         public int Work()
         {
             var work = Report();
-            int scanned = 0;
             foreach (Dictionary<string, object> lib in (ArrayList)work["libraries"])
             {
                 if (!(bool)lib["scan"]) continue;
                 ScanLibrary((string)lib["id"], (string)lib["path"]);
-                scanned++;
+                Scanned++;
             }
-            return scanned;
+            if (work.ContainsKey("copies"))
+                foreach (Dictionary<string, object> copy in (ArrayList)work["copies"])
+                {
+                    if (CopyTitle(copy)) Copied++;
+                }
+            return work.ContainsKey("poll_seconds") ? Convert.ToInt32(work["poll_seconds"]) : PollSeconds;
+        }
+
+        /// <summary>Copies one sold title onto the customer's drive, into the shop's folder. Never deletes or overwrites a
+        /// different file; writes to a ".part" name and renames it at the end, so a pulled drive leaves no half file.</summary>
+        bool CopyTitle(Dictionary<string, object> c)
+        {
+            string line = (string)c["line"];
+            try
+            {
+                string library = Path.GetFullPath(((string)c["library"]).TrimEnd('\\') + "\\");
+                string source = Path.GetFullPath(Path.Combine(library, (string)c["relative_path"]));
+                if (!source.StartsWith(library, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("The title is outside its library folder.");
+                string root = (string)c["destination"];
+                if (!Directory.Exists(root)) throw new InvalidOperationException("The customer's drive " + root + " is not connected.");
+                string folder = (string)c["folder"];
+                if (folder.Contains("..") || Path.IsPathRooted(folder)) throw new InvalidOperationException("Bad destination folder.");
+                string target = Path.GetFullPath(Path.Combine(root, folder));
+                if (!target.StartsWith(Path.GetFullPath(root), StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Bad destination folder.");
+                if (target.StartsWith(library, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("The destination is inside the shop's own library.");
+
+                var files = new List<KeyValuePair<string, string>>();   // source file -> target file
+                if (File.Exists(source)) files.Add(new KeyValuePair<string, string>(source, Path.Combine(target, Path.GetFileName(source))));
+                else if (Directory.Exists(source))
+                {
+                    string trimmed = source.TrimEnd('\\');
+                    string baseDir = Path.Combine(target, Path.GetFileName(trimmed));
+                    foreach (string f in Directory.GetFiles(trimmed, "*", SearchOption.AllDirectories))
+                    {
+                        if ((File.GetAttributes(f) & (FileAttributes.Hidden | FileAttributes.System)) != 0) continue;
+                        files.Add(new KeyValuePair<string, string>(f, Path.Combine(baseDir, f.Substring(trimmed.Length + 1))));
+                    }
+                }
+                else throw new InvalidOperationException("The title is no longer in the library (" + c["relative_path"] + ").");
+
+                long total = files.Sum(kv => new FileInfo(kv.Key).Length), done = 0;
+                var drive = new DriveInfo(Path.GetPathRoot(target));
+                long needed = files.Where(kv => !SameFile(kv.Key, kv.Value)).Sum(kv => new FileInfo(kv.Key).Length);
+                if (drive.IsReady && drive.AvailableFreeSpace < needed) throw new InvalidOperationException("The customer's drive is full.");
+                Progress(line, "copying", 0, "");
+                DateTime lastReport = DateTime.UtcNow;
+                foreach (var kv in files)
+                {
+                    if (SameFile(kv.Key, kv.Value)) { done += new FileInfo(kv.Key).Length; continue; }
+                    Directory.CreateDirectory(Path.GetDirectoryName(kv.Value));
+                    string part = kv.Value + ".part";
+                    using (var input = new FileStream(kv.Key, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20))
+                    using (var output = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20))
+                    {
+                        byte[] buffer = new byte[4 << 20];
+                        int n;
+                        while ((n = input.Read(buffer, 0, buffer.Length)) > 0)
+                        {
+                            output.Write(buffer, 0, n);
+                            done += n;
+                            if ((DateTime.UtcNow - lastReport).TotalSeconds >= 2) { Progress(line, "copying", done, ""); lastReport = DateTime.UtcNow; }
+                        }
+                    }
+                    // A different file with the same name: keep both, never overwrite the customer's own.
+                    File.Move(part, FreeName(kv.Value));
+                }
+                Progress(line, "copied", Math.Max(done, total), "");
+                Log("copied " + c["relative_path"] + " to " + target);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log("copy " + c["relative_path"] + ": " + ex.Message);
+                try { Progress(line, "failed", 0, ex.Message.Length > 280 ? ex.Message.Substring(0, 280) : ex.Message); } catch (Exception) { }
+                return false;
+            }
+        }
+
+        /// <summary>Whether the title is already on the drive: the file itself, or an earlier "name (2)" copy of it, with
+        /// the same size (a copy is only renamed into place once complete).</summary>
+        static bool SameFile(string source, string target)
+        {
+            long length = new FileInfo(source).Length;
+            for (int n = 1; n < 100; n++)
+            {
+                string candidate = Numbered(target, n);
+                if (!File.Exists(candidate)) return false;
+                if (new FileInfo(candidate).Length == length) return true;
+            }
+            return false;
+        }
+
+        /// <summary>The first of "name.ext", "name (2).ext", "name (3).ext"... that is free.</summary>
+        static string FreeName(string target)
+        {
+            for (int n = 1; n < 100; n++)
+            {
+                string candidate = Numbered(target, n);
+                if (!File.Exists(candidate) && !Directory.Exists(candidate)) return candidate;
+            }
+            throw new InvalidOperationException("Too many files named " + Path.GetFileName(target) + " on the customer's drive.");
+        }
+
+        static string Numbered(string target, int n)
+        {
+            if (n == 1) return target;
+            return Path.Combine(Path.GetDirectoryName(target), Path.GetFileNameWithoutExtension(target) + " (" + n + ")" + Path.GetExtension(target));
+        }
+
+        void Progress(string line, string status, long copied, string message)
+        {
+            Post("movie-agent/copies/" + line + "/", new Dictionary<string, object> { { "status", status }, { "copied_bytes", copied }, { "message", message } });
         }
 
         void ScanLibrary(string id, string path)

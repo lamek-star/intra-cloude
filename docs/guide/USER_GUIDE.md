@@ -183,8 +183,21 @@ files never move into IntraForge: it keeps their names, sizes, covers and prices
 4. **Prices** sets one price for every title and one per category (in IntraForge Pay credits); **Edit** on a title
    corrects its name, year or category, sets its own price or hides it. **Scan again** on a library after adding films.
 
-Selling at the counter, copying onto the customer's USB, the customer portal on the shop Wi-Fi and its ads come in the
-next phases. Sell only films and series you hold the rights or a licence to sell.
+5. **Selling at the counter** (needs `movies.sell` on the shop): plug the customer's USB drive into the shop PC and
+   press **Add** on each title they want. The cart on the right lists the drive the media agent sees (the shop's own
+   library disks are never offered), the free space and the total. Choose **IF Pay** or **Cash** and press **Charge**.
+   - **IF Pay** shows the payment request's QR code and code from the shop's IntraForge Pay; the customer pays in their
+     wallet and the sale turns paid by itself. The person at the counter needs `ifpay.checkout` in Pay. If they pay in
+     cash after all, press **Paid in cash instead**.
+   - **Cash** waits for **Paid in cash** to be pressed once the money is in the till.
+   - Once paid, the media agent copies each title into `<shop name>\<category>` on the drive and the sale shows each
+     title's progress. A copy is written under a `.part` name and renamed at the end, so a pulled drive leaves no half
+     file; a different file with the same name is kept and the copy is saved as `name (2)`. **Copy the failed titles
+     again** restarts any title that failed (for example, the drive was pulled out).
+   - **Sales** in the header lists the shop's sales; open one to see its payment and copying again.
+
+The customer portal on the shop Wi-Fi and its ads come in the next phases. Sell only films and series you hold the
+rights or a licence to sell.
 
 ## 8. Real Features With No Screen Yet
 

@@ -13,6 +13,7 @@ export type MovieShop = {
   agent: { computer: string; version: string };
   titles: number;
   can_manage: boolean;
+  can_sell: boolean;
   created_at: string;
 };
 
@@ -51,6 +52,37 @@ export type MovieTitle = {
 export type AgentDrive = { root: string; label: string; kind: MovieLibrary["kind"]; total_bytes: number | null; free_bytes: number | null; folders: string[] };
 export type AgentReport = { agent_seen_at: string | null; drives: AgentDrive[]; computer?: string; agent_version?: string };
 
+export type SaleLine = {
+  id: string;
+  title: string;
+  title_id: string | null;
+  category: string;
+  kind: MovieTitle["kind"];
+  price: number;
+  size_bytes: number;
+  copy_status: "waiting" | "copying" | "copied" | "failed";
+  copied_bytes: number;
+  copy_message: string;
+};
+
+export type Sale = {
+  id: string;
+  number: string;
+  status: "awaiting_payment" | "paid" | "done" | "cancelled";
+  method: "ifpay" | "cash";
+  customer_name: string;
+  total: number;
+  destination: string;
+  folder: string;
+  pay: { code: string; qr_svg: string; expires_at: string | null } | null;
+  receipt_number: string;
+  paid_at: string | null;
+  created_at: string;
+  lines: SaleLine[];
+};
+
+export type Destination = { root: string; label: string; kind: MovieLibrary["kind"]; total_bytes: number | null; free_bytes: number | null };
+
 export const movies = {
   shops: (orgId: string) => api.get<MovieShop[]>(`/organizations/${orgId}/movie-shops/`),
   createShop: (orgId: string, name: string, project: string) => api.post<MovieShop>(`/organizations/${orgId}/movie-shops/`, { name, project }),
@@ -73,6 +105,12 @@ export const movies = {
   agentCredential: (id: string) => api.post<{ token: string }>(`/movie-shops/${id}/agent-credential/`),
   drives: (id: string) => api.get<AgentReport>(`/movie-shops/${id}/drives/`),
   coverUrl: (titleId: string) => `/api/v1/movie-titles/${titleId}/cover/`,
+  destinations: (id: string) => api.get<{ agent_seen_at: string | null; drives: Destination[] }>(`/movie-shops/${id}/destinations/`),
+  createSale: (id: string, body: { titles: string[]; destination: string; method: Sale["method"]; customer_name: string }) =>
+    api.post<Sale>(`/movie-shops/${id}/sales/`, body),
+  sales: (id: string, offset = 0) => api.get<Paginated<Sale>>(`/movie-shops/${id}/sales/?limit=25&offset=${offset}`),
+  sale: (saleId: string) => api.get<Sale>(`/movie-sales/${saleId}/`),
+  saleAction: (saleId: string, action: "cash" | "cancel" | "retry") => api.post<Sale>(`/movie-sales/${saleId}/${action}/`),
 };
 
 /** "1 title", "4 titles". */
@@ -125,3 +163,28 @@ export function drawnCover(title: string): { from: string; to: string; accent: s
   const [from, to, accent] = PALETTES[h % PALETTES.length];
   return { from, to, accent, motif: MOTIFS[(h >>> 8) % MOTIFS.length] };
 }
+
+/** Pay's QR code as a picture source, drawn from an <img> so nothing in it can run as part of this page. Pay sends
+ * it as a base64 SVG data URL; a bare SVG document is encoded here. Anything else gives no picture. */
+export function qrDataUrl(qr: string): string | null {
+  const prefix = "data:image/svg+xml;base64,";
+  if (qr.startsWith(prefix)) return /^[A-Za-z0-9+/]+={0,2}$/.test(qr.slice(prefix.length)) ? qr : null;
+  if (!/^\s*(<\?xml|<svg)/i.test(qr)) return null;
+  let binary = "";
+  new TextEncoder().encode(qr).forEach((b) => (binary += String.fromCharCode(b)));
+  return `${prefix}${btoa(binary)}`;
+}
+
+/** How far a sale's copying has got, 0..1. */
+export function copyProgress(sale: Sale): number {
+  const total = sale.lines.reduce((a, l) => a + Math.max(l.size_bytes, 1), 0);
+  const done = sale.lines.reduce((a, l) => a + (l.copy_status === "copied" ? Math.max(l.size_bytes, 1) : Math.min(l.copied_bytes, l.size_bytes)), 0);
+  return total ? done / total : 0;
+}
+
+export const SALE_STATUS: Record<Sale["status"], string> = {
+  awaiting_payment: "Waiting for payment",
+  paid: "Paid · copying",
+  done: "Copied",
+  cancelled: "Cancelled",
+};

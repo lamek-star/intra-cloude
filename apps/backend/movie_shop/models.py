@@ -133,3 +133,79 @@ class Title(models.Model):
 
     def __str__(self) -> str:
         return self.title
+
+
+class Sale(models.Model):
+    """A counter sale: titles for one customer, paid with IntraForge Pay (or cash), then copied by the media
+    agent onto the customer's drive. Nothing here holds money: Pay keeps the payment and its receipt
+    (ADR-0022 decision 6)."""
+
+    class Status(models.TextChoices):
+        AWAITING_PAYMENT = "awaiting_payment"
+        PAID = "paid"  # paid; the agent is copying (or will)
+        DONE = "done"  # every title copied
+        CANCELLED = "cancelled"
+
+    class Method(models.TextChoices):
+        IFPAY = "ifpay"
+        CASH = "cash"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    shop = models.ForeignKey(MovieShop, on_delete=models.CASCADE, related_name="sales")
+    number = models.CharField(max_length=40, unique=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.AWAITING_PAYMENT)
+    method = models.CharField(max_length=10, choices=Method.choices, default=Method.IFPAY)
+    customer_name = models.CharField(max_length=120, blank=True)
+    total = models.PositiveIntegerField()  # credits
+    # Where the titles go: a drive the media agent reported ("E:\\"), into a folder named after the shop.
+    destination = models.CharField(max_length=260)
+    folder = models.CharField(max_length=120)
+    pay_request_id = models.UUIDField(null=True, blank=True)
+    pay_code = models.TextField(blank=True)  # what the wallet scans (the QR code carries it too)
+    pay_qr_svg = models.TextField(blank=True)
+    pay_expires_at = models.DateTimeField(null=True, blank=True)
+    receipt_number = models.CharField(max_length=60, blank=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="movie_sales"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["shop", "status"])]
+
+    def __str__(self) -> str:
+        return self.number
+
+
+class SaleLine(models.Model):
+    """One title in a sale, as it was when sold (the catalogue may change later), and its copy onto the
+    drive."""
+
+    class Copy(models.TextChoices):
+        WAITING = "waiting"
+        COPYING = "copying"
+        COPIED = "copied"
+        FAILED = "failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    sale = models.ForeignKey(Sale, on_delete=models.CASCADE, related_name="lines")
+    title = models.ForeignKey(Title, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    library = models.ForeignKey(Library, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    title_name = models.CharField(max_length=200)
+    category = models.CharField(max_length=120)
+    relative_path = models.CharField(max_length=400)
+    kind = models.CharField(max_length=10)
+    price = models.PositiveIntegerField()
+    size_bytes = models.BigIntegerField(default=0)
+    copy_status = models.CharField(max_length=10, choices=Copy.choices, default=Copy.WAITING)
+    copied_bytes = models.BigIntegerField(default=0)
+    copy_message = models.CharField(max_length=300, blank=True)
+    copy_updated_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["title_name"]
+
+    def __str__(self) -> str:
+        return self.title_name

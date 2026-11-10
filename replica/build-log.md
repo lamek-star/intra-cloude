@@ -356,3 +356,34 @@ kept in a scratch folder), a test library of 18 files scanned into 10 titles (a 
 folder, release tags removed) with 3 covers, the catalogue, a category, the hover card, prices and edit captured. The
 vitest timeout is now 15 s: four user-event walk-throughs timed out at 5 s on a busy machine and passed alone.
 Phases 2-4 (counter sale with IF Pay and copying to USB, the customer portal, ads) are next.
+
+### Movie Shop, phase 2: selling at the counter (2026-11-10, not in a kit yet)
+
+A cart on the catalogue (**Add** on a title, needs `movies.sell`): the customer's drive as the media agent sees it
+(the shop's own library disks are never offered), free space, IF Pay or cash. `Sale` and `SaleLine` keep each title as
+sold (path, category, price, size) and its copy state. **IF Pay** asks the shop's Pay for a payment request through
+the existing Pay bridge (amount = credits x 100, the sale number as the external id; the cashier needs
+`ifpay.checkout`) and shows Pay's QR; the sale turns paid when Pay says paid and cancelled when the request expires.
+**Cash** waits for "Paid in cash". Only a paid sale is copied: the agent's work answer now carries the copy jobs and
+asks it back every 2 s while there are any; it copies into `<shop name>\<category>` on the drive under a `.part` name,
+renames at the end, never overwrites (a different file of the same name stays and the copy becomes "name (2)", then
+(3)...; a title already there with the same size is not copied twice) and reports progress, failures and "copied".
+**Sales** lists the shop's sales and reopens one; a failed title can be copied again.
+
+Checked: backend 8 new tests (cash and IF Pay paths with Pay replaced by a stand-in, expiry, `movies.sell` needed,
+destination must be a drive the agent reports and not a library disk, hidden/foreign titles and a full drive refused,
+nothing copied for an unpaid or cancelled sale, another shop's agent cannot report progress, retry) and 106 with the
+permissions, applications and service-app suites; ruff clean. Frontend 196 tests (3 new), tsc and eslint clean. Live on
+the test copy with preview images and a test drive (a `subst` letter onto a scratch folder, removed afterwards): a
+two-title cash sale copied byte for byte (a 6-episode series folder and a film); a second sale onto a drive holding the
+customer's own different "Desert Wind (2025).mp4" kept that file and saved the copy as "(2)"; selling it again copied
+nothing new; a sale whose drive was pulled failed with "not connected" and copied after **Copy the failed titles
+again**; a real IF Pay request was created by the test copy's Pay, its QR shown, and it turned cancelled when it
+expired after 2 minutes. Four faults found this way and fixed: the hover card's Add button spilled onto the next title
+when the cart narrowed the grid (Add now has its own row, the grid drops to 5 columns with the cart open, and the hover
+card no longer covers the caption); Pay's payment code is an 80-character signed token and the 40-character field cut
+its signature off (now a text field); Pay sends the QR as a data URL and it was encoded a second time, so no QR showed
+(now used as sent, anything that is not an SVG gives no picture); and the Sales list said "Copying 0%" for a failed
+copy. Docker Desktop's VM stopped once during the image builds (three stacks running); a restart brought every stack
+back, the shop's included. Phases 3 and 4 (the customer portal on the shop Wi-Fi with rewards, then ads) are next; phase
+3 needs a new endpoint in the Pay repository.

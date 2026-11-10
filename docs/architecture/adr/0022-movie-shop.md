@@ -1,6 +1,6 @@
 # ADR-0022 — Movie Shop: a catalogue of the shop's own video library, sold at the counter and on the shop Wi-Fi
 
-Status: accepted; phase 1 implemented (2026-11-10), phases 2-4 planned.
+Status: accepted; phases 1 and 2 implemented (2026-11-10), phases 3-4 planned.
 Date: 2026-11-10. Builds on ADR-0001 (control plane / data plane), ADR-0008 (capabilities), ADR-0018 (service
 applications and the Pay bridge), ADR-0021 (shop names). Adds one Django app (`movie_shop`) and one Windows helper
 (the media agent); no new datastore, identity provider or container image.
@@ -63,7 +63,7 @@ drives, a USB stick plugged in at the counter, or a NAS share mapped in Windows.
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 1 | `movie_shop` app (shop, libraries, titles, covers, prices), agent credential, media agent (drives, scan, covers), owner catalogue page | implemented |
-| 2 | Counter sale: cart, Pay payment request, copy jobs carried out by the agent with progress, sales list | planned |
+| 2 | Counter sale: cart, Pay payment request, copy jobs carried out by the agent with progress, sales list | implemented |
 | 3 | Customer portal: sign-up on the shop Wi-Fi, approval and Pay wallet, browse, buy, wallet and points, reward rules | planned (needs the Pay endpoint) |
 | 4 | Ads on the portal | planned |
 
