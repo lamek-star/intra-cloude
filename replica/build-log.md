@@ -472,3 +472,12 @@ is the tested `1.5.4-portal` build with migration 0005; `npm audit --omit=dev --
 known vulnerabilities (the backend test environment); the exe's file properties read IntraForge 1.5.4 and
 "© 2026 lamek-rusoom". Not yet done: installing it on the shop PC (an upgrade from 1.5.3) and a real phone on the shop
 Wi-Fi.
+
+**Shop PC upgraded 1.5.3 -> 1.5.4 (2026-11-10 23:43-23:50 local)** with the 1.5.4 installer in its unattended mode
+(`IntraForge-Setup-1.5.4-6fcb9da90.exe /quiet /dir=C:\IntraForge`, log `kits\upgrade-1.5.4.log`, exit 0). Safety backup
+first (control database 406,294 bytes, business records 520,348, files 215,332; 150 s); migrations `movie_shop`
+0001-0004 applied; 87 permissions seeded (`movies.read/manage/sell` present); IntraForge Pay's migration 0005 applied
+in its schema. All 13 services up on `1.5.4-6fcb9da90` (Pay, Spare Parts and Pharmacy healthy); `/healthz`, `/readyz`,
+`/login` and `/movies` answer 200, the portal API 404 for an unknown shop; `C:\IntraForge\IntraForgeMediaAgent.exe`
+in place; 1.5.3 kept in `.previous`. Not yet done: pairing the media agent on the shop PC and a real phone on the shop
+Wi-Fi.
