@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Movie Shop · Copy to drive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="ms.css"><script src="ms.js"></script><script src="shell.js"></script>
+<style>
+  .behind { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-top: 90px; filter: blur(2px); opacity: .5; }
+  .scrim { position: absolute; inset: 0; background: rgba(5,7,13,.62); z-index: 40; }
+  .dialog { position: absolute; z-index: 50; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 980px; background: var(--surface); border: 1px solid var(--line2); border-radius: 20px; box-shadow: 0 40px 90px -20px rgba(0,0,0,.95); overflow: hidden; }
+  .dh { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid var(--line); }
+  .db { display: grid; grid-template-columns: 1.15fr .85fr; }
+  .col { padding: 20px 22px; }
+  .col + .col { border-left: 1px solid var(--line); background: rgba(10,13,22,.35); }
+  .item { display: grid; grid-template-columns: 46px 1fr auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .item .cover { width: 46px; border-radius: 6px; }
+  .item .cover .cover-title, .item .cover .cover-price, .item .cover .cover-badge { display: none; }
+  .item b { font-size: 13.5px; } .item small { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .tree { margin-top: 10px; padding: 12px 14px; border-radius: 12px; background: var(--bg2); border: 1px solid var(--line); font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; color: var(--text2); line-height: 1.75; }
+  .tree .f { color: var(--amber2); }
+  .sum { display: flex; justify-content: space-between; font-size: 13px; padding: 7px 0; color: var(--text2); }
+  .sum b { color: var(--text); }
+</style></head>
+<body>
+<script>
+const items = [
+  [MOVIES[0], "Action", "2.1 GB", 50, "done"],
+  [MOVIES[1], "Action", "2.4 GB", 50, 64],
+  [SERIES[0], "Series · season 1, 10 episodes", "11.8 GB", 60, "wait"],
+];
+const state = (s) => s === "done" ? `<span class="chip live" style="font-size:11px">${icon("check", 12, 3)} Copied</span>`
+  : s === "wait" ? `<span class="chip" style="font-size:11px">${icon("clock", 12)} Waiting</span>`
+  : `<div style="width:120px"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--amber2);font-weight:700"><span>Copying</span><span>${s}%</span></div><div class="bar" style="margin-top:5px"><i style="width:${s}%"></i></div></div>`;
+document.write(shell("Catalogue", `
+  <div class="h1">Movies drive (D:)</div>
+  <div class="behind">${MOVIES.slice(0, 12).map((m) => cover(m)).join("")}</div>
+  <div class="scrim"></div>
+  <div class="dialog">
+    <div class="dh">
+      <div style="display:flex;align-items:center;gap:12px"><span style="width:36px;height:36px;border-radius:10px;background:rgba(45,212,191,.12);color:var(--teal);display:grid;place-items:center">${icon("usb", 18)}</span>
+        <div><div style="font-size:16px;font-weight:700">Copy to the customer's drive</div><div style="font-size:12px;color:var(--muted)">3 titles for Selam Tesfaye · paid with IntraForge Pay</div></div></div>
+      <span style="color:var(--muted)">${icon("x", 18)}</span>
+    </div>
+    <div class="db">
+      <div class="col">
+        <div class="label">Cart</div>
+        ${items.map(([m, g, size, p, s]) => `<div class="item">${cover(m)}<div><b>${m.t}</b><small>${g} · ${size} · <span style="color:var(--amber2);font-weight:700">${p} credits</span></small></div>${state(s)}</div>`).join("")}
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
+          <div class="label">Destination</div><span class="chip teal">${icon("check", 12, 3)} 41 GB free · needs 16.3 GB</span>
+        </div>
+        <div class="tree">
+          <div>${icon("usb", 13)} Kingston USB (E:)</div>
+          <div style="padding-left:16px" class="f">${icon("folder", 13)} Lamek Movie Shop</div>
+          <div style="padding-left:34px">${icon("folder", 13)} Action</div>
+          <div style="padding-left:52px">Desert Wind (2025).mp4 <span style="color:var(--green)">✓</span></div>
+          <div style="padding-left:52px">Iron Harbor (2024).mp4 <span style="color:var(--amber2)">64%</span></div>
+          <div style="padding-left:34px">${icon("folder", 13)} Series<span style="color:var(--muted)"> › The Coffee House › Season 1</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:14px;font-size:12px;color:var(--muted)">${icon("clock", 14)} 48 MB/s · about 4 minutes left · the drive is safe to remove when all three show Copied</div>
+      </div>
+      <div class="col">
+        <div class="label">Customer</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:10px;padding:12px;border-radius:14px;background:var(--raised);border:1px solid var(--line2)">
+          <span style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#2dd4bf,#0f766e);display:grid;place-items:center;font-weight:800;color:#042f2a">ST</span>
+          <div style="flex:1"><b style="font-size:14px">Selam Tesfaye</b><div style="font-size:11.5px;color:var(--muted)">+291 7 123 456 · member since Oct 2026</div></div>
+          <span class="chip amber">${icon("star", 11, 0)} Gold</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
+          <div style="padding:12px;border-radius:12px;background:var(--bg2);border:1px solid var(--line)"><div style="font-size:11px;color:var(--muted)">IF Pay wallet</div><div style="font-size:20px;font-weight:800;margin-top:2px">1,090 <span style="font-size:12px;color:var(--muted);font-weight:600">credits</span></div></div>
+          <div style="padding:12px;border-radius:12px;background:var(--bg2);border:1px solid var(--line)"><div style="font-size:11px;color:var(--muted)">Reward points</div><div style="font-size:20px;font-weight:800;margin-top:2px;color:var(--teal)">395 <span style="font-size:12px;color:var(--muted);font-weight:600">points</span></div></div>
+        </div>
+        <div class="label" style="margin-top:18px">Payment</div>
+        <div style="margin-top:6px">
+          <div class="sum"><span>3 titles</span><b>160 credits</b></div>
+          <div class="sum"><span>Points used (100 points)</span><b style="color:var(--teal)">− 10 credits</b></div>
+          <div class="sum" style="border-top:1px solid var(--line);margin-top:4px;padding-top:10px;font-size:15px"><span style="color:var(--text)">Paid from wallet</span><b style="font-size:18px">150 credits</b></div>
+          <div class="sum"><span>Reward earned (10% back)</span><b style="color:var(--teal)">+ 15 points</b></div>
+        </div>
+        <div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.3);display:flex;gap:10px;align-items:center;font-size:12.5px;color:#a7f3d0">
+          ${icon("shieldcheck", 18)} <div><b style="color:#d1fae5">Payment confirmed</b><br>Receipt RCP-20261110-0187 is in IF Pay and the shop's sales.</div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:16px"><span class="btn" style="flex:1">${icon("receipt", 15)} Print receipt</span><span class="btn amber" style="flex:1">${icon("plus", 15, 2.6)} Add more titles</span></div>
+      </div>
+    </div>
+  </div>
+`));
+hydrate();
+</script>
+</body></html>

@@ -167,6 +167,25 @@ same stock, receiving and selling, with medicines instead of products and item n
 - In the shop kit the Pharmacy is offered as a pilot preview (`BUILT_IN_APP_PREVIEWS=pharmacy`); set it empty
   in `.env` to hide it.
 
+### The Movie Shop
+
+**Movie Shop** in the sidebar turns the films and series on the shop PC's own drives into a catalogue (ADR-0022). The
+files never move into IntraForge: it keeps their names, sizes, covers and prices.
+
+1. **New movie shop**: give it a name and choose the project that keeps the covers.
+2. **Connect the shop's drives**: create the connection key, then run the command shown once in PowerShell on the shop
+   PC. The media agent (`C:\IntraForge\IntraForgeMediaAgent.exe`) then starts by itself at every sign-in. It only talks
+   to IntraForge on this PC and opens nothing to the network.
+3. **Choose the folders** (or type one, such as `D:\Movies`; a NAS works when it is mapped as a drive letter). Each
+   folder inside becomes a category, each video a title, a folder of videos a series. The title and year come from the
+   file name (`Desert Wind (2025).mp4`); a picture with the same name, or `poster.jpg` in the film's folder, becomes the
+   cover, and titles without one get a drawn cover.
+4. **Prices** sets one price for every title and one per category (in IntraForge Pay credits); **Edit** on a title
+   corrects its name, year or category, sets its own price or hides it. **Scan again** on a library after adding films.
+
+Selling at the counter, copying onto the customer's USB, the customer portal on the shop Wi-Fi and its ads come in the
+next phases. Sell only films and series you hold the rights or a licence to sell.
+
 ## 8. Real Features With No Screen Yet
 
 The interface above covers the core workflow. Everything below is fully

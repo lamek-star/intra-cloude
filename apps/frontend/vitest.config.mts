@@ -9,5 +9,7 @@ export default defineConfig({
     setupFiles: ["./vitest.setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"],
     css: false,
+    // jsdom with user-event is slow on a busy machine (a running IntraForge, a build): 5 s timed out walk-through tests.
+    testTimeout: 15000,
   },
 });

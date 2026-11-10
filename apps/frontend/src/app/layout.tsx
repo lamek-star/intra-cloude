@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Oswald } from "next/font/google";
 import { AuthProvider } from "@/lib/auth-context";
 import { QueryProvider } from "@/lib/query";
 import { TourRequestCapture } from "@/components/TourRequestCapture";
@@ -10,6 +10,8 @@ import "./globals.css";
 // stays consistent with CLAUDE.md's "local-first, no internet dependency
 // for normal operation" rule.
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+// The Movie Shop's cinematic titles (covers, headings); self-hosted the same way.
+const oswald = Oswald({ subsets: ["latin"], weight: ["500", "600"], variable: "--font-display" });
 
 export const metadata: Metadata = {
   title: {
@@ -35,7 +37,7 @@ export const viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`h-full antialiased ${inter.variable}`}>
+    <html lang="en" className={`h-full antialiased ${inter.variable} ${oswald.variable}`}>
       <body className="min-h-full flex flex-col bg-surface-canvas text-text-primary font-sans">
         <QueryProvider>
           <TourRequestCapture />

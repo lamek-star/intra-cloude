@@ -132,6 +132,9 @@ Last updated: 2026-08-07
 | `inventory.receive` | Receive stock into a warehouse in an installed application (ADR-0017). Implies no other inventory capability. |
 | `inventory.adjust` | Write arbitrary stock movements through the record API of an installed application (ADR-0017); no adjustment workflow exists in v1.0. |
 | `inventory.transfer` | Move stock between warehouses (ADR-0017); the authority is defined, no transfer workflow exists in v1.0. |
+| `movies.read` | See a movie shop's catalogue: libraries, categories, titles, prices (ADR-0022). Per shop (resource type `movie_shop`) or organization-wide. |
+| `movies.manage` | Manage a movie shop: libraries, prices, titles, and the media agent's credential (ADR-0022). |
+| `movies.sell` | Sell titles at the counter and have the media agent copy them (ADR-0022, phase 2). |
 | `system.admin` | Platform-wide administrative operations (Super Administrator only) |
 | `environment.read` | View an Application's Environments and their non-secret configuration/status |
 | `environment.manage` | Create/update/clone/disable/delete Environments, variables, and webhooks |

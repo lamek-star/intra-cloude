@@ -73,6 +73,8 @@ if (($BackupFirst -or $DeleteData) -and -not $finishingEarlierRemoval) {
 
 Step 'Removing automatic start, backup tasks, the shortcut and the Installed-apps entry'
 Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'IntraForgeShop' -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'IntraForgeMediaAgent' -ErrorAction SilentlyContinue
+Get-Process -Name 'IntraForgeMediaAgent' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 $taskNames = @('IntraForge daily backup', 'IntraForge weekly backup check')
 foreach ($name in $taskNames) { Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue }
 Remove-ShopShortcuts

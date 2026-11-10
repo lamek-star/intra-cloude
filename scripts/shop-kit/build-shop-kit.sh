@@ -86,6 +86,8 @@ CC_TMP="$(mktemp -d)"
   -reference:System.Web.Extensions.dll -reference:System.IO.Compression.dll -reference:System.IO.Compression.FileSystem.dll \
   "$(cygpath -w "$HERE/control-center/ControlCenter.cs")" "$(cygpath -w "$HERE/control-center/Ui.cs")"
 echo "   control center compiled"
+bash "$HERE/media-agent/build-media-agent.sh" "$CC_TMP/IntraForgeMediaAgent.exe"
+echo "   media agent compiled"
 
 echo "== 3/6 pin MinIO to the exact tested release"
 # MINIO_TAG=<release> keeps the release the shop already runs (an upgrade must not silently change the object store);
@@ -104,6 +106,7 @@ rm -rf "$OUT/images" "$OUT/infrastructure"; mkdir -p "$OUT/images" "$OUT/infrast
 sed "s/@TAG@/$TAG/g; s/@MINIO_TAG@/$MINIO_TAG/g" "$HERE/template/docker-compose.yml" > "$OUT/docker-compose.yml"
 cp "$HERE/template/"*.ps1 "$HERE/template/README.txt" "$OUT/"
 cp "$CC_TMP/IntraForgeControlCenter.exe" "$OUT/IntraForgeControlCenter.exe"
+cp "$CC_TMP/IntraForgeMediaAgent.exe" "$OUT/IntraForgeMediaAgent.exe"
 cp "$EXPORT/infrastructure/proxy/Caddyfile" "$OUT/infrastructure/proxy/Caddyfile"
 printf '%s\n' "$KIT_VERSION" > "$OUT/VERSION"
 cp "$REPO/docs/OWN_SHOP_PILOT_QUICKSTART.md" "$OUT/OWN_SHOP_PILOT_QUICKSTART.md"
@@ -196,7 +199,7 @@ lines += ["", f"Docker Desktop / engine version this kit was built and rehearsed
           "Never used during installation: " + ", ".join(manifest["not_used_at_install"]) + "."]
 (out / "OFFLINE_MANIFEST.txt").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
 PY
-( cd "$OUT" && sha256sum --binary VERSION BUILD_INFO.txt IntraForgeControlCenter.exe docker-compose.yml infrastructure/proxy/Caddyfile OFFLINE_MANIFEST.json images/intraforge-shop-images.tar > SHA256SUMS.txt )
+( cd "$OUT" && sha256sum --binary VERSION BUILD_INFO.txt IntraForgeControlCenter.exe IntraForgeMediaAgent.exe docker-compose.yml infrastructure/proxy/Caddyfile OFFLINE_MANIFEST.json images/intraforge-shop-images.tar > SHA256SUMS.txt )
 
 rm -rf "$EXPORT" "$CC_TMP"
 

@@ -79,6 +79,7 @@ LOCAL_APPS = [
     "analytics",
     "service_apps",
     "sites",
+    "movie_shop",
 ]
 
 # --- Service applications (ADR-0018) ---

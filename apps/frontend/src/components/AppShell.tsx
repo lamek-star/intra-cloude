@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, ChevronDown, Compass, LayoutDashboard, LayoutGrid, LogOut, Search, type LucideIcon } from "lucide-react";
+import { Building2, ChevronDown, Clapperboard, Compass, LayoutDashboard, LayoutGrid, LogOut, Search, type LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { prefetchRoute } from "@/lib/queries";
 import { ConfirmProvider } from "@/components/ConfirmProvider";
@@ -91,6 +91,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </SidebarLink>
             <SidebarLink href="/orgs" icon={Building2}>
               Organizations
+            </SidebarLink>
+            <SidebarLink href="/movies" icon={Clapperboard}>
+              Movie Shop
             </SidebarLink>
           </nav>
 

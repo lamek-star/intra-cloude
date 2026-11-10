@@ -32,6 +32,10 @@ PERMISSIONS = {
     "inventory.transfer": (
         "Move stock between warehouses (authority defined; no transfer workflow exists in v1.0)"
     ),
+    # Movie Shop (ADR-0022), per shop (resource type `movie_shop`) or organization-wide. Default-deny.
+    "movies.read": "See a movie shop's catalogue (libraries, categories, titles, prices)",
+    "movies.manage": "Manage a movie shop: libraries, prices, the media agent's credential, titles",
+    "movies.sell": "Sell titles from a movie shop at the counter and have the media agent copy them",
     "workspace.manage": "Create Workspaces and Projects within an organization",
     "org_unit.read": (
         "View an organization's structural units (branches, departments, teams, etc.) and their membership"

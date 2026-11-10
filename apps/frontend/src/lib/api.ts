@@ -167,6 +167,7 @@ export const api = {
   postIdempotent: <T>(path: string, body: unknown, idempotencyKey: string) =>
     request<T>(path, { method: "POST", body, headers: { "Idempotency-Key": idempotencyKey } }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: "PATCH", body }),
+  put: <T>(path: string, body?: unknown) => request<T>(path, { method: "PUT", body }),
   del: <T = void>(path: string, body?: unknown) => request<T>(path, { method: "DELETE", body }),
   postForm: <T>(path: string, form: FormData) =>
     request<T>(path, { method: "POST", body: form, isFormData: true }),

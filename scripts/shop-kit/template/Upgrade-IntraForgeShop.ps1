@@ -74,9 +74,13 @@ $dataDir = Get-ShopSetting 'SHOP_DATA_DIR' 'C:/IntraForgeData'
 $port = Get-ShopSetting 'SHOP_HTTPS_PORT' '8443'
 $env:SHOP_HTTPS_PORT = $port; $env:SHOP_DATA_DIR = $dataDir
 $upgraded = $false
+$agentWasRunning = $false
 try {
     Step 'Stopping the previous version (data stays)'
     Compose-In $InstallDir down --remove-orphans
+    # The Movie Shop's media agent (ADR-0022) runs from this folder: stop it so its program file can be replaced.
+    $agentWasRunning = [bool](Get-Process -Name 'IntraForgeMediaAgent' -ErrorAction SilentlyContinue)
+    Get-Process -Name 'IntraForgeMediaAgent' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
     Step 'Installing the new program files'
     Get-ChildItem -Force $newKit | Where-Object { @('.env', '.install-complete', '.setup-extracted', '.previous', '.upgrade-staging') -notcontains $_.Name } |
@@ -139,6 +143,8 @@ try {
     try { if (-not (Wait-ShopReady)) { throw 'The new version did not become healthy.' } }
     finally { Pop-Location }
     $upgraded = $true
+    $agentExe = Join-Path $InstallDir 'IntraForgeMediaAgent.exe'
+    if ($agentWasRunning -and (Test-Path $agentExe)) { Start-Process -FilePath $agentExe -ArgumentList 'run' -WindowStyle Hidden }
 }
 catch {
     $reason = $_.Exception.Message

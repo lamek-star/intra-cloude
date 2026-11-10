@@ -334,3 +334,25 @@ sale-complete screen -- A4 preview and the 80 mm receipt print window captured; 
 downloaded as a single label and as an A4 page. Two faults found this way and fixed: the dialog's preview barcode
 overflowed onto the number, and on an A4 picture every Rx box after the first came out grey (the cut guides' colour).
 Only the built-in Spare Parts and Pharmacy get this; the separate Spare Parts service app has no source to change.
+
+### Movie Shop, phase 1: the library as a catalogue (2026-11-10, not in a kit yet)
+
+ADR-0022 decides the design (mockups in `design-references/movie-shop-mockups/`): the films never enter IntraForge;
+the new `movie_shop` app keeps only metadata (shop, libraries, titles, prices) and covers (as ordinary files in the
+shop's `movie-covers` bucket); a Windows **media agent** (`scripts/shop-kit/media-agent/`, built into the kit as
+`IntraForgeMediaAgent.exe`) does all file work as a client of IntraForge on the same PC, signed in with the shop's own
+Application credential (no new token scheme, no port opened). Three capabilities, default-deny: `movies.read`,
+`movies.manage`, `movies.sell`. Owner pages: **Movie Shop** in the sidebar -- shops, then the catalogue (storage, folders
+as categories, the titles of a folder with cover, price, edit), connecting the agent and choosing folders, prices. The
+upgrade stops and restarts a running agent; the uninstaller removes it.
+
+Checked: backend 14 new tests (capabilities, cross-organization 404s, the agent credential: another application's
+credential, a browser session and a replaced credential are refused; scanning keeps the owner's price, hidden flag and
+edits and drops vanished titles; path traversal and device paths refused; a stale scan cannot overwrite a newer one;
+covers are real files, served to the owner, re-sent only when changed, non-pictures refused) and 70 with the
+permissions, applications and storage suites; ruff clean. Frontend 193 tests (7 new), tsc and eslint clean. On the test
+copy with preview images: a shop opened as the test owner, the agent paired in test mode (no sign-in entry added, files
+kept in a scratch folder), a test library of 18 files scanned into 10 titles (a series of 6 episodes, a film in its own
+folder, release tags removed) with 3 covers, the catalogue, a category, the hover card, prices and edit captured. The
+vitest timeout is now 15 s: four user-event walk-throughs timed out at 5 s on a busy machine and passed alone.
+Phases 2-4 (counter sale with IF Pay and copying to USB, the customer portal, ads) are next.
