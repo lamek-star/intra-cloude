@@ -48,6 +48,8 @@ export type PortalOrder = {
 
 export type OrderPreview = { subtotal: number; discount: number; points_used: number; total: number; free_titles: string[] };
 
+export type PortalAd = { id: string; title: string; text: string; advertiser: string; film: string | null; film_title: string | null; link: string; has_picture: boolean; picture_version: string };
+
 type Page<T> = { count: number; next: string | null; previous: string | null; results: T[] };
 
 async function call<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
@@ -78,11 +80,15 @@ export const portalApi = {
     Object.entries(params).forEach(([k, v]) => v !== undefined && v !== "" && qs.set(k, String(v)));
     return call<Page<PortalTitle>>("GET", `${shop}/titles/?${qs.toString()}`);
   },
+  title: (shop: string, titleId: string) => call<PortalTitle>("GET", `${shop}/titles/${titleId}/`),
   coverUrl: (shop: string, titleId: string) => `/api/v1/portal/${shop}/titles/${titleId}/cover/`,
   orders: (shop: string) => call<PortalOrder[]>("GET", `${shop}/orders/`),
   preview: (shop: string, titles: string[], use_points: boolean) =>
     call<OrderPreview>("POST", `${shop}/orders/`, { titles, use_points, preview: true }),
   order: (shop: string, titles: string[], use_points: boolean) => call<PortalOrder>("POST", `${shop}/orders/`, { titles, use_points }),
+  ads: (shop: string) => call<PortalAd[]>("GET", `${shop}/ads/`),
+  adPictureUrl: (shop: string, ad: PortalAd) => `/api/v1/portal/${shop}/ads/${ad.id}/picture/?v=${ad.picture_version}`,
+  tapAd: (shop: string, adId: string) => call<{ film: string | null; link: string }>("POST", `${shop}/ads/${adId}/tap/`),
   cancelOrder: (shop: string, orderId: string) => call<PortalOrder>("POST", `${shop}/orders/${orderId}/cancel/`),
 };
 

@@ -350,10 +350,15 @@ def edit_title(*, title: Title, actor, data: dict) -> Title:
 
 
 def read_cover(title: Title) -> tuple[bytes, str] | None:
-    if title.cover is None or title.cover.status != "active":
+    return read_file(title.cover, COVER_MAX_BYTES)
+
+
+def read_file(file_obj, max_bytes: int) -> tuple[bytes, str] | None:
+    """A shop picture's bytes and type (a cover or an ad), or None when there is none or it is not active."""
+    if file_obj is None or file_obj.status != "active":
         return None
     from storage.backends import get_client
 
-    body = get_client().get_stream(title.cover.object_key)
-    data = io.BytesIO(body.read(COVER_MAX_BYTES + 1)).getvalue()
-    return data, title.cover.mime_type
+    body = get_client().get_stream(file_obj.object_key)
+    data = io.BytesIO(body.read(max_bytes + 1)).getvalue()
+    return data, file_obj.mime_type

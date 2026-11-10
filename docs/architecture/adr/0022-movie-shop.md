@@ -1,6 +1,6 @@
 # ADR-0022 — Movie Shop: a catalogue of the shop's own video library, sold at the counter and on the shop Wi-Fi
 
-Status: accepted; phases 1-3 implemented (2026-11-10), phase 4 planned.
+Status: accepted; phases 1-4 implemented (2026-11-10).
 Date: 2026-11-10. Builds on ADR-0001 (control plane / data plane), ADR-0008 (capabilities), ADR-0018 (service
 applications and the Pay bridge), ADR-0021 (shop names). Adds one Django app (`movie_shop`) and one Windows helper
 (the media agent); no new datastore, identity provider or container image.
@@ -84,6 +84,17 @@ drives, a USB stick plugged in at the counter, or a NAS share mapped in Windows.
   own (`https://<pc>:8443/portal/<shop>`) and shows the local certificate warning until the shop's root certificate is
   trusted on the phone.
 
+### Phase 4 as built
+
+- An `Ad` is the shop's own record: title, short text, who it is for (another shop or business, or empty for the shop
+  itself), optional first and last day, on/off, order, and a picture stored like the covers (a real JPEG, PNG or WebP,
+  up to 2 MB, in the shop's covers bucket, under the shop's own identity). At most 50 per shop; `movies.manage`.
+- A tap opens one of the shop's own films or a web address. Only `http`/`https` addresses are accepted (no
+  `javascript:`, `data:` or quotes), and the portal opens them in a new tab with `noopener,noreferrer`.
+- The portal shows at most 10 ads that are switched on and within their dates, to anyone on the open portal (also on the
+  sign-up screen), always labelled "Ad · <who it is for>". It counts views (each time the list is shown) and taps; the
+  counts are the owner's and nothing identifies the customer.
+
 ## Phases
 
 | Phase | Scope | Status |
@@ -91,7 +102,7 @@ drives, a USB stick plugged in at the counter, or a NAS share mapped in Windows.
 | 1 | `movie_shop` app (shop, libraries, titles, covers, prices), agent credential, media agent (drives, scan, covers), owner catalogue page | implemented |
 | 2 | Counter sale: cart, Pay payment request, copy jobs carried out by the agent with progress, sales list | implemented |
 | 3 | Customer portal: sign-up on the shop Wi-Fi, approval and Pay wallet, browse, buy, wallet and points, reward rules | implemented (Pay: `feature/shop-app-customers`) |
-| 4 | Ads on the portal | planned |
+| 4 | Ads on the portal | implemented |
 
 ## Consequences
 

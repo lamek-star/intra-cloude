@@ -112,7 +112,7 @@ export function Portal({ shopId }: { shopId: string }) {
       )}
 
       <main className="flex-1 px-4 pt-4 pb-28">
-        {tab === "browse" && <Browse shopId={shopId} inCart={inCart} onToggle={toggle} />}
+        {tab === "browse" && <Browse shopId={shopId} shopName={shop.name} inCart={inCart} onToggle={toggle} />}
         {tab === "cart" && (
           <CartScreen
             shopId={shopId}

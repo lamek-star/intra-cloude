@@ -4,6 +4,7 @@ import { useId, useState, type FormEvent } from "react";
 import { Clapperboard, Gift } from "lucide-react";
 import { portalApi, rulesInWords, type PortalHome } from "@/lib/portal";
 import { portalMessage, portalStyle as ui } from "./Portal";
+import { AdCarousel } from "./AdCarousel";
 
 /** Sign in, or create an account with the shop (the shop approves it at the counter). */
 export function AuthScreen({ shop, onSignedIn }: { shop: PortalHome["shop"]; onSignedIn: () => void }) {
@@ -47,6 +48,10 @@ export function AuthScreen({ shop, onSignedIn }: { shop: PortalHome["shop"]; onS
           {shop.name}
         </h1>
         <p className="mt-1 text-sm text-slate-400">Films and series, copied to your USB at the counter.</p>
+
+        <div className="mt-5">
+          <AdCarousel shopId={shop.id} shopName={shop.name} />
+        </div>
 
         {perks.length > 0 && (
           <ul className="mt-5 flex flex-col gap-2 rounded-2xl border border-[#252e47] bg-[#141a2b]/80 p-4">

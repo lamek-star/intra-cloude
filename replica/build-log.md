@@ -426,3 +426,25 @@ join (PostgreSQL refuses `FOR UPDATE` on an outer join), "not signed in" answere
 Block and Reject not mapped to their statuses, and the portal header's points not refreshing after a purchase. The
 test copy was put back on its 1.5.2 images afterwards (its Pay database keeps migration 0005, which the old Pay code
 ignores). Phase 4 (ads) is next.
+
+### Movie Shop, phase 4: ads on the portal (2026-11-10, not in a kit yet)
+
+**Ads** in the Movie Shop header: the owner writes an ad (title, text, who it is for, picture, dates, a tap that opens
+one of the shop's films or an `https` page), sees a preview exactly as customers will, and manages the list (showing
+or not, views and taps, on/off, order, edit, delete). The portal shows the ads that are on and in date in a swipeable
+carousel at the top of Browse and on the sign-up screen, always labelled "Ad · <who it is for>"; it moves on by itself
+unless the visitor prefers reduced motion or is touching it. ADR-0022 "Phase 4 as built" records the rules (http/https
+links only, opened with no referrer; real pictures only; at most 50 ads; counts that identify nobody).
+
+Checked: backend 7 new tests (`movies.manage` only, other organizations 404; unsafe links -- `javascript:`, `data:`,
+`ftp:`, a bare scheme, a quote -- refused, films of another shop refused, film and link together refused, dates in
+order, unknown fields refused; only switched-on, in-date ads on the portal, with views and taps counted and a hidden ad
+not tappable; a closed portal shows none; a non-picture refused and a real PNG served byte for byte; edit, delete and
+the 50 limit; a film ad opens the film for a signed-in customer only, never with its path); 47 Movie Shop tests pass,
+ruff clean. Frontend 203 tests (3 new for the banner's "Ad" label and taps), tsc and eslint clean. Live on the test
+copy: the owner added an ad for "Abel Phones" with a picture and a link, and one for the shop's own film; a signed-out
+phone saw the carousel on the sign-up screen; the signed-in customer saw it on Browse and tapping the film ad opened
+Desert Wind; the owner's list then showed 2 views and 1 tap. Three design faults found this way and fixed: the owner's
+list crammed the full banner into a small thumbnail (now a compact thumbnail), on a phone the title ran across the
+picture, and on a phone the 16:7 banner was too short so the title and text collided (16:9 on phones, the text one
+line). The test copy was put back on its 1.5.2 images afterwards.

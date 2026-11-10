@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import portal_views, views
+from . import ads_views, portal_views, views
 
 urlpatterns = [
     path(
@@ -111,6 +111,7 @@ urlpatterns = [
         "portal/<shop_id>/categories/", portal_views.PortalCategoriesView.as_view(), name="portal-categories"
     ),
     path("portal/<shop_id>/titles/", portal_views.PortalTitlesView.as_view(), name="portal-titles"),
+    path("portal/<shop_id>/titles/<title_id>/", portal_views.PortalTitleView.as_view(), name="portal-title"),
     path(
         "portal/<shop_id>/titles/<title_id>/cover/",
         portal_views.PortalCoverView.as_view(),
@@ -122,4 +123,15 @@ urlpatterns = [
         portal_views.PortalOrderCancelView.as_view(),
         name="portal-order-cancel",
     ),
+    # Ads (phase 4)
+    path("movie-shops/<uuid:shop_id>/ads/", ads_views.AdListCreateView.as_view(), name="movie-shop-ads"),
+    path("movie-ads/<uuid:ad_id>/", ads_views.AdDetailView.as_view(), name="movie-ad-detail"),
+    path("movie-ads/<uuid:ad_id>/picture/", ads_views.AdPictureView.as_view(), name="movie-ad-picture"),
+    path("portal/<shop_id>/ads/", ads_views.PortalAdsView.as_view(), name="portal-ads"),
+    path(
+        "portal/<shop_id>/ads/<ad_id>/picture/",
+        ads_views.PortalAdPictureView.as_view(),
+        name="portal-ad-picture",
+    ),
+    path("portal/<shop_id>/ads/<ad_id>/tap/", ads_views.PortalAdTapView.as_view(), name="portal-ad-tap"),
 ]

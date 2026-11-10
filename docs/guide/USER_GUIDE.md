@@ -211,7 +211,14 @@ files never move into IntraForge: it keeps their names, sizes, covers and prices
      drive and IF Pay or cash, and press **Charge this order**: the free titles and their points apply then. A
      cancelled or expired sale gives the points back.
 
-Ads on the portal come in the next phase. Sell only films and series you hold the rights or a licence to sell.
+7. **Ads** in the header (needs `movies.manage`) puts ads at the top of your portal, marked "Ad": a new film, an offer,
+   or another shop or business you advertise for (**For**). Give it a title, a short text, a picture (JPEG, PNG or
+   WebP up to 2 MB; keep the right side for the picture) and, if you like, first and last days. A tap can open one of
+   your films or a web page (`https://...`; it opens only when the customer's phone has internet). The preview shows
+   it as customers see it. The list shows whether each ad is showing, its views and taps; switch it on or off, move it
+   up or down, edit or delete it.
+
+Sell only films and series you hold the rights or a licence to sell.
 
 ## 8. Real Features With No Screen Yet
 

@@ -113,6 +113,28 @@ export type ShopCustomer = {
   approved_at: string | null;
 };
 
+export type ShopAd = {
+  id: string;
+  title: string;
+  text: string;
+  advertiser: string;
+  film: string | null;
+  film_title: string | null;
+  link: string;
+  has_picture: boolean;
+  picture_version: string;
+  starts_on: string | null;
+  ends_on: string | null;
+  active: boolean;
+  position: number;
+  views: number;
+  taps: number;
+  showing: boolean;
+  created_at: string;
+};
+
+export type AdInput = Partial<Pick<ShopAd, "title" | "text" | "advertiser" | "film" | "link" | "starts_on" | "ends_on" | "active" | "position">>;
+
 export type ApprovedWallet = { username: string | null; created: boolean; first_password: string | null; path: string | null };
 
 export type Destination = { root: string; label: string; kind: MovieLibrary["kind"]; total_bytes: number | null; free_bytes: number | null };
@@ -154,6 +176,16 @@ export const movies = {
   approve: (customerId: string) => api.post<{ customer: ShopCustomer; wallet: ApprovedWallet }>(`/movie-customers/${customerId}/approve/`),
   customerAction: (customerId: string, action: "reject" | "block" | "unblock") =>
     api.post<{ customer: ShopCustomer }>(`/movie-customers/${customerId}/${action}/`),
+  ads: (id: string) => api.get<ShopAd[]>(`/movie-shops/${id}/ads/`),
+  createAd: (id: string, body: AdInput) => api.post<ShopAd>(`/movie-shops/${id}/ads/`, body),
+  updateAd: (adId: string, body: AdInput) => api.patch<ShopAd>(`/movie-ads/${adId}/`, body),
+  deleteAd: (adId: string) => api.del(`/movie-ads/${adId}/`),
+  uploadAdPicture: (adId: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return api.postForm<ShopAd>(`/movie-ads/${adId}/picture/`, form);
+  },
+  adPictureUrl: (adId: string, version = "") => `/api/v1/movie-ads/${adId}/picture/${version ? `?v=${version}` : ""}`,
   adjustPoints: (customerId: string, delta: number, note: string) =>
     api.post<{ customer: ShopCustomer }>(`/movie-customers/${customerId}/points/`, { delta, note }),
 };

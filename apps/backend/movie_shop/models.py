@@ -307,3 +307,36 @@ class SaleLine(models.Model):
 
     def __str__(self) -> str:
         return self.title_name
+
+
+class Ad(models.Model):
+    """An advertisement the shop shows on its own portal (ADR-0022 decision 8, phase 4): for the shop itself,
+    one of its films, or another business the shop advertises for. Never shown anywhere else."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    shop = models.ForeignKey(MovieShop, on_delete=models.CASCADE, related_name="ads")
+    title = models.CharField(max_length=80)
+    text = models.CharField(max_length=300, blank=True)
+    advertiser = models.CharField(max_length=80, blank=True)  # who it is for, when not the shop itself
+    # A tap opens one of the shop's films, or a web address (http/https only), or nothing.
+    film = models.ForeignKey(Title, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    link = models.URLField(max_length=300, blank=True)
+    picture = models.ForeignKey(
+        "storage.FileObject", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    starts_on = models.DateField(null=True, blank=True)
+    ends_on = models.DateField(null=True, blank=True)
+    active = models.BooleanField(default=True)
+    position = models.PositiveIntegerField(default=0)
+    views = models.PositiveIntegerField(default=0)
+    taps = models.PositiveIntegerField(default=0)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["position", "-created_at"]
+
+    def __str__(self) -> str:
+        return self.title

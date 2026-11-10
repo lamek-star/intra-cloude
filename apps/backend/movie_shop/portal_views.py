@@ -220,6 +220,17 @@ class PortalTitlesView(PortalView):
         )
 
 
+class PortalTitleView(PortalView):
+    def get(self, request, shop_id, title_id):
+        shop = self.shop(shop_id)
+        self.signed_in(request, shop)
+        title = shop.titles.filter(id=title_id, hidden=False).first() if _is_uuid(title_id) else None
+        if title is None:
+            raise Http404
+        prices = {p.category.lower(): p.price for p in shop.category_prices.all()}
+        return Response(portal_title_json(title, prices, shop.default_price))
+
+
 class PortalCoverView(PortalView):
     def get(self, request, shop_id, title_id):
         shop = self.shop(shop_id)

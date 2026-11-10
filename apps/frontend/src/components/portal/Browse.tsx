@@ -8,11 +8,12 @@ import { formatBytes } from "@/lib/movies";
 import { portalApi, type PortalTitle } from "@/lib/portal";
 import { MovieCover } from "@/components/movies/MovieCover";
 import { portalStyle as ui } from "./Portal";
+import { AdCarousel } from "./AdCarousel";
 
 const PAGE = 48;
 
 /** The shop's catalogue: categories, search, covers; a tap opens the title with "Add to cart". */
-export function Browse({ shopId, inCart, onToggle }: { shopId: string; inCart: (id: string) => boolean; onToggle: (t: PortalTitle) => void }) {
+export function Browse({ shopId, shopName, inCart, onToggle }: { shopId: string; shopName: string; inCart: (id: string) => boolean; onToggle: (t: PortalTitle) => void }) {
   const [category, setCategory] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [query, setQuery] = useState("");
@@ -27,6 +28,7 @@ export function Browse({ shopId, inCart, onToggle }: { shopId: string; inCart: (
 
   return (
     <div>
+      <AdCarousel shopId={shopId} shopName={shopName} onFilm={(id) => void portalApi.title(shopId, id).then(setOpen).catch(() => undefined)} />
       <form
         onSubmit={(e) => {
           e.preventDefault();

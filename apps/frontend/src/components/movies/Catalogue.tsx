@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useId, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, Coins, Folder, HardDrive, Pencil, Play, Plus, Receipt, RefreshCw, Search, Server, ShoppingCart, Star, Tag, Trash2, Usb, Users } from "lucide-react";
+import { ChevronLeft, Coins, Folder, HardDrive, Pencil, Play, Plus, Receipt, RefreshCw, Search, Server, ShoppingCart, Star, Tag, Megaphone, Trash2, Usb, Users } from "lucide-react";
 import { agentOnline, formatBytes, movies, titlesLabel, type MovieLibrary, type MovieTitle, type Sale } from "@/lib/movies";
 import { PageLoading, ErrorBanner } from "@/components/ui";
 import { useConfirm } from "@/components/ConfirmProvider";
@@ -12,6 +12,7 @@ import { dark, EditTitleDialog, message, PricesDialog, SetupDialog } from "./Dia
 import { CartPanel, SaleDialog } from "./Checkout";
 import { SalesDialog } from "./SalesList";
 import { CustomersDialog } from "./Customers";
+import { AdsDialog } from "./Ads";
 
 const KIND_ICON = { fixed: HardDrive, removable: Usb, network: Server };
 const PAGE = 60;
@@ -26,7 +27,7 @@ export function Catalogue({ shopId }: { shopId: string }) {
   const [q, setQ] = useState("");
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(PAGE);
-  const [dialog, setDialog] = useState<"setup" | "prices" | "sales" | "customers" | null>(null);
+  const [dialog, setDialog] = useState<"setup" | "prices" | "sales" | "customers" | "ads" | null>(null);
   const [cart, setCart] = useState<MovieTitle[]>([]);
   const [openSale, setOpenSale] = useState<{ id: string; initial?: Sale } | null>(null);
   const [editing, setEditing] = useState<MovieTitle | null>(null);
@@ -120,6 +121,9 @@ export function Catalogue({ shopId }: { shopId: string }) {
                     {portalInfo.data?.waiting}
                   </span>
                 )}
+              </button>
+              <button className={dark.btn} onClick={() => setDialog("ads")}>
+                <Megaphone className="h-4 w-4" /> Ads
               </button>
               <button className={dark.btn} onClick={() => setDialog("prices")}>
                 <Tag className="h-4 w-4" /> Prices
@@ -292,6 +296,7 @@ export function Catalogue({ shopId }: { shopId: string }) {
       {dialog === "setup" && <SetupDialog shop={s} onClose={() => setDialog(null)} onChanged={refresh} />}
       {dialog === "prices" && <PricesDialog shop={s} categories={cats} onClose={() => setDialog(null)} onSaved={refresh} />}
       {editing && <EditTitleDialog title={editing} onClose={() => setEditing(null)} onSaved={refresh} />}
+      {dialog === "ads" && <AdsDialog shopId={s.id} shopName={s.name} onClose={() => setDialog(null)} />}
       {dialog === "customers" && <CustomersDialog shopId={s.id} onClose={() => setDialog(null)} onChanged={refresh} />}
       {dialog === "sales" && <SalesDialog shopId={s.id} onClose={() => setDialog(null)} onOpen={(id) => setOpenSale({ id })} />}
       {openSale && <SaleDialog saleId={openSale.id} initial={openSale.initial} onClose={() => setOpenSale(null)} />}
