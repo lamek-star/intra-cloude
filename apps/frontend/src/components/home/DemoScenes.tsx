@@ -22,7 +22,7 @@ import {
 import s from "./home.module.css";
 
 export type CursorPoint = { at: number; x: number; y: number; click?: boolean };
-export type Scene = { key: string; nav: number; title: string; caption: string; cursor: CursorPoint[]; View: (p: { t: number }) => ReactNode };
+export type Scene = { key: string; nav: number; path: string; title: string; caption: string; cursor: CursorPoint[]; View: (p: { t: number }) => ReactNode };
 
 export const SCENE_MS = 5600;
 
@@ -75,7 +75,7 @@ function Overview({ t }: { t: number }) {
   ];
   return (
     <>
-      <Heading title="Good morning, Selam" sub="Your shop at a glance · everything runs on this PC" />
+      <Heading title="Welcome, Selam" sub="Your shop at a glance · everything runs on this PC" />
       {stats.map(([label, n, suffix], i) => (
         <Box key={label} x={146 + i * 121} y={92} w={112} h={62} className={`${panel} ${s.pop} p-2.5`} style={{ animationDelay: `${120 + i * 90}ms` }}>
           <p className="text-[9.5px] font-medium text-slate-500">{label}</p>
@@ -139,7 +139,7 @@ function Storage({ t }: { t: number }) {
   const upload = progress(t, 1500, 1500);
   return (
     <>
-      <Heading title="Shop documents" sub="Bucket › Invoices · versioning on" />
+      <Heading title="Shop documents" sub="Organizations › Lamek Shop › Shop documents · versioning on" />
       <Box x={548} y={50} w={74} h={26} className={`flex items-center justify-center gap-1 rounded-md bg-brand-600 text-[10.5px] font-semibold text-white ${t > 1150 && t < 1500 ? s.ring : ""}`}>
         <Upload className="h-3 w-3" />
         Upload
@@ -262,7 +262,7 @@ function People({ t }: { t: number }) {
   ];
   return (
     <>
-      <Heading title="People and roles" sub="Each person signs in with their own account · roles, not shared passwords" />
+      <Heading title="Lamek Shop · Members" sub="Organizations › Lamek Shop · each person has their own sign-in and role" />
       <Box x={146} y={90} w={476} h={58} className={`${panel} flex items-center gap-2 px-3`}>
         <UserPlus className="h-4 w-4 text-slate-400" />
         <div className={`flex h-[26px] flex-1 items-center rounded-md border px-2 font-mono text-[10.5px] text-slate-900 ${t > 800 ? "border-brand-400" : "border-slate-200"}`}>
@@ -272,7 +272,7 @@ function People({ t }: { t: number }) {
         <span className={`flex h-[26px] w-[84px] items-center justify-center rounded-md border text-[10.5px] font-semibold ${t > 2400 ? "border-slate-200 bg-slate-50 text-slate-700" : "border-slate-200 text-slate-400"}`}>
           {t > 2400 ? "Cashier" : "Role"}
         </span>
-        <span className={`flex h-[26px] w-[76px] items-center justify-center rounded-md bg-brand-600 text-[10.5px] font-semibold text-white ${t > 2850 && t < 3200 ? s.ring : ""}`}>Invite</span>
+        <span className={`flex h-[26px] w-[76px] items-center justify-center rounded-md bg-brand-600 text-[10.5px] font-semibold text-white ${t > 2850 && t < 3200 ? s.ring : ""}`}>Add member</span>
       </Box>
       <Member y={160} initials="SA" color="bg-brand-600" name="Selam" email="selam@shop.local" role="Owner" />
       <Member y={190} initials="DM" color="bg-teal-600" name="Daniel" email="daniel@shop.local" role="Manager" />
@@ -300,6 +300,7 @@ export const SCENES: Scene[] = [
   {
     key: "overview",
     nav: 0,
+    path: "dashboard",
     title: "Your shop at a glance",
     caption: "Health, activity, backups and storage, live on one page.",
     View: Overview,
@@ -313,9 +314,10 @@ export const SCENES: Scene[] = [
   },
   {
     key: "storage",
-    nav: 1,
+    nav: 2,
+    path: "buckets/7c1e…",
     title: "Store every file",
-    caption: "Upload, keep every version, and get deleted files back from Trash.",
+    caption: "Organizations › your shop › a bucket: upload, keep every version, and get deleted files back from Trash.",
     View: Storage,
     cursor: [
       { at: 0, x: 54, y: 127 },
@@ -329,7 +331,8 @@ export const SCENES: Scene[] = [
   },
   {
     key: "apps",
-    nav: 2,
+    nav: 1,
+    path: "apps",
     title: "Install business apps",
     caption: "Spare Parts, Pharmacy and Pay install in one click, with no internet.",
     View: Apps,
@@ -344,9 +347,10 @@ export const SCENES: Scene[] = [
   },
   {
     key: "people",
-    nav: 3,
+    nav: 2,
+    path: "orgs/2b8f…",
     title: "Invite your team",
-    caption: "Give each person a role. Everything they do is in the audit log.",
+    caption: "Organizations › your shop › Members: give each person a role. Everything they do is in the audit log.",
     View: People,
     cursor: [
       { at: 0, x: 54, y: 179 },

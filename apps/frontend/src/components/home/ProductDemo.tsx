@@ -1,18 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Folder, LayoutDashboard, LayoutGrid, Lock, Pause, Play, Users } from "lucide-react";
+import { Building2, Clapperboard, LayoutDashboard, LayoutGrid, Lock, Pause, Play } from "lucide-react";
 import { SCENES, SCENE_MS, type CursorPoint } from "./DemoScenes";
 import { usePrefersReducedMotion } from "@/lib/use-reduced-motion";
 import s from "./home.module.css";
 
 const STAGE_W = 640;
 const STAGE_H = 420;
+// The real sidebar (components/AppShell.tsx): files and people live inside an organization.
 const NAV = [
   { icon: LayoutDashboard, label: "Dashboard" },
-  { icon: Folder, label: "Storage" },
   { icon: LayoutGrid, label: "Apps" },
-  { icon: Users, label: "People" },
+  { icon: Building2, label: "Organizations" },
+  { icon: Clapperboard, label: "Movie Shop" },
 ];
 
 function cursorAt(points: CursorPoint[], t: number) {
@@ -98,14 +99,14 @@ export function ProductDemo() {
         style={{ height: STAGE_H * scale }}
       >
         <div aria-hidden="true" className="absolute top-0 left-0 origin-top-left select-none" style={{ width: STAGE_W, height: STAGE_H, transform: `scale(${scale})` }}>
-          {/* Browser bar: the address is this PC's own. */}
+          {/* Browser bar: this PC's own address and the real page each scene shows. */}
           <div className="absolute inset-x-0 top-0 flex h-9 items-center gap-2 border-b border-slate-200 bg-slate-50 px-3">
             <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
             <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
             <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
             <div className="mx-auto flex h-[22px] w-64 items-center justify-center gap-1.5 rounded-md bg-white text-[10px] text-slate-500 shadow-[inset_0_0_0_1px_rgba(15,23,42,.08)]">
               <Lock className="h-2.5 w-2.5 text-green-600" />
-              https://shop-pc:8443/{current.key === "overview" ? "dashboard" : current.key}
+              https://shop-pc:8443/{current.path}
             </div>
           </div>
           {/* The app's navy rail */}

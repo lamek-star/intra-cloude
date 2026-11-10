@@ -58,7 +58,9 @@
 @keyframes windowIn {
   from { opacity: 0; transform: perspective(1400px) rotateX(8deg) translateY(28px) scale(0.97); }
 }
-.paused * {
+/* Paused: the looping motion stops, but a scene's one-time entrance still finishes -- otherwise choosing a scene while
+   paused would leave its heading frozen at its first, invisible frame. */
+.paused *:not(.sceneIn):not(.pop) {
   animation-play-state: paused !important;
 }
 .sceneIn {
