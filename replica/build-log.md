@@ -448,3 +448,27 @@ Desert Wind; the owner's list then showed 2 views and 1 tap. Three design faults
 list crammed the full banner into a small thumbnail (now a compact thumbnail), on a phone the title ran across the
 picture, and on a phone the 16:7 banner was too short so the title and text collided (16:9 on phones, the text one
 line). The test copy was put back on its 1.5.2 images afterwards.
+
+### Kit 1.5.4 (2026-11-10)
+
+`IntraForge-Local-1.5.4-6fcb9da90.zip` (914 MB), SHA-256
+`65db71d0ca751fcf9389265f0637ddca26678d9573db5a4e31ba999c005f87bc`, and `IntraForge-Setup-1.5.4-6fcb9da90.exe`
+(1.8 GB, with Docker Desktop and WSL for the owner's own PCs only), SHA-256
+`49563e03844bd919588bae8081166d7d499f10e5a49a2894bd1263653450441e`, built from `6fcb9da90` with
+`KIT_VERSION=1.5.4 CARRY_APPS_FROM=1.4.0-dbf44f593 MINIO_TAG=RELEASE.2025-09-07T16-13-09Z
+PAY_IMAGE=intraforge-shop-pay:1.5.4-portal`.
+
+New since 1.5.3: labels with the shop name and a captioned part number, labels as PNG, invoices on A4 and receipt
+paper; the Movie Shop, phases 1-4 (catalogue and the Windows media agent `IntraForgeMediaAgent.exe`, counter sales
+with IF Pay or cash copied to the customer's USB, the customer portal with IF Pay wallets and rewards, ads); the
+home-page demo showing the real menu and pages. **IntraForge Pay** is now lamek-star/intraforge-pay
+`feature/shop-app-customers` at `b738f48` (wallets opened for shop apps, the customer choosing their own password; on
+`feature/refunds-cashback` `429aca5`): image `sha256:6b77be7f...` = the 1.5.0 cashback image with `ifpay` replaced, migration
+0005. Spare Parts, Pharmacy and the Node runtime carried over unchanged from kit 1.4.0.
+
+Checked: 8/8 kit checksums and both files' `.sha256`; VERSION `1.5.4`; 12 images, all bundled; no keys or `.env` in the
+kit; the backend image has Movie Shop migrations 0001-0004, the frontend has `/portal` and the new demo, the Pay image
+is the tested `1.5.4-portal` build with migration 0005; `npm audit --omit=dev --audit-level=high` 0; `pip-audit` no
+known vulnerabilities (the backend test environment); the exe's file properties read IntraForge 1.5.4 and
+"© 2026 lamek-rusoom". Not yet done: installing it on the shop PC (an upgrade from 1.5.3) and a real phone on the shop
+Wi-Fi.
