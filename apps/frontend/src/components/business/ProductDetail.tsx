@@ -20,7 +20,7 @@ import { money } from "@/lib/format";
 import { Badge, Button, Card, EmptyState, ErrorBanner, Input, Label, PageLoading, Table, Td, Th, THead } from "@/components/ui";
 import { useBusiness } from "./BusinessApp";
 import { MovementHistory, StockTable } from "./Inventory";
-import { PrintLabelsButton, type LabelData } from "./Labels";
+import { numberCaption, PrintLabelsButton, type LabelData } from "./Labels";
 import { ToyoDiyLookup } from "./ToyoDiyLookup";
 import { AddPartNumber } from "./PartNumbers";
 import { Pager } from "./RecordSection";
@@ -367,6 +367,7 @@ function ProductLabelButton({ part }: { part: BusinessRow }) {
     <PrintLabelsButton
       items={number ? [labelFor(schema, part, number)] : []}
       disabledReason={`Give it ${words.number.toLowerCase()} first: the label carries it as a barcode.`}
+      caption={numberCaption(words.number)}
     />
   );
 }

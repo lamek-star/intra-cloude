@@ -3,9 +3,12 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
-import { cell, cellText, getRecord, listRecords, type BusinessRow } from "@/lib/business";
+import { cell, cellText, editionOf, getRecord, listRecords, WORDS, type BusinessRow } from "@/lib/business";
 import { formatDate, formatDateTime, money, signed } from "@/lib/format";
-import { Badge, Button, Card, ErrorBanner, PageLoading, Table, Td, Th, THead } from "@/components/ui";
+import type { InvoiceData } from "@/lib/invoice";
+import { Badge, Card, ErrorBanner, PageLoading, Table, Td, Th, THead } from "@/components/ui";
+import { numberCaption } from "./Labels";
+import { PrintInvoiceButton } from "./InvoicePrint";
 import { useBusiness } from "./BusinessApp";
 import { useNames } from "./hooks";
 
@@ -18,9 +21,9 @@ type Doc = {
 };
 
 /** The sales document: the invoice for one sale, its lines, and the stock that left because of it.
- * Everything is read from IntraForge; this screen never changes anything. Print it, or save it as a
- * PDF, from the browser (the page carries a print layout). */
-export default function SalesDocument({ orderId }: { orderId: string }) {
+ * Everything is read from IntraForge; this screen never changes anything. "Print invoice" prints it on
+ * A4 or a receipt printer with the shop's details (InvoicePrint.tsx), or saves it as a PDF. */
+export default function SalesDocument({ orderId, autoPrint = false }: { orderId: string; autoPrint?: boolean }) {
   const { schema, instance } = useBusiness();
   const [doc, setDoc] = useState<Doc | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +72,25 @@ export default function SalesDocument({ orderId }: { orderId: string }) {
     ...(doc?.movements ?? []).map((m) => cellText(schema, "stock_movement", m, "stock_movement_part")),
   ];
   const parts = useNames("part", "name", partIds);
+  // Each line's part number (the first one the product has), for the printed invoice.
+  const [numbers, setNumbers] = useState<Record<string, string>>({});
+  const lineParts = [...new Set((doc?.lines ?? []).map((l) => cellText(schema, "sales_order_line", l, "sales_order_line_part")).filter(Boolean))];
+  const linePartsKey = lineParts.join(",");
+  useEffect(() => {
+    if (!linePartsKey) return;
+    let cancelled = false;
+    Promise.all(
+      linePartsKey.split(",").map(async (id) => {
+        const page = await listRecords(schema, "part_number", { filters: { part_number_part: id }, limit: 1 });
+        return [id, page.results[0] ? cellText(schema, "part_number", page.results[0], "number") : ""] as const;
+      }),
+    )
+      .then((pairs) => !cancelled && setNumbers(Object.fromEntries(pairs)))
+      .catch(() => !cancelled && setNumbers({}));
+    return () => {
+      cancelled = true;
+    };
+  }, [schema, linePartsKey]);
   const warehouses = useNames(
     "warehouse",
     "name",
@@ -79,6 +101,33 @@ export default function SalesDocument({ orderId }: { orderId: string }) {
   if (!doc) return <PageLoading />;
 
   const invoiceNumber = doc.invoice ? cellText(schema, "invoice", doc.invoice, "invoice_number") : "";
+  const words = WORDS[editionOf(schema)];
+  const namesReady = lineParts.every((id) => parts[id] !== undefined);
+  const invoiceData: InvoiceData | null = namesReady
+    ? {
+        number: invoiceNumber,
+        date: formatDate(
+          (doc.invoice && cell(schema, "invoice", doc.invoice, "invoice_date")) || cell(schema, "sales_order", doc.order, "order_date"),
+        ),
+        payment: doc.invoice ? cellText(schema, "invoice", doc.invoice, "status") : "",
+        customer: doc.customer,
+        lines: doc.lines.map((line) => {
+          const partId = cellText(schema, "sales_order_line", line, "sales_order_line_part");
+          return {
+            number: numbers[partId] ?? "",
+            name: parts[partId] ?? "",
+            quantity: cellText(schema, "sales_order_line", line, "quantity"),
+            unitPrice: money(cell(schema, "sales_order_line", line, "unit_price")),
+            total: money(cell(schema, "sales_order_line", line, "line_total")),
+          };
+        }),
+        total: money(cell(schema, "sales_order", doc.order, "total_amount")),
+        amountDue: money(doc.invoice ? cell(schema, "invoice", doc.invoice, "amount_due") : cell(schema, "sales_order", doc.order, "total_amount")),
+        numberCaption: numberCaption(words.number),
+        productWord: words.product,
+        printedAt: new Date().toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
+      }
+    : null;
 
   return (
     <article aria-labelledby="doc-title" className="max-w-3xl print:max-w-none">
@@ -86,9 +135,7 @@ export default function SalesDocument({ orderId }: { orderId: string }) {
         <Link href={`/apps/${instance.id}/sales`} className="text-sm font-medium text-brand-700 hover:underline">
           ← All sales
         </Link>
-        <Button variant="secondary" onClick={() => window.print()}>
-          Print invoice
-        </Button>
+        <PrintInvoiceButton data={invoiceData} autoOpen={autoPrint} />
       </div>
 
       <Card className="print:border-0 print:shadow-none">
@@ -128,7 +175,8 @@ export default function SalesDocument({ orderId }: { orderId: string }) {
 
         <Table>
           <THead>
-            <Th>Product</Th>
+            <Th>{words.number}</Th>
+            <Th>{words.product}</Th>
             <Th>Quantity</Th>
             <Th>Unit price</Th>
             <Th>Line total</Th>
@@ -136,6 +184,7 @@ export default function SalesDocument({ orderId }: { orderId: string }) {
           <tbody>
             {doc.lines.map((line) => (
               <tr key={String(line.id)} className="border-b border-slate-100 last:border-0">
+                <Td className="font-mono text-xs">{numbers[cellText(schema, "sales_order_line", line, "sales_order_line_part")] || "—"}</Td>
                 <Td>{parts[cellText(schema, "sales_order_line", line, "sales_order_line_part")] ?? "…"}</Td>
                 <Td className="tabular-nums">{cellText(schema, "sales_order_line", line, "quantity")}</Td>
                 <Td className="tabular-nums">{money(cell(schema, "sales_order_line", line, "unit_price"))}</Td>

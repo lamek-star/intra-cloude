@@ -16,6 +16,7 @@ import {
   saleTotalCents,
   type SaleLine,
 } from "@/lib/business";
+import { Printer } from "lucide-react";
 import { Button, Card, ErrorBanner, Input, Label, LinkButton, Select } from "@/components/ui";
 import { useBusiness } from "./BusinessApp";
 import { useOptions } from "./hooks";
@@ -164,7 +165,11 @@ export default function SellStock() {
           </ul>
         </div>
         <div className="mt-4 flex gap-2">
-          <LinkButton href={`/apps/${instance.id}/sales/${sold.orderId}`} variant="primary">
+          <LinkButton href={`/apps/${instance.id}/sales/${sold.orderId}?print=1`} variant="primary">
+            <Printer className="h-4 w-4" aria-hidden="true" />
+            Print invoice
+          </LinkButton>
+          <LinkButton href={`/apps/${instance.id}/sales/${sold.orderId}`} variant="secondary">
             Open sales document
           </LinkButton>
           <Button variant="secondary" onClick={newSale}>

@@ -314,3 +314,23 @@ screenshot served; `/api/v1/system/version/` refuses an anonymous caller (403) a
 5 accounts intact (5 before); the Control Center exe is the kit's (same SHA-256), reopened after the upgrade; the
 installer's marker now names the 1.5.3 kit, so opening the same setup file again says "already installed"; 1.5.2 kept
 in `.previous`.
+
+### Labels with the shop's name, label pictures, and a printed invoice (2026-11-10, not in a kit yet)
+
+- **Labels** (`components/business/Labels.tsx`) now carry the shop's name at the top, the product name in bold, its
+  details, the barcode and the number with its caption ("Part No." / "Item No."), then price and shelf. The shop name
+  is typed once in the print dialog and remembered on that computer.
+- **Download image** (`lib/label-image.ts`): the same labels drawn on a canvas at 300 dpi -- one 50 x 30 mm PNG per
+  label for a label printer, or A4 pages of 3 x 8 labels with light cut guides.
+- **Print invoice** (`lib/invoice.ts`, `components/business/InvoicePrint.tsx`): A4, or an 80 mm / 58 mm receipt
+  printer; the shop's name, address, phone, tax number, currency and closing note (remembered per app on that
+  computer); every line with its part number; the invoice number as a barcode; a live preview of exactly what prints;
+  "Save as PDF" through the browser. "Sale complete" now offers **Print invoice** straight away; the sales document
+  shows each line's part number.
+
+Checked: frontend 186 tests pass (9 new), tsc and eslint clean. On the test copy with a preview image, signed in as
+the test owner: a test warehouse, customer and two received medicines, a two-line sale, then Print invoice from the
+sale-complete screen -- A4 preview and the 80 mm receipt print window captured; a medicine's label printed and
+downloaded as a single label and as an A4 page. Two faults found this way and fixed: the dialog's preview barcode
+overflowed onto the number, and on an A4 picture every Rx box after the first came out grey (the cut guides' colour).
+Only the built-in Spare Parts and Pharmacy get this; the separate Spare Parts service app has no source to change.
