@@ -410,3 +410,59 @@ class PortalTests(TestCase):
             }
             me = client.get(self.url("me/")).data
         self.assertEqual((me["wallet"]["username"], me["wallet"]["balance"]), ("selam", 123.45))
+
+    # ---- counter sales for a portal customer --------------------------------------------------------------
+    def counter_sale(self, titles, **extra):
+        return self.owner_client.post(
+            f"/api/v1/movie-shops/{self.shop.id}/sales/",
+            {"titles": titles, "destination": "E:\\", "method": "cash", **extra},
+            format="json",
+        )
+
+    def test_a_counter_sale_for_a_portal_customer_uses_their_points_and_a_cancel_returns_them(self):
+        client, cid = self.approved_customer()
+        found = self.owner_client.get(
+            f"/api/v1/movie-shops/{self.shop.id}/counter-customers/", {"phone": "0911 223 344"}
+        ).data["results"]
+        self.assertEqual(found, [{"id": cid, "name": "Selam", "phone_end": "3344", "points": 30}])
+        both = [self.titles["Film 1"], self.titles["Film 2"]]
+        sale = self.counter_sale(both, customer=cid, use_points=True)
+        self.assertEqual(sale.status_code, 201, sale.data)
+        self.assertEqual((sale.data["total"], sale.data["points_used"]), (50, 30))
+        self.assertEqual(client.get(self.url("me/")).data["points"], 0)
+        self.owner_client.post(f"/api/v1/movie-sales/{sale.data['id']}/cancel/")
+        self.assertEqual(client.get(self.url("me/")).data["points"], 30)
+        # The counter's titles count towards every third title free, like the customer's own orders.
+        paid = self.counter_sale([self.titles["Film 1"], self.titles["Film 2"]], customer=cid).data
+        self.owner_client.post(f"/api/v1/movie-sales/{paid['id']}/cash/")
+        third = self.counter_sale([self.titles["Film 3"]], customer=cid).data
+        self.assertEqual((third["status"], third["total"]), ("paid", 0))
+
+    def test_without_a_customer_a_counter_sale_has_no_rewards(self):
+        self.approved_customer()
+        sale = self.counter_sale([self.titles["Film 1"], self.titles["Film 2"]], use_points=True).data
+        self.assertEqual((sale["total"], sale["points_used"]), (80, 0))
+
+    def test_the_counter_finds_only_approved_customers_of_this_shop_by_six_digits_or_more(self):
+        _, pending = self.sign_up(phone="0922000111", name="Waiting")
+        _, cid = self.approved_customer()
+        url = f"/api/v1/movie-shops/{self.shop.id}/counter-customers/"
+        self.assertEqual(self.owner_client.get(url, {"phone": "09112"}).data["results"], [])  # too short
+        self.assertEqual(self.owner_client.get(url, {"phone": "0922000111"}).data["results"], [])  # pending
+        r = self.counter_sale([self.titles["Film 1"]], customer=pending.data["id"])
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self.counter_sale([self.titles["Film 1"]], customer="not-a-uuid").status_code, 400)
+        clerk = APIClient()
+        clerk.force_login(self.clerk)  # a member who may not sell
+        self.assertEqual(clerk.get(url, {"phone": "0911223344"}).status_code, 403)
+        outsider = APIClient()
+        outsider.force_login(self.outsider)
+        self.assertEqual(outsider.get(url, {"phone": "0911223344"}).status_code, 404)
+
+    def test_the_portal_directory_lists_only_open_portals_by_name(self):
+        r = APIClient().get("/api/v1/portal/")
+        self.assertEqual(r.data, {"shops": [{"id": str(self.shop.id), "name": "Lamek Movies"}]})
+        self.owner_client.put(
+            f"/api/v1/movie-shops/{self.shop.id}/portal/", {"portal_open": False}, format="json"
+        )
+        self.assertEqual(APIClient().get("/api/v1/portal/").data, {"shops": []})

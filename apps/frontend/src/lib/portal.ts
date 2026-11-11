@@ -68,6 +68,9 @@ async function call<T>(method: "GET" | "POST", path: string, body?: unknown): Pr
   return data as T;
 }
 
+/** The open portals on this shop network (the short address /portal/ chooses among them). */
+export const portalDirectory = () => call<{ shops: { id: string; name: string }[] }>("GET", "");
+
 export const portalApi = {
   home: (shop: string) => call<PortalHome>("GET", `${shop}/`),
   signUp: (shop: string, body: { name: string; phone: string; password: string; birthday?: string; referral_code?: string }) =>

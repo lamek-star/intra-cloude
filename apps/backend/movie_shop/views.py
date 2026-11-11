@@ -523,6 +523,8 @@ class SaleListCreateView(OwnerView):
             destination=data.get("destination"),
             method=data.get("method", "ifpay"),
             customer_name=data.get("customer_name", ""),
+            customer_id=data.get("customer"),
+            use_points=data.get("use_points") is True,
         )
         return Response(_sale_json(sale), status=status.HTTP_201_CREATED)
 
@@ -753,5 +755,36 @@ class ShopTodayView(OwnerView):
                 "titles": SaleLine.objects.filter(sale__in=paid).count(),
                 "credits": totals["credits"] or 0,
                 "new_customers": shop.customers.filter(created_at__gte=since).count(),
+            }
+        )
+
+
+class CounterCustomerFindView(OwnerView):
+    """For the person at the counter (movies.sell): finds an approved portal customer by phone number, to
+    apply their rewards to a counter sale. Deliberately narrow: at least 6 digits of the number, at most 5
+    matches, the name, the number's last 4 digits and the points; never the customer list."""
+
+    def get(self, request, shop_id):
+        from .models import PortalCustomer
+        from .portal import points_of
+
+        shop = get_member_shop(request.user, shop_id)
+        if not _can_sell(request.user, shop):
+            return _forbidden()
+        digits = "".join(ch for ch in str(request.query_params.get("phone", ""))[:20] if ch.isdigit())
+        if len(digits) < 6:
+            return Response({"results": []})
+        found = shop.customers.filter(status=PortalCustomer.Status.APPROVED, phone__contains=digits)[:5]
+        return Response(
+            {
+                "results": [
+                    {
+                        "id": str(c.id),
+                        "name": c.name,
+                        "phone_end": c.phone[-4:],
+                        "points": points_of(c),
+                    }
+                    for c in found
+                ]
             }
         )

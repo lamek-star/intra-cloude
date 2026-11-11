@@ -22,7 +22,8 @@ Describe 'the shop''s own names' {
 
     It 'names only the apps this installation runs' {
         $names = Get-ShopAppNames @('backend', 'pharmacy', 'pay-2', 'pay-1', 'proxy')
-        @($names.Keys) -join ',' | Should Be 'intraforge,pharmacy,pay'
+        @($names.Keys) -join ',' | Should Be 'intraforge,movies,pharmacy,pay'
+        $names['movies'] | Should Be '/portal/'
         $names['pay'] | Should Be '/apps/pay-1/'
     }
 
@@ -42,6 +43,7 @@ Describe 'the shop''s own names' {
         $text = New-ShopNamesCaddy 'lan' (Get-ShopAppNames @('spareparts', 'pharmacy'))
         $text | Should Match "host pharmacy\.lan"
         $text | Should Match 'redir @ifname_spare_parts /apps/spare-parts/ 302'
+        $text | Should Match 'redir @ifname_movies /portal/ 302'
         $text | Should Not Match 'host intraforge\.lan'
     }
 
