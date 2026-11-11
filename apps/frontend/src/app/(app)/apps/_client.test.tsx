@@ -37,12 +37,14 @@ function installed(overrides: Record<string, unknown> = {}) {
 }
 
 let sites: unknown[] = [];
+let shops: unknown[] = [];
 
 function serve(results: unknown[], available: unknown[] = []) {
   get.mockImplementation(async (path: string) => {
     if (path === "/service-apps/") return { results, available };
     if (path === "/organizations/") return [ORG];
     if (path === "/organizations/o1/sites/") return sites;
+    if (path === "/organizations/o1/movie-shops/") return shops;
     throw new Error(`unexpected GET ${path}`);
   });
 }
@@ -51,6 +53,7 @@ beforeEach(() => {
   get.mockReset();
   post.mockReset();
   sites = [];
+  shops = [];
 });
 
 describe("Apps", () => {
@@ -156,5 +159,30 @@ describe("Apps: uploaded apps", () => {
     expect(await screen.findByRole("heading", { name: "Harbour Motors" })).toBeInTheDocument();
     await waitFor(() => expect(get).toHaveBeenCalledWith("/organizations/o1/sites/"));
     expect(screen.queryByRole("heading", { name: "Your uploaded apps" })).not.toBeInTheDocument();
+  });
+
+  it("shows each movie shop as an installed app and offers the Movie Shop to install", async () => {
+    shops = [
+      {
+        id: "m1",
+        organization: "o1",
+        project: "p1",
+        name: "Lamek Movies",
+        default_price: 40,
+        category_prices: {},
+        agent_seen_at: null,
+        agent: { computer: "", version: "" },
+        titles: 12,
+        can_manage: true,
+        can_sell: true,
+        created_at: "",
+      },
+    ];
+    serve([]);
+    renderWithQuery(<AppsClient />);
+    expect(await screen.findByRole("heading", { name: "Lamek Movies" })).toBeInTheDocument();
+    expect(screen.getByText("Media agent off")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Open/ })).toHaveAttribute("href", "/movies/m1");
+    expect(screen.getByRole("button", { name: "Install Movie Shop" })).toBeEnabled();
   });
 });

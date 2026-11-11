@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
-import { Ban, Check, Copy, Gift, KeyRound, ShieldCheck, Undo2, Users, Wallet, X } from "lucide-react";
+import { Ban, Check, Copy, Gift, KeyRound, Pencil, ShieldCheck, Undo2, Users, Wallet, X } from "lucide-react";
 import { movies, type ApprovedWallet, type PortalSettings, type ShopCustomer } from "@/lib/movies";
 import { dark, DarkDialog, message } from "./Dialogs";
 
@@ -25,6 +25,9 @@ export function CustomersDialog({ shopId, onClose, onChanged }: { shopId: string
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [approved, setApproved] = useState<{ customer: ShopCustomer; wallet: ApprovedWallet } | null>(null);
+  // A one-time code or password to hand to a customer (shown once).
+  const [secret, setSecret] = useState<{ title: string; rows: [string, string][]; note: string } | null>(null);
+  const [editingCustomer, setEditingCustomer] = useState<ShopCustomer | null>(null);
 
   const [version, setVersion] = useState(0);
 
@@ -63,6 +66,19 @@ export function CustomersDialog({ shopId, onClose, onChanged }: { shopId: string
     <DarkDialog title="Customers" onClose={onClose} wide>
       {error && <p className="mb-3 rounded-lg bg-red-400/10 px-3 py-2 text-sm text-red-200">{error}</p>}
       {approved && <FirstPassword data={approved} onDone={() => setApproved(null)} />}
+      {secret && <OneTimeSecret {...secret} onDone={() => setSecret(null)} />}
+      {editingCustomer && (
+        <EditCustomer
+          customer={editingCustomer}
+          onCancel={() => setEditingCustomer(null)}
+          onSave={(body) =>
+            act(editingCustomer.id, async () => {
+              await movies.editCustomer(editingCustomer.id, body);
+              setEditingCustomer(null);
+            })
+          }
+        />
+      )}
       {settings && (
         <PortalSettingsCard
           settings={settings}
@@ -115,6 +131,54 @@ export function CustomersDialog({ shopId, onClose, onChanged }: { shopId: string
               <span className="ml-auto text-sm font-bold text-amber-200" title="Movie Shop points">
                 {c.points} pts
               </span>
+              {c.reset_requested_at && (
+                <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-px text-[10.5px] font-semibold text-amber-200">Asks for a new password</span>
+              )}
+              <button className="text-xs text-slate-400 hover:text-white" disabled={busy !== null} onClick={() => setEditingCustomer(c)}>
+                <Pencil className="mr-1 inline h-3.5 w-3.5" /> Edit
+              </button>
+              {c.status === "approved" && (
+                <button
+                  className={`text-xs hover:text-white ${c.reset_requested_at ? "font-semibold text-amber-200" : "text-slate-400"}`}
+                  disabled={busy !== null}
+                  onClick={() =>
+                    act(c.id, async () => {
+                      const r = await movies.resetCode(c.id);
+                      setSecret({
+                        title: `New portal password for ${c.name}`,
+                        rows: [
+                          ["Phone", c.phone],
+                          ["One-time code", r.code],
+                        ],
+                        note: `Give the code to the customer. On the portal they choose "Forgot password?", then "I have a code", and set a new password. It works once, for ${r.minutes} minutes.`,
+                      });
+                    })
+                  }
+                >
+                  <KeyRound className="mr-1 inline h-3.5 w-3.5" /> Password code
+                </button>
+              )}
+              {c.status === "approved" && c.has_wallet && (
+                <button
+                  className="text-xs text-slate-400 hover:text-white"
+                  disabled={busy !== null}
+                  onClick={() =>
+                    act(c.id, async () => {
+                      const r = await movies.resetWallet(c.id);
+                      setSecret({
+                        title: `New IF Pay wallet password for ${c.name}`,
+                        rows: [
+                          ["Wallet username", r.wallet.username ?? c.pay_username],
+                          ["One-time password", r.wallet.first_password ?? ""],
+                        ],
+                        note: "Give these to the customer now; the password is shown only once. Their wallet asks them to choose their own at the next sign-in.",
+                      });
+                    })
+                  }
+                >
+                  <Wallet className="mr-1 inline h-3.5 w-3.5" /> Wallet password
+                </button>
+              )}
               {c.status === "approved" && (
                 <button className="text-xs text-slate-400 hover:text-red-300" disabled={busy !== null} onClick={() => act(c.id, () => movies.customerAction(c.id, "block"))}>
                   <Ban className="mr-1 inline h-3.5 w-3.5" /> Block
@@ -257,5 +321,83 @@ function FirstPassword({ data, onDone }: { data: { customer: ShopCustomer; walle
         Done, I gave it to them
       </button>
     </div>
+  );
+}
+
+/** A one-time code or password for a customer, shown once to the owner. */
+function OneTimeSecret({ title, rows, note, onDone }: { title: string; rows: [string, string][]; note: string; onDone: () => void }) {
+  return (
+    <div className="mb-4 rounded-2xl border border-teal-400/40 bg-teal-400/10 p-4" role="status">
+      <p className="flex items-center gap-2 text-sm font-bold text-teal-100">
+        <KeyRound className="h-4 w-4" /> {title}
+      </p>
+      <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+        {rows.map(([label, value]) => (
+          <div key={label} className="contents">
+            <dt className="text-slate-400">{label}</dt>
+            <dd className="font-mono text-base font-bold tracking-wider text-amber-200">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-2 text-xs text-teal-100/80">{note}</p>
+      <button className={`${dark.btn} mt-3`} onClick={onDone}>
+        Done, I gave it to them
+      </button>
+    </div>
+  );
+}
+
+/** Corrects a customer's name, phone number or birthday. */
+function EditCustomer({
+  customer,
+  onSave,
+  onCancel,
+}: {
+  customer: ShopCustomer;
+  onSave: (body: { name: string; phone: string; birthday: string | null }) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(customer.name);
+  const [phone, setPhone] = useState(customer.phone);
+  const [birthday, setBirthday] = useState(customer.birthday ?? "");
+  const ids = { name: useId(), phone: useId(), birthday: useId() };
+  return (
+    <form
+      className="mb-4 rounded-2xl border border-[#323c5a] bg-[#141a2b] p-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSave({ name: name.trim(), phone: phone.trim(), birthday: birthday || null });
+      }}
+    >
+      <p className="text-sm font-bold">Edit {customer.name}</p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <div>
+          <label htmlFor={ids.name} className={dark.label}>
+            Name
+          </label>
+          <input id={ids.name} className={dark.input} maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
+        </div>
+        <div>
+          <label htmlFor={ids.phone} className={dark.label}>
+            Phone
+          </label>
+          <input id={ids.phone} className={dark.input} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+        </div>
+        <div>
+          <label htmlFor={ids.birthday} className={dark.label}>
+            Birthday
+          </label>
+          <input id={ids.birthday} className={dark.input} type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} />
+        </div>
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <button type="button" className={dark.btn} onClick={onCancel}>
+          Cancel
+        </button>
+        <button className={dark.amber} disabled={!name.trim() || !phone.trim()}>
+          <Check className="h-4 w-4" /> Save
+        </button>
+      </div>
+    </form>
   );
 }

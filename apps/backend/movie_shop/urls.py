@@ -94,7 +94,7 @@ urlpatterns = [
             views.CustomerActionView.as_view(action_name=name),
             name=f"movie-customer-{name}",
         )
-        for name in ("approve", "reject", "block", "unblock")
+        for name in ("approve", "reject", "block", "unblock", "reset-code", "wallet-password")
     ],
     path(
         "movie-customers/<uuid:customer_id>/points/",
@@ -134,4 +134,11 @@ urlpatterns = [
         name="portal-ad-picture",
     ),
     path("portal/<shop_id>/ads/<ad_id>/tap/", ads_views.PortalAdTapView.as_view(), name="portal-ad-tap"),
+    path(
+        "movie-customers/<uuid:customer_id>/",
+        views.CustomerDetailView.as_view(),
+        name="movie-customer-detail",
+    ),
+    path("portal/<shop_id>/forgot/", portal_views.PortalForgotView.as_view(), name="portal-forgot"),
+    path("portal/<shop_id>/reset/", portal_views.PortalResetView.as_view(), name="portal-reset"),
 ]

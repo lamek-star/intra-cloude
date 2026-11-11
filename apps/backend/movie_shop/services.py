@@ -194,8 +194,10 @@ def add_scanned_titles(*, library: Library, generation: int, items) -> dict:
             title.kind, title.size_bytes, title.episodes = c["kind"], c["size_bytes"], c["episodes"]
             title.seen_generation = generation
             title.save()
-            if c["cover_fingerprint"] and (
-                title.cover_id is None or title.cover_fingerprint != c["cover_fingerprint"]
+            if (
+                c["cover_fingerprint"]
+                and not title.cover_locked
+                and (title.cover_id is None or title.cover_fingerprint != c["cover_fingerprint"])
             ):
                 wanted.append(c["relative_path"])
     return {"covers_wanted": wanted}
@@ -222,6 +224,8 @@ def attach_cover(*, library: Library, relative_path: str, fingerprint: str, uplo
     title = library.titles.filter(relative_path__iexact=relative_path).first()
     if title is None:
         raise ValidationError({"relative_path": "No such title in this library."})
+    if title.cover_locked:
+        return title  # the owner chose this poster; the folder's picture does not replace it
     if upload is None or upload.size > COVER_MAX_BYTES:
         raise ValidationError({"file": f"A picture up to {COVER_MAX_BYTES // 1000} KB."})
     head = upload.read(16)
@@ -362,3 +366,97 @@ def read_file(file_obj, max_bytes: int) -> tuple[bytes, str] | None:
     body = get_client().get_stream(file_obj.object_key)
     data = io.BytesIO(body.read(max_bytes + 1)).getvalue()
     return data, file_obj.mime_type
+
+
+OWNER_COVER_MAX_BYTES = 3_000_000
+
+
+def _picture_kind(upload) -> None:
+    head = upload.read(16)
+    upload.seek(0)
+    if not (
+        head.startswith(b"\xff\xd8\xff")
+        or head.startswith(b"\x89PNG\r\n\x1a\n")
+        or (head[:4] == b"RIFF" and head[8:12] == b"WEBP")
+    ):
+        raise ValidationError({"file": "A JPEG, PNG or WebP picture."})
+
+
+def set_owner_cover(*, title: Title, actor, upload) -> Title:
+    """The owner's own poster for a title: kept through every re-scan until the owner goes back to the
+    folder's."""
+    if upload is None or upload.size > OWNER_COVER_MAX_BYTES:
+        raise ValidationError({"file": f"A picture up to {OWNER_COVER_MAX_BYTES // 1_000_000} MB."})
+    _picture_kind(upload)
+    shop = title.shop
+    identity = shop.agent_application.service_account.identity_user
+    cover = storage.upload_file(
+        bucket=shop.covers_bucket,
+        folder=None,
+        uploaded_file=upload,
+        display_filename=f"{title.title[:180]} (poster)",
+        creator=identity,
+    )
+    if cover.mime_type not in COVER_TYPES:
+        storage.delete_file(cover, actor=identity)
+        raise ValidationError({"file": "A JPEG, PNG or WebP picture."})
+    old = title.cover
+    title.cover, title.cover_locked, title.cover_fingerprint = cover, True, "owner"
+    title.save(update_fields=["cover", "cover_locked", "cover_fingerprint", "updated_at"])
+    if old is not None:
+        storage.delete_file(old, actor=identity)
+    audit.record(
+        actor=actor,
+        organization_id=shop.organization_id,
+        action="movie_shop.title.poster",
+        resource_type="movie_shop",
+        resource_id=shop.id,
+        context={"title": str(title.id), "name": title.title},
+    )
+    return title
+
+
+def clear_owner_cover(*, title: Title, actor) -> Title:
+    """Back to the folder's own picture: the next scan sends it again (or the drawn cover until then)."""
+    shop = title.shop
+    old = title.cover if title.cover_locked else None
+    title.cover_locked = False
+    title.cover_fingerprint = ""
+    if old is not None:
+        title.cover = None
+    title.save(update_fields=["cover", "cover_locked", "cover_fingerprint", "updated_at"])
+    if old is not None:
+        storage.delete_file(old, actor=shop.agent_application.service_account.identity_user)
+    audit.record(
+        actor=actor,
+        organization_id=shop.organization_id,
+        action="movie_shop.title.poster_cleared",
+        resource_type="movie_shop",
+        resource_id=shop.id,
+        context={"title": str(title.id), "name": title.title},
+    )
+    return title
+
+
+def rename(obj, *, actor, name, what: str):
+    """Renames a shop or a library (the shop's name must stay unique in its organization)."""
+    from django.db import IntegrityError
+
+    clean = scanning.clean_text(name, "name", max_length=120)
+    old = obj.name
+    obj.name = clean
+    try:
+        with transaction.atomic():
+            obj.save(update_fields=["name"])
+    except IntegrityError as exc:
+        raise ValidationError({"name": "Another movie shop here already has that name."}) from exc
+    shop = obj if what == "shop" else obj.shop
+    audit.record(
+        actor=actor,
+        organization_id=shop.organization_id,
+        action=f"movie_shop.{what}.rename",
+        resource_type="movie_shop",
+        resource_id=shop.id,
+        context={"from": old, "to": clean},
+    )
+    return obj

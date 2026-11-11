@@ -264,3 +264,26 @@ def customer_wallet(caller, wallet_id) -> dict:
     _, deployment = pay_for(caller, reading=True)
     data = _call(deployment, "GET", f"customers/{wid}?source_app_id={caller.id}")
     return {k: data.get(k) for k in _CUSTOMER}
+
+
+def reset_customer_wallet_password(caller, wallet_id, *, actor_id) -> dict:
+    """A new one-time password for a wallet the caller opened (the person must hold ifpay.customers.manage on
+    that Pay). Show it once, never store it; the wallet asks the customer to choose their own again."""
+    try:
+        wid = uuid.UUID(str(wallet_id))
+    except ValueError as exc:
+        raise NotFound("No such wallet.") from exc
+    pay, deployment = pay_for(caller)
+    user, caps = _member_holding(
+        pay,
+        actor_id,
+        "ifpay.customers.manage",
+        "This person may not reset IntraForge Pay wallets. Give them the Pay Manager role.",
+    )
+    data = _call(
+        deployment,
+        "POST",
+        f"customers/{wid}/reset-password?source_app_id={caller.id}",
+        {"actor": {"id": str(user.pk), "display_name": display_name(user), "capabilities": caps}},
+    )
+    return {"username": data.get("username"), "first_password": data.get("first_password")}

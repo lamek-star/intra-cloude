@@ -100,6 +100,8 @@ class Title(models.Model):
     class Kind(models.TextChoices):
         MOVIE = "movie"
         SERIES = "series"
+        MUSIC = "music"  # one song
+        ALBUM = "album"  # a folder of songs
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     shop = models.ForeignKey(MovieShop, on_delete=models.CASCADE, related_name="titles")
@@ -120,6 +122,8 @@ class Title(models.Model):
         "storage.FileObject", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
     cover_fingerprint = models.CharField(max_length=64, blank=True)
+    # The owner chose this title's poster: a re-scan never replaces it.
+    cover_locked = models.BooleanField(default=False)
     # The owner's own values: they survive every re-scan.
     price = models.PositiveIntegerField(null=True, blank=True)
     hidden = models.BooleanField(default=False)
@@ -171,6 +175,8 @@ class PortalCustomer(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
     birthday_points_year = models.PositiveSmallIntegerField(null=True, blank=True)
+    # The customer asked for a new password on the portal; the owner allows it with a one-time code.
+    reset_requested_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -340,3 +346,24 @@ class Ad(models.Model):
 
     def __str__(self) -> str:
         return self.title
+
+
+class PasswordResetCode(models.Model):
+    """A one-time code the owner gives a customer to choose a new portal password (shown once; only its hash
+    is kept)."""
+
+    customer = models.ForeignKey(PortalCustomer, on_delete=models.CASCADE, related_name="reset_codes")
+    code_hash = models.CharField(max_length=64)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"reset code for {self.customer_id}"

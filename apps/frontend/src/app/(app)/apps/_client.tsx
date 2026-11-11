@@ -31,6 +31,7 @@ import {
   Select,
   Spinner,
 } from "@/components/ui";
+import { MovieShopCards, MovieShopInstallCard, useMovieShops } from "./MovieShopApps";
 
 function openError(err: unknown): string {
   if (err instanceof ApiError) {
@@ -53,6 +54,7 @@ export default function AppsClient() {
   const [openErr, setOpenErr] = useState<string | null>(null);
   const [installing, setInstalling] = useState<InstallableApp | null>(null);
   const uploaded = useQuery(uploadedAppsQuery(orgs));
+  const movieShops = useMovieShops(orgs);
 
   const load = useCallback(() => queryClient.invalidateQueries({ queryKey: keys.serviceApps }), [queryClient]);
 
@@ -83,7 +85,7 @@ export default function AppsClient() {
         <h2 id="installed-heading" className="mb-3 text-sm font-semibold text-slate-900">
           Installed applications
         </h2>
-        {installed.length === 0 ? (
+        {installed.length === 0 && movieShops.length === 0 ? (
           <EmptyState
             title="No applications yet"
             description={
@@ -130,6 +132,7 @@ export default function AppsClient() {
                 </li>
               );
             })}
+            <MovieShopCards shops={movieShops} showOrganization={orgs.length > 1} />
           </ul>
         )}
       </section>
@@ -149,7 +152,7 @@ export default function AppsClient() {
         </section>
       )}
 
-      {data.available.length > 0 && (
+      {(data.available.length > 0 || orgs.length > 0) && (
         <section aria-labelledby="available-heading">
           <h2 id="available-heading" className="mb-3 text-sm font-semibold text-slate-900">
             Available to install
@@ -169,6 +172,7 @@ export default function AppsClient() {
                 </Card>
               </li>
             ))}
+            <MovieShopInstallCard orgs={orgs} />
           </ul>
         </section>
       )}

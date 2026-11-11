@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Coins } from "lucide-react";
+import { Coins, Music } from "lucide-react";
 import { drawnCover, movies, type MovieTitle } from "@/lib/movies";
 
 function Motif({ motif, accent }: { motif: ReturnType<typeof drawnCover>["motif"]; accent: string }) {
@@ -65,7 +65,7 @@ function Motif({ motif, accent }: { motif: ReturnType<typeof drawnCover>["motif"
 }
 
 /** A title's cover: the picture found beside it, or a drawn one, with its price and the title over a dark fade. */
-type CoverTitle = Pick<MovieTitle, "id" | "title" | "has_cover" | "price" | "kind" | "episodes">;
+type CoverTitle = Pick<MovieTitle, "id" | "title" | "has_cover" | "price" | "kind" | "episodes" | "cover_version">;
 
 /** A title's cover: the shop's picture when there is one (from `src`, or the owner's cover address), else a cover
  * drawn from the title. */
@@ -80,7 +80,7 @@ export function MovieCover({ title, showPrice = true, className = "", src }: { t
     >
       {picture ? (
         // eslint-disable-next-line @next/next/no-img-element -- the shop's own cover, served by IntraForge
-        <img src={src ?? movies.coverUrl(title.id)} alt="" loading="lazy" onError={() => setBroken(true)} className="absolute inset-0 h-full w-full object-cover" />
+        <img src={src ?? movies.coverUrl(title.id, title.cover_version)} alt="" loading="lazy" onError={() => setBroken(true)} className="absolute inset-0 h-full w-full object-cover" />
       ) : (
         <svg viewBox="0 0 200 300" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" aria-hidden="true">
           <Motif motif={drawn.motif} accent={drawn.accent} />
@@ -93,9 +93,16 @@ export function MovieCover({ title, showPrice = true, className = "", src }: { t
           {title.price}
         </span>
       )}
-      {title.kind === "series" && (
-        <span className="absolute top-2 right-2 rounded border border-white/25 bg-black/55 px-1.5 py-0.5 text-[10px] font-extrabold tracking-wide text-white backdrop-blur-sm">
-          {title.episodes} EP
+      {(title.kind === "series" || title.kind === "album" || title.kind === "music") && (
+        <span className="absolute top-2 right-2 inline-flex items-center gap-1 rounded border border-white/25 bg-black/55 px-1.5 py-0.5 text-[10px] font-extrabold tracking-wide text-white backdrop-blur-sm">
+          {title.kind === "series" ? (
+            `${title.episodes} EP`
+          ) : (
+            <>
+              <Music className="h-3 w-3" aria-hidden="true" />
+              {title.kind === "album" ? title.episodes : ""}
+            </>
+          )}
         </span>
       )}
       {!picture && (

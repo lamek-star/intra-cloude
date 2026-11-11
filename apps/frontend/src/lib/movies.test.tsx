@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { agentOnline, copyProgress, drawnCover, formatBytes, pairCommand, qrDataUrl, titlesLabel, type MovieTitle, type Sale } from "./movies";
+import { agentOnline, copyProgress, drawnCover, formatBytes, pairCommand, partsLabel, qrDataUrl, titlesLabel, type MovieTitle, type Sale } from "./movies";
 import { MovieCover } from "@/components/movies/MovieCover";
 
 const TITLE: MovieTitle = {
@@ -117,5 +117,16 @@ describe("the counter sale helpers", () => {
     expect(qrDataUrl("javascript:alert(1)")).toBeNull();
     expect(qrDataUrl("data:text/html;base64,PHNjcmlwdD4=")).toBeNull();
     expect(qrDataUrl('data:image/svg+xml;base64,PHN2Zy8+" onerror="x')).toBeNull();
+  });
+});
+
+describe("music and series labels", () => {
+  it("says episodes for a series, songs for an album, and nothing for a film", () => {
+    expect(partsLabel({ kind: "series", episodes: 6 })).toBe("6 episodes");
+    expect(partsLabel({ kind: "series", episodes: 6 }, true)).toBe("6 ep.");
+    expect(partsLabel({ kind: "album", episodes: 1 })).toBe("1 song");
+    expect(partsLabel({ kind: "album", episodes: 14 })).toBe("14 songs");
+    expect(partsLabel({ kind: "music", episodes: 1 })).toBe("Song");
+    expect(partsLabel({ kind: "movie", episodes: 1 })).toBeNull();
   });
 });

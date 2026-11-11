@@ -39,10 +39,13 @@ export type MovieTitle = {
   category: string;
   title: string;
   year: number | null;
-  kind: "movie" | "series";
+  kind: "movie" | "series" | "music" | "album";
   size_bytes: number;
   episodes: number;
   has_cover: boolean;
+  /** The owner chose this poster; a re-scan never replaces it. */
+  cover_locked?: boolean;
+  cover_version?: string;
   price: number;
   own_price: number | null;
   hidden: boolean;
@@ -111,6 +114,8 @@ export type ShopCustomer = {
   has_wallet: boolean;
   referred_by: string | null;
   approved_at: string | null;
+  /** The customer asked for a new password on the portal. */
+  reset_requested_at: string | null;
 };
 
 export type ShopAd = {
@@ -160,7 +165,15 @@ export const movies = {
   setPrices: (id: string, default_price: number, categories: Record<string, number>) => api.put<MovieShop>(`/movie-shops/${id}/prices/`, { default_price, categories }),
   agentCredential: (id: string) => api.post<{ token: string }>(`/movie-shops/${id}/agent-credential/`),
   drives: (id: string) => api.get<AgentReport>(`/movie-shops/${id}/drives/`),
-  coverUrl: (titleId: string) => `/api/v1/movie-titles/${titleId}/cover/`,
+  coverUrl: (titleId: string, version = "") => `/api/v1/movie-titles/${titleId}/cover/${version ? `?v=${version}` : ""}`,
+  setPoster: (titleId: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return api.postForm<MovieTitle>(`/movie-titles/${titleId}/cover/`, form);
+  },
+  clearPoster: (titleId: string) => api.del<MovieTitle>(`/movie-titles/${titleId}/cover/`),
+  renameShop: (id: string, name: string) => api.patch<MovieShop>(`/movie-shops/${id}/`, { name }),
+  renameLibrary: (libraryId: string, name: string) => api.patch<MovieLibrary>(`/movie-libraries/${libraryId}/`, { name }),
   destinations: (id: string) => api.get<{ agent_seen_at: string | null; drives: Destination[] }>(`/movie-shops/${id}/destinations/`),
   createSale: (id: string, body: { titles: string[]; destination: string; method: Sale["method"]; customer_name: string }) =>
     api.post<Sale>(`/movie-shops/${id}/sales/`, body),
@@ -176,6 +189,11 @@ export const movies = {
   approve: (customerId: string) => api.post<{ customer: ShopCustomer; wallet: ApprovedWallet }>(`/movie-customers/${customerId}/approve/`),
   customerAction: (customerId: string, action: "reject" | "block" | "unblock") =>
     api.post<{ customer: ShopCustomer }>(`/movie-customers/${customerId}/${action}/`),
+  editCustomer: (customerId: string, body: { name?: string; phone?: string; birthday?: string | null }) =>
+    api.patch<{ customer: ShopCustomer }>(`/movie-customers/${customerId}/`, body),
+  resetCode: (customerId: string) => api.post<{ customer: ShopCustomer; code: string; minutes: number }>(`/movie-customers/${customerId}/reset-code/`),
+  resetWallet: (customerId: string) =>
+    api.post<{ customer: ShopCustomer; wallet: { username: string | null; first_password: string | null } }>(`/movie-customers/${customerId}/wallet-password/`),
   ads: (id: string) => api.get<ShopAd[]>(`/movie-shops/${id}/ads/`),
   createAd: (id: string, body: AdInput) => api.post<ShopAd>(`/movie-shops/${id}/ads/`, body),
   updateAd: (adId: string, body: AdInput) => api.patch<ShopAd>(`/movie-ads/${adId}/`, body),
@@ -191,6 +209,14 @@ export const movies = {
 };
 
 /** "1 title", "4 titles". */
+/** "6 episodes" for a series, "12 songs" for an album; nothing for a single film or song. */
+export function partsLabel(t: { kind: MovieTitle["kind"]; episodes: number }, short = false): string | null {
+  if (t.kind === "series") return short ? `${t.episodes} ep.` : `${t.episodes} episodes`;
+  if (t.kind === "album") return `${t.episodes} ${t.episodes === 1 ? "song" : "songs"}`;
+  if (t.kind === "music") return "Song";
+  return null;
+}
+
 export function titlesLabel(n: number): string {
   return `${n.toLocaleString()} ${n === 1 ? "title" : "titles"}`;
 }

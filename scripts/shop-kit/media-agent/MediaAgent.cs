@@ -32,7 +32,7 @@ using Microsoft.Win32;
 
 static class MediaAgent
 {
-    const string Version = "1.0.0";
+    const string Version = "1.1.0";
     const int PollSeconds = 15;
     // INTRAFORGE_MEDIA_AGENT_HOME moves the agent's own files (tests); normally %LOCALAPPDATA%\IntraForge.
     static readonly string Home = Environment.GetEnvironmentVariable("INTRAFORGE_MEDIA_AGENT_HOME")
@@ -84,15 +84,31 @@ static class MediaAgent
 
     static void Say(string text) { if (console) Console.WriteLine(text); }
 
+    static readonly object LogLock = new object();
+
     static void Log(string text)
     {
-        try
+        lock (LogLock)  // copies to different drives run at the same time
         {
-            if (File.Exists(LogPath) && new FileInfo(LogPath).Length > 1024 * 1024) File.Delete(LogPath);
-            File.AppendAllText(LogPath, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + text + Environment.NewLine);
+            try
+            {
+                if (File.Exists(LogPath) && new FileInfo(LogPath).Length > 1024 * 1024) File.Delete(LogPath);
+                File.AppendAllText(LogPath, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + text + Environment.NewLine);
+            }
+            catch (Exception) { }
         }
-        catch (Exception) { }
     }
+
+    // Windows' own copy engine (the one Explorer uses): large files go without the file cache, which is markedly faster
+    // onto USB drives and keeps the PC responsive.
+    delegate uint CopyProgressRoutine(long total, long transferred, long streamSize, long streamTransferred, uint streamNumber,
+                                      uint reason, IntPtr source, IntPtr destination, IntPtr data);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern bool CopyFileEx(string existing, string newFile, CopyProgressRoutine progress, IntPtr data, ref int cancel, uint flags);
+
+    const uint CopyNoBuffering = 0x1000;
+    const long UnbufferedFrom = 64L << 20;
 
     // ---- pairing -------------------------------------------------------------------------------------------------------
     static int Pair(string[] args)
@@ -233,10 +249,18 @@ static class MediaAgent
                 Scanned++;
             }
             if (work.ContainsKey("copies"))
-                foreach (Dictionary<string, object> copy in (ArrayList)work["copies"])
+            {
+                // One worker per customer drive: two customers' drives fill at the same time, while the titles for one
+                // drive go one after another (writing two files at once to one USB stick is slower, not faster).
+                var byDrive = ((ArrayList)work["copies"]).Cast<Dictionary<string, object>>()
+                    .GroupBy(c => ((string)c["destination"]).ToUpperInvariant()).ToList();
+                var workers = byDrive.Select(group => new Thread(() =>
                 {
-                    if (CopyTitle(copy)) Copied++;
-                }
+                    foreach (var copy in group) if (CopyTitle(copy)) Interlocked.Increment(ref Copied);
+                }) { IsBackground = true }).ToList();
+                workers.ForEach(t => t.Start());
+                workers.ForEach(t => t.Join());
+            }
             return work.ContainsKey("poll_seconds") ? Convert.ToInt32(work["poll_seconds"]) : PollSeconds;
         }
 
@@ -277,27 +301,44 @@ static class MediaAgent
                 long needed = files.Where(kv => !SameFile(kv.Key, kv.Value)).Sum(kv => new FileInfo(kv.Key).Length);
                 if (drive.IsReady && drive.AvailableFreeSpace < needed) throw new InvalidOperationException("The customer's drive is full.");
                 Progress(line, "copying", 0, "");
-                DateTime lastReport = DateTime.UtcNow;
-                foreach (var kv in files)
+                long reported = 0;   // bytes copied so far, read by the reporter below
+                int reporting = 0;
+                // Progress goes to IntraForge from a timer, so a slow answer never pauses the copy itself.
+                using (var reporter = new Timer(_ =>
                 {
-                    if (SameFile(kv.Key, kv.Value)) { done += new FileInfo(kv.Key).Length; continue; }
-                    Directory.CreateDirectory(Path.GetDirectoryName(kv.Value));
-                    string part = kv.Value + ".part";
-                    using (var input = new FileStream(kv.Key, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20))
-                    using (var output = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20))
+                    if (Interlocked.Exchange(ref reporting, 1) == 1) return;
+                    try { Progress(line, "copying", Interlocked.Read(ref reported), ""); } catch (Exception) { }
+                    finally { Interlocked.Exchange(ref reporting, 0); }
+                }, null, 2000, 2000))
+                {
+                    foreach (var kv in files)
                     {
-                        byte[] buffer = new byte[4 << 20];
-                        int n;
-                        while ((n = input.Read(buffer, 0, buffer.Length)) > 0)
+                        long size = new FileInfo(kv.Key).Length;
+                        if (SameFile(kv.Key, kv.Value)) { done += size; Interlocked.Exchange(ref reported, done); continue; }
+                        Directory.CreateDirectory(Path.GetDirectoryName(kv.Value));
+                        string part = kv.Value + ".part";
+                        long before = done;
+                        CopyProgressRoutine onProgress = (t, transferred, a, b, c2, r, s1, d1, x) =>
                         {
-                            output.Write(buffer, 0, n);
-                            done += n;
-                            if ((DateTime.UtcNow - lastReport).TotalSeconds >= 2) { Progress(line, "copying", done, ""); lastReport = DateTime.UtcNow; }
+                            Interlocked.Exchange(ref reported, before + transferred);
+                            return 0;  // continue
+                        };
+                        int cancel = 0;
+                        uint flags = size >= UnbufferedFrom ? CopyNoBuffering : 0;
+                        if (!CopyFileEx(kv.Key, part, onProgress, IntPtr.Zero, ref cancel, flags))
+                        {
+                            int error = Marshal.GetLastWin32Error();
+                            try { File.Delete(part); } catch (Exception) { }
+                            throw new IOException(new System.ComponentModel.Win32Exception(error).Message + " (" + Path.GetFileName(kv.Key) + ")");
                         }
+                        GC.KeepAlive(onProgress);
+                        done = before + size;
+                        Interlocked.Exchange(ref reported, done);
+                        // A different file with the same name: keep both, never overwrite the customer's own.
+                        File.Move(part, FreeName(kv.Value));
                     }
-                    // A different file with the same name: keep both, never overwrite the customer's own.
-                    File.Move(part, FreeName(kv.Value));
                 }
+                while (Interlocked.CompareExchange(ref reporting, 0, 0) == 1) Thread.Sleep(50);
                 Progress(line, "copied", Math.Max(done, total), "");
                 Log("copied " + c["relative_path"] + " to " + target);
                 return true;
@@ -442,16 +483,19 @@ sealed class Found
 }
 
 /// <summary>The scanning rules (ADR-0022 decision 5): folders are categories, video files are titles, a folder of
-/// videos is a series; names give the title and year; a picture beside a title is its cover.</summary>
+/// videos is a series; audio files are music and a folder of them an album; names give the title and year; a picture
+/// beside a title is its cover.</summary>
 static class Scanner
 {
     static readonly string[] Videos = { ".mp4", ".mkv", ".avi", ".mov", ".m4v", ".wmv", ".ts", ".webm" };
+    static readonly string[] Audio = { ".mp3", ".m4a", ".flac", ".wav", ".aac", ".ogg", ".opus", ".wma" };
     static readonly string[] Pictures = { ".jpg", ".jpeg", ".png" };
     static readonly string[] CoverNames = { "poster", "cover", "folder", "front" };
-    static readonly Regex Tags = new Regex(@"\b(2160p|1080p|720p|480p|4k|uhd|hdr|10bit|x264|x265|h\.?264|h\.?265|hevc|web[- ]?dl|webrip|bluray|blu-ray|brrip|bdrip|dvdrip|hdtv|hdrip|aac\d?|ac3|dts|ddp?5\.1|yify|yts|rarbg|proper|repack|extended|remastered|amzn|nf)\b.*$", RegexOptions.IgnoreCase);
+    static readonly Regex Tags = new Regex(@"\b(320kbps|256kbps|128kbps|kbps|2160p|1080p|720p|480p|4k|uhd|hdr|10bit|x264|x265|h\.?264|h\.?265|hevc|web[- ]?dl|webrip|bluray|blu-ray|brrip|bdrip|dvdrip|hdtv|hdrip|aac\d?|ac3|dts|ddp?5\.1|yify|yts|rarbg|proper|repack|extended|remastered|amzn|nf)\b.*$", RegexOptions.IgnoreCase);
     static readonly Regex YearRx = new Regex(@"[\(\[]?\b(19[0-9]{2}|20[0-9]{2})\b[\)\]]?");
 
     static bool IsVideo(string f) { return Videos.Contains(Path.GetExtension(f).ToLowerInvariant()); }
+    static bool IsAudio(string f) { return Audio.Contains(Path.GetExtension(f).ToLowerInvariant()); }
     static bool Visible(string p) { try { return (File.GetAttributes(p) & (FileAttributes.Hidden | FileAttributes.System)) == 0; } catch (Exception) { return false; } }
 
     public static List<Found> Scan(string root)
@@ -459,15 +503,33 @@ static class Scanner
         var found = new List<Found>();
         foreach (string file in Directory.GetFiles(root).Where(IsVideo).Where(Visible))
             found.Add(Movie(root, file, "Other"));
+        foreach (string file in Directory.GetFiles(root).Where(IsAudio).Where(Visible))
+            found.Add(Track(root, file, "Music"));
         foreach (string category in Directory.GetDirectories(root).Where(Visible))
         {
             string name = Path.GetFileName(category);
             foreach (string file in SafeFiles(category).Where(IsVideo).Where(Visible))
                 found.Add(Movie(root, file, name));
+            foreach (string file in SafeFiles(category).Where(IsAudio).Where(Visible))
+                found.Add(Track(root, file, name));
             foreach (string folder in SafeDirs(category).Where(Visible))
             {
                 var videos = AllVideos(folder, 2);
-                if (videos.Count == 0) continue;
+                if (videos.Count == 0)
+                {
+                    // A folder of songs is an album ("Music\Teddy Afro - Ethiopia (2017)\01 ....mp3").
+                    var songs = AllMedia(folder, 2, IsAudio);
+                    if (songs.Count == 1 && SafeDirs(folder).Length == 0)
+                    {
+                        Found t = Track(root, songs[0], name);
+                        Parse(Path.GetFileName(folder), t);
+                        t.RelativePath = Relative(root, folder);
+                        Cover(folder, null, t);
+                        found.Add(t);
+                    }
+                    else if (songs.Count > 1) found.Add(Album(root, folder, name, songs));
+                    continue;
+                }
                 if (videos.Count == 1 && SafeDirs(folder).Length == 0)
                 {
                     // "Category\Desert Wind (2025)\movie.mkv": the folder names the film.
@@ -486,11 +548,27 @@ static class Scanner
     static string[] SafeFiles(string dir) { try { return Directory.GetFiles(dir); } catch (Exception) { return new string[0]; } }
     static string[] SafeDirs(string dir) { try { return Directory.GetDirectories(dir); } catch (Exception) { return new string[0]; } }
 
-    static List<string> AllVideos(string dir, int depth)
+    static List<string> AllVideos(string dir, int depth) { return AllMedia(dir, depth, IsVideo); }
+
+    static List<string> AllMedia(string dir, int depth, Func<string, bool> kind)
     {
-        var list = SafeFiles(dir).Where(IsVideo).Where(Visible).ToList();
-        if (depth > 0) foreach (string sub in SafeDirs(dir).Where(Visible)) list.AddRange(AllVideos(sub, depth - 1));
+        var list = SafeFiles(dir).Where(kind).Where(Visible).ToList();
+        if (depth > 0) foreach (string sub in SafeDirs(dir).Where(Visible)) list.AddRange(AllMedia(sub, depth - 1, kind));
         return list;
+    }
+
+    static Found Track(string root, string file, string category)
+    {
+        Found f = Movie(root, file, category);
+        f.Kind = "music";
+        return f;
+    }
+
+    static Found Album(string root, string folder, string category, List<string> songs)
+    {
+        Found f = Series(root, folder, category, songs);
+        f.Kind = "album";
+        return f;
     }
 
     static string Relative(string root, string path)

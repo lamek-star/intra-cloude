@@ -247,6 +247,11 @@ export function SaleDialog({ saleId, initial, onClose }: { saleId: string; initi
           </div>
 
           {sale.status === "ordered" && <ChargeOrder sale={sale} onCharged={setSale} />}
+          {sale.status === "ordered" && (
+            <button className="text-xs text-slate-400 hover:text-red-300" onClick={() => void act("cancel")}>
+              Cancel this order (points are given back)
+            </button>
+          )}
           {sale.status === "awaiting_payment" && sale.pay && (
             <div className="rounded-xl border border-teal-400/30 bg-teal-400/5 p-3 text-center">
               <p className="text-xs font-semibold text-teal-200">Scan with the IF Pay wallet</p>

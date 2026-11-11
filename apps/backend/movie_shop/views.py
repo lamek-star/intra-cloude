@@ -89,6 +89,9 @@ def _title_json(t: Title, prices: dict, default: int) -> dict:
         "size_bytes": t.size_bytes,
         "episodes": t.episodes,
         "has_cover": t.cover_id is not None,
+        "cover_locked": t.cover_locked,
+        # Changes with the picture, so a browser never shows a replaced poster from its cache.
+        "cover_version": str(t.cover_id)[:8] if t.cover_id else "",
         "price": services.price_of(t, prices, default),
         "own_price": t.price,
         "hidden": t.hidden,
@@ -134,6 +137,14 @@ class ShopDetailView(OwnerView):
                 can_sell=_can(request.user, "movies.sell", shop),
             )
         )
+
+    def patch(self, request, shop_id):
+        shop = get_member_shop(request.user, shop_id)
+        if not _can(request.user, "movies.manage", shop):
+            return _forbidden()
+        data = request.data if isinstance(request.data, dict) else {}
+        services.rename(shop, actor=request.user, name=data.get("name"), what="shop")
+        return Response(_shop_json(shop, can_manage=True, can_sell=_can(request.user, "movies.sell", shop)))
 
 
 class DestinationsView(OwnerView):
@@ -221,6 +232,14 @@ def _member_library(user, library_id) -> Library:
 
 
 class LibraryDetailView(OwnerView):
+    def patch(self, request, library_id):
+        library = _member_library(request.user, library_id)
+        if not _can(request.user, "movies.manage", library.shop):
+            return _forbidden()
+        data = request.data if isinstance(request.data, dict) else {}
+        services.rename(library, actor=request.user, name=data.get("name"), what="library")
+        return Response(_library_json(library))
+
     def delete(self, request, library_id):
         library = _member_library(request.user, library_id)
         if not _can(request.user, "movies.manage", library.shop):
@@ -312,6 +331,24 @@ class TitleDetailView(OwnerView):
 
 
 class TitleCoverView(OwnerView):
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, title_id):
+        title = _member_title(request.user, title_id)
+        if not _can(request.user, "movies.manage", title.shop):
+            return _forbidden()
+        services.set_owner_cover(title=title, actor=request.user, upload=request.FILES.get("file"))
+        prices = {p.category.lower(): p.price for p in title.shop.category_prices.all()}
+        return Response(_title_json(title, prices, title.shop.default_price))
+
+    def delete(self, request, title_id):
+        title = _member_title(request.user, title_id)
+        if not _can(request.user, "movies.manage", title.shop):
+            return _forbidden()
+        services.clear_owner_cover(title=title, actor=request.user)
+        prices = {p.category.lower(): p.price for p in title.shop.category_prices.all()}
+        return Response(_title_json(title, prices, title.shop.default_price))
+
     def get(self, request, title_id):
         title = _member_title(request.user, title_id)
         if not _can(request.user, "movies.read", title.shop):
@@ -582,6 +619,9 @@ def _owner_customer_json(customer) -> dict:
         "has_wallet": customer.pay_wallet_id is not None,
         "referred_by": customer.referred_by.name if customer.referred_by_id else None,
         "approved_at": customer.approved_at.isoformat() if customer.approved_at else None,
+        "reset_requested_at": customer.reset_requested_at.isoformat()
+        if customer.reset_requested_at
+        else None,
     }
 
 
@@ -638,6 +678,19 @@ class CustomerActionView(OwnerView):
                     },
                 }
             )
+        if self.action_name == "reset-code":
+            code = portal.issue_reset_code(customer, actor=request.user)
+            # Shown once to the owner to give the customer; only its hash is kept.
+            return Response(
+                {
+                    "customer": _owner_customer_json(customer),
+                    "code": code,
+                    "minutes": portal.RESET_CODE_MINUTES,
+                }
+            )
+        if self.action_name == "wallet-password":
+            wallet = portal.reset_wallet_password(customer, actor=request.user)
+            return Response({"customer": _owner_customer_json(customer), "wallet": wallet})
         portal.set_status(customer, actor=request.user, status=self.action_name)
         return Response({"customer": _owner_customer_json(customer)})
 
@@ -651,4 +704,17 @@ class CustomerPointsView(OwnerView):
             return _forbidden()
         data = request.data if isinstance(request.data, dict) else {}
         portal.adjust_points(customer, actor=request.user, delta=data.get("delta"), note=data.get("note"))
+        return Response({"customer": _owner_customer_json(customer)})
+
+
+class CustomerDetailView(OwnerView):
+    def patch(self, request, customer_id):
+        from . import portal
+
+        customer = _member_customer(request.user, customer_id)
+        if not _can(request.user, "movies.manage", customer.shop):
+            return _forbidden()
+        portal.edit_customer(
+            customer, actor=request.user, data=request.data if isinstance(request.data, dict) else {}
+        )
         return Response({"customer": _owner_customer_json(customer)})

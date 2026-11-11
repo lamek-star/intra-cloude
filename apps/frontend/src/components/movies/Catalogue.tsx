@@ -4,11 +4,11 @@ import Link from "next/link";
 import { useEffect, useId, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, Coins, Folder, HardDrive, Pencil, Play, Plus, Receipt, RefreshCw, Search, Server, ShoppingCart, Star, Tag, Megaphone, Trash2, Usb, Users } from "lucide-react";
-import { agentOnline, formatBytes, movies, titlesLabel, type MovieLibrary, type MovieTitle, type Sale } from "@/lib/movies";
+import { agentOnline, formatBytes, movies, partsLabel, titlesLabel, type MovieLibrary, type MovieTitle, type Sale } from "@/lib/movies";
 import { PageLoading, ErrorBanner } from "@/components/ui";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { MovieCover } from "./MovieCover";
-import { dark, EditTitleDialog, message, PricesDialog, SetupDialog } from "./Dialogs";
+import { dark, EditTitleDialog, message, PricesDialog, RenameDialog, SetupDialog } from "./Dialogs";
 import { CartPanel, SaleDialog } from "./Checkout";
 import { SalesDialog } from "./SalesList";
 import { CustomersDialog } from "./Customers";
@@ -31,6 +31,7 @@ export function Catalogue({ shopId }: { shopId: string }) {
   const [cart, setCart] = useState<MovieTitle[]>([]);
   const [openSale, setOpenSale] = useState<{ id: string; initial?: Sale } | null>(null);
   const [editing, setEditing] = useState<MovieTitle | null>(null);
+  const [renaming, setRenaming] = useState<{ kind: "shop" } | { kind: "library"; library: MovieLibrary } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const searchId = useId();
 
@@ -94,8 +95,13 @@ export function Catalogue({ shopId }: { shopId: string }) {
             <Play className="h-4 w-4" strokeWidth={2.6} />
           </span>
           <div>
-            <h1 className="text-xl font-semibold tracking-wide uppercase" style={{ fontFamily: "var(--font-display), sans-serif" }}>
+            <h1 className="flex items-center gap-2 text-xl font-semibold tracking-wide uppercase" style={{ fontFamily: "var(--font-display), sans-serif" }}>
               {s.name}
+              {s.can_manage && (
+                <button onClick={() => setRenaming({ kind: "shop" })} className="rounded-md p-1 text-slate-500 hover:bg-white/5 hover:text-white" aria-label="Rename the shop">
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              )}
             </h1>
             <p className="text-[11px] tracking-wider text-slate-500 uppercase">Movie Shop · {s.titles.toLocaleString()} titles</p>
           </div>
@@ -200,6 +206,9 @@ export function Catalogue({ shopId }: { shopId: string }) {
                       <button className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-slate-400 hover:bg-white/5 hover:text-white" onClick={() => void movies.scan(lib.id).then(refresh)}>
                         <RefreshCw className="h-3 w-3" /> Scan again
                       </button>
+                      <button className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-slate-400 hover:bg-white/5 hover:text-white" onClick={() => setRenaming({ kind: "library", library: lib })}>
+                        <Pencil className="h-3 w-3" /> Rename
+                      </button>
                       <button className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-slate-400 hover:bg-white/5 hover:text-red-300" onClick={() => void removeLibrary(lib)}>
                         <Trash2 className="h-3 w-3" /> Remove
                       </button>
@@ -296,6 +305,19 @@ export function Catalogue({ shopId }: { shopId: string }) {
       {dialog === "setup" && <SetupDialog shop={s} onClose={() => setDialog(null)} onChanged={refresh} />}
       {dialog === "prices" && <PricesDialog shop={s} categories={cats} onClose={() => setDialog(null)} onSaved={refresh} />}
       {editing && <EditTitleDialog title={editing} onClose={() => setEditing(null)} onSaved={refresh} />}
+      {renaming && (
+        <RenameDialog
+          title={renaming.kind === "shop" ? "Rename the movie shop" : "Rename the library"}
+          label="Name"
+          current={renaming.kind === "shop" ? s.name : renaming.library.name}
+          onSave={async (name) => {
+            if (renaming.kind === "shop") await movies.renameShop(s.id, name);
+            else await movies.renameLibrary(renaming.library.id, name);
+            refresh();
+          }}
+          onClose={() => setRenaming(null)}
+        />
+      )}
       {dialog === "ads" && <AdsDialog shopId={s.id} shopName={s.name} onClose={() => setDialog(null)} />}
       {dialog === "customers" && <CustomersDialog shopId={s.id} onClose={() => setDialog(null)} onChanged={refresh} />}
       {dialog === "sales" && <SalesDialog shopId={s.id} onClose={() => setDialog(null)} onOpen={(id) => setOpenSale({ id })} />}
@@ -345,7 +367,7 @@ function TitleCard({ title, canManage, canSell, inCart, onEdit, onToggleCart }: 
           <p className="truncate text-[11px] font-semibold text-white">{title.title}</p>
           <p className="mt-0.5 flex items-center gap-1 truncate text-[10.5px] text-slate-300">
             <Star className="h-3 w-3 shrink-0 fill-amber-300 text-amber-300" />
-            {[title.category, title.year, title.kind === "series" ? `${title.episodes} episodes` : null].filter(Boolean).join(" · ")}
+            {[title.category, title.year, partsLabel(title)].filter(Boolean).join(" · ")}
           </p>
           {title.description && <p className="mt-1 line-clamp-2 text-[10.5px] leading-snug text-slate-400">{title.description}</p>}
           <div className="mt-2 flex items-center gap-1.5">
@@ -384,7 +406,7 @@ function TitleCard({ title, canManage, canSell, inCart, onEdit, onToggleCart }: 
       </div>
       <p className="mt-2 truncate text-[13px] font-semibold">{title.title}</p>
       <p className="text-[11px] text-slate-500">
-        {[title.year, title.kind === "series" ? `${title.episodes} ep.` : null, formatBytes(title.size_bytes)].filter(Boolean).join(" · ")}
+        {[title.year, partsLabel(title, true), formatBytes(title.size_bytes)].filter(Boolean).join(" · ")}
         {title.hidden && " · hidden"}
       </p>
     </div>

@@ -88,14 +88,14 @@ def clean_title(item, index: int) -> dict:
     if not isinstance(item, dict):
         raise ValidationError({f"titles[{index}]": "Each title is an object."})
     kind = item.get("kind", "movie")
-    if kind not in ("movie", "series"):
-        raise ValidationError({f"titles[{index}].kind": "movie or series."})
+    if kind not in ("movie", "series", "music", "album"):
+        raise ValidationError({f"titles[{index}].kind": "movie, series, music or album."})
     year = item.get("year")
     if year is not None and (isinstance(year, bool) or not isinstance(year, int) or not 1880 <= year <= 2100):
         raise ValidationError({f"titles[{index}].year": "A year such as 2025."})
     episodes = item.get("episodes", 1)
     if isinstance(episodes, bool) or not isinstance(episodes, int) or not 1 <= episodes <= 10000:
-        raise ValidationError({f"titles[{index}].episodes": "How many video files, 1 or more."})
+        raise ValidationError({f"titles[{index}].episodes": "How many files (episodes or songs), 1 or more."})
     return {
         "relative_path": clean_relative_path(item.get("relative_path"), f"titles[{index}].relative_path"),
         "category": clean_text(item.get("category"), f"titles[{index}].category", max_length=120),

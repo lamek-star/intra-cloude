@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { Check, Copy, HardDrive, KeyRound, Server, Usb, X } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { Check, Copy, HardDrive, ImagePlus, KeyRound, Server, Usb, X } from "lucide-react";
 import { agentOnline, formatBytes, movies, pairCommand, titlesLabel, type AgentReport, type MovieCategory, type MovieShop, type MovieTitle } from "@/lib/movies";
 import { useDialogA11y } from "@/lib/use-dialog-a11y";
+import { MovieCover } from "./MovieCover";
 
 export const dark = {
   input: "h-10 w-full rounded-lg border border-[#323c5a] bg-[#0f1422] px-3 text-sm text-slate-100 placeholder:text-slate-500 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20",
@@ -253,13 +254,20 @@ export function EditTitleDialog({ title, onClose, onSaved }: { title: MovieTitle
   const [price, setPrice] = useState(title.own_price != null ? String(title.own_price) : "");
   const [hidden, setHidden] = useState(title.hidden);
   const [description, setDescription] = useState(title.description);
+  // The poster: a new picture to upload, or back to the folder's own picture.
+  const [poster, setPoster] = useState<File | null>(null);
+  const [clearPoster, setClearPoster] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const ids = { name: useId(), year: useId(), category: useId(), price: useId(), description: useId() };
+  const ids = { name: useId(), year: useId(), category: useId(), price: useId(), description: useId(), poster: useId() };
+  const preview = useMemo(() => (poster ? URL.createObjectURL(poster) : null), [poster]);
+  useEffect(() => () => void (preview && URL.revokeObjectURL(preview)), [preview]);
 
   async function save() {
     setError(null);
+    setBusy(true);
     try {
-      const saved = await movies.editTitle(title.id, {
+      let saved = await movies.editTitle(title.id, {
         title: name,
         year: year ? Number(year) : null,
         category,
@@ -267,61 +275,143 @@ export function EditTitleDialog({ title, onClose, onSaved }: { title: MovieTitle
         hidden,
         description,
       });
+      if (poster) saved = await movies.setPoster(title.id, poster);
+      else if (clearPoster) saved = await movies.clearPoster(title.id);
       onSaved(saved);
       onClose();
     } catch (err) {
       setError(message(err));
+    } finally {
+      setBusy(false);
     }
   }
 
+  const shown = { ...title, title: name, has_cover: preview ? true : clearPoster ? false : title.has_cover };
   return (
-    <DarkDialog title="Edit title" onClose={onClose}>
+    <DarkDialog title="Edit title" onClose={onClose} wide>
       <p className="mb-4 truncate font-mono text-xs text-slate-500" title={title.relative_path}>
         {title.relative_path}
       </p>
-      <div className="grid grid-cols-[1fr_110px] gap-3">
+      <div className="grid gap-5 sm:grid-cols-[150px_1fr]">
         <div>
-          <label htmlFor={ids.name} className={dark.label}>
-            Title
+          <MovieCover title={shown} src={preview ?? undefined} />
+          <label htmlFor={ids.poster} className={`${dark.btn} mt-2 h-9 w-full cursor-pointer text-xs`}>
+            <ImagePlus className="h-3.5 w-3.5" /> {title.has_cover || preview ? "Change poster" : "Add a poster"}
           </label>
-          <input id={ids.name} className={dark.input} value={name} onChange={(e) => setName(e.target.value)} />
+          <input
+            id={ids.poster}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="sr-only"
+            onChange={(e) => {
+              setPoster(e.target.files?.[0] ?? null);
+              setClearPoster(false);
+            }}
+          />
+          {(title.cover_locked || poster) && !clearPoster && (
+            <button
+              type="button"
+              className="mt-1.5 w-full text-[11px] text-slate-400 hover:text-white"
+              onClick={() => {
+                setPoster(null);
+                setClearPoster(Boolean(title.cover_locked));
+              }}
+            >
+              {poster ? "Undo the new poster" : "Use the folder's picture"}
+            </button>
+          )}
+          <p className="mt-1 text-[10.5px] leading-snug text-slate-500">JPEG, PNG or WebP up to 3 MB. Your poster stays when the folder is scanned again.</p>
         </div>
         <div>
-          <label htmlFor={ids.year} className={dark.label}>
-            Year
+          <div className="grid grid-cols-[1fr_110px] gap-3">
+            <div>
+              <label htmlFor={ids.name} className={dark.label}>
+                Title
+              </label>
+              <input id={ids.name} className={dark.input} value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div>
+              <label htmlFor={ids.year} className={dark.label}>
+                Year
+              </label>
+              <input id={ids.year} className={dark.input} inputMode="numeric" value={year} onChange={(e) => setYear(e.target.value.replace(/[^0-9]/g, "").slice(0, 4))} />
+            </div>
+            <div>
+              <label htmlFor={ids.category} className={dark.label}>
+                Category
+              </label>
+              <input id={ids.category} className={dark.input} value={category} onChange={(e) => setCategory(e.target.value)} />
+            </div>
+            <div>
+              <label htmlFor={ids.price} className={dark.label}>
+                Own price
+              </label>
+              <input id={ids.price} className={dark.input} inputMode="numeric" placeholder="Category" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9]/g, ""))} />
+            </div>
+          </div>
+          <label htmlFor={ids.description} className={`${dark.label} mt-3`}>
+            Short description
           </label>
-          <input id={ids.year} className={dark.input} inputMode="numeric" value={year} onChange={(e) => setYear(e.target.value.replace(/[^0-9]/g, "").slice(0, 4))} />
-        </div>
-        <div>
-          <label htmlFor={ids.category} className={dark.label}>
-            Category
+          <textarea id={ids.description} className={`${dark.input} h-24 py-2`} maxLength={2000} value={description} onChange={(e) => setDescription(e.target.value)} />
+          <label className="mt-3 flex items-center gap-2 text-sm text-slate-300">
+            <input type="checkbox" checked={hidden} onChange={(e) => setHidden(e.target.checked)} className="h-4 w-4 accent-amber-400" />
+            Hide from the catalogue
           </label>
-          <input id={ids.category} className={dark.input} value={category} onChange={(e) => setCategory(e.target.value)} />
-        </div>
-        <div>
-          <label htmlFor={ids.price} className={dark.label}>
-            Own price
-          </label>
-          <input id={ids.price} className={dark.input} inputMode="numeric" placeholder="Category" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9]/g, ""))} />
         </div>
       </div>
-      <label htmlFor={ids.description} className={`${dark.label} mt-3`}>
-        Short description
-      </label>
-      <textarea id={ids.description} className={`${dark.input} h-24 py-2`} maxLength={2000} value={description} onChange={(e) => setDescription(e.target.value)} />
-      <label className="mt-3 flex items-center gap-2 text-sm text-slate-300">
-        <input type="checkbox" checked={hidden} onChange={(e) => setHidden(e.target.checked)} className="h-4 w-4 accent-amber-400" />
-        Hide from the catalogue
-      </label>
       {error && <p className="mt-3 text-sm text-red-300">{error}</p>}
       <div className="mt-5 flex justify-end gap-2">
-        <button className={dark.btn} onClick={onClose}>
+        <button className={dark.btn} onClick={onClose} disabled={busy}>
           Cancel
         </button>
-        <button className={dark.amber} onClick={() => void save()}>
-          <Check className="h-4 w-4" /> Save
+        <button className={dark.amber} onClick={() => void save()} disabled={busy}>
+          <Check className="h-4 w-4" /> {busy ? "Saving..." : "Save"}
         </button>
       </div>
+    </DarkDialog>
+  );
+}
+
+/** Renames something (a shop, a library): its current name, Save or Cancel. */
+export function RenameDialog({ title, label, current, onSave, onClose }: { title: string; label: string; current: string; onSave: (name: string) => Promise<unknown>; onClose: () => void }) {
+  const [name, setName] = useState(current);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const id = useId();
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      await onSave(name.trim());
+      onClose();
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <DarkDialog title={title} onClose={onClose}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save();
+        }}
+      >
+        <label htmlFor={id} className={dark.label}>
+          {label}
+        </label>
+        <input id={id} className={dark.input} maxLength={120} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        {error && <p className="mt-3 text-sm text-red-300">{error}</p>}
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" className={dark.btn} onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button className={dark.amber} disabled={busy || !name.trim() || name.trim() === current}>
+            <Check className="h-4 w-4" /> Save
+          </button>
+        </div>
+      </form>
     </DarkDialog>
   );
 }

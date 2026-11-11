@@ -1,19 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Building2, Clapperboard, LayoutDashboard, LayoutGrid, Lock, Pause, Play } from "lucide-react";
+import { Building2, LayoutDashboard, LayoutGrid, Lock, Pause, Play } from "lucide-react";
 import { SCENES, SCENE_MS, type CursorPoint } from "./DemoScenes";
 import { usePrefersReducedMotion } from "@/lib/use-reduced-motion";
 import s from "./home.module.css";
 
 const STAGE_W = 640;
 const STAGE_H = 420;
-// The real sidebar (components/AppShell.tsx): files and people live inside an organization.
+// The real sidebar (components/AppShell.tsx): files and people live inside an organization; apps open from Apps.
 const NAV = [
   { icon: LayoutDashboard, label: "Dashboard" },
   { icon: LayoutGrid, label: "Apps" },
   { icon: Building2, label: "Organizations" },
-  { icon: Clapperboard, label: "Movie Shop" },
 ];
 
 function cursorAt(points: CursorPoint[], t: number) {

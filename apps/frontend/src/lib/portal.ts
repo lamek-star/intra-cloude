@@ -26,10 +26,11 @@ export type PortalTitle = {
   category: string;
   title: string;
   year: number | null;
-  kind: "movie" | "series";
+  kind: "movie" | "series" | "music" | "album";
   size_bytes: number;
   episodes: number;
   has_cover: boolean;
+  cover_version?: string;
   price: number;
   description: string;
 };
@@ -82,6 +83,8 @@ export const portalApi = {
   },
   title: (shop: string, titleId: string) => call<PortalTitle>("GET", `${shop}/titles/${titleId}/`),
   coverUrl: (shop: string, titleId: string) => `/api/v1/portal/${shop}/titles/${titleId}/cover/`,
+  forgot: (shop: string, phone: string) => call<{ ok: boolean }>("POST", `${shop}/forgot/`, { phone }),
+  reset: (shop: string, phone: string, code: string, password: string) => call<PortalMe>("POST", `${shop}/reset/`, { phone, code, password }),
   orders: (shop: string) => call<PortalOrder[]>("GET", `${shop}/orders/`),
   preview: (shop: string, titles: string[], use_points: boolean) =>
     call<OrderPreview>("POST", `${shop}/orders/`, { titles, use_points, preview: true }),

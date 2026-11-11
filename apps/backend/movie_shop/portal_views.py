@@ -73,6 +73,7 @@ def portal_title_json(t: Title, prices: dict, default: int) -> dict:
         "size_bytes": t.size_bytes,
         "episodes": t.episodes,
         "has_cover": t.cover_id is not None,
+        "cover_version": str(t.cover_id)[:8] if t.cover_id else "",
         "price": services.price_of(t, prices, default),
         "description": t.description,
     }
@@ -288,3 +289,29 @@ class PortalOrderCancelView(PortalView):
         if sale is None:
             raise Http404
         return Response(order_json(portal.cancel_order(customer, sale)))
+
+
+class PortalForgotView(PortalView):
+    """ "I forgot my password": the owner is asked, and gives the customer a one-time code at the counter."""
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth"
+
+    def post(self, request, shop_id):
+        shop = self.shop(shop_id)
+        data = request.data if isinstance(request.data, dict) else {}
+        portal.request_reset(shop, data.get("phone"))
+        return Response({"ok": True})
+
+
+class PortalResetView(PortalView):
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth"
+
+    def post(self, request, shop_id):
+        shop = self.shop(shop_id)
+        data = request.data if isinstance(request.data, dict) else {}
+        customer, token = portal.reset_password(
+            shop, phone=data.get("phone"), code=data.get("code"), password=data.get("password")
+        )
+        return self.with_cookie(Response(customer_json(customer)), token)

@@ -72,7 +72,7 @@ export function MovieShops() {
   );
 }
 
-function CreateShopDialog({ organizations, onClose }: { organizations: { id: string; name: string }[]; onClose: () => void }) {
+export function CreateShopDialog({ organizations, onClose }: { organizations: { id: string; name: string }[]; onClose: () => void }) {
   const qc = useQueryClient();
   const router = useRouter();
   const [org, setOrg] = useState(organizations[0]?.id ?? "");

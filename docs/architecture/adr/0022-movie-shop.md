@@ -95,6 +95,24 @@ drives, a USB stick plugged in at the counter, or a NAS share mapped in Windows.
   sign-up screen), always labelled "Ad · <who it is for>". It counts views (each time the list is shown) and taps; the
   counts are the owner's and nothing identifies the customer.
 
+### Later additions (2026-11-11)
+
+- **Music**: audio files are titles (`music`), a folder of them an album (`album`); sold and copied like films.
+- **The owner's poster**: Edit title takes a picture (JPEG/PNG/WebP up to 3 MB, stored like covers); `cover_locked`
+  keeps it through every re-scan (the agent is not asked for the folder's picture, and an upload would not replace it)
+  until the owner goes back to the folder's picture.
+- **Renaming** a shop or a library; the owner **edits** a customer's name, phone and birthday.
+- **Password recovery with the owner's permission**: the customer asks on the portal (the answer never says whether a
+  phone number has an account); the owner issues a one-time code (hashed, one hour, five tries, earlier codes
+  revoked); the customer sets a new password with it and their sessions end. The IF Pay wallet gets a new one-time
+  password through Pay's `POST /internal/customers/<id>/reset-password` (the owner must hold
+  `ifpay.customers.manage`).
+- **The Movie Shop is an app**: shops are listed with the installed applications and "Movie Shop" under available
+  ones; its own sidebar link is gone.
+- **Faster copying**: the agent copies with Windows' `CopyFileEx` (unbuffered for files from 64 MB), one worker per
+  customer drive (two drives fill at once), and progress goes to IntraForge from a timer so a slow answer never pauses
+  a copy.
+
 ## Phases
 
 | Phase | Scope | Status |

@@ -4,7 +4,7 @@ import { useId, useRef, useState } from "react";
 import { useDialogA11y } from "@/lib/use-dialog-a11y";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Plus, Search, Star, X } from "lucide-react";
-import { formatBytes } from "@/lib/movies";
+import { formatBytes, partsLabel } from "@/lib/movies";
 import { portalApi, type PortalTitle } from "@/lib/portal";
 import { MovieCover } from "@/components/movies/MovieCover";
 import { portalStyle as ui } from "./Portal";
@@ -73,7 +73,7 @@ export function Browse({ shopId, shopName, inCart, onToggle }: { shopId: string;
               </span>
             )}
             <p className="mt-1.5 truncate text-[13px] font-semibold">{t.title}</p>
-            <p className="truncate text-[11px] text-slate-500">{[t.year, t.kind === "series" ? `${t.episodes} ep.` : null].filter(Boolean).join(" · ") || t.category}</p>
+            <p className="truncate text-[11px] text-slate-500">{[t.year, partsLabel(t, true)].filter(Boolean).join(" · ") || t.category}</p>
           </button>
         ))}
       </div>
@@ -104,7 +104,7 @@ function TitleSheet({ shopId, title, added, onToggle, onClose }: { shopId: strin
             <h2 className="pr-8 text-xl font-bold">{title.title}</h2>
             <p className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-slate-400">
               <Star className="h-4 w-4 fill-amber-300 text-amber-300" />
-              {[title.category, title.year, title.kind === "series" ? `${title.episodes} episodes` : null, formatBytes(title.size_bytes)].filter(Boolean).join(" · ")}
+              {[title.category, title.year, partsLabel(title), formatBytes(title.size_bytes)].filter(Boolean).join(" · ")}
             </p>
             {title.description && <p className="mt-3 line-clamp-4 text-sm leading-relaxed text-slate-300">{title.description}</p>}
             <p className="mt-3 text-2xl font-extrabold text-amber-200">

@@ -486,3 +486,160 @@ def wallet_of(customer: PortalCustomer) -> dict | None:
         "path": data.get("wallet_path"),
         "must_change_password": bool(data.get("must_change_password")),
     }
+
+
+# ---- password recovery, with the owner's permission --------------------------------------------------------
+RESET_CODE_MINUTES = 60
+RESET_MAX_ATTEMPTS = 5
+_RESET_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def request_reset(shop: MovieShop, phone) -> None:
+    """The customer asks for a new password on the portal. The answer is the same whether or not the phone
+    number has an account, so nobody can find out who is a customer; the owner sees the request in
+    Customers."""
+    try:
+        phone = normalize_phone(phone)
+    except ValidationError:
+        return
+    customer = shop.customers.filter(phone=phone).exclude(status=PortalCustomer.Status.REJECTED).first()
+    if customer is None:
+        return
+    customer.reset_requested_at = timezone.now()
+    customer.save(update_fields=["reset_requested_at"])
+    audit.record(
+        actor=None,
+        organization_id=shop.organization_id,
+        action="movie_shop.portal.reset_requested",
+        resource_type="movie_shop",
+        resource_id=shop.id,
+        context={"customer": str(customer.id)},
+    )
+
+
+def issue_reset_code(customer: PortalCustomer, *, actor) -> str:
+    """The owner allows a new password: a one-time code for the customer, valid one hour, shown to the owner
+    once. Any earlier unused code stops working."""
+    from .models import PasswordResetCode
+
+    if customer.status in (PortalCustomer.Status.REJECTED, PortalCustomer.Status.BLOCKED):
+        raise ValidationError({"status": "Unblock this customer first."})
+    code = "".join(secrets.choice(_RESET_ALPHABET) for _ in range(8))
+    with transaction.atomic():
+        customer.reset_codes.filter(used_at__isnull=True).update(used_at=timezone.now())
+        PasswordResetCode.objects.create(
+            customer=customer,
+            code_hash=_hash(code),
+            created_by=actor,
+            expires_at=timezone.now() + datetime.timedelta(minutes=RESET_CODE_MINUTES),
+        )
+    audit.record(
+        actor=actor,
+        organization_id=customer.shop.organization_id,
+        action="movie_shop.customer.reset_code",
+        resource_type="movie_shop",
+        resource_id=customer.shop_id,
+        context={"customer": str(customer.id)},
+    )
+    return f"{code[:4]}-{code[4:]}"
+
+
+def reset_password(shop: MovieShop, *, phone, code, password) -> tuple[PortalCustomer, str]:
+    """The customer chooses a new password with the owner's one-time code. Their other sign-ins end."""
+    refusal = AuthenticationFailed("That code is not right, or it has expired. Ask the shop for a new one.")
+    try:
+        phone = normalize_phone(phone)
+    except ValidationError as exc:
+        raise refusal from exc
+    customer = shop.customers.filter(phone=phone).first()
+    clean = str(code or "").replace("-", "").replace(" ", "").upper()[:20]
+    if customer is None:
+        _hash(clean)
+        raise refusal
+    password = str(password or "")
+    if len(password) > 200:
+        raise ValidationError({"password": "That password is too long."})
+    try:
+        validate_password(password)
+    except DjangoValidationError as exc:
+        raise ValidationError({"password": list(exc.messages)}) from exc
+    with transaction.atomic():
+        entry = (
+            customer.reset_codes.select_for_update()
+            .filter(used_at__isnull=True, expires_at__gt=timezone.now())
+            .first()
+        )
+        if entry is None or entry.attempts >= RESET_MAX_ATTEMPTS:
+            raise refusal
+        if not secrets.compare_digest(entry.code_hash, _hash(clean)):
+            entry.attempts += 1
+            entry.save(update_fields=["attempts"])
+            ok = False
+        else:
+            ok = True
+            entry.used_at = timezone.now()
+            entry.save(update_fields=["used_at"])
+            customer.password = make_password(password)
+            customer.reset_requested_at = None
+            customer.save(update_fields=["password", "reset_requested_at"])
+            customer.sessions.filter(revoked_at__isnull=True).update(revoked_at=timezone.now())
+    if not ok:
+        raise refusal
+    audit.record(
+        actor=None,
+        organization_id=shop.organization_id,
+        action="movie_shop.portal.password_reset",
+        resource_type="movie_shop",
+        resource_id=shop.id,
+        context={"customer": str(customer.id)},
+    )
+    return customer, _new_session(customer)
+
+
+def reset_wallet_password(customer: PortalCustomer, *, actor) -> dict:
+    """A new one-time password for the customer's IF Pay wallet (the owner must hold ifpay.customers.manage in
+    Pay); the wallet asks the customer to choose their own again."""
+    if not customer.pay_wallet_id:
+        raise ValidationError({"detail": "This customer has no IF Pay wallet yet."})
+    result = pay_bridge.reset_customer_wallet_password(
+        sales.caller(customer.shop), customer.pay_wallet_id, actor_id=actor.pk
+    )
+    audit.record(
+        actor=actor,
+        organization_id=customer.shop.organization_id,
+        action="movie_shop.customer.wallet_password_reset",
+        resource_type="movie_shop",
+        resource_id=customer.shop_id,
+        context={"customer": str(customer.id)},
+    )
+    return result
+
+
+def edit_customer(customer: PortalCustomer, *, actor, data: dict) -> PortalCustomer:
+    """The owner corrects a customer's name, phone number or birthday."""
+    if not isinstance(data, dict) or set(data) - {"name", "phone", "birthday"}:
+        raise ValidationError({"detail": "name, phone or birthday."})
+    changed = []
+    if "name" in data:
+        customer.name = scanning.clean_text(data["name"], "name", max_length=80)
+        changed.append("name")
+    if "phone" in data:
+        customer.phone = normalize_phone(data["phone"])
+        changed.append("phone")
+    if "birthday" in data:
+        customer.birthday = _birthday(data["birthday"])
+        changed.append("birthday")
+    try:
+        with transaction.atomic():
+            customer.save(update_fields=changed or None)
+    except IntegrityError as exc:
+        raise ValidationError({"phone": "Another customer of this shop has that phone number."}) from exc
+    audit.record(
+        actor=actor,
+        organization_id=customer.shop.organization_id,
+        action="movie_shop.customer.edit",
+        resource_type="movie_shop",
+        resource_id=customer.shop_id,
+        context={"customer": str(customer.id), "fields": changed},
+    )
+    return customer
