@@ -41,5 +41,7 @@ A secret scan of every recovered file (keys, tokens, private keys, `.env`/key fi
 ## Checks
 
 - Backend: the recovered tree's own full test suite against real Postgres 18, Valkey and MinIO, using the 1.4.0 image's
-  own Python dependencies. Result: pending (recorded in a follow-up commit on this branch).
+  own Python dependencies (2026-11-03): **1,268 passed, 1 failed, 2 skipped, 227 subtests passed** in 45 min. The
+  one failure, `sites/tests/test_server_apps.py::ServerAppLifecycleTests::test_offline_online_and_delete_go_through_the_runner`,
+  passes when run on its own (1 passed), so it depends on test order, not on missing code.
 - The release notes report "backend 1,227 passed (full suite)" for this commit on the build machine.
