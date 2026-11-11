@@ -41,4 +41,10 @@ public sealed class BackupRecordInfo
 
     [JsonPropertyName("verified_at")]
     public DateTimeOffset? VerifiedAt { get; set; }
+
+    [JsonPropertyName("restored_at")]
+    public DateTimeOffset? RestoredAt { get; set; }
+
+    [JsonPropertyName("restore_error")]
+    public string RestoreError { get; set; } = string.Empty;
 }

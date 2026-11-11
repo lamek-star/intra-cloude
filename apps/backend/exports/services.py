@@ -5,10 +5,13 @@ separate from builder.py/restorer.py, which know nothing about jobs,
 permissions, or storage keys and are reusable on their own.
 """
 
+import hashlib
+import json
 import uuid
 
 from django.conf import settings
 from django.http import Http404
+from django.utils.crypto import salted_hmac
 
 from audit import services as audit
 from audit.models import AuditEvent
@@ -16,9 +19,10 @@ from organizations.models import Membership, Organization
 from permissions.services import has_permission
 from storage.backends import get_client
 
-from . import builder, restorer
+from . import builder
 from .crypto import unwrap_passphrase, wrap_passphrase
 from .models import ExportJob, RestoreJob
+from .recovery import cleanup_completed_source, run_restore  # noqa: F401 - existing service entry point
 
 EXPORT_STORAGE_PREFIX = "exports"
 RESTORE_STAGING_PREFIX = "restore-staging"
@@ -29,6 +33,10 @@ class ExportPermissionDenied(Exception):
 
 
 class RestoreValidationError(Exception):
+    pass
+
+
+class RestoreRequestConflict(Exception):
     pass
 
 
@@ -125,86 +133,53 @@ def download_export(*, actor, job: ExportJob):
     return get_client().get_stream(job.object_key)
 
 
-def stage_restore_upload(*, actor, uploaded_file, passphrase: str | None = None) -> RestoreJob:
-    """Stores the uploaded .icp bytes in object storage and creates the
-    RestoreJob row. Permission is deliberately NOT checked against any
-    organization here — restoring creates a *new* one, so there is
-    nothing yet to scope a permission check to; any authenticated user
-    may attempt a restore (they become that new organization's
-    administrator, exactly like anyone creating a brand-new
-    organization normally would)."""
-    data = uploaded_file.read()
+def stage_restore_upload(
+    *, actor, uploaded_file, passphrase: str | None = None, idempotency_key: uuid.UUID | None = None
+) -> RestoreJob:
+    """Any active authenticated user may restore into a NEW organization.
+
+    Optional client key identifies a logical submission only within that
+    actor's account. Different payload/passphrase under that key is rejected.
+    Without a key, repeated uploads deliberately create independent jobs.
+    """
+    if not actor.is_authenticated or not actor.is_active:
+        raise ExportPermissionDenied("An active authenticated restore owner is required")
+    data = uploaded_file.read(settings.MAX_UPLOAD_SIZE_BYTES + 1)
     if len(data) > settings.MAX_UPLOAD_SIZE_BYTES:
         raise RestoreValidationError(
             f"package exceeds the maximum upload size of {settings.MAX_UPLOAD_SIZE_BYTES} bytes"
         )
-
-    job = RestoreJob.objects.create(created_by=actor, source_object_key="")
-    object_key = f"{RESTORE_STAGING_PREFIX}/{job.id}.icp"
-    get_client().put_stream(object_key, _BytesReader(data), "application/octet-stream")
-    job.source_object_key = object_key
-    job.save(update_fields=["source_object_key"])
-
+    digest = hashlib.sha256(data).hexdigest()
+    fingerprint = salted_hmac(
+        "exports.restore.request", json.dumps([digest, passphrase]), algorithm="sha256"
+    ).hexdigest()
+    job_id = uuid.uuid4()
+    defaults = {
+        "id": job_id, "source_object_key": f"{RESTORE_STAGING_PREFIX}/{job_id}.icp",
+        "source_sha256": digest, "request_fingerprint": fingerprint,
+    }
+    if idempotency_key is None:
+        job = RestoreJob.objects.create(created_by=actor, **defaults)
+    else:
+        job, _ = RestoreJob.objects.get_or_create(
+            created_by=actor, idempotency_key=idempotency_key, defaults=defaults
+        )
+        if job.request_fingerprint != fingerprint:
+            raise RestoreRequestConflict("Idempotency-Key already belongs to a different restore request")
+    if job.status == RestoreJob.Status.COMPLETED:
+        cleanup_completed_source(job)
+        return job
+    get_client().put_stream(job.source_object_key, _BytesReader(data), "application/octet-stream")
+    # An overlapping successful execution may have deleted staging while
+    # this identical upload was still in flight. Clean again in that case.
+    job.refresh_from_db()
+    if job.status == RestoreJob.Status.COMPLETED:
+        cleanup_completed_source(job)
+        return job
     from .tasks import run_restore_task
 
     run_restore_task.delay(str(job.id), wrap_passphrase(passphrase))
     return job
-
-
-def run_restore(job_id: str, wrapped_passphrase: str | None) -> None:
-    from django.utils import timezone
-
-    passphrase = unwrap_passphrase(wrapped_passphrase)
-
-    job = RestoreJob.objects.get(id=job_id)
-    job.status = RestoreJob.Status.VALIDATING
-    job.save(update_fields=["status"])
-
-    client = get_client()
-    container_bytes = client.get_stream(job.source_object_key).read()
-
-    try:
-        zf, manifest = restorer.open_package(container_bytes, passphrase=passphrase)
-        restorer.verify_checksums(zf, manifest)
-
-        job.status = RestoreJob.Status.RESTORING
-        job.save(update_fields=["status"])
-
-        report = restorer.restore_package(zf, manifest, actor=job.created_by)
-    except Exception as exc:
-        job.status = RestoreJob.Status.FAILED
-        job.error_message = str(exc)[:2000]
-        job.save(update_fields=["status", "error_message"])
-        audit.record(
-            actor=job.created_by,
-            organization_id=None,
-            action="import.restore",
-            resource_type="restore_job",
-            resource_id=job.id,
-            result=AuditEvent.Result.ERROR,
-            context={"error": str(exc)[:500]},
-        )
-        raise
-    finally:
-        try:
-            client.delete(job.source_object_key)
-        except Exception:  # noqa: BLE001 - staging cleanup must never mask the real result
-            pass
-
-    job.status = RestoreJob.Status.COMPLETED
-    job.organization_id = uuid.UUID(report.organization_id)
-    job.report = report.as_dict()
-    job.completed_at = timezone.now()
-    job.save(update_fields=["status", "organization", "report", "completed_at"])
-
-    audit.record(
-        actor=job.created_by,
-        organization_id=job.organization_id,
-        action="import.restore",
-        resource_type="restore_job",
-        resource_id=job.id,
-        context={"report": job.report},
-    )
 
 
 class _BytesReader:

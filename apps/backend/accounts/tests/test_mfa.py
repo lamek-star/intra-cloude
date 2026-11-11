@@ -52,6 +52,22 @@ class EnrollmentTests(MFATestBase):
         self.user.refresh_from_db()
         self.assertFalse(self.user.mfa_enabled)
 
+    def test_enroll_cannot_switch_off_mfa_that_is_already_on(self):
+        # Turning MFA off needs a current code (mfa-disable). Re-enrolling must not be a way around
+        # that: it used to set mfa_enabled=False and replace the secret with no code at all.
+        secret = self.client.post(reverse("mfa-enroll")).data["secret"]
+        self.client.post(reverse("mfa-confirm"), {"code": totp.generate_totp(secret)})
+        self.user.refresh_from_db()
+        stored = bytes(self.user.mfa_secret_encrypted)
+
+        resp = self.client.post(reverse("mfa-enroll"))
+
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertNotIn("secret", resp.data)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.mfa_enabled)
+        self.assertEqual(bytes(self.user.mfa_secret_encrypted), stored)
+
     def test_confirm_without_a_prior_enroll_call_is_rejected(self):
         resp = self.client.post(reverse("mfa-confirm"), {"code": "123456"})
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
@@ -103,6 +119,24 @@ class LoginWithMFATests(MFATestBase):
 
         me = self.client.get(reverse("auth-me"))
         self.assertEqual(me.status_code, status.HTTP_200_OK)
+
+    def test_a_completed_two_step_sign_in_lasts_as_long_as_any_other_sign_in(self):
+        # The pending "password OK, code not yet given" session is limited to a few minutes; that limit
+        # must not carry over into the signed-in session (it used to: two-step users were signed out
+        # about five minutes after signing in).
+        from django.conf import settings
+        from django.contrib.sessions.backends.db import SessionStore
+
+        self.client.post(
+            reverse("auth-login"), {"email": "mfa-user@example.com", "password": "a-strong-passw0rd!"}
+        )
+        pending = SessionStore(session_key=self.client.cookies[settings.SESSION_COOKIE_NAME].value)
+        self.assertLessEqual(pending.get_expiry_age(), 300)
+
+        self.client.post(reverse("mfa-verify"), {"code": totp.generate_totp(self.secret)})
+        session = SessionStore(session_key=self.client.cookies[settings.SESSION_COOKIE_NAME].value)
+        self.assertNotIn("_session_expiry", session.load())
+        self.assertEqual(session.get_expiry_age(), settings.SESSION_COOKIE_AGE)
 
     def test_wrong_code_after_password_does_not_complete_login(self):
         self.client.post(

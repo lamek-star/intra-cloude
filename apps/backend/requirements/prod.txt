@@ -18,6 +18,8 @@ botocore==1.43.67
     # via
     #   boto3
     #   s3transfer
+cbor2==6.2.1
+    # via webauthn
 celery==5.6.3
     # via -r base.in
 cffi==2.1.1
@@ -39,7 +41,10 @@ click-plugins==1.1.1.2
 click-repl==0.3.0
     # via celery
 cryptography==50.0.0
-    # via -r base.in
+    # via
+    #   -r base.in
+    #   pyopenssl
+    #   webauthn
 django==5.2.17
     # via
     #   -r base.in
@@ -47,7 +52,7 @@ django==5.2.17
     #   djangorestframework
 django-cors-headers==4.9.0
     # via -r base.in
-djangorestframework==3.18.0
+djangorestframework==3.18.3
     # via -r base.in
 gunicorn==23.0.0
     # via -r prod.in
@@ -71,10 +76,18 @@ psycopg==3.3.4
     # via -r base.in
 psycopg-binary==3.3.4
     # via psycopg
+pyasn1==0.6.5
+    # via
+    #   pyasn1-modules
+    #   webauthn
+pyasn1-modules==0.4.2
+    # via webauthn
 pycparser==3.0
     # via cffi
-pyjwt==2.13.0
+pyjwt==2.15.1
     # via redis
+pyopenssl==26.4.0
+    # via webauthn
 python-dateutil==2.9.0.post0
     # via
     #   botocore
@@ -95,7 +108,7 @@ tzdata==2026.3
     # via kombu
 tzlocal==5.4.4
     # via celery
-urllib3==2.7.0
+urllib3==2.8.0
     # via botocore
 vine==5.1.0
     # via
@@ -104,3 +117,5 @@ vine==5.1.0
     #   kombu
 wcwidth==0.8.2
     # via prompt-toolkit
+webauthn==3.0.1
+    # via -r base.in

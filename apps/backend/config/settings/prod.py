@@ -22,7 +22,20 @@ SECURE_SSL_REDIRECT = True
 # is deliberately not routed through the public proxy at all (see
 # infrastructure/proxy/Caddyfile — no /metrics matcher — and
 # docs/architecture/ROADMAP.md Phase 11).
-SECURE_REDIRECT_EXEMPT = [r"^healthz$", r"^readyz$", r"^metrics$"]
+# The internal service-application API (ADR-0018) is the same case: service containers call gunicorn
+# directly over plain HTTP on the internal network, and the proxy refuses /api/v1/internal/ from
+# outside (infrastructure/proxy/Caddyfile), so it is never reachable over the public TLS path at all.
+# Without this exemption every call was redirected to https://backend/... and hung (found by running
+# the Spare Parts service against the qualification stack).
+# The proxy calls these on the internal network over plain HTTP (the internal service API; the on-demand TLS
+# check for hosted sites' own names, ADR-0020).
+SECURE_REDIRECT_EXEMPT = [
+    r"^healthz$",
+    r"^readyz$",
+    r"^metrics$",
+    r"^api/v1/internal/",
+    r"^_sites-certificate/$",
+]
 SECURE_HSTS_SECONDS = 31536000
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = False  # local/LAN-first deployments should opt in deliberately, not by default

@@ -1,16 +1,23 @@
-# Local Deployment Guide — Private Data Cloud
+# Local Deployment Guide — IntraForge
 
 Status: VERIFIED (Phase 1 — the full bring-up sequence below (build,
 migrate, `docker compose up`, request through the proxy over TLS) was
 actually run end-to-end on 2026-08-08 and works. See
 `docs/architecture/DEPENDENCY_VERSIONS.md` and
 `docs/architecture/ROADMAP.md` Phase 1 for the bugs that surfaced and were
-fixed along the way — the steps below already reflect the fixes.)
-Last updated: 2026-08-08
+fixed along the way — the steps below already reflect the fixes.) This
+document covers the plain Docker Compose path on a Linux/dev host
+directly; for the packaged Windows/WSL2 appliance path (ADR-0012
+Architecture A), see `installer/README.md` and the Control Center's
+"Setup & Removal" tab instead — the same `PROXY_BIND_ADDRESS`/
+`PROXY_TLS_HOSTNAMES`/`ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS`/
+`CORS_ALLOWED_ORIGINS` settings Section 6/7 below describe are what
+that path's `-LanAddress` option widens automatically.
+Last updated: 2026-09-03
 
 ## 1. Scope
 
-This guide covers running Private Data Cloud on a single private-network
+This guide covers running IntraForge on a single private-network
 host (a home lab server, an on-prem Linux box, or a local dev machine) using
 Docker Compose. It assumes no internet exposure by default.
 
@@ -34,7 +41,7 @@ Docker Compose. It assumes no internet exposure by default.
 |---|---|---|---|
 | `proxy` | Caddy | Yes (LAN interface only, via `PROXY_BIND_ADDRESS`) | TLS termination, routing to `frontend`/`backend` |
 | `frontend` | Node 24 / Next.js 16 | No (via proxy only) | |
-| `backend` | Python 3.13 / Django 5.2 LTS (gunicorn) | No (via proxy only) | Runs migrations on startup via entrypoint, not automatically in prod without review |
+| `backend` | Python 3.13 / Django 5.2 LTS (gunicorn) | No (via proxy only) | Migrations are an explicit operator step below; gunicorn does not apply them |
 | `worker` | same image as backend (`image: pdc-backend:latest`, shared explicitly), `celery worker` | No | |
 | `beat` | same image as backend (same shared tag), `celery beat` | No | |
 | `postgres-control` | postgres:18 | No | Control-plane metadata DB |
@@ -151,6 +158,3 @@ environment variables, never hardcoded. Categories:
   (Phase 11, `docs/operations/BACKUP_RESTORE.md`), but getting a copy off
   this host is still an operator-configured step.
 
-This document will be replaced with verified, tested commands once Phase 1
-infrastructure work actually produces the Dockerfiles and compose file
-referenced above.

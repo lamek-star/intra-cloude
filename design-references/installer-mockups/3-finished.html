@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Setup: Finished</title>
+<link rel="stylesheet" href="installer.css"><script src="icons.js"></script>
+<style>
+  .seal { margin: 54px auto 0; width: 150px; height: 150px; border-radius: 36px; position: relative; display: grid; place-items: center;
+    background: #fff; box-shadow: 0 0 0 10px rgba(255,255,255,.06), 0 0 0 22px rgba(255,255,255,.035), 0 24px 50px rgba(0,0,0,.4); }
+  .seal img { width: 104px; }
+  .seal .ok { position: absolute; right: -10px; bottom: -10px; width: 46px; height: 46px; border-radius: 50%; background: var(--green); color: #fff;
+    display: grid; place-items: center; box-shadow: 0 0 0 4px var(--navy), 0 6px 14px rgba(0,0,0,.35); }
+  .hero .center { text-align: center; }
+  .hero h3 { margin-top: 34px; }
+  .health { margin: 14px auto 0; display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: #bbf7d0; background: rgba(22,163,74,.16);
+    box-shadow: inset 0 0 0 1px rgba(74,222,128,.25); border-radius: 99px; padding: 5px 12px; }
+  .health i { width: 7px; height: 7px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 0 3px rgba(74,222,128,.2); }
+  .checks.one { grid-template-columns: 1fr; gap: 9px; margin-top: 16px; }
+</style></head>
+<body>
+<div class="window">
+  <aside class="hero">
+    <div class="mesh"></div>
+    <img class="lockup" src="../brand/generated/intraforge-lockup-dark.png" alt="IntraForge">
+    <div class="center">
+      <div class="seal"><img src="../brand/generated/intraforge-icon.png" alt=""><span class="ok"><i data-i="check" data-s="24" data-w="3"></i></span></div>
+      <h3>Version 1.5.2 is installed</h3>
+      <p class="p">Installed in 9 min 48 s</p>
+      <div class="health"><i></i>All 13 services are running</div>
+    </div>
+    <div class="foot"><span>Local Edition 1.5.2</span><span>Works offline</span></div>
+  </aside>
+
+  <section class="main">
+    <div class="chrome"><div><i data-i="minus" data-s="16"></i></div><div><i data-i="x" data-s="16"></i></div></div>
+    <div class="steps">
+      <div class="s done"><span class="n"><i data-i="check" data-s="12" data-w="3"></i></span>Choose</div><span class="bar"></span>
+      <div class="s done"><span class="n"><i data-i="check" data-s="12" data-w="3"></i></span>Install</div><span class="bar"></span>
+      <div class="s on"><span class="n">3</span>Finish</div>
+    </div>
+    <h1>IntraForge is ready</h1>
+    <p class="sub">Open it in your browser and create the owner account. The owner controls everything, so choose a strong password and add your phone as a passkey.</p>
+
+    <div class="card">
+      <div class="r"><span class="k">Address on this PC</span><span class="v url mono">https://localhost:9443</span><span class="act"><i data-i="copy" data-s="14"></i>Copy</span></div>
+      <div class="r"><span class="k">Control Center</span><span class="v">Start menu › IntraForge Control Center</span></div>
+    </div>
+    <div class="summary">
+      <div><b>Installed to</b><span>C:\IntraForge</span></div>
+      <div><b>Business data</b><span>C:\IntraForgeData</span></div>
+      <div><b>Daily backup</b><span>19:00</span></div>
+      <div><b>Autostart</b><span>On</span></div>
+    </div>
+
+    <div class="checks one">
+      <div class="check"><span class="box"><i data-i="check" data-s="13" data-w="3"></i></span>Open IntraForge now</div>
+      <div class="check"><span class="box"><i data-i="check" data-s="13" data-w="3"></i></span>Show me a quick tour after I sign in</div>
+    </div>
+
+    <div class="foot">
+      <span class="legal"><a href="#">What's new in 1.5.2</a></span>
+      <button class="btn primary big">Finish</button>
+    </div>
+  </section>
+</div>
+</body></html>

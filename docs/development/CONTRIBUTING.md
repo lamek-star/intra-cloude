@@ -1,4 +1,4 @@
-# Contributing — Private Data Cloud
+# Contributing — IntraForge
 
 Status: PLACEHOLDER (Phase 0).
 

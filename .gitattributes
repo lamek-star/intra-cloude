@@ -1,0 +1,9 @@
+# Shell scripts must keep LF endings (core.autocrlf=true would otherwise give them CRLF and break bash).
+*.sh text eol=lf
+# Never convert line endings in binary files (core.autocrlf would corrupt them on checkout).
+*.pdf binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.zip binary
+*.exe binary

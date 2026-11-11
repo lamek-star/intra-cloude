@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
-import { api, ApiError, type Membership, type Organization, type Workspace } from "@/lib/api";
+import Link from "next/link";
+import { api, ApiError, type Membership, type Organization, type Team, type Workspace } from "@/lib/api";
 import {
   Badge,
   Button,
@@ -11,6 +11,7 @@ import {
   ErrorBanner,
   Input,
   Label,
+  LinkButton,
   Modal,
   PageHeader,
   PageLoading,
@@ -20,17 +21,26 @@ import {
   THead,
   TRow,
 } from "@/components/ui";
+import { MemberRoles, type OrganizationRoles } from "./MemberRoles";
 
 export default function OrgDetailClient({ orgId }: { orgId: string }) {
-  const router = useRouter();
   const [org, setOrg] = useState<Organization | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[] | null>(null);
   const [members, setMembers] = useState<Membership[] | null>(null);
+  const [teams, setTeams] = useState<Team[]>([]);
+  // Only for people who may manage roles (permissions.manage); null hides the role controls.
+  const [roles, setRoles] = useState<OrganizationRoles | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [wsModalOpen, setWsModalOpen] = useState(false);
   const [memberModalOpen, setMemberModalOpen] = useState(false);
 
   async function load() {
+    // All five requests start together. Members and teams require users.manage — a plain member may not
+    // have it; fail soft.
+    const members = api.get<Membership[]>(`/organizations/${orgId}/members/`).catch(() => [] as Membership[]);
+    const teams = api.get<Team[]>(`/organizations/${orgId}/teams/`).catch(() => [] as Team[]);
+    const roleList = api.get<OrganizationRoles>(`/organizations/${orgId}/roles/`).catch(() => null);
     try {
       const [o, ws] = await Promise.all([
         api.get<Organization>(`/organizations/${orgId}/`),
@@ -40,14 +50,31 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
       setWorkspaces(ws);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load organization.");
+      setErrorDetail(err);
       return;
     }
-    // Members require users.manage — a plain member may not have it; fail soft.
-    try {
-      setMembers(await api.get<Membership[]>(`/organizations/${orgId}/members/`));
-    } catch {
-      setMembers([]);
-    }
+    const [m, t, r] = await Promise.all([members, teams, roleList]);
+    setMembers(m);
+    setTeams(t);
+    setRoles(r);
+  }
+
+  function heldBy(membershipId: string): string[] {
+    return (roles?.assignments ?? []).filter((a) => a.membership_id === membershipId).map((a) => a.role_slug);
+  }
+
+  function setHeld(membershipId: string, held: string[]) {
+    setRoles((prev) =>
+      prev
+        ? {
+            ...prev,
+            assignments: [
+              ...prev.assignments.filter((a) => a.membership_id !== membershipId),
+              ...held.map((role_slug) => ({ membership_id: membershipId, role_slug })),
+            ],
+          }
+        : prev,
+    );
   }
 
   useEffect(() => {
@@ -58,7 +85,7 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
   }, [orgId]);
 
   if (!org && !error) return <PageLoading />;
-  if (error && !org) return <ErrorBanner message={error} />;
+  if (error && !org) return <ErrorBanner message={error} error={errorDetail} />;
   if (!org) return null;
 
   return (
@@ -67,11 +94,33 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
         title={org.name}
         breadcrumbs={[{ label: "Organizations", href: "/orgs" }, { label: org.name }]}
         description={`/${org.slug}`}
+        actions={
+          <>
+            <LinkButton href={`/orgs/${orgId}/app-templates`} variant="secondary" size="sm">
+              Apps
+            </LinkButton>
+            <LinkButton href={`/orgs/${orgId}/sites`} variant="secondary" size="sm">
+              Websites
+            </LinkButton>
+            <LinkButton href={`/orgs/${orgId}/developer`} variant="secondary" size="sm">
+              Developer
+            </LinkButton>
+            <LinkButton href={`/orgs/${orgId}/teams`} variant="secondary" size="sm">
+              Teams
+            </LinkButton>
+            <LinkButton href={`/orgs/${orgId}/units`} variant="secondary" size="sm">
+              Units
+            </LinkButton>
+            <LinkButton href={`/orgs/${orgId}/audit`} variant="secondary" size="sm">
+              Audit log
+            </LinkButton>
+          </>
+        }
       />
 
       <div className="mb-8">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-300">Workspaces</h2>
+          <h2 className="text-sm font-semibold text-slate-600">Workspaces</h2>
           <Button size="sm" onClick={() => setWsModalOpen(true)}>
             New workspace
           </Button>
@@ -89,18 +138,18 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {workspaces?.map((ws) => (
-              <button
+              <Link
                 key={ws.id}
-                onClick={() => router.push(`/orgs/${orgId}/workspaces/${ws.id}`)}
-                className="text-left"
+                href={`/orgs/${orgId}/workspaces/${ws.id}`}
+                className="block text-left"
               >
-                <Card className="transition-colors hover:border-indigo-400/40 hover:bg-white/[0.05]">
-                  <p className="font-medium text-white">{ws.name}</p>
+                <Card className="transition-colors hover:border-brand-400/40 hover:bg-slate-50">
+                  <p className="font-medium text-slate-900">{ws.name}</p>
                   <p className="mt-1 text-xs text-slate-500">
                     Created {new Date(ws.created_at).toLocaleDateString()}
                   </p>
                 </Card>
-              </button>
+              </Link>
             ))}
           </div>
         )}
@@ -108,7 +157,7 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
 
       <div>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-300">Members</h2>
+          <h2 className="text-sm font-semibold text-slate-600">Members</h2>
           <Button size="sm" variant="secondary" onClick={() => setMemberModalOpen(true)}>
             Add member
           </Button>
@@ -120,25 +169,52 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
               <Th>Name</Th>
               <Th>Status</Th>
               <Th>Team</Th>
+              {roles && <Th>Roles</Th>}
             </THead>
             <tbody>
               {members.map((m) => (
                 <TRow key={m.id}>
-                  <Td>{m.user.email}</Td>
-                  <Td className="text-slate-400">
+                  {m.application ? (
+                    <Td>
+                      <span title={m.user.email}>Application </span>
+                      <Link href={`/applications/${m.application.id}`} className="text-brand-600 hover:underline">
+                        {m.application.name}
+                      </Link>
+                    </Td>
+                  ) : (
+                    <Td>{m.user.email}</Td>
+                  )}
+                  <Td className="text-text-muted">
                     {[m.user.first_name, m.user.last_name].filter(Boolean).join(" ") || "—"}
                   </Td>
                   <Td>
                     <Badge tone={m.status === "active" ? "success" : "warning"}>{m.status}</Badge>
                   </Td>
-                  <Td className="text-slate-500">{m.team ?? "—"}</Td>
+                  <Td className="text-slate-500">
+                    {teams.find((t) => t.id === m.team)?.name ?? "—"}
+                  </Td>
+                  {roles && (
+                    <Td>
+                      <MemberRoles
+                        orgId={orgId}
+                        membershipId={m.id}
+                        who={m.user.email}
+                        roles={roles.roles}
+                        held={heldBy(m.id)}
+                        onChange={(held) => setHeld(m.id, held)}
+                        givingRefused={
+                          m.application ? "Access is given on the application's page, not as a role." : undefined
+                        }
+                      />
+                    </Td>
+                  )}
                 </TRow>
               ))}
             </tbody>
           </Table>
         ) : (
           <p className="text-sm text-slate-500">
-            No member list visible — you may not hold <code className="text-slate-400">users.manage</code> in
+            No member list visible — you may not hold <code className="text-text-muted">users.manage</code> in
             this organization.
           </p>
         )}
@@ -179,6 +255,7 @@ function CreateWorkspaceModal({
 }) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -191,6 +268,7 @@ function CreateWorkspaceModal({
       onCreated(ws);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create workspace.");
+      setErrorDetail(err);
     } finally {
       setSubmitting(false);
     }
@@ -199,7 +277,7 @@ function CreateWorkspaceModal({
   return (
     <Modal open={open} onClose={onClose} title="New workspace">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <ErrorBanner message={error} />}
+        {error && <ErrorBanner message={error} error={errorDetail} />}
         <div>
           <Label htmlFor="ws-name">Name</Label>
           <Input
@@ -237,6 +315,7 @@ function AddMemberModal({
 }) {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -249,6 +328,7 @@ function AddMemberModal({
       onAdded(m);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to add member.");
+      setErrorDetail(err);
     } finally {
       setSubmitting(false);
     }
@@ -257,7 +337,7 @@ function AddMemberModal({
   return (
     <Modal open={open} onClose={onClose} title="Add member">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <ErrorBanner message={error} />}
+        {error && <ErrorBanner message={error} error={errorDetail} />}
         <div>
           <Label htmlFor="member-email">Email of an existing user</Label>
           <Input

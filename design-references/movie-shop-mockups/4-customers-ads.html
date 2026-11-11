@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Movie Shop · Customers and ads</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="ms.css"><script src="ms.js"></script><script src="shell.js"></script>
+<style>
+  .cols { display: grid; grid-template-columns: 1fr 1.08fr; gap: 16px; margin-top: 18px; }
+  .panel { padding: 18px; }
+  .ph { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .ph .ic { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; }
+  .ph b { font-size: 15px; } .ph span { display: block; font-size: 11.5px; color: var(--muted); }
+  .person { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+  .av { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 13px; flex: none; }
+  .person b { font-size: 13.5px; display: block; } .person small { font-size: 11.5px; color: var(--muted); }
+  .ad { display: grid; grid-template-columns: 210px 1fr; gap: 14px; padding: 12px; border-radius: 14px; background: var(--bg2); border: 1px solid var(--line); margin-top: 10px; }
+  .banner { height: 96px; border-radius: 10px; position: relative; overflow: hidden; padding: 12px; display: flex; flex-direction: column; justify-content: flex-end; }
+  .banner b { font-family: Oswald, sans-serif; font-size: 17px; text-transform: uppercase; line-height: 1; letter-spacing: .02em; position: relative; }
+  .banner span { font-size: 10.5px; opacity: .9; position: relative; margin-top: 3px; }
+  .ad .t { font-size: 13.5px; font-weight: 700; } .ad .m { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+  .stats { display: flex; gap: 14px; margin-top: 8px; font-size: 11.5px; color: var(--text2); }
+</style></head>
+<body>
+<script>
+const pending = [
+  ["MH", "#f59e0b", "Meron Habte", "+291 7 412 908 · Android phone", "2 min ago"],
+  ["YK", "#8b5cf6", "Yonas Kidane", "+291 7 330 152 · iPhone", "14 min ago"],
+  ["AB", "#ec4899", "Abeba Berhe", "+291 1 655 201 · laptop", "1 h ago"],
+];
+const ad = (bg, title, line, t, m, status, views, taps) => `<div class="ad"><div class="banner" style="background:${bg}"><b>${title}</b><span>${line}</span></div>
+  <div><div style="display:flex;align-items:center;gap:8px"><span class="t">${t}</span>${status}</div><div class="m">${m}</div>
+  <div class="stats"><span>${icon("tv", 13)} ${views} views</span><span>${icon("trending", 13)} ${taps} taps</span></div>
+  <div style="display:flex;gap:6px;margin-top:8px"><span class="btn sm">Edit</span><span class="btn sm ghost">Pause</span></div></div></div>`;
+document.write(shell("Customers", `
+  <div style="display:flex;align-items:flex-end;justify-content:space-between">
+    <div><div class="h1">Customers &amp; ads</div><div class="sub">People who signed up on the shop Wi-Fi, and what they see on the customer portal.</div></div>
+    <div style="display:flex;gap:8px"><span class="btn">${icon("qr", 15)} Print Wi-Fi poster</span><span class="btn amber">${icon("megaphone", 15)} New ad</span></div>
+  </div>
+  <div class="cols">
+    <div>
+      <div class="panel">
+        <div class="ph"><span class="ic" style="background:rgba(45,212,191,.12);color:var(--teal)">${icon("wifi", 17)}</span><div><b>New on the shop Wi-Fi</b><span>Signed up on shop.local/movies · add them to IF Pay to give them a wallet and rewards</span></div><span class="chip amber" style="margin-left:auto">3 waiting</span></div>
+        ${pending.map(([i, c, n, d, w]) => `<div class="person"><span class="av" style="background:${c};color:#0a0d16">${i}</span><div style="flex:1"><b>${n}</b><small>${d} · ${w}</small></div><span class="btn sm ghost">Decline</span><span class="btn sm teal">${icon("wallet", 13)} Add to IF Pay</span></div>`).join("")}
+        <div class="person" style="border:0;opacity:.85"><span class="av" style="background:#2dd4bf;color:#042f2a">ST</span><div style="flex:1"><b>Selam Tesfaye</b><small>Added to IF Pay · welcome bonus 100 points given</small></div><span class="chip live">${icon("check", 12, 3)} Member</span></div>
+      </div>
+      <div class="panel" style="margin-top:16px">
+        <div class="ph"><span class="ic" style="background:rgba(245,165,36,.12);color:var(--amber2)">${icon("users", 17)}</span><div><b>Members</b><span>284 customers with an IF Pay wallet</span></div></div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px">
+          <div style="padding:12px;border-radius:12px;background:var(--bg2);border:1px solid var(--line)"><div style="font-size:11px;color:var(--muted)">Credits in wallets</div><div style="font-size:19px;font-weight:800">48,210</div></div>
+          <div style="padding:12px;border-radius:12px;background:var(--bg2);border:1px solid var(--line)"><div style="font-size:11px;color:var(--muted)">Points given this month</div><div style="font-size:19px;font-weight:800;color:var(--teal)">6,940</div></div>
+          <div style="padding:12px;border-radius:12px;background:var(--bg2);border:1px solid var(--line)"><div style="font-size:11px;color:var(--muted)">Came back this month</div><div style="font-size:19px;font-weight:800;color:var(--amber2)">71%</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="ph"><span class="ic" style="background:rgba(139,92,246,.14);color:#c4b5fd">${icon("megaphone", 17)}</span><div><b>Ads on the customer portal</b><span>Shown on the home screen and between movie rows · only on your shop's Wi-Fi</span></div></div>
+      ${ad("linear-gradient(120deg,#1e3a8a,#0ea5e9)", "Brake pads −20%", "Lamek Spare Parts · this week", "Lamek Spare Parts", "Your other shop · links to its catalogue · 10–16 Nov", '<span class="chip live" style="font-size:10.5px"><span class="dot"></span>Live</span>', "1,284", "212")}
+      ${ad("linear-gradient(120deg,#7c3aed,#ec4899)", "New phone models", "Asmara Mobile · in store now", "Asmara Mobile", "Partner shop · picture and phone number · 10–30 Nov", '<span class="chip live" style="font-size:10.5px"><span class="dot"></span>Live</span>', "860", "97")}
+      ${ad("linear-gradient(120deg,#047857,#34d399)", "Free blood pressure check", "Lamek Pharmacy · Saturday 9–12", "Lamek Pharmacy", "Your other shop · from Friday 14 Nov", `<span class="chip" style="font-size:10.5px">${icon("calendar", 11)} Scheduled</span>`, "—", "—")}
+      <div style="margin-top:12px;padding:12px;border-radius:12px;border:1px dashed var(--line2);display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted)">${icon("image", 18)} Add a picture, a title and where it leads (a shop, a product, a phone number). Ads never leave the shop's network.</div>
+    </div>
+  </div>
+`));
+hydrate();
+</script>
+</body></html>

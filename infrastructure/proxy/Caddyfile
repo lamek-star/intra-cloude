@@ -22,7 +22,17 @@
 # (docs/architecture/ARCHITECTURE.md Section 4).
 
 {
-	admin off
+	# The admin endpoint listens on the proxy container's own loopback only: the app runner (ADR-0020) reloads
+	# hosted apps' routes with `caddy reload` run inside this container. Nothing outside the container reaches it.
+	admin localhost:2019
+	# A hosted site's own name (ADR-0020) gets a certificate only when IntraForge says it belongs to an online site.
+	on_demand_tls {
+		ask http://backend:8000/_sites-certificate/
+	}
+	# A browser that opens IntraForge by IP address sends no server name (SNI); without a default the
+	# TLS handshake fails before any page loads. The shop kit sets this to the shop PC's address when
+	# other PCs in the shop may connect; otherwise it stays "localhost".
+	default_sni {$PROXY_DEFAULT_SNI:localhost}
 }
 
 {$PROXY_TLS_HOSTNAMES:localhost 127.0.0.1} {
@@ -37,12 +47,175 @@
 		Referrer-Policy "same-origin"
 	}
 
-	@backend path /api/* /healthz /readyz
+	# The shop's own names (ADR-0021): https://pharmacy.lan:8443/ opens the Pharmacy. Written by the shop kit's
+	# network script when the shop network is on; nothing matches (and nothing changes) otherwise.
+	import /etc/caddy/names/*.caddy
+
+	# The internal service-application API (ADR-0018) is for containers on the internal network
+	# only; from outside it simply does not exist.
+	@internal path /api/v1/internal /api/v1/internal/*
+	handle @internal {
+		respond 404
+	}
+
+	# A service application's own internal API (IntraForge calls it on the internal network, e.g.
+	# IntraForge Pay's /apps/pay-N/internal/) does not exist from outside either.
+	@appinternal path_regexp ^/apps/[^/]+/internal(/.*)?$
+	handle @appinternal {
+		respond 404
+	}
+
+	# Hosted websites (ADR-0019) are served only on the sites port below, never on IntraForge's own origin.
+	@hostedsites path /_sites /_sites/*
+	handle @hostedsites {
+		respond 404
+	}
+
+	@backend path /api/* /healthz /readyz /oauth/* /.well-known/*
 	handle @backend {
 		reverse_proxy backend:8000
 	}
 
+	# Service applications are served on IntraForge's own origin, under their launch path, so the
+	# IntraForge login carries over (ADR-0018). The application never receives IntraForge's own
+	# session or CSRF cookie: it authenticates the path-scoped application session instead. Where
+	# the service is not deployed this answers 502.
+	@spareparts path /apps/spare-parts /apps/spare-parts/*
+	handle @spareparts {
+		reverse_proxy spareparts:3000 {
+			header_up Cookie "(^|;\s*)(sessionid|csrftoken)=[^;]*" ""
+		}
+	}
+
+	# The Pharmacy (the same engine in its pharmacy edition), same rules as above.
+	@pharmacy path /apps/pharmacy /apps/pharmacy/*
+	handle @pharmacy {
+		reverse_proxy pharmacy:3000 {
+			header_up Cookie "(^|;\s*)(sessionid|csrftoken)=[^;]*" ""
+		}
+	}
+
+	# IntraForge Pay: one service per shop (slots pay-1 .. pay-3), same rules as above.
+	@pay1 path /apps/pay-1 /apps/pay-1/*
+	handle @pay1 {
+		reverse_proxy pay-1:8600 {
+			header_up Cookie "(^|;\s*)(sessionid|csrftoken)=[^;]*" ""
+		}
+	}
+	@pay2 path /apps/pay-2 /apps/pay-2/*
+	handle @pay2 {
+		reverse_proxy pay-2:8600 {
+			header_up Cookie "(^|;\s*)(sessionid|csrftoken)=[^;]*" ""
+		}
+	}
+	@pay3 path /apps/pay-3 /apps/pay-3/*
+	handle @pay3 {
+		reverse_proxy pay-3:8600 {
+			header_up Cookie "(^|;\s*)(sessionid|csrftoken)=[^;]*" ""
+		}
+	}
+
 	handle {
 		reverse_proxy frontend:3000
+	}
+}
+
+# Hosted websites (ADR-0019): https://<host>:8445/<site address>/. A separate origin from IntraForge, but a
+# browser shares cookies between ports of the same host, so no cookie or credential reaches the site view and
+# no response may set one; the backend also sandboxes every page (Content-Security-Policy: sandbox, no
+# allow-same-origin). The addresses carry the port, e.g. "localhost:8445 127.0.0.1:8445 192.168.1.20:8445";
+# the shop kit's network script adds the PC's name and address when the shop network is switched on.
+{$PROXY_SITES_ADDRESSES:localhost:8445 127.0.0.1:8445} {
+	tls internal
+
+	encode zstd gzip
+
+	request_header -Cookie
+	request_header -Authorization
+	request_header -X-IntraForge-Site-Host
+	header -Set-Cookie
+	header -Server
+
+	# Hosted Node.js apps (ADR-0020): one route file per running app, written by the app runner.
+	import /etc/caddy/apps/*.caddy
+
+	handle {
+		rewrite * /_sites{uri}
+		# The site view never needs the visitor's host name; Django only accepts its own names.
+		reverse_proxy backend:8000 {
+			header_up Host backend
+		}
+	}
+}
+
+# Hosted sites under their own name on the shop network (ADR-0020 decision 3): https://myshop.lan:8445/. Any name
+# not listed above lands here; a certificate is issued only for an online site's own name (on_demand_tls above).
+# A separate host from IntraForge, so a Node.js app may keep cookies for its own name; a website stays cookieless.
+https://:8445 {
+	tls internal {
+		on_demand
+	}
+
+	encode zstd gzip
+	request_header -Authorization
+	request_header -X-IntraForge-Site-Host
+	header -Server
+
+	# Hosted Node.js apps under their own name, written by the app runner.
+	import /etc/caddy/apps/*.host
+
+	handle {
+		request_header -Cookie
+		header -Set-Cookie
+		rewrite * /_sites/_host{uri}
+		reverse_proxy backend:8000 {
+			header_up X-IntraForge-Site-Host {host}
+			header_up Host backend
+		}
+	}
+}
+
+# The internet gate (ADR-0020 decision 4): plain HTTP on the edge network only, for the Cloudflare Tunnel
+# connector the app runner starts when the Super Administrator switches internet access on (TLS ends at
+# Cloudflare). Never published to the host. It serves published sites and nothing else -- IntraForge itself,
+# its API and its sign-in are not reachable here; an unpublished name gets the "not available" page.
+http://:8446 {
+	request_header -Authorization
+	request_header -X-IntraForge-Site-Host
+	header -Server
+
+	# Published Node.js apps, written by the app runner.
+	import /etc/caddy/apps/*.internet
+
+	handle {
+		request_header -Cookie
+		header -Set-Cookie
+		rewrite * /_sites/_internet{uri}
+		reverse_proxy backend:8000 {
+			header_up X-IntraForge-Site-Host {host}
+			header_up Host backend
+			header_up X-Forwarded-Proto https
+		}
+	}
+}
+
+# IntraForge's public API for hosted server apps, reachable only from each app's own internal network (where
+# the runner attaches the proxy as "intraforge"); never published to the host. Apps authenticate with their own
+# bearer credential; the internal service API and cookies never pass here.
+http://:8080 {
+	request_header -Cookie
+	@internal path /api/v1/internal /api/v1/internal/*
+	handle @internal {
+		respond 404
+	}
+	@api path /api/v1/*
+	handle @api {
+		reverse_proxy backend:8000 {
+			header_up Host backend
+			header_up X-Forwarded-Proto https
+		}
+	}
+	handle {
+		respond 404
 	}
 }

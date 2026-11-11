@@ -256,3 +256,242 @@ class DatabaseBuilderPermissionTests(DatabaseBuilderTestBase):
             reverse("tenant-database-list-create", args=[self.project_id]), {"name": "Nope"}
         )
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class SchemaReadVisibilityTests(DatabaseBuilderTestBase):
+    """
+    An active organization member with no role or ShareGrant/ResourceGrant
+    on a tenant database must not be able to read its schema (table/column
+    names and types) — matching the row-data endpoints (test_rows.py's
+    RowPermissionTests) and storage's FileListCreateView, both of which
+    already require the matching `*.read` permission before listing
+    anything. The tenant-database and table detail/list endpoints
+    previously only checked organization membership, leaking schema
+    metadata to any member regardless of Sharing settings.
+    """
+
+    def setUp(self):
+        super().setUp()
+        db = self.client.post(
+            reverse("tenant-database-list-create", args=[self.project_id]), {"name": "CRM"}
+        )
+        self.db_id = db.data["id"]
+        table = self.client.post(reverse("table-list-create", args=[self.db_id]), {"name": "contacts"})
+        self.table_id = table.data["id"]
+
+        self.outsider = User.objects.create_user(email="schema-outsider@example.com", password="x")
+        Membership.objects.create(
+            user=self.outsider, organization_id=self.org_id, status=Membership.Status.ACTIVE
+        )
+        self.client.force_login(self.outsider)
+
+    def test_member_without_database_read_cannot_view_database_detail(self):
+        resp = self.client.get(reverse("tenant-database-detail", args=[self.db_id]))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_member_without_database_read_cannot_list_tables(self):
+        resp = self.client.get(reverse("table-list-create", args=[self.db_id]))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_member_without_database_read_cannot_view_table_detail(self):
+        resp = self.client.get(reverse("table-detail", args=[self.table_id]))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_a_share_grant_restores_read_access_to_the_schema(self):
+        self.client.force_login(self.admin)
+        share = self.client.post(
+            reverse("share-grant-list-create", args=[self.org_id]),
+            {
+                "resource_type": "databases.tenant_database",
+                "resource_id": self.db_id,
+                "principal_type": "user",
+                "user_id": str(self.outsider.id),
+                "level": "read",
+            },
+            format="json",
+        )
+        self.assertEqual(share.status_code, status.HTTP_201_CREATED, share.data)
+
+        self.client.force_login(self.outsider)
+        resp = self.client.get(reverse("table-list-create", args=[self.db_id]))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(resp.data), 1)
+
+
+class TenantDatabaseListVisibilityTests(DatabaseBuilderTestBase):
+    """TenantDatabaseListCreateView.get previously listed every
+    TenantDatabase in a project (name, created_by) via get_member_project
+    only -- no database.read check at all, role-wide or resource-scoped
+    -- the same class of gap as SchemaReadVisibilityTests above, on the
+    list-at-the-project-level sibling endpoint. Fixed by filtering per-
+    database (role-wide OR a per-database ResourceGrant), matching
+    storage's identical BucketListCreateView.get fix, since database.read
+    is resource-scoped at the TenantDatabase level and a single
+    all-or-nothing check would incorrectly hide a database the caller can
+    already reach directly via a ResourceGrant."""
+
+    def setUp(self):
+        super().setUp()
+        visible = self.client.post(
+            reverse("tenant-database-list-create", args=[self.project_id]), {"name": "Visible"}
+        )
+        self.visible_db_id = visible.data["id"]
+        hidden = self.client.post(
+            reverse("tenant-database-list-create", args=[self.project_id]), {"name": "Hidden"}
+        )
+        self.hidden_db_id = hidden.data["id"]
+
+        self.outsider = User.objects.create_user(email="dblist-outsider@example.com", password="x")
+        Membership.objects.create(
+            user=self.outsider, organization_id=self.org_id, status=Membership.Status.ACTIVE
+        )
+        self.client.force_login(self.outsider)
+
+    def test_member_with_no_grants_sees_no_databases(self):
+        resp = self.client.get(reverse("tenant-database-list-create", args=[self.project_id]))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data, [])
+
+    def test_member_with_a_resource_grant_on_one_database_sees_only_that_one(self):
+        from permissions.services import grant_resource_permission
+
+        grant_resource_permission(
+            user=self.outsider,
+            permission_code="database.read",
+            organization_id=self.org_id,
+            resource_type="databases.tenant_database",
+            resource_id=self.visible_db_id,
+            granted_by=self.admin,
+        )
+
+        resp = self.client.get(reverse("tenant-database-list-create", args=[self.project_id]))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual([d["id"] for d in resp.data], [self.visible_db_id])
+
+
+class RowRuleViolationTests(DatabaseBuilderTestBase):
+    """A row the database refuses (unique value, link to a missing row) is a clear
+    400 with a reason, never a 500 -- and nothing is written."""
+
+    def setUp(self):
+        super().setUp()
+        db = self.client.post(reverse("tenant-database-list-create", args=[self.project_id]), {"name": "HR"})
+        self.tenant_database_id = db.data["id"]
+        tables_url = reverse("table-list-create", args=[self.tenant_database_id])
+        units = self.client.post(tables_url, {"name": "units"})
+        staff = self.client.post(tables_url, {"name": "staff"})
+        self.staff_id = staff.data["id"]
+        self.client.post(
+            reverse("column-create", args=[self.staff_id]),
+            {"name": "employee_no", "data_type": "varchar", "max_length": 20, "is_unique": True},
+            format="json",
+        )
+        unit_col = self.client.post(
+            reverse("column-create", args=[self.staff_id]),
+            {"name": "unit_id", "data_type": "uuid", "is_nullable": True},
+            format="json",
+        )
+        self.client.post(
+            reverse("foreign-key-create", args=[self.staff_id]),
+            {
+                "column_id": unit_col.data["id"],
+                "references_table_id": units.data["id"],
+                "references_column_id": units.data["columns"][0]["id"],
+                "on_delete": "restrict",
+            },
+            format="json",
+        )
+        self.rows_url = reverse("row-list-create", args=[self.staff_id])
+
+    def _count(self):
+        return self.client.get(self.rows_url).data["count"]
+
+    def test_a_duplicate_unique_value_is_a_clear_400(self):
+        first = self.client.post(self.rows_url, {"employee_no": "EMP-1"}, format="json")
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        dup = self.client.post(self.rows_url, {"employee_no": "EMP-1"}, format="json")
+        self.assertEqual(dup.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("already exists", dup.data["detail"])
+        self.assertEqual(self._count(), 1)
+
+    def test_a_link_to_a_missing_row_is_a_clear_400(self):
+        missing_unit = "00000000-0000-4000-8000-000000000001"
+        body = {"employee_no": "EMP-2", "unit_id": missing_unit}
+        resp = self.client.post(self.rows_url, body, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("linked row does not exist", resp.data["detail"])
+        self.assertEqual(self._count(), 0)
+
+    def test_an_update_to_a_duplicate_value_is_a_clear_400_and_changes_nothing(self):
+        self.client.post(self.rows_url, {"employee_no": "EMP-1"}, format="json")
+        other = self.client.post(self.rows_url, {"employee_no": "EMP-2"}, format="json")
+        detail_url = reverse("row-detail", args=[self.staff_id, other.data["id"]])
+        resp = self.client.patch(detail_url, {"employee_no": "EMP-1"}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("already exists", resp.data["detail"])
+        kept = self.client.get(detail_url)
+        self.assertEqual(kept.data["employee_no"], "EMP-2")
+
+
+class LinkedRowLookupTests(DatabaseBuilderTestBase):
+    """H8: the data explorer can list a table's links and fetch the linked rows by id, so it can
+    show a name instead of a raw id -- both need database.read."""
+
+    def setUp(self):
+        super().setUp()
+        db = self.client.post(reverse("tenant-database-list-create", args=[self.project_id]), {"name": "Lib"})
+        tables_url = reverse("table-list-create", args=[db.data["id"]])
+        books = self.client.post(tables_url, {"name": "books"})
+        loans = self.client.post(tables_url, {"name": "loans"})
+        self.books_id, self.loans_id = books.data["id"], loans.data["id"]
+        self.client.post(
+            reverse("column-create", args=[self.books_id]),
+            {"name": "title", "data_type": "text"},
+            format="json",
+        )
+        book_col = self.client.post(
+            reverse("column-create", args=[self.loans_id]),
+            {"name": "book_id", "data_type": "uuid", "is_nullable": True},
+            format="json",
+        )
+        self.client.post(
+            reverse("foreign-key-create", args=[self.loans_id]),
+            {
+                "column_id": book_col.data["id"],
+                "references_table_id": self.books_id,
+                "references_column_id": books.data["columns"][0]["id"],
+            },
+            format="json",
+        )
+        rows_url = reverse("row-list-create", args=[self.books_id])
+        self.book_ids = [
+            str(self.client.post(rows_url, {"title": t}, format="json").data["id"]) for t in ("A", "B", "C")
+        ]
+
+    def test_the_tables_links_are_listed(self):
+        resp = self.client.get(reverse("foreign-key-create", args=[self.loans_id]))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(resp.data), 1)
+        self.assertEqual(str(resp.data[0]["references_table"]), self.books_id)
+
+    def test_rows_can_be_fetched_by_id(self):
+        resp = self.client.get(
+            reverse("row-list-create", args=[self.books_id]), {"ids": ",".join(self.book_ids[:2])}
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual({r["title"] for r in resp.data["results"]}, {"A", "B"})
+
+    def test_malformed_ids_are_a_400(self):
+        resp = self.client.get(reverse("row-list-create", args=[self.books_id]), {"ids": "not-an-id"})
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_a_member_without_database_read_gets_neither(self):
+        outsider = User.objects.create_user(email="db-reader-none@example.com", password="x")
+        Membership.objects.create(user=outsider, organization_id=self.org_id, status=Membership.Status.ACTIVE)
+        self.client.force_login(outsider)
+        self.assertEqual(
+            self.client.get(reverse("foreign-key-create", args=[self.loans_id])).status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        resp = self.client.get(reverse("row-list-create", args=[self.books_id]), {"ids": self.book_ids[0]})
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)

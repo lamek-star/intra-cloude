@@ -1,7 +1,7 @@
 [project]
-name = "private-data-cloud-backend"
+name = "intraforge-backend"
 version = "0.1.0"
-description = "Private Data Cloud control-plane backend (Django + DRF)"
+description = "IntraForge control-plane backend (Django + DRF)"
 requires-python = ">=3.13"
 
 [tool.ruff]

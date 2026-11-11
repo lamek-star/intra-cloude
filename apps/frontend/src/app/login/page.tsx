@@ -1,21 +1,56 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState, useSyncExternalStore, type FormEvent } from "react";
+import { Fingerprint, Package } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { isMfaRequired, useAuth } from "@/lib/auth-context";
-import { Button, ErrorBanner, Input, Label } from "@/components/ui";
+import { passkeyErrorMessage, passkeysSupported } from "@/lib/passkeys";
+import { isSafeNextPath } from "@/lib/safe-next";
+import { appIdFromOpenPath, getSignInBranding, type SignInBranding } from "@/lib/service-apps";
+import { Button, ErrorBanner, Input, Label, PageLoading } from "@/components/ui";
+
+const noSubscription = () => () => undefined;
 
 export default function LoginPage() {
-  const { login, verifyMfa } = useAuth();
+  return (
+    <Suspense fallback={<PageLoading />}>
+      <LoginPageInner />
+    </Suspense>
+  );
+}
+
+function LoginPageInner() {
+  const { login, verifyMfa, signInWithPasskey } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [needsMfa, setNeedsMfa] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Known only in the browser; false while rendering on the server.
+  const canUsePasskey = useSyncExternalStore(noSubscription, passkeysSupported, () => false);
+  // Sent here by an application (its "open" page): show that application's own sign-in.
+  const appId = isSafeNextPath(next) ? appIdFromOpenPath(next) : null;
+  const [branding, setBranding] = useState<SignInBranding | null>(null);
+  // Until the application's name has arrived, show neither header (no flash of "IntraForge" first).
+  const [brandingSettled, setBrandingSettled] = useState(!appId);
+
+  useEffect(() => {
+    if (!appId) return;
+    let live = true;
+    getSignInBranding(appId)
+      .then((b) => live && setBranding(b))
+      .catch(() => undefined) // unknown or unavailable: the ordinary IntraForge sign-in
+      .finally(() => live && setBrandingSettled(true));
+    return () => {
+      live = false;
+    };
+  }, [appId]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -32,26 +67,69 @@ export default function LoginPage() {
           return;
         }
       }
-      router.push("/orgs");
+      goOn();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong.");
+      if (err instanceof ApiError && (err.body as { passkey_only?: boolean } | null)?.passkey_only) {
+        setError("This account signs in with a passkey only. Use the passkey button below.");
+      } else {
+        setError(err instanceof ApiError ? err.message : "Something went wrong.");
+      }
     } finally {
       setSubmitting(false);
     }
   }
 
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 flex flex-col items-center">
-          <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500 text-sm font-bold text-white">
-            P
-          </div>
-          <h1 className="text-lg font-semibold text-white">Private Data Cloud</h1>
-          <p className="mt-1 text-sm text-slate-500">Sign in to your organization</p>
-        </div>
+  function goOn() {
+    if (isSafeNextPath(next)) {
+      // A real, full navigation -- `next` may point outside the
+      // Next.js app entirely (e.g. back into /oauth/authorize on the
+      // same origin, for an external application's sign-in flow),
+      // which router.push() cannot reach.
+      window.location.assign(next);
+    } else {
+      router.push("/dashboard");
+    }
+  }
 
-        <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-white/10 bg-white/[0.03] p-6">
+  async function passkeySignIn() {
+    setError(null);
+    setSubmitting(true);
+    try {
+      await signInWithPasskey("phone");
+      goOn();
+    } catch (err) {
+      setError(passkeyErrorMessage(err) ?? (err instanceof ApiError ? err.message : "Something went wrong."));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const registerHref = isSafeNextPath(next) ? `/register?next=${encodeURIComponent(next)}` : "/register";
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-white px-4">
+      <div className="w-full max-w-sm">
+        {!brandingSettled ? (
+          <div className="mb-8 h-[108px]" aria-hidden="true" />
+        ) : branding ? (
+          <div className="mb-8 flex flex-col items-center text-center">
+            <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+              <Package size={24} aria-hidden="true" />
+            </span>
+            <h1 className="text-lg font-semibold text-text-primary">{branding.product_name}</h1>
+            <p className="mt-0.5 text-sm font-medium text-text-primary">{branding.display_name}</p>
+            <p className="mt-1 text-sm text-slate-500">Sign in with your staff account</p>
+          </div>
+        ) : (
+          <div className="mb-8 flex flex-col items-center">
+            {/* eslint-disable-next-line @next/next/no-img-element -- fixed-size static brand asset */}
+            <img src="/brand/icon-96.png" alt="IntraForge" width={44} height={44} className="mb-3 h-11 w-11" />
+            <h1 className="text-lg font-semibold text-text-primary">IntraForge</h1>
+            <p className="mt-1 text-sm text-slate-500">Sign in to your account</p>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-slate-200 bg-white p-6">
           {error && <ErrorBanner message={error} />}
 
           {!needsMfa ? (
@@ -95,7 +173,7 @@ export default function LoginPage() {
                 placeholder="123456"
               />
               <p className="mt-1.5 text-xs text-slate-500">
-                This account has MFA enabled — enter the 6-digit code from your authenticator app.
+                This account uses two-step sign-in. Enter the six-digit code from your authenticator app.
               </p>
             </div>
           )}
@@ -105,9 +183,29 @@ export default function LoginPage() {
           </Button>
         </form>
 
+        {canUsePasskey && !needsMfa && (
+          <div className="mt-4">
+            <div className="mb-4 flex items-center gap-3 text-xs text-text-muted" aria-hidden="true">
+              <span className="h-px flex-1 bg-slate-200" />
+              or
+              <span className="h-px flex-1 bg-slate-200" />
+            </div>
+            <Button variant="secondary" className="w-full" onClick={() => void passkeySignIn()} disabled={submitting}>
+              <Fingerprint size={16} aria-hidden="true" />
+              Sign in with a passkey
+            </Button>
+            <p className="mt-2 text-center text-xs text-text-muted">
+              Scan the QR code with your phone and confirm with your fingerprint or face.
+            </p>
+          </div>
+        )}
+
+        {branding && (
+          <p className="mt-4 text-center text-xs text-text-muted">Staff accounts are managed in IntraForge.</p>
+        )}
         <p className="mt-5 text-center text-sm text-slate-500">
           Don&apos;t have an account?{" "}
-          <Link href="/register" className="text-indigo-400 hover:text-indigo-300">
+          <Link href={registerHref} className="text-brand-600 underline underline-offset-4 hover:text-brand-500">
             Create one
           </Link>
         </p>

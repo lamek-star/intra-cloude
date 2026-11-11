@@ -6,8 +6,9 @@ from rest_framework.views import APIView
 
 from accounts.models import User
 from audit import services as audit
-from permissions.catalog import SYSTEM_ROLES
-from permissions.services import assign_role, has_permission
+from permissions.catalog import ADMIN_PERMISSION_CODES, ORGANIZATION_ROLE_SUMMARIES, SYSTEM_ROLES
+from permissions.models import RoleAssignment
+from permissions.services import PermissionError_, assign_role, has_permission, remove_role
 
 from .models import Membership, Organization, Team
 from .serializers import (
@@ -20,7 +21,7 @@ from .serializers import (
     TeamMemberSerializer,
     TeamSerializer,
 )
-from .services import add_team_member, create_organization, remove_team_member
+from .services import add_team_member, create_organization, remove_team_member, service_account_of
 from .services import get_member_organization as _get_member_organization
 from .services import get_member_team as _get_member_team
 
@@ -54,7 +55,9 @@ class MembershipListCreateView(APIView):
 
     def get(self, request, organization_id):
         org = _get_member_organization(request.user, organization_id)
-        memberships = Membership.objects.filter(organization=org).select_related("user")
+        memberships = Membership.objects.filter(organization=org).select_related(
+            "user", "user__service_account__application"
+        )
         return Response(MembershipSerializer(memberships, many=True).data)
 
     def post(self, request, organization_id):
@@ -77,9 +80,7 @@ class MembershipListCreateView(APIView):
             defaults={"status": Membership.Status.ACTIVE, "invited_by": request.user},
         )
         if not created:
-            return Response(
-                {"detail": "This user is already a member."}, status=status.HTTP_409_CONFLICT
-            )
+            return Response({"detail": "This user is already a member."}, status=status.HTTP_409_CONFLICT)
         audit.record(
             actor=request.user,
             organization_id=org.id,
@@ -90,29 +91,106 @@ class MembershipListCreateView(APIView):
         return Response(MembershipSerializer(membership).data, status=status.HTTP_201_CREATED)
 
 
+def _membership_for_role_change(request, organization_id, membership_id):
+    """The organization (caller must be an active member: 404 otherwise) and one of ITS memberships,
+    or a 403 Response when the caller may not manage roles there."""
+    org = _get_member_organization(request.user, organization_id)
+    if not has_permission(request.user, "permissions.manage", organization_id=org.id):
+        return org, None, Response(status=status.HTTP_403_FORBIDDEN)
+    try:
+        membership = Membership.objects.select_related("user").get(id=membership_id, organization=org)
+    except Membership.DoesNotExist as exc:
+        raise Http404 from exc
+    return org, membership, None
+
+
+class OrganizationRolesView(APIView):
+    """The roles this organization can give its members, and who holds which. Only for people who
+    may manage roles (permissions.manage): who has which role is not shown to every member."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, organization_id):
+        org = _get_member_organization(request.user, organization_id)
+        if not has_permission(request.user, "permissions.manage", organization_id=org.id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        roles = [
+            {
+                "slug": slug,
+                "name": SYSTEM_ROLES[slug][0],
+                "summary": summary,
+                "administrative": bool(ADMIN_PERMISSION_CODES & set(SYSTEM_ROLES[slug][1])),
+            }
+            for slug, summary in ORGANIZATION_ROLE_SUMMARIES.items()
+        ]
+        memberships = dict(Membership.objects.filter(organization=org).values_list("user_id", "id"))
+        assignments = [
+            {"membership_id": str(memberships[user_id]), "role_slug": slug}
+            for user_id, slug in RoleAssignment.objects.filter(
+                organization=org, user_id__in=memberships.keys()
+            ).values_list("user_id", "role__slug")
+        ]
+        return Response({"roles": roles, "assignments": assignments})
+
+
 class MembershipRoleAssignView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, organization_id, membership_id):
-        org = _get_member_organization(request.user, organization_id)
-        if not has_permission(request.user, "permissions.manage", organization_id=org.id):
-            return Response(status=status.HTTP_403_FORBIDDEN)
+        org, membership, refused = _membership_for_role_change(request, organization_id, membership_id)
+        if refused:
+            return refused
 
-        try:
-            membership = Membership.objects.get(id=membership_id, organization=org)
-        except Membership.DoesNotExist as exc:
-            raise Http404 from exc
+        account = service_account_of(membership.user)
+        if account is not None:
+            return Response(
+                {
+                    "detail": f"This is the sign-in of the application “{account.application.name}”. "
+                    "Give it access to specific files or data from the application's page instead."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         serializer = AssignRoleSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         role_slug = serializer.validated_data["role_slug"]
         if role_slug not in SYSTEM_ROLES:
             return Response({"detail": "Unknown role."}, status=status.HTTP_400_BAD_REQUEST)
-
-        assignment = assign_role(
-            user=membership.user, role_slug=role_slug, organization=org, granted_by=request.user
-        )
+        if role_slug not in ORGANIZATION_ROLE_SUMMARIES:
+            return Response(
+                {"detail": "This role can't be given to an organization member."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        existing = RoleAssignment.objects.filter(
+            user=membership.user, role__slug=role_slug, role__organization__isnull=True, organization=org
+        ).first()
+        if existing is not None:
+            return Response({"id": existing.id, "role": role_slug}, status=status.HTTP_200_OK)
+        try:
+            assignment = assign_role(
+                user=membership.user, role_slug=role_slug, organization=org, granted_by=request.user
+            )
+        except PermissionError_ as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"id": assignment.id, "role": role_slug}, status=status.HTTP_201_CREATED)
+
+
+class MembershipRoleRemoveView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, organization_id, membership_id, role_slug):
+        org, membership, refused = _membership_for_role_change(request, organization_id, membership_id)
+        if refused:
+            return refused
+        try:
+            removed = remove_role(
+                user=membership.user, role_slug=role_slug, organization=org, removed_by=request.user
+            )
+        except PermissionError_ as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        if not removed:
+            raise Http404
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class TeamListCreateView(APIView):

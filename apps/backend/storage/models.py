@@ -7,6 +7,15 @@ from django.db import models
 class Bucket(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey("workspaces.Project", on_delete=models.CASCADE, related_name="buckets")
+    # Optional binding to an Application Environment -- same OneToOne
+    # pattern and rationale as databases.TenantDatabase.environment.
+    environment = models.OneToOneField(
+        "environments.Environment",
+        on_delete=models.SET_NULL,
+        related_name="bucket",
+        null=True,
+        blank=True,
+    )
     name = models.CharField(max_length=200)
     versioning_enabled = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)

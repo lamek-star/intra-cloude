@@ -58,8 +58,10 @@ THIRD_PARTY_APPS = [
 # Bounded Django apps per docs/architecture/DATA_MODEL.md Section 1.
 # Each owns its own models/services/serializers/tests; no giant shared app.
 LOCAL_APPS = [
+    "app_platform",
     "accounts",
     "organizations",
+    "org_units",
     "permissions",
     "workspaces",
     "storage",
@@ -67,12 +69,58 @@ LOCAL_APPS = [
     "datasets",
     "imports",
     "applications",
+    "oauth_provider",
+    "catalogue_storage",
+    "environments",
     "sharing",
     "audit",
     "system",
     "exports",
     "analytics",
+    "service_apps",
+    "sites",
+    "movie_shop",
+    "licensing",
 ]
+
+# --- Service applications (ADR-0018) ---
+# Separately deployed services that keep their data, files, identity and audit in IntraForge.
+# A slot exists only when its service token is configured (a random secret shared with the
+# service container); its database login role reaches only the one schema IntraForge provisions.
+SERVICE_APP_DEPLOYMENTS = {
+    "spare-parts": {
+        "app_type": "spare_parts",
+        "token": env("SERVICE_APP_SPAREPARTS_TOKEN", ""),
+        "db_role": env("SERVICE_APP_SPAREPARTS_DB_ROLE", "svc_spare_parts"),
+        "db_password": env("SERVICE_APP_SPAREPARTS_DB_PASSWORD", ""),
+        "internal_url": env("SERVICE_APP_SPAREPARTS_URL", "http://spareparts:3000"),
+        "launch_path": "/apps/spare-parts/",
+    },
+    # The Pharmacy: the same engine built as its pharmacy edition, one per installation.
+    "pharmacy": {
+        "app_type": "pharmacy",
+        "token": env("SERVICE_APP_PHARMACY_TOKEN", ""),
+        "db_role": env("SERVICE_APP_PHARMACY_DB_ROLE", "svc_pharmacy"),
+        "db_password": env("SERVICE_APP_PHARMACY_DB_PASSWORD", ""),
+        "internal_url": env("SERVICE_APP_PHARMACY_URL", "http://pharmacy:3000"),
+        "launch_path": "/apps/pharmacy/",
+    },
+    # IntraForge Pay: one slot per shop (one Pay service, one schema and one ledger each), so several
+    # organizations on one installation each get their own Pay. Slot N runs at http://pay-N:8600.
+    **{
+        f"pay-{n}": {
+            "app_type": "intraforge_pay",
+            "token": env(f"SERVICE_APP_PAY{n}_TOKEN", ""),
+            "db_role": env(f"SERVICE_APP_PAY{n}_DB_ROLE", f"svc_pay_{n}"),
+            "db_password": env(f"SERVICE_APP_PAY{n}_DB_PASSWORD", ""),
+            "internal_url": env(f"SERVICE_APP_PAY{n}_URL", f"http://pay-{n}:8600"),
+            "launch_path": f"/apps/pay-{n}/",
+        }
+        for n in range(1, 4)
+    },
+}
+# How long a service-application browser session lives without use (absolute cap below).
+SERVICE_APP_SESSION_HOURS = int(env("SERVICE_APP_SESSION_HOURS", "12"))
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
@@ -84,6 +132,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "licensing.middleware.LicenceMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
@@ -164,6 +213,11 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+# Portable imports are memory-backed. Bound expansion before member reads.
+PORTABLE_MAX_MEMBERS = int(env("PORTABLE_MAX_MEMBERS", "10000"))
+PORTABLE_MAX_EXPANDED_BYTES = int(env("PORTABLE_MAX_EXPANDED_BYTES", str(512 * 1024 * 1024)))
+PORTABLE_MAX_MEMBER_BYTES = int(env("PORTABLE_MAX_MEMBER_BYTES", str(64 * 1024 * 1024)))
+PORTABLE_MAX_MANIFEST_BYTES = int(env("PORTABLE_MAX_MANIFEST_BYTES", str(4 * 1024 * 1024)))
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -186,6 +240,14 @@ SECURE_REFERRER_POLICY = "same-origin"
 # (Section 24 / Section 17 of the master prompt).
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "")
 CORS_ALLOW_CREDENTIALS = True
+
+# The `iss` claim oauth_provider's ID tokens carry, and the base URL its
+# discovery document (/.well-known/openid-configuration) advertises for
+# every other endpoint — must be the exact origin external clients (e.g.
+# the spare-parts site) reach this deployment at, i.e. the proxy's own
+# origin (docker-compose.yml's `proxy` service), never the internal
+# `backend:8000` service name.
+OIDC_ISSUER = env("OIDC_ISSUER", "https://localhost:8443")
 
 # --- Django REST Framework ---
 REST_FRAMEWORK = {
@@ -220,6 +282,27 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "system.exceptions.structured_exception_handler",
 }
 
+# --- Cache (DRF throttling, and anything else Django's cache framework
+# backs) -- gunicorn runs multiple worker processes (Dockerfile: --workers
+# 3), each with its own memory. Without an explicit CACHES setting here,
+# Django silently falls back to LocMemCache, which is per-process: DRF's
+# rate-limit counters (ScopedRateThrottle "auth" scope, OrganizationRateThrottle
+# "import" scope) each only ever see the fraction of requests gunicorn's
+# round-robin happened to route to that one worker, so the real,
+# live-verified effective budget was inconsistent and roughly workers-times
+# looser than DEFAULT_THROTTLE_RATES actually states -- exactly the
+# credential-stuffing/brute-force protection the "auth" scope's own
+# comment above exists for. A separate Valkey DB index (1, not 0) keeps
+# cache keys out of Celery's broker/result-backend namespace on the same
+# instance -- no new datastore per CLAUDE.md rule 6, boring technology
+# already running.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": env("CACHE_URL", "redis://localhost:6379/1"),
+    }
+}
+
 # --- Celery (broker/result backend: Valkey, Redis-protocol — see ADR-0011) ---
 CELERY_BROKER_URL = env("REDIS_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = env("REDIS_URL", "redis://localhost:6379/0")
@@ -229,12 +312,33 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 
+# How long the Redis/Valkey broker transport waits before treating an
+# unacknowledged message as abandoned and redelivering it -- the
+# complement imports/tasks.py's run_import_task acks_late=True actually
+# needs to matter in practice. Redis-transport Celery defaults this to
+# 3600s (1 hour) when unset; live-verified that acks_late alone, at that
+# default, left a worker-killed import job stuck for the full hour before
+# ever becoming redeliverable, which defeats the point for an operator
+# watching a job that should self-heal in minutes, not defeat the point
+# by silently keeping the 1-hour default. Set comfortably above
+# CELERY_TASK_TIME_LIMIT above (never redeliver a task that's still
+# legitimately within its own allowed runtime -- that would risk two
+# workers running the same import concurrently) but well short of an
+# hour.
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "visibility_timeout": int(env("CELERY_VISIBILITY_TIMEOUT_SECONDS", str(40 * 60)))
+}
+
 # Nightly full backups, weekly automated restoration tests (Phase 11;
 # docs/operations/BACKUP_RESTORE.md Sections 3 and 7 — "a recurring job
 # restores the latest backup set... this is a scheduled Celery Beat job,
 # not a manual checklist item that quietly stops happening"). Only takes
 # effect for the `beat` service, which schedules these against `worker`.
 CELERY_BEAT_SCHEDULE = {
+    "recover-app-operation-publication": {
+        "task": "app_platform.tasks.recover_operation_publication",
+        "schedule": 60.0,
+    },
     "backup-control-db-nightly": {
         "task": "system.tasks.run_backup_task",
         "schedule": crontab(hour=2, minute=0),
@@ -294,6 +398,32 @@ OBJECT_STORAGE_BUCKET_PREFIX = env("OBJECT_STORAGE_BUCKET_PREFIX", "pdc")
 # guide, once written) can raise or lower it per deployment profile.
 MAX_UPLOAD_SIZE_BYTES = int(env("MAX_UPLOAD_SIZE_BYTES", str(2 * 1024**3)))
 
+# --- Hosted websites (ADR-0019) ---
+# Served by the proxy on their own port; the frontend shows https://<this host>:<port>/<slug>/.
+SITES_PUBLIC_PORT = int(env("SITES_PUBLIC_PORT", "8445"))
+# IntraForge's own names, the ones the proxy serves with its internal certificate (PROXY_TLS_HOSTNAMES in the
+# shop kit, set from SHOP_TLS_HOSTNAMES; the shop network adds the PC's name and address). The on-demand
+# certificate check (sites/serve.py certificate_allowed) must say yes to them. Lower-case, space-separated.
+OWN_TLS_HOSTNAMES = [n.lower() for n in env("SHOP_TLS_HOSTNAMES", "localhost 127.0.0.1").split()]
+SITES_MAX_ZIP_BYTES = int(env("SITES_MAX_ZIP_BYTES", str(200 * 1024 * 1024)))
+SITES_MAX_TOTAL_BYTES = int(env("SITES_MAX_TOTAL_BYTES", str(500 * 1024 * 1024)))
+SITES_MAX_FILE_BYTES = int(env("SITES_MAX_FILE_BYTES", str(100 * 1024 * 1024)))
+SITES_MAX_FILES = int(env("SITES_MAX_FILES", "5000"))
+# An entry larger than 1 MB that unpacks to more than this many times its packed size is refused (zip bomb).
+SITES_MAX_RATIO = int(env("SITES_MAX_RATIO", "200"))
+# Node.js server apps (ADR-0020): a zip with intraforge.json. They carry their node_modules, hence
+# higher limits.
+SITES_MAX_APP_FILES = int(env("SITES_MAX_APP_FILES", "40000"))
+SITES_MAX_APP_TOTAL_BYTES = int(env("SITES_MAX_APP_TOTAL_BYTES", str(800 * 1024 * 1024)))
+# The app runner (a separate service; empty URL = server apps are not available on this installation).
+SITES_RUNNER_URL = env("SITES_RUNNER_URL", "")
+SITES_RUNNER_TOKEN = env("SITES_RUNNER_TOKEN", "")
+# Where an app reaches IntraForge's public API on its own network (the proxy's API listener).
+SITES_APP_API_URL = env("SITES_APP_API_URL", "http://intraforge:8080/api/v1/")
+# The PC's address on the shop network (set by the shop kit's network script): the address a site's own name
+# must point to on the other PCs (hosts file or router DNS). Empty: this computer only.
+SITES_LAN_ADDRESS = env("SHOP_LAN_ADDRESS", "")
+
 # --- Malware scanning (Section 33 of the master prompt) ---
 # Off by default: turning this on requires a ClamAV daemon actually
 # reachable at CLAMAV_HOST/CLAMAV_PORT (see infrastructure/docker and
@@ -352,6 +482,14 @@ BACKUP_ENCRYPTION_KEY = env("BACKUP_ENCRYPTION_KEY", "")
 FEATURE_EXTERNAL_SHARING_ENABLED = env_bool("FEATURE_EXTERNAL_SHARING_ENABLED", False)
 FEATURE_INTERNET_GATEWAY_ENABLED = env_bool("FEATURE_INTERNET_GATEWAY_ENABLED", False)
 
+# Local Edition: built-in applications appear to customers only once QUALIFIED
+# (app_platform/built_in_apps.py). Turn this on for development, demos and the pilot
+# preview to also list PARTIALLY_QUALIFIED / EXPERIMENTAL ones, clearly labelled.
+SHOW_UNQUALIFIED_BUILT_IN_APPS = env_bool("SHOW_UNQUALIFIED_BUILT_IN_APPS", False)
+# Named pilot previews shown on their own (comma-separated catalog keys, e.g. "pharmacy"), still labelled as
+# previews. A DEFERRED application is never shown, whatever this says.
+BUILT_IN_APP_PREVIEWS = env_list("BUILT_IN_APP_PREVIEWS", "")
+
 # --- Logging: structured, request-ID-aware (Section 20) ---
 LOGGING = {
     "version": 1,
@@ -378,3 +516,14 @@ LOGGING = {
         "django": {"handlers": ["console"], "level": "INFO", "propagate": False},
     },
 }
+
+
+# ---- licensing (ADR-0023) ----------------------------------------------------------------------------
+# Enforced in the shop kit (LICENSE_ENFORCED=true in its compose file): a 30-day trial, then read-only until a
+# serial number is activated for this PC. The public key belongs to the vendor's licence tool
+# (scripts/licensing); only the vendor holds the private key. The kit's start script writes this PC's code
+# into LICENSE_MACHINE_DIR.
+LICENSE_ENFORCED = env("LICENSE_ENFORCED", "false").lower() == "true"
+LICENSE_TRIAL_DAYS = int(env("LICENSE_TRIAL_DAYS", "30"))
+LICENSE_PUBLIC_KEY = env("LICENSE_PUBLIC_KEY", "zSfqFYK1MLzgjwzs8ae9uWBTK4LkiMJ3xPaEbXWYjIM=")
+LICENSE_MACHINE_DIR = env("LICENSE_MACHINE_DIR", "/run/intraforge/machine")

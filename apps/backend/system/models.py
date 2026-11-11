@@ -34,6 +34,12 @@ class BackupRecord(models.Model):
     verified_restorable = models.BooleanField(default=False)
     verified_at = models.DateTimeField(null=True, blank=True)
     verification_error = models.TextField(blank=True)
+    # Set only by a real restore into the live target this backup came
+    # from (system/backups.py:restore_backup) -- distinct from
+    # verified_restorable, which only ever proves restorability against a
+    # throwaway isolated target and never touches production data.
+    restored_at = models.DateTimeField(null=True, blank=True)
+    restore_error = models.TextField(blank=True)
 
     class Meta:
         ordering = ["-started_at"]

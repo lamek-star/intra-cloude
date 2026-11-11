@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Movie Shop · Prices and rewards</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="ms.css"><script src="ms.js"></script><script src="shell.js"></script>
+<style>
+  .cols { display: grid; grid-template-columns: 1fr 1.15fr 1fr; gap: 16px; margin-top: 18px; }
+  .panel { padding: 18px; }
+  .ph { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .ph .ic { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; }
+  .ph b { font-size: 15px; } .ph span { display: block; font-size: 11.5px; color: var(--muted); }
+  .prow { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .prow .v { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 8px; background: var(--bg2); border: 1px solid var(--line2); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .rule { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .rule .ic { width: 32px; height: 32px; border-radius: 9px; background: rgba(45,212,191,.1); color: var(--teal); display: grid; place-items: center; flex: none; }
+  .rule b { font-size: 13.5px; display: block; } .rule small { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+  .rule .amt { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .pill { padding: 4px 9px; border-radius: 8px; background: var(--bg2); border: 1px solid var(--line2); font-weight: 700; font-size: 12px; white-space: nowrap; }
+  .tier { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--bg2); border: 1px solid var(--line); margin-top: 8px; font-size: 12.5px; }
+</style></head>
+<body>
+<script>
+const rule = (ic, title, text, amt, on) => `<div class="rule"><span class="ic">${icon(ic, 16)}</span><div style="flex:1"><b>${title}</b><small>${text}</small></div><div class="amt"><span class="pill">${amt}</span><span class="toggle ${on ? "on" : ""}"></span></div></div>`;
+document.write(shell("Prices & rewards", `
+  <div style="display:flex;align-items:flex-end;justify-content:space-between">
+    <div><div class="h1">Prices &amp; rewards</div><div class="sub">Set once when you set up the shop, change any time. Customers see prices in credits; IntraForge Pay keeps every balance.</div></div>
+    <div style="display:flex;gap:8px"><span class="btn ghost">Discard changes</span><span class="btn amber">${icon("check", 15, 2.6)} Save rules</span></div>
+  </div>
+  <div class="cols">
+    <div class="panel">
+      <div class="ph"><span class="ic" style="background:rgba(245,165,36,.12);color:var(--amber2)">${icon("tag", 17)}</span><div><b>Prices</b><span>From the folder; one title can override</span></div></div>
+      <div class="prow"><span>Every movie (default)</span><span class="v">${icon("coins", 13)} 40</span></div>
+      <div class="prow"><span>New releases <small style="color:var(--muted)">· less than 6 months</small></span><span class="v">${icon("coins", 13)} 50</span></div>
+      <div class="prow"><span>Series · per season</span><span class="v">${icon("coins", 13)} 60</span></div>
+      <div class="prow"><span>Series · one episode</span><span class="v">${icon("coins", 13)} 8</span></div>
+      <div class="prow"><span>Kids</span><span class="v">${icon("coins", 13)} 30</span></div>
+      <div class="prow"><span>Documentary</span><span class="v">${icon("coins", 13)} 30</span></div>
+      <div class="prow" style="border:0"><span>4K copy</span><span class="v">+ 10</span></div>
+      <div style="margin-top:12px;padding:12px;border-radius:12px;background:var(--bg2);border:1px dashed var(--line2);font-size:12px;color:var(--muted);line-height:1.5">
+        1 credit = <b style="color:var(--text)">1 ERN</b>. Customers top up at the counter (cash) and pay with their IF Pay wallet or by scanning the shop's QR.
+      </div>
+    </div>
+    <div class="panel">
+      <div class="ph"><span class="ic" style="background:rgba(45,212,191,.12);color:var(--teal)">${icon("gift", 17)}</span><div><b>Reward rules</b><span>Points customers earn, turned into credit by the rules on the right</span></div></div>
+      ${rule("coins", "Cashback on every purchase", "Points worth a share of what the customer paid.", "10%", true)}
+      ${rule("wifi", "Welcome bonus", "When a customer signs up on the shop Wi-Fi and you add them to IF Pay.", "100 pts", true)}
+      ${rule("film", "Every 10th title free", "Counted per customer; the cheapest title in the cart is free.", "10th", true)}
+      ${rule("users", "Bring a friend", "When a friend they invited makes a first purchase.", "50 pts", true)}
+      ${rule("calendar", "Birthday gift", "On the birthday the customer gave when signing up.", "50 pts", false)}
+      ${rule("trending", "Double points weekend", "Fridays and Saturdays, on new releases only.", "× 2", false)}
+    </div>
+    <div class="panel">
+      <div class="ph"><span class="ic" style="background:rgba(139,92,246,.14);color:#c4b5fd">${icon("wallet", 17)}</span><div><b>Points into credit</b><span>How points become money in the wallet</span></div></div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:12px;padding:16px;border-radius:14px;background:linear-gradient(135deg,rgba(45,212,191,.12),rgba(245,165,36,.10));border:1px solid var(--line2)">
+        <div style="text-align:center"><div style="font-size:26px;font-weight:800;color:var(--teal)">100</div><div style="font-size:11px;color:var(--muted)">points</div></div>
+        <span style="color:var(--muted)">${icon("chevronright", 22)}</span>
+        <div style="text-align:center"><div style="font-size:26px;font-weight:800;color:var(--amber2)">10</div><div style="font-size:11px;color:var(--muted)">credits</div></div>
+      </div>
+      <div class="rule" style="border:0"><div style="flex:1"><b>Turn into credit automatically</b><small>Every time a customer reaches 500 points.</small></div><span class="toggle on"></span></div>
+      <div class="rule" style="padding-top:0"><div style="flex:1"><b>Points expire</b><small>12 months after they were earned.</small></div><span class="toggle on"></span></div>
+      <div class="label" style="margin-top:12px">Member levels</div>
+      <div class="tier"><span class="chip">Silver</span><span style="color:var(--muted)">from 500 points a year</span><b style="margin-left:auto">+ 2%</b></div>
+      <div class="tier"><span class="chip amber">${icon("star", 11, 0)} Gold</span><span style="color:var(--muted)">from 2,000 points a year</span><b style="margin-left:auto">+ 5%</b></div>
+    </div>
+  </div>
+  <div class="panel" style="margin-top:16px;padding:14px 18px;display:flex;align-items:center;gap:14px">
+    <span style="width:36px;height:36px;border-radius:10px;background:rgba(245,165,36,.12);color:var(--amber2);display:grid;place-items:center">${icon("info", 18)}</span>
+    <div style="font-size:13px;color:var(--text2)"><b style="color:var(--text)">Example:</b> Selam buys 3 titles for 160 credits and earns <b style="color:var(--teal)">16 points</b> (+5% Gold = 24). At 500 points, <b style="color:var(--amber2)">50 credits</b> go into her IF Pay wallet by themselves, and she gets a message on the portal.</div>
+  </div>
+`));
+hydrate();
+</script>
+</body></html>

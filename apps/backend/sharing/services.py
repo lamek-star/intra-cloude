@@ -23,10 +23,14 @@ import uuid
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.http import Http404
 from django.utils import timezone
 
 from accounts.models import User
+from app_platform.access import RESOURCE_TYPE_APP_INSTANCE, RESOURCE_TYPE_APP_MODEL
+from app_platform.inventory_authority import RESOURCE_TYPE_INVENTORY_OPERATIONS
+from app_platform.models import AppInstance, ModelDefinition
 from audit import services as audit
 from audit.models import AuditEvent
 from databases.connections import RESOURCE_TYPE_CONNECTED_DATABASE
@@ -71,6 +75,41 @@ LEVEL_PERMISSIONS: dict[str, dict[str, list[str]]] = {
         # Recommendation, Phase 8) — no write/admin level to grant.
         ShareGrant.Level.READ: ["database.read"],
     },
+    # App Platform Phase 3 step 4 ("basic permissions"): governs only an
+    # app instance's own metadata (its models/fields/relationships and
+    # whether they can be edited/schema-evolved) -- never the records an
+    # already-provisioned instance stores. Record data lives in a real
+    # tenant database table and is already shareable today via
+    # RESOURCE_TYPE_TENANT_DATABASE against that table directly
+    # (records.py's own resolve() checks database.read/database.write on
+    # it, not anything app_instance-scoped) -- a deliberate, pre-existing
+    # separation this step reuses rather than duplicates.
+    RESOURCE_TYPE_APP_INSTANCE: {
+        ShareGrant.Level.READ: ["app_instance.read"],
+        ShareGrant.Level.WRITE: ["app_instance.read", "app_instance.manage"],
+        ShareGrant.Level.ADMIN: [
+            "app_instance.read",
+            "app_instance.manage",
+            "app_instance.schema.manage",
+        ],
+    },
+    # Phase 7 "module scope": one model's records, not the whole instance
+    # (RESOURCE_TYPE_APP_INSTANCE, metadata only anyway) or the whole
+    # tenant database (RESOURCE_TYPE_TENANT_DATABASE, every model at once).
+    # No admin level -- schema changes stay instance-level, never per-model.
+    RESOURCE_TYPE_APP_MODEL: {
+        ShareGrant.Level.READ: ["database.read"],
+        ShareGrant.Level.WRITE: ["database.read", "database.write"],
+    },
+    # ADR-0017: business-operation authority over one installed application's stock. One level = one
+    # operation = one permission; nothing here implies read access to any model (that stays a separate,
+    # module-scoped grant), and no level implies another.
+    RESOURCE_TYPE_INVENTORY_OPERATIONS: {
+        ShareGrant.Level.SELL: ["inventory.sell"],
+        ShareGrant.Level.RECEIVE: ["inventory.receive"],
+        ShareGrant.Level.ADJUST: ["inventory.adjust"],
+        ShareGrant.Level.TRANSFER: ["inventory.transfer"],
+    },
 }
 
 _RESOURCE_ORG_FILTERS = {
@@ -82,6 +121,15 @@ _RESOURCE_ORG_FILTERS = {
     ).exists(),
     RESOURCE_TYPE_CONNECTED_DATABASE: lambda resource_id, org_id: ConnectedDatabase.objects.filter(
         id=resource_id, project__workspace__organization_id=org_id
+    ).exists(),
+    RESOURCE_TYPE_APP_INSTANCE: lambda resource_id, org_id: AppInstance.objects.filter(
+        id=resource_id, organization_id=org_id
+    ).exists(),
+    RESOURCE_TYPE_APP_MODEL: lambda resource_id, org_id: ModelDefinition.objects.filter(
+        id=resource_id, instance__organization_id=org_id
+    ).exists(),
+    RESOURCE_TYPE_INVENTORY_OPERATIONS: lambda resource_id, org_id: AppInstance.objects.filter(
+        id=resource_id, organization_id=org_id
     ).exists(),
 }
 
@@ -129,6 +177,16 @@ def _principal_user_ids(principal_type: str, *, user=None, team: Team | None = N
     raise SharingValidationError(f"unsupported principal_type: {principal_type!r}")
 
 
+def _active_shares(organization, resource_type: str, resource_id):
+    """Shares on one resource that still give access: not revoked and not expired."""
+    return ShareGrant.objects.filter(
+        organization=organization,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        revoked_at__isnull=True,
+    ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()))
+
+
 def create_share_grant(
     *,
     actor,
@@ -168,6 +226,13 @@ def create_share_grant(
         pass
     else:
         raise SharingValidationError(f"unsupported principal_type: {principal_type!r}")
+
+    # H13: the same share twice is refused -- two identical rows would look like two grants while
+    # revoking one of them used to remove the access both describe.
+    if _active_shares(organization, resource_type, resource_id).filter(
+        principal_type=principal_type, user=user, team=team, level=level
+    ).exists():
+        raise SharingValidationError("this is already shared with them at this level")
 
     target_users = list(
         User.objects.filter(
@@ -241,12 +306,25 @@ def revoke_share_grant(*, actor, share: ShareGrant, request_id: str = "") -> Non
         share.principal_type, user=share.user, team=share.team, organization=share.organization
     )
     permission_codes = LEVEL_PERMISSIONS[share.resource_type][share.level]
-    ResourceGrant.objects.filter(
+    # Access another active share on the same resource still gives (a team share and a personal
+    # one, a read and a write share) stays: only what no remaining share implies is removed.
+    still_given: set[tuple[str, str]] = set()
+    others = _active_shares(share.organization, share.resource_type, share.resource_id).exclude(id=share.id)
+    for other in others:
+        other_users = _principal_user_ids(
+            other.principal_type, user=other.user, team=other.team, organization=other.organization
+        )
+        for code in LEVEL_PERMISSIONS[other.resource_type][other.level]:
+            still_given.update((str(user_id), code) for user_id in other_users)
+    grants = ResourceGrant.objects.filter(
         user_id__in=target_user_ids,
         permission_id__in=permission_codes,
         organization=share.organization,
         resource_type=share.resource_type,
         resource_id=share.resource_id,
+    )
+    grants.filter(
+        id__in=[g.id for g in grants if (str(g.user_id), g.permission_id) not in still_given]
     ).delete()
 
     share.revoked_at = timezone.now()

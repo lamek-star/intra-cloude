@@ -18,9 +18,11 @@
     (`msiexec /x /quiet`, the common SCCM/Group Policy removal path)
     give no opportunity to confirm a destructive action or wait out a
     real pg_dump-backed backup cycle, so this package simply never
-    initiates either. Removing the Intra-Cloud deployment itself is a
+    initiates either. Removing the IntraForge deployment itself is a
     separate, deliberate action through the Control Center or
-    Uninstall-IntraCloudDistro.ps1 directly, not a side effect of
+    Uninstall-IntraCloudDistro.ps1 directly (script retains its
+    pre-rebrand file name in this pass — see the "not renamed here"
+    note by the ProgramData directory below), not a side effect of
     Programs and Features.
 
     UpgradeCode is fixed forever once this ships for real (it's the
@@ -28,14 +30,14 @@
     product," not a new install) — generated once via
     [guid]::NewGuid(), never regenerate it casually.
   -->
-  <Package Name="Intra-Cloud Control Center"
-           Manufacturer="Intra-Cloud"
+  <Package Name="IntraForge Control Center"
+           Manufacturer="IntraForge"
            Version="$(var.ProductVersion)"
            UpgradeCode="622B2C0F-8C41-4F9D-8039-76F99791EF6A"
            Language="1033"
            Scope="perMachine">
 
-    <MajorUpgrade DowngradeErrorMessage="A newer version of Intra-Cloud Control Center is already installed." />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of IntraForge Control Center is already installed." />
 
     <MediaTemplate EmbedCab="yes" />
 
@@ -56,7 +58,7 @@
          installer/README.md since Phase 16). Left as a known, explicit
          gap rather than shipped unverified; see
          docs/architecture/ROADMAP.md's Phase 19 entry. -->
-    <Launch Condition="Installed OR VersionNT64" Message="Intra-Cloud requires a 64-bit version of Windows." />
+    <Launch Condition="Installed OR VersionNT64" Message="IntraForge requires a 64-bit version of Windows." />
 
     <!-- Root-caused during this session's re-verification pass
          (docs/architecture/ROADMAP.md, "Re-verification pass
@@ -104,10 +106,10 @@
          LaunchConditions (Return value 3, exit 1603) with zero new
          files or registry state; the interactive wizard's UAC prompt,
          when declined, likewise leaves zero new state. -->
-    <Launch Condition="Installed OR Privileged" Message="Intra-Cloud Control Center requires administrator privileges to install. Right-click the installer and choose 'Run as administrator', or if installing silently, run msiexec from an elevated (Run as administrator) command prompt." />
+    <Launch Condition="Installed OR Privileged" Message="IntraForge Control Center requires administrator privileges to install. Right-click the installer and choose 'Run as administrator', or if installing silently, run msiexec from an elevated (Run as administrator) command prompt." />
 
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="Intra-Cloud">
+      <Directory Id="INSTALLFOLDER" Name="IntraForge">
         <Directory Id="ControlCenterFolder" Name="Control Center">
           <Directory Id="ScriptsFolder" Name="scripts" />
         </Directory>
@@ -115,7 +117,7 @@
     </StandardDirectory>
 
     <StandardDirectory Id="ProgramMenuFolder">
-      <Directory Id="ApplicationProgramsFolder" Name="Intra-Cloud" />
+      <Directory Id="ApplicationProgramsFolder" Name="IntraForge" />
     </StandardDirectory>
 
     <!-- Phase 18: the Control Center runs unelevated by design (only the
@@ -124,7 +126,19 @@
          actually write its own settings file into. Scoped to this one
          subdirectory, not the whole IntraCloud tree, so the WSL/VHDX
          storage under %ProgramData%\IntraCloud\wsl (Import-IntraCloudDistro.ps1's
-         default InstallPath) stays exactly as protected as it is today. -->
+         default InstallPath) stays exactly as protected as it is today.
+
+         Directory Name kept as "IntraCloud" (not "IntraForge") during
+         the IntraForge rebrand, deliberately: this %ProgramData% root is
+         shared with the WSL/VHDX storage path in
+         installer/scripts/Import-IntraCloudDistro.ps1's default
+         -InstallPath and control-center/Services/SettingsService.cs's
+         settings-file path — renaming only the WiX-created half would
+         split one shared tree into two, breaking the "same %ProgramData%
+         tree, same ACL scope" property SettingsService.cs's own comment
+         relies on. Rename this root together with those two files (and
+         the wider installer-script rename they're part of) as one
+         coordinated pass, not here. -->
     <StandardDirectory Id="CommonAppDataFolder">
       <Directory Id="IntraCloudProgramData" Name="IntraCloud">
         <Directory Id="ControlCenterDataFolder" Name="ControlCenter" />
@@ -134,7 +148,7 @@
     <ComponentGroup Id="ControlCenterComponents" Directory="ControlCenterFolder">
       <Component Id="ControlCenterExe" Guid="6E4B2B4E-6C2C-4E1B-9B1A-2F5B7B6E1A11">
         <File Id="ControlCenterExeFile"
-              Source="$(var.ControlCenterPublishDir)IntraCloudControlCenter.exe"
+              Source="$(var.ControlCenterPublishDir)IntraForgeControlCenter.exe"
               KeyPath="yes" />
       </Component>
     </ComponentGroup>
@@ -150,13 +164,13 @@
 
     <Component Id="StartMenuShortcut" Directory="ApplicationProgramsFolder" Guid="9A3E6C2D-1B4F-4C8A-8E2D-5A7C3B9F2E44">
       <Shortcut Id="ControlCenterStartMenuShortcut"
-                Name="Intra-Cloud Control Center"
-                Description="Manage your Intra-Cloud installation"
-                Target="[ControlCenterFolder]IntraCloudControlCenter.exe"
+                Name="IntraForge Control Center"
+                Description="Manage your IntraForge installation"
+                Target="[ControlCenterFolder]IntraForgeControlCenter.exe"
                 WorkingDirectory="ControlCenterFolder" />
       <RemoveFolder Id="RemoveApplicationProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />
       <RegistryValue Root="HKCU"
-                      Key="Software\Intra-Cloud\ControlCenter"
+                      Key="Software\IntraForge\ControlCenter"
                       Name="installed"
                       Type="integer"
                       Value="1"
@@ -175,14 +189,14 @@
       </CreateFolder>
       <RemoveFolder Id="RemoveControlCenterDataFolder" Directory="ControlCenterDataFolder" On="uninstall" />
       <RegistryValue Root="HKLM"
-                      Key="Software\Intra-Cloud\ControlCenter"
+                      Key="Software\IntraForge\ControlCenter"
                       Name="DataFolderProvisioned"
                       Type="integer"
                       Value="1"
                       KeyPath="yes" />
     </Component>
 
-    <Feature Id="ControlCenterFeature" Title="Intra-Cloud Control Center" Level="1">
+    <Feature Id="ControlCenterFeature" Title="IntraForge Control Center" Level="1">
       <ComponentGroupRef Id="ControlCenterComponents" />
       <ComponentGroupRef Id="ScriptsComponents" />
       <ComponentRef Id="StartMenuShortcut" />
@@ -194,12 +208,19 @@
          calls for. WIXUI_INSTALLDIR must name the top-level directory
          the browse dialog actually controls; pointing it at
          ControlCenterFolder directly (rather than the INSTALLFOLDER
-         parent) would let a user browse to change "Intra-Cloud\Control
-         Center" independently of "Intra-Cloud", which isn't a
+         parent) would let a user browse to change "IntraForge\Control
+         Center" independently of "IntraForge", which isn't a
          meaningful choice here. INSTALLFOLDER is the one directory
          users should be choosing. -->
     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
     <ui:WixUI Id="WixUI_InstallDir" />
+    <!-- Add/Remove Programs icon — the same generated brand icon the
+         Control Center exe itself embeds (control-center/Resources/
+         icon.ico, csproj's ApplicationIcon), kept as a second copy here
+         since WiX and MSBuild each need their own reference to a file,
+         not a shared path across the two projects. -->
+    <Icon Id="ProductIcon" SourceFile="..\assets\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
     <!-- Relative to this .wxs file's own project directory
          (installer/wix/), not an MSBuild property — .wxs files don't
          process $(MSBuildThisFileDirectory)-style MSBuild property

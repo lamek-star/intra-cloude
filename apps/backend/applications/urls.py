@@ -33,4 +33,9 @@ urlpatterns = [
         views.ApplicationResourceGrantListCreateView.as_view(),
         name="application-resource-grant-list-create",
     ),
+    path(
+        "applications/<uuid:application_id>/resource-grants/<uuid:grant_id>/",
+        views.ApplicationResourceGrantDetailView.as_view(),
+        name="application-resource-grant-detail",
+    ),
 ]

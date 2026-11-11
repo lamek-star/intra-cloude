@@ -1,0 +1,64 @@
+/* The welcome tour inside the web app (first sign-in). Inter, DESIGN.md tokens, lucide icons. */
+:root {
+  --navy: #172554; --brand: #2563eb; --brand-700: #1d4ed8; --brand-50: #eff6ff; --brand-100: #dbeafe;
+  --teal: #14b8a6; --teal-700: #0f766e; --teal-50: #f0fdfa; --green: #16a34a; --green-700: #15803d; --green-50: #f0fdf4;
+  --amber: #d97706; --amber-50: #fffbeb; --text: #0f172a; --text-2: #475569; --text-3: #64748b;
+  --border: #e2e8f0; --border-strong: #cbd5e1; --sunken: #f1f5f9; --canvas: #f8fafc;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Inter, "Segoe UI", system-ui, sans-serif; color: var(--text); -webkit-font-smoothing: antialiased; overflow: hidden; }
+svg { display: inline-block; vertical-align: middle; flex: none; }
+.mono { font-family: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; }
+
+/* The app behind the tour, dimmed */
+.app { position: absolute; inset: 0; display: grid; grid-template-columns: 232px 1fr; background: var(--canvas); }
+.rail { background: var(--navy); padding: 18px 12px; display: flex; flex-direction: column; gap: 2px; }
+.rail img { height: 26px; align-self: flex-start; margin: 2px 8px 22px; }
+.rail div { color: rgba(255,255,255,.72); font-size: 14px; padding: 8px 10px; border-radius: 6px; display: flex; gap: 10px; align-items: center; }
+.rail div.on { background: var(--brand); color: #fff; }
+.page { padding: 26px 32px; }
+.page h1 { font-size: 24px; font-weight: 600; letter-spacing: -.02em; }
+.page .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 20px; }
+.page .c { height: 120px; background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+.page .c b { display: block; height: 10px; width: 40%; background: var(--sunken); border-radius: 4px; }
+.page .c i { display: block; height: 22px; width: 60%; background: var(--border); border-radius: 4px; margin-top: 14px; }
+.page .wide { height: 300px; margin-top: 16px; background: #fff; border: 1px solid var(--border); border-radius: 10px; }
+.scrim { position: absolute; inset: 0; background: rgba(15, 23, 42, .55); backdrop-filter: blur(2px); display: grid; place-items: center; }
+
+/* The tour dialog */
+.tour { width: 880px; height: 520px; background: #fff; border-radius: 16px; overflow: hidden; display: grid; grid-template-columns: 410px 1fr; position: relative;
+  box-shadow: 0 0 0 1px rgba(15,23,42,.08), 0 30px 80px rgba(15,23,42,.35); }
+.art { position: relative; overflow: hidden; background: radial-gradient(320px 260px at 0% 0%, #dbeafe, transparent 70%), radial-gradient(300px 260px at 100% 100%, #ccfbf1, transparent 70%), linear-gradient(160deg, #f5f8ff, #f2fbf9); }
+.art .mesh { position: absolute; inset: 0; opacity: .5; }
+.art .mesh svg g:first-child { stroke: #c7d7f5; } .art .mesh svg g:last-child { fill: #bcd0f3; }
+.content { padding: 34px 38px 26px 38px; display: flex; flex-direction: column; }
+.close { position: absolute; top: 14px; right: 14px; width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; color: var(--text-3); }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--brand-700); }
+.content h2 { font-size: 28px; line-height: 1.2; font-weight: 650; letter-spacing: -.025em; margin-top: 10px; }
+.content .body { font-size: 15px; line-height: 1.6; color: var(--text-2); margin-top: 12px; }
+.points { margin-top: 22px; display: flex; flex-direction: column; gap: 12px; }
+.point { display: flex; gap: 12px; align-items: center; font-size: 14px; color: var(--text); }
+.point .ic { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; background: var(--brand-50); color: var(--brand-700); }
+.nav { margin-top: auto; display: flex; align-items: center; gap: 10px; }
+.dots { display: flex; gap: 6px; margin-right: auto; align-items: center; }
+.dots i { width: 7px; height: 7px; border-radius: 99px; background: var(--border-strong); }
+.dots i.on { width: 22px; background: var(--brand); }
+.btn { height: 38px; padding: 0 16px; border-radius: 8px; font: 600 14px Inter, "Segoe UI", sans-serif; display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border-strong); background: #fff; color: var(--text); }
+.btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+.btn.link { border-color: transparent; color: var(--text-3); padding: 0 8px; }
+
+/* Illustration building blocks */
+.card { position: absolute; background: #fff; border-radius: 12px; box-shadow: 0 0 0 1px rgba(15,23,42,.06), 0 14px 34px rgba(30,58,138,.16); }
+.chip { position: absolute; background: #fff; border-radius: 99px; padding: 7px 12px 7px 8px; display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600;
+  box-shadow: 0 0 0 1px rgba(15,23,42,.06), 0 8px 20px rgba(30,58,138,.14); white-space: nowrap; }
+.chip .d { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; }
+.blue { background: var(--brand-50); color: var(--brand-700); } .teal { background: var(--teal-50); color: var(--teal-700); }
+.green { background: var(--green-50); color: var(--green-700); } .amber { background: var(--amber-50); color: #b45309; }
+.slate { background: var(--sunken); color: var(--text-2); }
+.row { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 8px 0; border-top: 1px solid var(--border); color: var(--text); }
+.row .m { margin-left: auto; color: var(--text-3); font-size: 11px; }
+.th { font-size: 10px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text-3); }
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; border-radius: 99px; padding: 3px 9px; }
+.avatar { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 11px; font-weight: 700; }
+.toggle { width: 34px; height: 20px; border-radius: 99px; background: var(--border-strong); position: relative; }
+.toggle::after { content: ""; position: absolute; left: 3px; top: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); }

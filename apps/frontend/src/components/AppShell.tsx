@@ -1,97 +1,244 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Building2, ChevronDown, Compass, LayoutDashboard, LayoutGrid, LogOut, Search, type LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { prefetchRoute } from "@/lib/queries";
+import { LicenceBanner } from "./LicenceBanner";
+import { ConfirmProvider } from "@/components/ConfirmProvider";
+import { CommandPalette } from "@/components/CommandPalette";
+import { PageTransition } from "@/components/PageTransition";
+import { useDialogA11y } from "@/lib/use-dialog-a11y";
+import { api } from "@/lib/api";
+import { COPYRIGHT, versionLabel } from "@/lib/brand";
+import { markTourSeen, readTourState, shouldShowTour } from "@/lib/tour";
+import { WelcomeTour } from "@/components/WelcomeTour";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(menuOpen, () => setMenuOpen(false), accountMenuRef);
+  // The welcome tour opens by itself once per person on this browser (lib/tour.ts). This shell only renders for a signed-in
+  // user (app/(app)/layout.tsx), so the decision is made once, on the first render.
+  const [tourOpen, setTourOpen] = useState(() => {
+    if (!user) return false;
+    const { seen, request } = readTourState(user.id);
+    return shouldShowTour(seen, request);
+  });
+  const { data: about } = useQuery({
+    queryKey: ["system", "version"],
+    queryFn: () => api.get<{ version: string }>("/system/version/"),
+    staleTime: Infinity,
+    retry: false,
+  });
+
+  // Setup's "no tour" wish is used up once the person is signed in.
+  const userId = user?.id;
+  useEffect(() => {
+    if (userId && !tourOpen && readTourState(userId).request === "off") markTourSeen(userId);
+  }, [userId, tourOpen]);
+
+  function closeTour() {
+    if (userId) markTourSeen(userId);
+    setTourOpen(false);
+  }
+
+  async function handleLogout() {
+    setMenuOpen(false);
+    await logout();
+    router.push("/login");
+  }
 
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-100">
-      <aside className="hidden w-56 shrink-0 border-r border-white/10 bg-slate-950/60 sm:flex sm:flex-col">
-        <div className="flex h-14 items-center gap-2 border-b border-white/10 px-4">
-          <div className="flex h-6 w-6 items-center justify-center rounded bg-indigo-500 text-xs font-bold text-white">
-            P
+    <ConfirmProvider>
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[70] focus:rounded-lg focus:bg-brand-600 focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-white"
+      >
+        Skip to main content
+      </a>
+      <CommandPalette open={paletteOpen} setOpen={setPaletteOpen} />
+      <WelcomeTour open={tourOpen} onClose={closeTour} version={about?.version} />
+      <div className="flex min-h-screen bg-surface-canvas text-text-primary">
+        <aside className="hidden w-60 shrink-0 flex-col bg-navy p-4 sm:flex">
+          <div className="mb-6 flex items-center gap-2.5 px-1">
+            {/* eslint-disable-next-line @next/next/no-img-element -- fixed-size static brand asset, not user/CMS content; next/image's optimizer needs `sharp` in production, not worth the dependency for a handful of pre-sized PNGs. */}
+            <img src="/brand/icon-64.png" alt="" width={32} height={32} className="h-8 w-8 shrink-0" />
+            <span className="text-sm font-semibold text-white">IntraForge</span>
           </div>
-          <span className="text-sm font-semibold text-white">Private Data Cloud</span>
-        </div>
-        <nav className="flex flex-1 flex-col gap-0.5 p-3 text-sm">
-          <SidebarLink href="/orgs" icon="🏢">
-            Organizations
-          </SidebarLink>
-        </nav>
-        <div className="border-t border-white/10 p-3 text-[11px] text-slate-600">
-          Self-hosted · local-first
-        </div>
-      </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 px-4 sm:px-6">
-          <Link href="/orgs" className="text-sm font-semibold text-white sm:hidden">
-            Private Data Cloud
-          </Link>
-          <div className="hidden sm:block" />
-          <div className="relative">
-            <button
-              onClick={() => setMenuOpen((v) => !v)}
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-300 hover:bg-white/5"
-            >
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-500/20 text-xs font-medium text-indigo-300">
-                {user?.email.slice(0, 1).toUpperCase()}
-              </span>
-              <span className="hidden sm:inline">{user?.email}</span>
-              <span className="text-slate-600">▾</span>
-            </button>
-            {menuOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                <div className="absolute right-0 z-20 mt-1 w-48 rounded-md border border-white/10 bg-slate-900 py-1 shadow-xl">
-                  <div className="border-b border-white/10 px-3 py-2 text-xs text-slate-500">
-                    Signed in as
-                    <div className="truncate text-slate-300">{user?.email}</div>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      setMenuOpen(false);
-                      await logout();
-                      router.push("/login");
-                    }}
-                    className="block w-full px-3 py-2 text-left text-sm text-slate-300 hover:bg-white/5 hover:text-white"
-                  >
-                    Log out
-                  </button>
+          <button
+            onClick={() => setPaletteOpen(true)}
+            className="mb-3 flex items-center gap-2.5 rounded-xl bg-white/5 px-3 py-2 text-left text-sm text-slate-400 hover:bg-white/10 hover:text-slate-200"
+          >
+            <Search className="h-4 w-4" />
+            <span className="flex-1">Search…</span>
+            <kbd className="rounded border border-white/10 bg-black/20 px-1.5 py-0.5 text-[10px]">Ctrl K</kbd>
+          </button>
+
+          <nav aria-label="Main navigation" className="flex flex-1 flex-col gap-1 text-sm">
+            <SidebarLink href="/dashboard" icon={LayoutDashboard}>
+              Dashboard
+            </SidebarLink>
+            <SidebarLink href="/apps" icon={LayoutGrid}>
+              Apps
+            </SidebarLink>
+            <SidebarLink href="/orgs" icon={Building2}>
+              Organizations
+            </SidebarLink>
+          </nav>
+
+          {user && (
+            <div className="mt-4 space-y-1 border-t border-white/10 pt-4">
+              <Link
+                href="/account"
+                aria-current={pathname === "/account" ? "page" : undefined}
+                className="flex items-center gap-2.5 rounded-xl bg-white/5 px-2.5 py-2.5 hover:bg-white/10"
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-500/25 text-xs font-semibold text-brand-100">
+                  {user.email.slice(0, 1).toUpperCase()}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium text-white">
+                    {user.first_name || "Your account"}
+                  </p>
+                  <p className="truncate text-[11px] text-slate-400">{user.email}</p>
                 </div>
-              </>
-            )}
-          </div>
-        </header>
-        <main className="flex-1 overflow-y-auto p-4 sm:p-8">
-          <div className="mx-auto max-w-6xl">{children}</div>
-        </main>
+              </Link>
+              <button
+                onClick={handleLogout}
+                className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-red-300 hover:bg-white/5 hover:text-red-200"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                Log out
+              </button>
+            </div>
+          )}
+          <button
+            onClick={() => setTourOpen(true)}
+            className="mt-1 flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-slate-300 hover:bg-white/5 hover:text-white"
+          >
+            <Compass aria-hidden="true" className="h-3.5 w-3.5" />
+            Take the tour
+          </button>
+          {/* Two lines: the narrow rail would otherwise break the owner's name at its hyphen. */}
+          <p className="mt-3 px-2.5 text-[11px] leading-snug text-on-chrome-muted">
+            <span className="block">{versionLabel(about?.version)}</span>
+            <span className="block whitespace-nowrap">{COPYRIGHT}</span>
+          </p>
+        </aside>
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="flex h-14 shrink-0 items-center justify-between border-b border-border-subtle bg-white px-4 sm:hidden">
+            <Link href="/orgs" className="flex items-center gap-2 text-sm font-semibold text-text-primary">
+              {/* eslint-disable-next-line @next/next/no-img-element -- see rail logo above */}
+              <img src="/brand/icon-48.png" alt="" width={24} height={24} className="h-6 w-6 shrink-0" />
+              IntraForge
+            </Link>
+            <div className="relative">
+              <button
+                onClick={() => setMenuOpen((v) => !v)}
+                aria-label="Account menu"
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+              >
+                <span
+                  aria-hidden="true"
+                  className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-50 text-xs font-medium text-brand-600"
+                >
+                  {user?.email.slice(0, 1).toUpperCase()}
+                </span>
+                <ChevronDown aria-hidden="true" className="h-3.5 w-3.5 text-slate-400" />
+              </button>
+              {menuOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                  <div
+                    ref={accountMenuRef}
+                    role="menu"
+                    aria-label="Account menu"
+                    tabIndex={-1}
+                    className="absolute right-0 z-20 mt-1 w-48 rounded-xl border border-slate-200 bg-white py-1 shadow-xl outline-none"
+                  >
+                    <div className="border-b border-slate-100 px-3 py-2 text-xs text-text-muted">
+                      Signed in as
+                      <div className="truncate text-slate-700">{user?.email}</div>
+                    </div>
+                    <Link
+                      role="menuitem"
+                      href="/account"
+                      onClick={() => setMenuOpen(false)}
+                      className="block w-full px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    >
+                      Your account
+                    </Link>
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setTourOpen(true);
+                      }}
+                      className="block w-full px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    >
+                      Take the tour
+                    </button>
+                    <button
+                      role="menuitem"
+                      onClick={handleLogout}
+                      className="block w-full px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    >
+                      Log out
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </header>
+          <LicenceBanner />
+          <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto p-4 sm:p-8 outline-none">
+            <div className="mx-auto max-w-6xl">
+              <PageTransition>{children}</PageTransition>
+            </div>
+          </main>
+        </div>
       </div>
-    </div>
+    </ConfirmProvider>
   );
 }
 
 function SidebarLink({
   href,
-  icon,
+  icon: Icon,
   children,
 }: {
   href: string;
-  icon: string;
+  icon: LucideIcon;
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
+  const queryClient = useQueryClient();
+  const active = pathname === href || pathname?.startsWith(`${href}/`);
+  // Pointing at (or tabbing to) the link starts loading the page's data, so it is often there by the click.
+  const preload = () => prefetchRoute(queryClient, href);
   return (
     <Link
       href={href}
-      className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-slate-300 hover:bg-white/5 hover:text-white"
+      onPointerEnter={preload}
+      onFocus={preload}
+      aria-current={active ? "page" : undefined}
+      className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors ${
+        active ? "bg-nav-active text-white shadow-sm" : "text-slate-300 hover:bg-white/5 hover:text-white"
+      }`}
     >
-      <span className="text-base leading-none">{icon}</span>
+      <Icon aria-hidden="true" className="h-4 w-4" strokeWidth={2} />
       {children}
     </Link>
   );

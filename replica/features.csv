@@ -1,0 +1,64 @@
+feature,area,priority,original,clone,notes
+Sign in with email and password,identity,must,yes,yes,S01 /login (live)
+TOTP MFA enrol and challenge in the UI,identity,must,yes,yes,"B1 /account: turn on with setup key + code, turn off with current code (25e31cd). Enrol no longer resets active MFA (d9e7e10)"
+Organizations with sub-units (accounts / OUs),identity,must,yes,yes,S18 orgs > workspaces > projects + units (live)
+Invite a user and assign a role,identity,must,yes,yes,F4: an application's sign-in can no longer get an org role (9caa0dd)
+Groups of users (teams),identity,must,yes,yes,S15 /orgs/[id]/teams (live; empty state)
+Named roles from a permission catalog,identity,must,yes,yes,S16 by design capability codes not JSON policies
+Scoped API keys for programs with rotate / revoke / last used,identity,must,yes,yes,F05 S17 per application page (live); org-wide key list is a placeholder
+Create a bucket,storage,must,yes,yes,F01 S06
+Upload many files at once,storage,must,yes,yes,S08
+Browse folders with breadcrumbs,storage,must,yes,yes,"B2 folder rows, folder path, New folder, upload into folder (a1a0d54); scope check + 409 on duplicates (41f676a)"
+Search objects by name,storage,must,yes,yes,S07 filename filter (live)
+Download a file,storage,must,yes,yes,S07
+Delete with recovery (soft delete),storage,must,yes,yes,B3 Files/Trash switch + Restore (a1a0d54); quarantined files can no longer be restored (e11031e)
+Server-side content-type detection and malware scan,storage,must,partial,yes,IntraForge ahead: sniffed MIME + optional ClamAV
+Create a database,databases,must,yes,yes,F06 S21 instant schema per DB
+Create tables and typed columns with required/unique,databases,must,yes,yes,S23
+Browse and edit rows,databases,must,yes,yes,S23 by design grid not raw SQL
+Export table to CSV,databases,must,yes,yes,S23
+Immutable audit log with filters,observability,must,yes,yes,F09 S31 live: resource/action/result filters + Request ID; no date or user filter
+Scheduled encrypted backups with restore test,backup,must,yes,yes,F10 nightly 19:00 + Sunday restore test
+Restore with preview and safety backup,backup,must,yes,yes,F10 Control Center Restore
+Health status with per-check detail,observability,must,yes,yes,F3 object_storage in /readyz + per-app lines on dashboard (bf8582e)
+Unified search across services and resources,console,should,yes,partial,S03 Ctrl K finds nav pages only (L5)
+Console home with recent items and widgets,console,should,yes,yes,S02 /dashboard counts + health + last 8 events (live)
+Object detail page with properties and versions,storage,should,yes,no,S09
+Bucket versioning toggle and version restore UI,storage,should,yes,partial,"B4 version list + upload new version (f1e0575, a1a0d54); no toggle, no download/restore of an old version"
+Expiring share link for one file (presigned),storage,should,yes,no,F02 external sharing stubbed; hard part 1
+Folder (drag-drop) upload with per-file status,storage,should,yes,no,S08
+Share a bucket or DB with one person (resource grant),storage,should,yes,yes,Sharing panel on bucket and DB pages (live)
+Deploy a small app on your data (functions),compute,should,yes,yes,F07 S25 Node zip + intraforge.json in a locked container (live)
+App logs and test invoke for hosted apps,compute,should,yes,no,S27 card has no logs / test / env vars; hard part 2
+App env vars and secrets per environment,compute,should,yes,yes,S29 environments (live); Production typed development (L3)
+API request logs,observability,should,yes,no,S32 placeholder; audit log covers actions
+Static website hosting with versions and rollback,compute,should,yes,yes,F08 S28 zip upload + versions + take offline (live)
+Webhooks with signed deliveries,integration,should,yes,yes,F2: page now says at-least-once (c503a23)
+OAuth provider for your own apps (Cognito-like),identity,should,yes,no,S19 placeholder live; oauth_provider models exist (L1)
+Backups visible in the web UI,backup,should,yes,no,S34 desktop only (confirmed live: not in web nav)
+Read-only connection to an external database,databases,should,yes,yes,S24 Postgres only
+CSV import with column mapping,databases,should,yes,yes,S37
+Usage page with quotas,billing,should,yes,no,F12 S35 placeholder live
+Readable names in app runtime databases,databases,should,yes,yes,F8 labels from the app's definition on database and table pages (9c1e1ef)
+Org-wide storage and database lists,console,should,yes,no,S40 Developer Storage/Database placeholders
+Lifecycle rules (expire / delete old files),storage,could,yes,no,S12 hard part 3
+Tags on buckets and databases,storage,could,yes,no,S10
+Event notifications on file upload,storage,could,yes,no,S30 webhook events are app records only
+Typed confirmation before deleting a bucket or DB,console,could,yes,no,component: confirm-delete modal (Drop database button seen; confirm not tested)
+Budgets and usage alerts,billing,could,yes,no,S35
+Metrics dashboard in the web UI,observability,could,yes,no,S33 Prometheus exists; no UI
+Analytics dashboards on table data,analytics,could,yes,yes,S38 Dashboards panel on DB page (live)
+App catalogue with install and upgrade,marketplace,could,yes,yes,S36 /apps + app templates (live)
+Opt-in internet exposure with off switch,network,could,yes,partial,F13 kit-only Cloudflare tunnel gate; not seen in web UI
+Connected databases beyond Postgres,databases,could,yes,no,Connector protocol is engine-agnostic
+Developer hub with docs and SDKs,developer,could,partial,yes,S40 IntraForge ahead (6 of 12 tabs real)
+Per-application access summary (can / cannot),identity,could,partial,yes,S17 IntraForge ahead of IAM console (live)
+Regions and availability zones,infrastructure,skip,yes,skip,AWS global infrastructure; single PC by design
+Durability SLAs (eleven nines),infrastructure,skip,yes,skip,AWS infrastructure; IntraForge relies on backup discipline
+EC2 virtual machines and VPC networking,compute,skip,yes,skip,outside the slice; needs a hypervisor
+IAM JSON policy language with conditions,identity,skip,yes,skip,by design capability model instead
+Raw SQL query editor on tenant data,databases,skip,yes,skip,by design no unreviewed dynamic SQL
+Real-money pay-as-you-go billing,billing,skip,yes,skip,regulated; IntraForge Pay is simulated credits
+AWS Marketplace partner network,marketplace,skip,yes,skip,their partner network is not part of the product
+Compliance attestations (SOC PCI HIPAA),compliance,skip,yes,skip,earned by audit not built; pharmacy needs its own review
+AWS names logos and console look,brand,skip,yes,skip,trademarks; borrow behaviour only

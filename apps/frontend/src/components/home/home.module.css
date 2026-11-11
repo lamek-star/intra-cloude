@@ -1,0 +1,144 @@
+/* The home page's motion (app/page.tsx, components/home/*). Every animation ends in its final state ("both"), so with
+   reduced motion (globals.css shortens all animations to ~0) each element simply appears where it belongs. */
+
+/* ---- Hero backdrop ------------------------------------------------------------------------------------------------ */
+.glow {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(60px);
+  opacity: 0.55;
+  animation: drift 18s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+@keyframes drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(40px, -30px, 0) scale(1.08); }
+}
+.meshLine {
+  stroke-dasharray: 4 6;
+  animation: dash 14s linear infinite;
+}
+@keyframes dash {
+  to { stroke-dashoffset: -200; }
+}
+.pulse {
+  animation: pulse 3.2s ease-in-out infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.45; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.35); }
+}
+
+/* ---- Entrances ---------------------------------------------------------------------------------------------------- */
+.rise {
+  animation: rise 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px); }
+}
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 700ms cubic-bezier(0.16, 1, 0.3, 1), transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.revealed {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; }
+}
+
+/* ---- The demo window ---------------------------------------------------------------------------------------------- */
+.window {
+  animation: windowIn 900ms cubic-bezier(0.16, 1, 0.3, 1) 150ms both;
+}
+@keyframes windowIn {
+  from { opacity: 0; transform: perspective(1400px) rotateX(8deg) translateY(28px) scale(0.97); }
+}
+/* Paused: the looping motion stops, but a scene's one-time entrance still finishes -- otherwise choosing a scene while
+   paused would leave its heading frozen at its first, invisible frame. */
+.paused *:not(.sceneIn):not(.pop) {
+  animation-play-state: paused !important;
+}
+.sceneIn {
+  animation: sceneIn 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes sceneIn {
+  from { opacity: 0; transform: translateY(6px); }
+}
+.pop {
+  animation: pop 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes pop {
+  from { opacity: 0; transform: translateY(8px) scale(0.96); }
+}
+.dropIn {
+  animation: dropIn 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes dropIn {
+  from { opacity: 0; transform: translateY(-40px) rotate(-4deg) scale(0.9); }
+}
+.fill {
+  transform-origin: left;
+  animation: fill 1600ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+@keyframes fill {
+  from { transform: scaleX(0); }
+}
+.fadeOut {
+  animation: fadeOut 300ms ease-in both;
+}
+@keyframes fadeOut {
+  to { opacity: 0; transform: scale(0.96); height: 0; margin: 0; padding: 0; }
+}
+.blink {
+  animation: blink 1s steps(1) infinite;
+}
+@keyframes blink {
+  50% { opacity: 0; }
+}
+.healthOn {
+  animation: healthOn 400ms ease-out both;
+}
+@keyframes healthOn {
+  from { background: #f1f5f9; color: #94a3b8; }
+}
+.ring {
+  animation: ring 600ms ease-out both;
+}
+@keyframes ring {
+  from { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.45); }
+  to { box-shadow: 0 0 0 10px rgba(37, 99, 235, 0); }
+}
+
+/* The pointer moves between targets set per scene (left/top transitions); its click is a short press. */
+.cursor {
+  position: absolute;
+  z-index: 30;
+  transition: left 900ms cubic-bezier(0.65, 0, 0.35, 1), top 900ms cubic-bezier(0.65, 0, 0.35, 1);
+  filter: drop-shadow(0 2px 3px rgba(15, 23, 42, 0.35));
+  pointer-events: none;
+}
+.press {
+  animation: press 260ms ease-out;
+}
+@keyframes press {
+  50% { transform: scale(0.82); }
+}
+
+/* ---- Setup walkthrough ---------------------------------------------------------------------------------------------- */
+.shot {
+  animation: shot 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes shot {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+}
+.float {
+  animation: float 6s ease-in-out infinite alternate;
+}
+@keyframes float {
+  to { transform: translateY(-8px); }
+}

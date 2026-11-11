@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Movie Shop · Catalogue</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="ms.css"><script src="ms.js"></script><script src="shell.js"></script>
+<style>
+  .folders { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-top: 12px; }
+  .folder { border-radius: 14px; padding: 10px; background: var(--surface); border: 1px solid var(--line); display: flex; gap: 10px; align-items: center; }
+  .folder.on { border-color: var(--amber); box-shadow: 0 0 0 3px rgba(245,165,36,.15); background: linear-gradient(180deg, rgba(245,165,36,.08), var(--surface)); }
+  .folder .stack { position: relative; width: 44px; height: 58px; flex: none; }
+  .folder .stack .cover { position: absolute; width: 38px; border-radius: 6px; }
+  .folder .stack .cover:first-child { transform: rotate(-8deg); left: 0; top: 2px; opacity: .7; }
+  .folder .stack .cover:last-child { left: 6px; top: 0; }
+  .folder .stack .cover-title, .folder .stack .cover-price, .folder .stack .cover-badge { display: none; }
+  .folder b { font-size: 14px; display: block; }
+  .folder span { font-size: 11.5px; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 18px 16px; margin-top: 14px; }
+  .card .meta { margin-top: 8px; }
+  .card .meta b { font-size: 13px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .meta span { font-size: 11.5px; color: var(--muted); }
+  .card.hover .cover { transform: scale(1.06) translateY(-6px); box-shadow: 0 24px 44px -14px rgba(0,0,0,.9), 0 0 0 2px var(--amber); z-index: 3; }
+  .card { position: relative; }
+  .pop { position: absolute; left: -12px; width: 250px; top: 205px; z-index: 5; background: var(--raised); border: 1px solid var(--line2); border-radius: 14px; padding: 12px; box-shadow: 0 24px 50px -16px rgba(0,0,0,.9); }
+  .pop .row { display: flex; gap: 6px; margin-top: 10px; }
+</style></head>
+<body>
+<script>
+const cards = MOVIES.slice(0, 12).map((m, i) => `
+  <div class="card ${i === 1 ? "hover" : ""}">
+    ${cover(m)}
+    <div class="meta"><b>${m.t}</b><span>${m.y} · ${m.d} · ${m.s}</span></div>
+    ${i === 1 ? `<div class="pop">
+        <div style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text2)"><span style="color:var(--amber2)">${icon("star", 12, 0)}</span><b style="color:var(--text)">${m.r}</b> · ${m.g} · ${m.y} · ${m.d}</div>
+        <p style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.45">A harbor pilot uncovers a smuggling ring and has one night to warn the port.</p>
+        <div class="row"><span class="btn sm" style="flex:1">${icon("info", 13)} Details</span><span class="btn sm amber" style="flex:1.3">${icon("plus", 13, 2.6)} Copy to drive</span></div>
+      </div>` : ""}
+  </div>`).join("");
+document.write(shell("Catalogue", `
+  <div style="display:flex;align-items:flex-end;justify-content:space-between">
+    <div><div class="label" style="color:var(--amber2)">A · Folders</div><div class="h1" style="margin-top:4px">Movies drive (D:)</div>
+      <div class="sub">Arranged automatically from the folder and file names in <span style="color:var(--text2)">D:\\Movies</span> · last scan 2 min ago</div></div>
+    <div style="display:flex;gap:8px"><span class="btn">${icon("refresh", 15)} Scan again</span><span class="btn">${icon("folder", 15)} Choose folder</span></div>
+  </div>
+  <div class="folders">${FOLDERS.map((f) => `<div class="folder ${f.n === "Action" ? "on" : ""}"><div class="stack">${cover(f.m, { price: false })}${cover(MOVIES[(f.c % 9) + 1], { price: false })}</div><div><b>${f.n}</b><span>${f.c} titles</span></div></div>`).join("")}</div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-top:22px">
+    <div style="display:flex;align-items:center;gap:12px"><span class="label" style="color:var(--amber2)">B · Inside the folder</span><span style="font-size:17px;font-weight:700">Action</span><span class="chip">318 movies</span></div>
+    <div style="display:flex;gap:8px"><span class="chip">${icon("filter", 13)} Newest first</span><span class="chip">${icon("tag", 13)} All prices</span><span class="chip amber">${icon("usb", 13)} Copy to: Kingston USB (E:)</span></div>
+  </div>
+  <div class="grid">${cards}</div>
+`));
+hydrate();
+</script>
+</body></html>

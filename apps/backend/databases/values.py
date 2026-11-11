@@ -59,9 +59,17 @@ def validate_and_convert(value, data_type: str):
     if data_type == DBColumn.DataType.DATETIME:
         if not isinstance(value, str):
             raise RowValueError(f"expected an ISO datetime string, got {value!r}")
+        # The API returns a stored value with an explicit UTC marker ("...T08:30:00Z"); a caller that
+        # sends back what it read must not be refused (H12). Only UTC is accepted this way -- other
+        # offsets and fractional seconds stay outside the naive-UTC, whole-second contract.
+        naive = value
+        for utc_marker in ("Z", "+00:00"):
+            if naive.endswith(utc_marker):
+                naive = naive[: -len(utc_marker)]
+                break
         for fmt in DATETIME_FORMATS:
             try:
-                return datetime.strptime(value, fmt)
+                return datetime.strptime(naive, fmt)
             except ValueError:
                 continue
         raise RowValueError(f"expected an ISO datetime string, got {value!r}")

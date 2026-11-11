@@ -64,9 +64,7 @@ def has_permission(user, permission_code: str, organization_id=None, resource=No
         return True
     if resource is not None:
         resource_type, resource_id = resource
-        return has_resource_permission(
-            user, permission_code, organization_id, resource_type, resource_id
-        )
+        return has_resource_permission(user, permission_code, organization_id, resource_type, resource_id)
     return False
 
 
@@ -124,6 +122,48 @@ def assign_role(*, user, role_slug: str, organization=None, granted_by=None) -> 
     return assignment
 
 
+LAST_ADMINISTRATOR_ROLE_SLUG = "organization-administrator"
+
+
+def remove_role(*, user, role_slug: str, organization, removed_by) -> bool:
+    """Takes one organization-scoped role away from a member. Refuses to remove the organization's
+    last active Organization Administrator, which would leave nobody able to manage members or
+    roles. Returns False when the member did not hold the role."""
+    from organizations.models import Membership
+
+    assignment = RoleAssignment.objects.filter(
+        user=user, role__slug=role_slug, role__organization__isnull=True, organization=organization
+    ).first()
+    if assignment is None:
+        return False
+    if role_slug == LAST_ADMINISTRATOR_ROLE_SLUG:
+        active_members = Membership.objects.filter(
+            organization=organization, status=Membership.Status.ACTIVE
+        ).values("user_id")
+        others = (
+            RoleAssignment.objects.filter(
+                organization=organization, role__slug=role_slug, user_id__in=active_members
+            )
+            .exclude(pk=assignment.pk)
+            .exists()
+        )
+        if not others:
+            raise PermissionError_(
+                "This is the organization's last Organization Administrator. Give the role to someone "
+                "else first, so the organization can still be managed."
+            )
+    assignment.delete()
+    audit.record(
+        actor=removed_by,
+        organization_id=organization.id,
+        action="permissions.role.remove",
+        resource_type="user",
+        resource_id=user.id,
+        context={"role": role_slug},
+    )
+    return True
+
+
 def get_role(slug: str) -> Role:
     return Role.objects.get(slug=slug, organization__isnull=True)
 
@@ -166,3 +206,22 @@ def grant_resource_permission(
         context={"permission": permission_code, "granted_to": str(user.id)},
     )
     return grant
+
+
+def revoke_resource_permission(*, grant: ResourceGrant, revoked_by) -> None:
+    """Removes one ResourceGrant (the counterpart of grant_resource_permission), audited."""
+    organization_id, resource_type, resource_id = (
+        grant.organization_id,
+        grant.resource_type,
+        grant.resource_id,
+    )
+    permission, user_id = grant.permission_id, grant.user_id
+    grant.delete()
+    audit.record(
+        actor=revoked_by,
+        organization_id=organization_id,
+        action="permissions.resource_grant.revoke",
+        resource_type=resource_type,
+        resource_id=resource_id,
+        context={"permission": permission, "revoked_from": str(user_id)},
+    )

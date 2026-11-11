@@ -1,0 +1,13 @@
+{
+  "name": "IntraForge",
+  "short_name": "IntraForge",
+  "description": "Self-hosted, local-first business infrastructure. Build. Store. Connect. Privately.",
+  "icons": [
+    { "src": "/brand/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/brand/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ],
+  "theme_color": "#172554",
+  "background_color": "#f8fafc",
+  "display": "standalone",
+  "start_url": "/"
+}

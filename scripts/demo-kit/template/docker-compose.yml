@@ -1,0 +1,75 @@
+# IntraForge offline investor-demo kit -- its own project, images, volumes and port.
+# Nothing here can touch any other IntraForge or Docker project on the machine.
+#
+# Every image is already on the machine (loaded from images/*.tar by Install-IntraForgeDemo.ps1); nothing is
+# pulled. All containers sit on an internal-only network; only the proxy is published, and only on the loopback
+# address, so the demo is reachable from this computer alone.
+name: intraforge-demo
+
+x-backend: &backend
+  image: intraforge-demo-backend:1.0
+  pull_policy: never
+  env_file: .env
+  networks: [isolated]
+  volumes:
+    - backups:/backups
+    - ./VERSION:/VERSION:ro
+
+services:
+  postgres-control:
+    image: postgres:18
+    pull_policy: never
+    env_file: .env
+    networks: [isolated]
+    volumes: [control:/var/lib/postgresql]
+  postgres-tenant:
+    image: postgres:18
+    pull_policy: never
+    env_file: .env
+    networks: [isolated]
+    volumes: [tenant:/var/lib/postgresql]
+  valkey:
+    image: valkey/valkey:9-alpine
+    pull_policy: never
+    networks: [isolated]
+  object-storage:
+    image: minio/minio:latest
+    pull_policy: never
+    command: server /data
+    env_file: .env
+    networks: [isolated]
+    volumes: [objects:/data]
+  backend:
+    <<: *backend
+  worker:
+    <<: *backend
+    command: celery -A config worker -l info --concurrency=2
+  beat:
+    <<: *backend
+    command: celery -A config beat -l info --schedule=/tmp/celerybeat-schedule
+  frontend:
+    image: intraforge-demo-frontend:1.0
+    pull_policy: never
+    networks: [isolated]
+  proxy:
+    image: caddy:2-alpine
+    pull_policy: never
+    ports: ["127.0.0.1:${DEMO_HTTPS_PORT:-8443}:443"]
+    environment:
+      PROXY_TLS_HOSTNAMES: "localhost 127.0.0.1"
+    volumes:
+      - ./infrastructure/proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - certificates:/data
+    networks: [isolated, edge]
+
+networks:
+  isolated:
+    internal: true
+  edge: {}
+
+volumes:
+  control: {}
+  tenant: {}
+  objects: {}
+  backups: {}
+  certificates: {}

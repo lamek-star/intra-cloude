@@ -26,7 +26,9 @@ class AuditEventListView(generics.ListAPIView):
         if not has_permission(self.request.user, "audit.read", organization_id=org.id):
             raise PermissionDenied()
 
-        queryset = AuditEvent.objects.filter(organization=org)
+        queryset = AuditEvent.objects.filter(organization=org).select_related(
+            "actor", "actor__service_account__application"
+        )
 
         params = self.request.query_params
         action = params.get("action")
@@ -38,6 +40,9 @@ class AuditEventListView(generics.ListAPIView):
         resource_type = params.get("resource_type")
         if resource_type:
             queryset = queryset.filter(resource_type=resource_type)
+        resource_id = params.get("resource_id")
+        if resource_id:
+            queryset = queryset.filter(resource_id=resource_id)
         result = params.get("result")
         if result:
             queryset = queryset.filter(result=result)

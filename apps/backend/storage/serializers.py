@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Bucket, FileObject, Folder
+from .models import Bucket, FileObject, FileVersion, Folder
 
 
 class BucketSerializer(serializers.ModelSerializer):
@@ -49,6 +49,16 @@ class FileObjectSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+        read_only_fields = fields
+
+
+class FileVersionSerializer(serializers.ModelSerializer):
+    # A kept earlier content of a file (versioned buckets). object_key stays internal, as above.
+    created_by_email = serializers.EmailField(source="created_by.email", read_only=True)
+
+    class Meta:
+        model = FileVersion
+        fields = ["id", "file", "size", "checksum_sha256", "created_at", "created_by", "created_by_email"]
         read_only_fields = fields
 
 

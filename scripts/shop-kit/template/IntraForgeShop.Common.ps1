@@ -1,0 +1,571 @@
+# Shared helpers for the IntraForge own-shop pilot scripts. Dot-sourced by the other scripts; never run on its own.
+# Written for Windows PowerShell 5.1 (what a stock Windows 10/11 PC has).
+
+$ErrorActionPreference = 'Stop'
+$script:KitDir = $PSScriptRoot
+
+# Windows PowerShell 5.1 turns any text a native command writes to stderr into a TERMINATING error under
+# $ErrorActionPreference = 'Stop' as soon as it is redirected - even for an expected failure such as a container that is
+# not ready yet. Probes therefore run with 'Continue' and are judged by their exit code only.
+function Test-Quiet([scriptblock]$Probe) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $Probe *> $null; return ($LASTEXITCODE -eq 0) } finally { $ErrorActionPreference = $previous }
+}
+
+function Step([string]$Message) { Write-Host "`n==> $Message" -ForegroundColor Cyan }
+
+function Compose {
+    & docker compose @args
+    if ($LASTEXITCODE -ne 0) { throw "docker compose $($args -join ' ') failed (exit $LASTEXITCODE)" }
+}
+
+function Read-EnvFile([string]$Path) {
+    $values = @{}
+    if (Test-Path $Path) {
+        foreach ($line in Get-Content $Path) {
+            if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') { $values[$Matches[1]] = $Matches[2] }
+        }
+    }
+    return $values
+}
+
+function Get-ShopSetting([string]$Name, [string]$Default) {
+    $values = Read-EnvFile (Join-Path $script:KitDir '.env')
+    if ($values.ContainsKey($Name) -and $values[$Name]) { return $values[$Name] }
+    return $Default
+}
+
+# The data folder: the SHOP_DATA_DIR environment variable (set by Setup before .env exists), else .env, else the default.
+function Get-DataDir {
+    if ($env:SHOP_DATA_DIR) { return ($env:SHOP_DATA_DIR -replace '/', '\') }
+    return ((Get-ShopSetting 'SHOP_DATA_DIR' 'C:/IntraForgeData') -replace '/', '\')
+}
+function Get-ShopPort { return [int](Get-ShopSetting 'SHOP_HTTPS_PORT' '8443') }
+# The product version of this kit (the VERSION file; also what the Control Center and Installed apps show).
+function Get-KitVersion {
+    $file = Join-Path $script:KitDir 'VERSION'
+    if (Test-Path $file) { return (Get-Content $file -TotalCount 1).Trim() }
+    return 'unknown'
+}
+function Get-ShopVersion {
+    $file = Join-Path $script:KitDir 'BUILD_INFO.txt'
+    if (Test-Path $file) { return ((Get-Content $file | Select-Object -First 1)) }
+    return 'unknown build'
+}
+
+function Write-ShopLog([string]$Message, [string]$File = 'shop.log') {
+    try {
+        $dir = Join-Path (Get-DataDir) 'logs'
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        Add-Content -Path (Join-Path $dir $File) -Value ("{0}  {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message)
+    } catch { }   # logging must never break the operation it describes
+}
+
+function Find-DockerDesktop {
+    foreach ($candidate in @("$env:ProgramFiles\Docker\Docker\Docker Desktop.exe", "${env:ProgramFiles(x86)}\Docker\Docker\Docker Desktop.exe", "$env:LOCALAPPDATA\Programs\DockerDesktop\Docker Desktop.exe")) {
+        if (Test-Path $candidate) { return $candidate }
+    }
+    foreach ($hive in 'HKLM:', 'HKCU:') {
+        $key = "$hive\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+        if (-not (Test-Path $key)) { continue }
+        foreach ($sub in Get-ChildItem $key -ErrorAction SilentlyContinue) {
+            $props = Get-ItemProperty $sub.PSPath -ErrorAction SilentlyContinue
+            if ($props -and $props.DisplayName -eq 'Docker Desktop' -and $props.InstallLocation) {
+                $exe = Join-Path $props.InstallLocation 'Docker Desktop.exe'
+                if (Test-Path $exe) { return $exe }
+            }
+        }
+    }
+    $cli = Get-Command docker.exe -ErrorAction SilentlyContinue      # ...\Docker\resources\bin\docker.exe
+    if ($cli) {
+        $exe = Join-Path (Split-Path (Split-Path (Split-Path $cli.Source -Parent) -Parent) -Parent) 'Docker Desktop.exe'
+        if (Test-Path $exe) { return $exe }
+    }
+    return $null
+}
+
+# Can this PC run Docker Desktop at all? Level is 'ok', 'warn' or 'block'; Message is plain language.
+function Get-VirtualizationVerdict {
+    $cs = Get-CimInstance Win32_ComputerSystem
+    $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+    $hypervisor = [bool]$cs.HypervisorPresent
+    $firmware = $cpu.VirtualizationFirmwareEnabled
+    $isVm = ("$($cs.Model) $($cs.Manufacturer)") -match 'Virtual|VMware|QEMU|KVM'
+    if ($env:INTRAFORGE_SETUP_TEST_FAKE_NO_VIRT -eq '1') { $hypervisor = $false; $firmware = $false; $isVm = $false }   # test hook
+    # Inside a VM every Windows guest reports "a hypervisor is present" (the host's) whether or not nested virtualization is passed
+    # through, so in a VM only the firmware flag tells the truth. On a physical PC either signal is enough.
+    if ($isVm) {
+        # Before the Windows virtualization features are on, the firmware flag is the truth (True = nested virtualization passed through).
+        # Once they are on, Windows runs its own hypervisor and the same signals read identically WITH and WITHOUT nested virtualization
+        # (measured), so nothing can be checked then; Docker's engine start is the real test and its failure message names this cause.
+        if ($firmware -eq $true) { return @{ Level = 'ok'; Message = 'This PC is a virtual machine and nested virtualization is available to it.' } }
+        if ((Get-FeatureState 'VirtualMachinePlatform') -eq 'Enabled' -or (Get-FeatureState 'Microsoft-Hyper-V') -eq 'Enabled') {
+            return @{ Level = 'ok'; Message = "This PC is a virtual machine and Windows' virtualization features are already on, so passing virtualization through cannot be checked here. If Docker Desktop later fails to start, that is the likely cause: nested virtualization must be on for this VM in its host." }
+        }
+        return @{ Level = 'block'; Message = @"
+This PC is a virtual machine that does not pass virtualization through to it, so Docker Desktop (and IntraForge) cannot start.
+Fix it on the machine that HOSTS this virtual machine (shut the VM down first), then run this again:
+  Hyper-V    : on the host, in an administrator PowerShell:  Set-VMProcessor -VMName <vm name> -ExposeVirtualizationExtensions `$true
+  VirtualBox : Settings > System > Processor > tick 'Enable Nested VT-x/AMD-V'  (or: VBoxManage modifyvm <vm name> --nested-hw-virt on)
+  VMware     : VM settings > Processor > tick 'Virtualize Intel VT-x/EPT or AMD-V/RVI'
+Or use a physical PC.
+"@ }
+    }
+    if ($hypervisor) { return @{ Level = 'ok'; Message = 'Virtualization is available.' } }
+    if ($firmware -eq $true) { return @{ Level = 'ok'; Message = 'Virtualization is switched on in the BIOS (Docker Desktop''s installer will switch on the Windows parts it needs and may ask for one restart).' } }
+    if ($firmware -eq $false) {
+        return @{ Level = 'block'; Message = @"
+Virtualization is switched OFF in this PC's BIOS/UEFI, so Docker Desktop (and IntraForge) cannot run.
+How to fix it (about 5 minutes):
+  1. Restart the PC and open its BIOS/UEFI setup: press Del, F2, F10, F12 or Esc while it starts (it depends on the make).
+  2. Find 'Intel Virtualization Technology' / 'VT-x' (or, on AMD, 'SVM Mode') and set it to Enabled.
+  3. Save and exit, let Windows start, then run this again.
+To check in Windows: Task Manager > Performance > CPU > 'Virtualization: Enabled'.
+If there is no such setting, this PC cannot run IntraForge: use another PC.
+"@ }
+    }
+    return @{ Level = 'warn'; Message = 'Could not tell whether virtualization is on. If Docker Desktop later says "Virtualization support not detected", switch it on in the BIOS (Task Manager > Performance > CPU shows its state).' }
+}
+
+# Makes sure Docker's engine answers, starting Docker Desktop if it is installed but not running.
+function Start-DockerIfNeeded([int]$TimeoutSeconds = 240) {
+    if (Test-Quiet { docker info }) { return }
+    $exe = Find-DockerDesktop
+    if (-not $exe) {
+        throw 'Docker''s engine is not answering and Docker Desktop could not be found to start it. If Docker Desktop is installed, open it from the Start menu and wait until it says "Engine running", then run this again. If it is not installed, install it first (README.txt).'
+    }
+    Write-Host 'Starting Docker Desktop (this can take a minute or two)...'
+    Start-Process -FilePath $exe | Out-Null
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if (Test-Quiet { docker info }) { return }
+        Start-Sleep -Seconds 5
+    }
+    $virt = Get-VirtualizationVerdict
+    $hint = ''
+    if ($virt.Level -eq 'block') { $hint = "`n`nMost likely cause:`n" + $virt.Message }
+    elseif ((Get-CimInstance Win32_ComputerSystem).Model -match 'Virtual|VMware|QEMU|KVM') { $hint = "`n`nThis PC is a virtual machine: the most likely cause is that nested virtualization is not turned on for it in its host (Hyper-V: Set-VMProcessor -VMName <vm name> -ExposeVirtualizationExtensions `$true, with the VM shut down; VirtualBox: 'Enable Nested VT-x/AMD-V'; VMware: 'Virtualize Intel VT-x/EPT')." }
+    throw "Docker Desktop did not become ready within $TimeoutSeconds seconds. Open Docker Desktop, wait until it says 'Engine running', then run this again.$hint"
+}
+
+# A program installed while this window was already open (Docker Desktop, installed by Setup a minute ago) is not on THIS process's
+# PATH: Windows gives a process its environment when it starts. Rebuild PATH from the registry, and make sure Docker's own folder is
+# on it (a per-user Docker Desktop installs under %LOCALAPPDATA%\Programs\DockerDesktop and adds itself to the user PATH only).
+function Initialize-DockerPath {
+    $parts = @()
+    foreach ($scope in 'Machine', 'User', 'Process') {
+        $value = [Environment]::GetEnvironmentVariable('Path', $scope)
+        if ($value) { $parts += $value.Split(';') }
+    }
+    $exe = Find-DockerDesktop
+    if ($exe) {
+        $bin = Join-Path (Split-Path $exe -Parent) 'resources\bin'
+        if (Test-Path $bin) { $parts = @($bin) + $parts }
+    }
+    $seen = @{}; $merged = @()
+    foreach ($part in $parts) { $key = $part.TrimEnd('\').ToLowerInvariant(); if ($part -and -not $seen.ContainsKey($key)) { $seen[$key] = $true; $merged += $part } }
+    $env:Path = $merged -join ';'
+}
+Initialize-DockerPath
+
+# ---- Windows prerequisites (used by Setup-IntraForge.ps1 and its elevated helpers) ---------------------------------------------
+
+function Test-Admin {
+    return ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+# 'Enabled', 'Disabled' or 'Unavailable' (for example Hyper-V on Windows Home). Readable without administrator rights.
+function Get-FeatureState([string]$Name) {
+    $feature = Get-CimInstance Win32_OptionalFeature -Filter "Name='$Name'" -ErrorAction SilentlyContinue
+    if (-not $feature) { return 'Unavailable' }
+    switch ([int]$feature.InstallState) { 1 { return 'Enabled' } 2 { return 'Disabled' } default { return 'Unavailable' } }
+}
+
+function Test-RebootPending {
+    if (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') { return $true }
+    if (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') { return $true }
+    $pending = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -Name PendingFileRenameOperations -ErrorAction SilentlyContinue).PendingFileRenameOperations
+    return [bool]$pending
+}
+
+# Is the group membership already part of THIS sign-in's token? (A membership added later only counts after the next sign-in.)
+function Test-DockerUsersToken { return [bool]((& whoami /groups) -match 'docker-users') }
+
+function Test-WslInstalled {
+    return ((Test-Path 'C:\Program Files\WSL\wsl.exe') -and [bool](Get-Service -Name WSLService -ErrorAction SilentlyContinue))
+}
+
+# Only a file with a valid Authenticode signature from the expected publisher is ever run.
+function Test-Signature([string]$File, [string]$Publisher) {
+    $signature = Get-AuthenticodeSignature -LiteralPath $File
+    return ($signature.Status -eq 'Valid' -and $signature.SignerCertificate.Subject -match [regex]::Escape($Publisher))
+}
+
+function Write-SetupLog([string]$Message) { Write-ShopLog $Message 'setup.log' }
+
+# Runs a script with administrator rights and returns its exit code. Already elevated: runs in this console. Otherwise one UAC prompt.
+function Invoke-ElevatedScript([string]$Script, [string]$Arguments) {
+    $powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+    $argumentList = "-NoProfile -ExecutionPolicy Bypass -File `"$Script`" $Arguments"
+    if (Test-Admin) { $process = Start-Process -FilePath $powershell -ArgumentList $argumentList -Wait -PassThru -NoNewWindow }
+    else { $process = Start-Process -FilePath $powershell -ArgumentList $argumentList -Wait -PassThru -Verb RunAs }
+    return $process.ExitCode
+}
+
+function Wait-ShopReady([int]$Tries = 60) {
+    for ($i = 0; $i -lt $Tries; $i++) {
+        if (Test-Quiet { docker compose exec -T backend python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/readyz', timeout=5).status == 200 else 1)" }) { return $true }
+        Start-Sleep -Seconds 3
+    }
+    return $false
+}
+
+# The newest backup file of each type in a folder, as @{ control_db = FileInfo; ... }. A type with no file is absent.
+function Get-BackupSet([string]$Folder) {
+    $set = @{}
+    foreach ($type in 'control_db', 'tenant_db', 'object_storage') {
+        $found = Get-ChildItem -Path $Folder -Filter "${type}_*" -File -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime | Select-Object -Last 1
+        if ($found) { $set[$type] = $found }
+    }
+    return $set
+}
+
+function Get-LatestBackupTime([string]$Folder) {
+    $set = Get-BackupSet $Folder
+    if ($set.Count -lt 3) { return $null }
+    return ($set.Values | Sort-Object LastWriteTime | Select-Object -First 1).LastWriteTime
+}
+
+# The Spare Parts service answers its own health check (process health; installed or not).
+function Test-SparePartsReady {
+    return Test-Quiet { docker compose exec -T spareparts wget -q -T 5 -O /dev/null http://127.0.0.1:3000/apps/spare-parts/api/v1/health }
+}
+
+# ---- the one primary shortcut and the Installed-apps entry -------------------------------------------------------------------
+$script:ShortcutFolders = @([Environment]::GetFolderPath('Desktop'), (Join-Path ([Environment]::GetFolderPath('Programs')) 'IntraForge'))
+$script:LegacyShortcuts = @('Open IntraForge.lnk', 'IntraForge Backup Now.lnk', 'IntraForge Backup to USB.lnk', 'IntraForge Status.lnk', 'Open Spare Parts.url')
+function Get-ControlCenterPath { return (Join-Path $script:KitDir 'IntraForgeControlCenter.exe') }
+
+# One shortcut, "IntraForge", opening the Control Center (start, open, apps, backup, restore, diagnostics, uninstall all
+# live there). Older installations' separate shortcuts are removed.
+function Install-ShopShortcuts {
+    try {
+        $shell = New-Object -ComObject WScript.Shell
+        $cc = Get-ControlCenterPath
+        foreach ($folder in $script:ShortcutFolders) {
+            New-Item -ItemType Directory -Force -Path $folder | Out-Null
+            foreach ($old in $script:LegacyShortcuts) { Remove-Item -Path (Join-Path $folder $old) -ErrorAction SilentlyContinue }
+            $lnk = $shell.CreateShortcut((Join-Path $folder 'IntraForge.lnk'))
+            if (Test-Path $cc) { $lnk.TargetPath = $cc; $lnk.IconLocation = "$cc,0" }
+            else {
+                $lnk.TargetPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+                $lnk.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $script:KitDir 'Start-IntraForgeShop.ps1')`""
+            }
+            $lnk.WorkingDirectory = $script:KitDir
+            $lnk.Description = 'IntraForge Control Center: start and open IntraForge and your apps, back up, restore, diagnostics'
+            $lnk.Save()
+        }
+        Write-Host 'One shortcut, "IntraForge", is on the Desktop and in the Start menu. It opens the IntraForge Control Center.'
+    }
+    catch { Write-Host "Could not create the shortcut ($($_.Exception.Message)); start IntraForgeControlCenter.exe in $($script:KitDir)." -ForegroundColor Yellow }
+}
+function Remove-ShopShortcuts {
+    foreach ($folder in $script:ShortcutFolders) {
+        foreach ($name in @('IntraForge.lnk') + $script:LegacyShortcuts) { Remove-Item -Path (Join-Path $folder $name) -ErrorAction SilentlyContinue }
+    }
+    Remove-Item -Path (Join-Path ([Environment]::GetFolderPath('Programs')) 'IntraForge') -ErrorAction SilentlyContinue
+}
+
+# Windows Settings > Apps > Installed apps: "IntraForge", whose Uninstall opens the Control Center's guided removal.
+$script:UninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\IntraForge'
+function Register-ShopUninstallEntry {
+    try {
+        $cc = Get-ControlCenterPath
+        New-Item -Path $script:UninstallKey -Force | Out-Null
+        $version = Get-KitVersion
+        $values = @{
+            DisplayName = 'IntraForge'; Publisher = 'IntraForge'; DisplayVersion = $version
+            InstallLocation = $script:KitDir; NoModify = 1; NoRepair = 1
+            UninstallString = if (Test-Path $cc) { "`"$cc`" /uninstall" } else { "`"$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe`" -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $script:KitDir 'Uninstall-IntraForgeShop.ps1')`"" }
+        }
+        if (Test-Path $cc) { $values.DisplayIcon = "$cc,0" }
+        foreach ($k in $values.Keys) { Set-ItemProperty -Path $script:UninstallKey -Name $k -Value $values[$k] }
+    }
+    catch { Write-Host "Could not register IntraForge in Windows' Installed apps ($($_.Exception.Message))." -ForegroundColor Yellow }
+}
+function Unregister-ShopUninstallEntry { Remove-Item -Path $script:UninstallKey -Recurse -ErrorAction SilentlyContinue }
+
+# ---- hosted Node.js apps (ADR-0020) ------------------------------------------------------------------------------------
+# The app runner starts each hosted app in its own container. Those containers are not part of the compose project, so
+# stopping, starting and removing IntraForge handles them here (they carry the label intraforge.project, set to this
+# installation's compose project name -- the runner's RUNNER_PROJECT -- so another installation's apps are never touched).
+# The Cloudflare Tunnel connector (intraforge-tunnel) is one of them.
+function Get-ShopProject {
+    $file = Join-Path $script:KitDir 'docker-compose.yml'
+    if (Test-Path $file) {
+        foreach ($line in Get-Content $file) { if ($line -match '^name:\s*([a-z0-9][a-z0-9_-]*)\s*$') { return $Matches[1] } }
+    }
+    return 'intraforge-shop'
+}
+function Get-HostedAppContainers([switch]$Running) {
+    $all = if ($Running) { @() } else { @('-a') }
+    $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    $names = @(& docker ps @all --filter "label=intraforge.project=$(Get-ShopProject)" --format '{{.Names}}' 2>$null | Where-Object { $_ })
+    $ErrorActionPreference = $previous
+    return $names
+}
+# Is this container one of this installation's hosted apps (or its tunnel connector)?
+function Test-HostedAppContainer([string]$Name) {
+    if ($Name -notmatch '^[a-zA-Z0-9][a-zA-Z0-9_.-]*$') { return $false }
+    $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    $label = (& docker inspect --format '{{index .Config.Labels "intraforge.project"}}' $Name 2>$null | Select-Object -First 1)
+    $ErrorActionPreference = $previous
+    return ("$label".Trim() -eq (Get-ShopProject))
+}
+function Get-HostedAppsStateFile { return (Join-Path (Get-DataDir) 'logs\hosted-apps-running.txt') }
+
+# Stops the running apps and remembers which were running, so Start-HostedApps brings back exactly those (an app the
+# shop took offline stays offline).
+function Stop-HostedApps {
+    $running = Get-HostedAppContainers -Running
+    if ($running.Count -eq 0) { return }
+    $file = Get-HostedAppsStateFile
+    New-Item -ItemType Directory -Force -Path (Split-Path $file) | Out-Null
+    Set-Content -Path $file -Value $running -Encoding ASCII
+    foreach ($name in $running) { if (-not (Test-Quiet { docker stop $name })) { Write-Warning "Could not stop the hosted app $name." } }
+}
+function Start-HostedApps {
+    $file = Get-HostedAppsStateFile
+    if (-not (Test-Path $file)) { return }
+    # Every container Stop-HostedApps stopped -- the apps and the tunnel connector, whose restart policy does not bring it
+    # back after an explicit stop -- provided it still belongs to this installation.
+    foreach ($name in (Get-Content $file | Where-Object { Test-HostedAppContainer $_ })) {
+        if (-not (Test-Quiet { docker start $name })) { Write-Warning "Could not start the hosted app $name." }
+    }
+    Remove-Item -Force $file
+}
+# Complete removal: every hosted app's container, network and image, and the Node.js runtime image.
+function Remove-HostedApps {
+    foreach ($name in (Get-HostedAppContainers)) { [void](Test-Quiet { docker rm -f $name }) }
+    $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    $networks = @(& docker network ls --filter "label=intraforge.project=$(Get-ShopProject)" --format '{{.Name}}' 2>$null | Where-Object { $_ })
+    $images = @(& docker images --format '{{.Repository}}:{{.Tag}}' 2>$null | Where-Object { $_ -like 'ifapp-*' -or $_ -like 'intraforge-runtime-node:*' })
+    $ErrorActionPreference = $previous
+    foreach ($network in $networks) { [void](Test-Quiet { docker network rm $network }) }
+    foreach ($image in $images) { [void](Test-Quiet { docker image rm $image }) }
+}
+
+# ---- the shop's own Wi-Fi (Windows Mobile Hotspot) --------------------------------------------------------------------
+# When the shop has no router, this PC hosts the shop network itself: phones and the other PCs join its hotspot and open
+# IntraForge on it. Windows starts a hotspot only while the PC has some connection to share (Ethernet, a phone, any
+# Wi-Fi -- internet not needed). The hotspot's own address on this PC is always 192.168.137.1.
+$script:HotspotAddress = '192.168.137.1'
+
+function Initialize-WinRT {
+    Add-Type -AssemblyName System.Runtime.WindowsRuntime
+    $null = [Windows.Networking.Connectivity.NetworkInformation, Windows.Networking.Connectivity, ContentType = WindowsRuntime]
+    $null = [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager, Windows.Networking.NetworkOperators, ContentType = WindowsRuntime]
+}
+
+# Waits for a Windows Runtime async call (Windows PowerShell 5.1 has no await).
+function Wait-WinRT($operation, [Type]$resultType) {
+    $methods = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 }
+    if ($resultType) {
+        $asTask = ($methods | Where-Object { $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' } | Select-Object -First 1).MakeGenericMethod($resultType)
+    }
+    else { $asTask = $methods | Where-Object { $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncAction' } | Select-Object -First 1 }
+    $task = $asTask.Invoke($null, @($operation))
+    if (-not $task.Wait(60000)) { throw 'Windows did not answer within a minute (mobile hotspot).' }
+    if ($resultType) { return $task.Result }
+}
+
+function Get-HotspotManager {
+    Initialize-WinRT
+    $info = [Windows.Networking.Connectivity.NetworkInformation]
+    $connection = $info::GetInternetConnectionProfile()
+    if (-not $connection) {
+        $connection = @($info::GetConnectionProfiles() | Where-Object { $_.GetNetworkConnectivityLevel() -ne 'None' }) | Select-Object -First 1
+    }
+    if (-not $connection) {
+        throw ('This PC has no connection at all, and Windows starts a hotspot only while it has one to share (internet is not ' +
+            'needed). Connect it to anything once -- a network cable, a phone''s hotspot or any Wi-Fi -- and try again; or give the ' +
+            'shop a small Wi-Fi router.')
+    }
+    $tethering = [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager]
+    $capability = $tethering::GetTetheringCapabilityFromConnectionProfile($connection)
+    if ("$capability" -ne 'Enabled') {
+        throw "This PC cannot host a Wi-Fi hotspot ($capability). Its Wi-Fi may not support it, or a policy switches it off; use a small Wi-Fi router instead."
+    }
+    return $tethering::CreateFromConnectionProfile($connection)
+}
+
+function New-HotspotPassword {
+    # 12 characters that cannot be mixed up when typed on a phone (no l/1, o/0, i); random bytes above the last whole
+    # multiple of the alphabet's size are skipped, so every character is equally likely.
+    $alphabet = 'abcdefghjkmnpqrstuvwxyz23456789'
+    $limit = 256 - (256 % $alphabet.Length)
+    $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+    $byte = New-Object byte[] 1
+    $chars = New-Object System.Collections.Generic.List[char]
+    while ($chars.Count -lt 12) {
+        $rng.GetBytes($byte)
+        if ($byte[0] -lt $limit) { $chars.Add($alphabet[$byte[0] % $alphabet.Length]) }
+    }
+    $rng.Dispose()
+    return -join $chars
+}
+
+# Starts the hotspot with this name and password, kept on even when nobody is connected. Returns this PC's interface
+# index on it.
+function Start-ShopHotspot([string]$Ssid, [string]$Password) {
+    $manager = Get-HotspotManager
+    $config = $manager.GetCurrentAccessPointConfiguration()
+    if ($config.Ssid -ne $Ssid -or $config.Passphrase -ne $Password) {
+        $config.Ssid = $Ssid
+        $config.Passphrase = $Password
+        Wait-WinRT ($manager.ConfigureAccessPointAsync($config)) $null
+    }
+    try { [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager]::DisableNoConnectionsTimeout() } catch { }
+    if ("$($manager.TetheringOperationalState)" -ne 'On') {
+        $result = Wait-WinRT ($manager.StartTetheringAsync()) ([Windows.Networking.NetworkOperators.NetworkOperatorTetheringOperationResult])
+        if ("$($result.Status)" -ne 'Success') {
+            throw "Windows could not start the hotspot ($($result.Status)). $($result.AdditionalErrorMessage)"
+        }
+    }
+    for ($i = 0; $i -lt 30; $i++) {
+        $ip = Get-NetIPAddress -IPAddress $script:HotspotAddress -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($ip) { return $ip.InterfaceIndex }
+        Start-Sleep -Seconds 1
+    }
+    throw "The hotspot started, but this PC did not get its address ($($script:HotspotAddress)) on it."
+}
+
+function Stop-ShopHotspot {
+    try {
+        $manager = Get-HotspotManager
+        if ("$($manager.TetheringOperationalState)" -eq 'On') {
+            [void](Wait-WinRT ($manager.StopTetheringAsync()) ([Windows.Networking.NetworkOperators.NetworkOperatorTetheringOperationResult]))
+        }
+    }
+    catch { Write-Host "The hotspot could not be stopped: $($_.Exception.Message)" -ForegroundColor Yellow }
+}
+
+# ---- the shop's own names (ADR-0021) ---------------------------------------------------------------------------------
+# Phones and PCs find IntraForge and its apps by name: https://pharmacy.lan:8443 instead of an address. On a router network
+# the "names" service (CoreDNS) on this PC answers every name ending in the shop's domain with this PC's address and passes
+# all other names on; the router hands this PC out as the shop's name server. On the shop's own Wi-Fi (hotspot), Windows'
+# hotspot already answers the phones' name lookups from this PC's hosts file, so the names are written there.
+$script:HostsMarkerBegin = '# IntraForge shop names -- begin (written by Set-IntraForgeNetwork.ps1; do not edit)'
+$script:HostsMarkerEnd = '# IntraForge shop names -- end'
+
+# A domain the shop's names end in: "lan" or a name under the shop's own domain, e.g. "shop.harmongt.uk". Never ".local"
+# (multicast DNS: phones would not ask the name server) and never an address.
+function Test-ShopNameDomain([string]$Domain) {
+    if ($Domain -notmatch '^(?=.{1,200}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$') { return $false }
+    if ($Domain -eq 'local' -or $Domain.EndsWith('.local')) { return $false }
+    if ($Domain -match '^[0-9.]+$') { return $false }
+    return $true
+}
+
+# The names and the page each one opens, for the apps this installation runs ("running services" from docker compose).
+function Get-ShopAppNames([string[]]$RunningServices) {
+    $names = [ordered]@{ intraforge = '/' }
+    if ($RunningServices -contains 'spareparts') { $names['spare-parts'] = '/apps/spare-parts/' }
+    if ($RunningServices -contains 'pharmacy') { $names['pharmacy'] = '/apps/pharmacy/' }
+    $pay = @($RunningServices | Where-Object { $_ -match '^pay-[1-3]$' } | Sort-Object) | Select-Object -First 1
+    if ($pay) { $names['pay'] = "/apps/$pay/" }
+    return $names
+}
+
+# CoreDNS configuration: every name in the shop's domain is this PC (IPv4; no IPv6 answer, so phones do not wait for one),
+# everything else goes to the upstream name servers (the router's).
+function New-ShopNamesCorefile([string]$Domain, [string]$Address, [string[]]$Upstreams) {
+    if (-not (Test-ShopNameDomain $Domain)) { throw "Not a usable domain for the shop's names: '$Domain'." }
+    if (-not ($Address -as [ipaddress])) { throw "Not an address: '$Address'." }
+    $up = @($Upstreams | Where-Object { $_ -as [ipaddress] -and $_ -ne $Address })
+    if ($up.Count -eq 0) { throw 'No name server to pass other names on to (the router''s address was not found).' }
+    return @"
+# Written by Set-IntraForgeNetwork.ps1 (ADR-0021). Every name ending in .$Domain is this PC.
+$Domain {
+    template IN A {
+        answer "{{ .Name }} 60 IN A $Address"
+    }
+    template IN AAAA {
+        rcode NOERROR
+    }
+    errors
+}
+. {
+    forward . $($up -join ' ')
+    cache 300
+    errors
+}
+"@
+}
+
+# Proxy rules: each app's name opens that app (a redirect from the name's front page to the app's page).
+function New-ShopNamesCaddy([string]$Domain, [System.Collections.Specialized.OrderedDictionary]$Names) {
+    $lines = @('# Written by Set-IntraForgeNetwork.ps1 (ADR-0021): each app''s own name opens that app.')
+    foreach ($entry in $Names.GetEnumerator()) {
+        if ($entry.Value -eq '/') { continue }
+        if ($entry.Key -notmatch '^[a-z0-9-]+$' -or $entry.Value -notmatch '^/apps/[a-z0-9-]+/$') { throw "Not a usable app name: $($entry.Key)" }
+        $id = $entry.Key -replace '-', '_'
+        $lines += "@ifname_$id {", "`thost $($entry.Key).$Domain", "`tpath /", '}', "redir @ifname_$id $($entry.Value) 302"
+    }
+    return ($lines -join "`n") + "`n"
+}
+
+# Replaces IntraForge's block in a hosts file (only that block; everything else in the file is kept).
+function Set-ShopHostsEntries([string]$Address, [string[]]$HostNames, [string]$HostsFile = "$env:SystemRoot\System32\drivers\etc\hosts") {
+    $lines = @()
+    if (Test-Path $HostsFile) { $lines = @([IO.File]::ReadAllLines($HostsFile)) }
+    $kept = New-Object System.Collections.Generic.List[string]
+    $inside = $false
+    foreach ($line in $lines) {
+        if ($line -eq $script:HostsMarkerBegin) { $inside = $true; continue }
+        if ($line -eq $script:HostsMarkerEnd) { $inside = $false; continue }
+        if (-not $inside) { $kept.Add($line) }
+    }
+    while ($kept.Count -gt 0 -and $kept[$kept.Count - 1].Trim() -eq '') { $kept.RemoveAt($kept.Count - 1) }
+    if ($Address -and $HostNames) {
+        $kept.Add(''); $kept.Add($script:HostsMarkerBegin)
+        foreach ($h in $HostNames) { $kept.Add("$Address`t$h") }
+        $kept.Add($script:HostsMarkerEnd)
+    }
+    [IO.File]::WriteAllText($HostsFile, (($kept -join "`r`n") + "`r`n"), (New-Object System.Text.ASCIIEncoding))
+}
+
+function Remove-ShopHostsEntries([string]$HostsFile = "$env:SystemRoot\System32\drivers\etc\hosts") {
+    Set-ShopHostsEntries -Address '' -HostNames @() -HostsFile $HostsFile
+}
+
+
+# This PC's licence identity (ADR-0023), for IntraForge to read at <data folder>\machine:
+#   pc-code      "PC-1A2B-3C4D-5E6F-7A8B": SHA-256 over the Windows machine id and the motherboard UUID (the same
+#                formula as apps/backend/licensing/codes.py pc_code), so the vendor's activation code fits this PC only;
+#   first-start  the day IntraForge first started on this PC, also kept in the registry so a reinstall does not give
+#                a new trial.
+function Write-ShopMachineIdentity {
+    $dir = Join-Path (Get-DataDir) 'machine'
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    $guid = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Cryptography' -Name MachineGuid -ErrorAction SilentlyContinue).MachineGuid
+    $uuid = try { (Get-CimInstance Win32_ComputerSystemProduct -ErrorAction Stop).UUID } catch { '' }
+    $text = 'IntraForge-PC:' + "$guid".ToLowerInvariant() + '|' + "$uuid".ToLowerInvariant()
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $hash = $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($text)) } finally { $sha.Dispose() }
+    $hex = -join ($hash[0..7] | ForEach-Object { $_.ToString('X2') })
+    $code = 'PC-' + $hex.Substring(0, 4) + '-' + $hex.Substring(4, 4) + '-' + $hex.Substring(8, 4) + '-' + $hex.Substring(12, 4)
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText((Join-Path $dir 'pc-code'), $code, $utf8)
+    $key = 'HKCU:\Software\IntraForge'
+    if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
+    $first = (Get-ItemProperty $key -Name FirstStart -ErrorAction SilentlyContinue).FirstStart
+    $file = Join-Path $dir 'first-start'
+    if (-not $first -and (Test-Path $file)) { $first = (Get-Content $file -TotalCount 1).Trim() }
+    if (-not $first) { $first = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd') }
+    Set-ItemProperty $key -Name FirstStart -Value $first
+    [IO.File]::WriteAllText($file, $first, $utf8)
+    return $code
+}

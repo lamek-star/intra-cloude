@@ -1,0 +1,209 @@
+# IntraForge Local Edition -- own-shop pilot runtime. Its own project, images, volumes and port.
+#
+# Every image is already on the machine (loaded from images/*.tar by Install-IntraForgeShop.ps1); nothing is pulled.
+# All containers sit on an internal-only network (they have no route to the internet); only the proxy is published, and
+# only on the loopback address, so IntraForge is reachable from this computer alone.
+#
+# Persistent business data lives in Docker volumes (databases, files); every backup is written to a normal Windows
+# folder (SHOP_DATA_DIR\backups) so it can be seen, copied to a USB drive and restored. Both settings come from .env.
+name: intraforge-shop
+
+x-backend: &backend
+  image: intraforge-shop-backend:@TAG@
+  pull_policy: never
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    # Hosted Node.js apps (ADR-0020) are started by the app runner below; SITES_RUNNER_TOKEN comes from .env.
+    SITES_RUNNER_URL: http://runner:8700
+    # The Pharmacy (built-in, pilot preview) is offered in the shop; set BUILT_IN_APP_PREVIEWS= in .env to hide it.
+    BUILT_IN_APP_PREVIEWS: ${BUILT_IN_APP_PREVIEWS-pharmacy}
+    # Licensing (ADR-0023): a 30-day trial, then read-only until a serial number is activated for this PC.
+    LICENSE_ENFORCED: "true"
+  networks: [isolated]
+  volumes:
+    - ${SHOP_DATA_DIR:-C:/IntraForgeData}/backups:/backups
+    - ./VERSION:/VERSION:ro
+    # This PC's licence code and first-start day, written by Start-IntraForgeShop.ps1 (Write-ShopMachineIdentity).
+    - ${SHOP_DATA_DIR:-C:/IntraForgeData}/machine:/run/intraforge/machine:ro
+
+services:
+  postgres-control:
+    image: postgres:18
+    pull_policy: never
+    restart: unless-stopped
+    # A whole-database restore replaces every table in ONE transaction (restore_backup_file --replace); the
+    # default lock table (64 per connection) is too small for a large tenant database. ~20 MB of shared memory.
+    command: ["postgres", "-c", "max_locks_per_transaction=512"]
+    env_file: .env
+    networks: [isolated]
+    volumes: [control:/var/lib/postgresql]
+  postgres-tenant:
+    image: postgres:18
+    pull_policy: never
+    restart: unless-stopped
+    # A whole-database restore replaces every table in ONE transaction (restore_backup_file --replace); the
+    # default lock table (64 per connection) is too small for a large tenant database. ~20 MB of shared memory.
+    command: ["postgres", "-c", "max_locks_per_transaction=512"]
+    env_file: .env
+    networks: [isolated]
+    volumes: [tenant:/var/lib/postgresql]
+  valkey:
+    image: valkey/valkey:9-alpine
+    pull_policy: never
+    restart: unless-stopped
+    networks: [isolated]
+  object-storage:
+    image: minio/minio:@MINIO_TAG@
+    pull_policy: never
+    restart: unless-stopped
+    command: server /data
+    env_file: .env
+    networks: [isolated]
+    volumes: [objects:/data]
+  backend:
+    <<: *backend
+  worker:
+    <<: *backend
+    command: celery -A config worker -l info --concurrency=2
+  beat:
+    <<: *backend
+    command: celery -A config beat -l info --schedule=/tmp/celerybeat-schedule
+  # The app runner (ADR-0020): the ONLY service with the Docker socket. It accepts a fixed, token-checked set of
+  # operations from the backend and starts each hosted Node.js app in its own locked container (non-root, read-only,
+  # no capabilities, memory/CPU limits) on its own internal network with no internet. It gets no .env: only its token.
+  runner:
+    image: intraforge-shop-backend:@TAG@
+    pull_policy: never
+    restart: unless-stopped
+    user: "0:0"
+    command: ["python", "-m", "app_runner"]
+    environment:
+      RUNNER_TOKEN: ${SITES_RUNNER_TOKEN:?}
+      RUNNER_PROJECT: intraforge-shop
+      RUNNER_RUNTIME_IMAGE: intraforge-runtime-node:@TAG@
+      RUNNER_APP_MEMORY_MB: "256"
+      RUNNER_APP_CPUS: "0.5"
+      # The internet gate (ADR-0020): the Cloudflare Tunnel connector, started only when the Super Administrator
+      # switches internet access on, on the edge network (it needs the internet and reaches only the proxy there).
+      RUNNER_TUNNEL_IMAGE: cloudflare/cloudflared:2026.10.0
+      RUNNER_EDGE_NETWORK: intraforge-shop_edge
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - site-routes:/routes
+    networks: [isolated]
+  frontend:
+    image: intraforge-shop-frontend:@TAG@
+    pull_policy: never
+    restart: unless-stopped
+    networks: [isolated]
+  # The Spare Parts service application (ADR-0018): served by the proxy under /apps/spare-parts/ on IntraForge's own
+  # address, with IntraForge's sign-in; its data, files, audit and settings live in IntraForge. It gets only the three
+  # values it needs from .env (compose substitutes them), never the whole file, and it has no port on this computer.
+  spareparts:
+    image: intraforge-shop-spareparts:@TAG@
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      INTRAFORGE_SERVICE_TOKEN: ${SERVICE_APP_SPAREPARTS_TOKEN:?}
+      SPAREPARTS_PG_PASSWORD: ${SERVICE_APP_SPAREPARTS_DB_PASSWORD:?}
+      SPAREPARTS_PG_DATABASE: ${TENANT_DB_NAME:?}
+    depends_on: [backend, postgres-tenant]
+    networks: [isolated]
+  # The Pharmacy: the same engine built as its pharmacy edition (batches and expiry, the till, the prescription
+  # register), served under /apps/pharmacy/ with IntraForge's sign-in. Its own schema, login role and token.
+  pharmacy:
+    image: intraforge-shop-pharmacy:@TAG@
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      INTRAFORGE_SERVICE_TOKEN: ${SERVICE_APP_PHARMACY_TOKEN:?}
+      SPAREPARTS_PG_PASSWORD: ${SERVICE_APP_PHARMACY_DB_PASSWORD:?}
+      SPAREPARTS_PG_DATABASE: ${TENANT_DB_NAME:?}
+      # IntraForge names an application's session cookie after its slot ("Open" sets ifapp_pharmacy here).
+      SPAREPARTS_SESSION_COOKIE: ifapp_pharmacy
+    depends_on: [backend, postgres-tenant]
+    networks: [isolated]
+  # IntraForge Pay (simulated IF Credits, ADR-0018 section 10): one Pay service for this shop, slot pay-1, served by
+  # the proxy under /apps/pay-1/ with IntraForge's sign-in. Its ledger is a schema in the tenant database and its
+  # receipts live in IntraForge; it gets only the values it needs, never the whole .env, and has no port of its own.
+  pay-1:
+    image: intraforge-shop-pay:@TAG@
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      IFPAY_INTRAFORGE_URL: http://backend:8000
+      IFPAY_SERVICE_TOKEN: ${SERVICE_APP_PAY1_TOKEN:?}
+      IFPAY_DB_PASSWORD: ${SERVICE_APP_PAY1_DB_PASSWORD:?}
+      IFPAY_DB_HOST: postgres-tenant
+      IFPAY_DB_NAME: ${TENANT_DB_NAME:?}
+      IFPAY_BASE_PATH: /apps/pay-1
+      IFPAY_COOKIE_SECURE: "true"
+      # Phones: when the shop network is switched on (Control Center > Settings > Shop network), the network script
+      # records the PC's addresses (SHOP_PUBLIC_URLS) and writes IntraForge's certificate into <data>\shop-network.
+      # Pay shows the "install the app" and "connect" QR codes from them; with the network off it says phones are
+      # not set up. (The proxy's own CA in the certificates volume is not readable by Pay's restricted user.)
+      IFPAY_PUBLIC_URLS: ${SHOP_PUBLIC_URLS:-}
+      IFPAY_CA_CERT: /run/ifpay/shop-network/IntraForge-shop-certificate.crt
+    volumes:
+      - ${SHOP_DATA_DIR:?}/shop-network:/run/ifpay/shop-network:ro
+    depends_on: [backend, postgres-tenant]
+    networks: [isolated]
+  proxy:
+    image: caddy:2-alpine
+    pull_policy: never
+    restart: unless-stopped
+    # This computer only by default: the loopback addresses. "Allow other PCs in this shop" (Control Center > Settings,
+    # Set-IntraForgeNetwork.ps1) sets SHOP_BIND_V4/V6 to every address and adds the PC's name and address to the
+    # certificate; the Windows Firewall then admits the shop's PRIVATE network only and blocks public networks.
+    ports:
+      - "${SHOP_BIND_V4:-127.0.0.1}:${SHOP_HTTPS_PORT:-8443}:443"
+      # Also the IPv6 loopback: "localhost" resolves to ::1 first, and a client that does not fall back quickly
+      # (Windows retries a refused connection for ~2 s) would otherwise wait on every new connection.
+      - "[${SHOP_BIND_V6:-::1}]:${SHOP_HTTPS_PORT:-8443}:443"
+      # Hosted websites (Organization > Websites, ADR-0019) on their own port: a separate origin from IntraForge.
+      - "${SHOP_BIND_V4:-127.0.0.1}:8445:8445"
+      - "[${SHOP_BIND_V6:-::1}]:8445:8445"
+    environment:
+      PROXY_TLS_HOSTNAMES: "${SHOP_TLS_HOSTNAMES:-localhost 127.0.0.1}"
+      PROXY_SITES_ADDRESSES: "${SHOP_SITES_ADDRESSES:-localhost:8445 127.0.0.1:8445}"
+      PROXY_DEFAULT_SNI: "${SHOP_DEFAULT_SNI:-localhost}"
+    volumes:
+      - ./infrastructure/proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - certificates:/data
+      # Hosted Node.js apps' routes, written by the app runner.
+      - site-routes:/etc/caddy/apps:ro
+      # The shop's own names (ADR-0021), written by Set-IntraForgeNetwork.ps1.
+      - ${SHOP_DATA_DIR:-C:/IntraForgeData}/shop-network/names/proxy:/etc/caddy/names:ro
+    networks: [isolated, edge]
+
+  # The shop's name server (ADR-0021): only on a router network with the shop network on (COMPOSE_PROFILES=names in .env,
+  # set by Set-IntraForgeNetwork.ps1). It answers every name ending in the shop's domain with this PC's address and passes
+  # all other names on to the router; it listens on this PC's shop-network address only, never the internet.
+  names:
+    image: coredns/coredns:1.15.0
+    profiles: [names]
+    pull_policy: never
+    restart: unless-stopped
+    command: ["-conf", "/etc/coredns/Corefile"]
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    ports:
+      - "${SHOP_LAN_ADDRESS:-127.0.0.1}:53:53/udp"
+      - "${SHOP_LAN_ADDRESS:-127.0.0.1}:53:53/tcp"
+    volumes:
+      - ${SHOP_DATA_DIR:-C:/IntraForgeData}/shop-network/names/dns:/etc/coredns:ro
+    networks: [edge]
+
+networks:
+  isolated:
+    internal: true
+  edge: {}
+
+volumes:
+  control: {}
+  tenant: {}
+  objects: {}
+  certificates: {}
+  site-routes: {}

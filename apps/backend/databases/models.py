@@ -15,6 +15,22 @@ class TenantDatabase(models.Model):
     project = models.ForeignKey(
         "workspaces.Project", on_delete=models.CASCADE, related_name="tenant_databases"
     )
+    # Optional binding to an Application Environment (environments app).
+    # `unique=True` (OneToOne semantics) -- an Environment has at most one
+    # primary database, matching the "environment-specific database" model
+    # the Environment Management subsystem calls for, without a second
+    # database engine: this is the exact same TenantDatabase every other
+    # part of the platform already uses. NULL for every TenantDatabase
+    # created before this existed, and remains a valid, unbound state
+    # afterward too -- not every database needs to belong to an
+    # Environment.
+    environment = models.OneToOneField(
+        "environments.Environment",
+        on_delete=models.SET_NULL,
+        related_name="tenant_database",
+        null=True,
+        blank=True,
+    )
     name = models.CharField(max_length=200)
     schema_name = models.CharField(max_length=63, unique=True, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)

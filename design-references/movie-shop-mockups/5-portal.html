@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Movie Shop · Customer portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="ms.css"><script src="ms.js"></script>
+<style>
+  body { width: 1760px; height: 980px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: radial-gradient(900px 500px at 20% 0%, rgba(245,165,36,.12), transparent 60%), radial-gradient(900px 600px at 90% 100%, rgba(45,212,191,.10), transparent 60%), #070a12; }
+  .row4 { display: flex; gap: 44px; }
+  .scroll { position: absolute; inset: 44px 0 74px; overflow: hidden; }
+  .hrow { display: flex; gap: 10px; padding: 0 16px; }
+  .hrow .cover { width: 104px; flex: none; border-radius: 8px; }
+  .hrow .cover-title { font-size: 12px !important; left: 7px; bottom: 7px; }
+  .hrow .cover-price { font-size: 9.5px; padding: 1px 6px 1px 4px; top: 6px; left: 6px; }
+  .hrow .cover-badge { font-size: 8px; top: 6px; right: 6px; }
+  .rtitle { display: flex; justify-content: space-between; align-items: baseline; padding: 0 16px; margin: 16px 0 8px; font-size: 14px; font-weight: 700; }
+  .rtitle span { font-size: 11.5px; color: var(--muted); font-weight: 500; }
+  .field { margin-top: 10px; } .field .lab { font-size: 11.5px; color: var(--text2); font-weight: 600; margin-bottom: 5px; }
+  .field .input { height: 42px; font-size: 14px; color: var(--text); }
+  .perk { display: flex; gap: 10px; align-items: center; font-size: 12.5px; color: var(--text2); margin-top: 8px; }
+  .perk .ic { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; flex: none; }
+  .act { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  .act .ic { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; flex: none; }
+</style></head>
+<body data-size="1760,980">
+<script>
+const status = `<div class="status"><span>9:41</span><span style="display:flex;gap:6px;align-items:center">${icon("wifi", 14, 2.4)}<span style="width:22px;height:11px;border:1.5px solid #fff;border-radius:3px;position:relative;display:inline-block"><i style="position:absolute;inset:1.5px;right:5px;background:#fff;border-radius:1px"></i></span></span></div>`;
+const tabs = (on) => `<div class="tabbar">${[["home", "Home"], ["search", "Search"], ["film", "My movies"], ["wallet", "Wallet"], ["user", "Me"]].map(([i, n]) => `<div class="${n === on ? "on" : ""}">${icon(i, 20)}${n}</div>`).join("")}</div>`;
+const phone = (inner, cap, sub) => `<div><div class="phone"><div class="screen"><div class="notch"></div>${status}${inner}</div></div><div class="caption"><b>${cap}</b><span>${sub}</span></div></div>`;
+const row = (list) => `<div class="hrow">${list.map((m) => cover(m)).join("")}</div>`;
+const miniBrand = `<div class="brand" style="gap:8px"><span class="mark" style="width:28px;height:28px;border-radius:8px">${icon("play", 13, 2.6)}</span><b style="font-size:15px">LAMEK MOVIES</b></div>`;
+
+// 1. Sign up on the shop Wi-Fi
+const join = `<div class="scroll" style="inset:44px 0 0">
+  <div style="position:relative;height:200px;overflow:hidden">
+    <div style="display:flex;gap:8px;transform:rotate(-8deg) translate(-30px,-30px);opacity:.55">${[MOVIES[0], MOVIES[1], SERIES[0], MOVIES[3], MOVIES[4], SERIES[5]].map((m) => `<div style="width:92px;flex:none">${cover(m, { price: false })}</div>`).join("")}</div>
+    <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,13,22,.2),var(--bg))"></div>
+    <div style="position:absolute;left:18px;right:18px;bottom:8px">
+      <span class="chip live" style="font-size:10.5px"><span class="dot"></span>Connected to the shop Wi-Fi</span>
+      <div class="display" style="font-size:30px;font-weight:600;line-height:1.05;margin-top:10px;text-transform:uppercase">Welcome to<br><span style="color:var(--amber2)">Lamek Movie Shop</span></div>
+    </div>
+  </div>
+  <div style="padding:6px 18px 0">
+    <div class="perk"><span class="ic" style="background:rgba(45,212,191,.12);color:var(--teal)">${icon("gift", 15)}</span>100 points welcome gift when the shop adds you</div>
+    <div class="perk"><span class="ic" style="background:rgba(245,165,36,.12);color:var(--amber2)">${icon("film", 15)}</span>Browse 3,300 movies and series, pay with credits</div>
+    <div class="perk"><span class="ic" style="background:rgba(139,92,246,.14);color:#c4b5fd">${icon("tag", 15)}</span>Deals from Lamek shops, only here</div>
+    <div class="field"><div class="lab">Your name</div><div class="input">Meron Habte</div></div>
+    <div class="field"><div class="lab">Phone number</div><div class="input">+291 7 412 908</div></div>
+    <div class="field"><div class="lab">Birthday <span style="color:var(--muted);font-weight:500">(optional, for a gift)</span></div><div class="input" style="color:var(--muted)">DD / MM</div></div>
+    <div class="btn amber" style="width:100%;height:46px;margin-top:16px;font-size:15px">Create my account</div>
+    <p style="font-size:11px;color:var(--muted);text-align:center;margin-top:10px;line-height:1.45">The shop adds you to IntraForge Pay at the counter;<br>then your wallet and rewards switch on.</p>
+  </div></div>`;
+
+// 2. Home
+const home = `<div class="scroll">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px 10px">${miniBrand}
+    <span class="chip teal" style="font-size:11px">${icon("wallet", 12)} 1,090 · ${icon("star", 10, 0)} 395</span></div>
+  <div style="position:relative;margin:0 16px;height:250px;border-radius:18px;overflow:hidden;background:linear-gradient(165deg,#f59e0b,#7c2d12)">
+    <svg viewBox="0 0 200 300" preserveAspectRatio="xMidYMid slice" style="position:absolute;inset:0;width:100%;height:100%">${MOTIFS.sun("#fde68a")}</svg>
+    <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 30%,rgba(5,7,13,.92))"></div>
+    <div style="position:absolute;left:14px;right:14px;bottom:14px">
+      <span class="chip amber" style="font-size:10px;padding:2px 8px">NEW IN THE SHOP</span>
+      <div class="display" style="font-size:30px;font-weight:600;text-transform:uppercase;margin-top:6px;line-height:1">Desert Wind</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:4px">2025 · Action · 1h 58m · ★ 4.6</div>
+      <div style="display:flex;gap:8px;margin-top:10px"><span class="btn amber sm" style="flex:1;height:34px">${icon("coins", 13)} Buy · 50</span><span class="btn sm" style="flex:1;height:34px;background:rgba(255,255,255,.12)">${icon("info", 13)} Details</span></div>
+    </div>
+  </div>
+  <div style="display:flex;gap:6px;padding:12px 16px 0;overflow:hidden">${["All", "Series", "Action", "Comedy", "Kids", "Drama"].map((c, i) => `<span class="chip" style="${i === 0 ? "background:var(--text);color:var(--bg);border-color:var(--text)" : ""}">${c}</span>`).join("")}</div>
+  <div class="rtitle">New this week <span>See all</span></div>${row([MOVIES[1], MOVIES[4], SERIES[5], MOVIES[7]])}
+  <div style="margin:14px 16px 0;height:86px;border-radius:14px;overflow:hidden;position:relative;background:linear-gradient(120deg,#1e3a8a,#0ea5e9);padding:12px 14px">
+    <span style="position:absolute;top:8px;right:10px;font-size:9px;font-weight:700;letter-spacing:.06em;opacity:.75">FROM THE SHOP</span>
+    <div class="display" style="font-size:20px;font-weight:600;text-transform:uppercase;margin-top:12px">Brake pads −20%</div>
+    <div style="font-size:11px;opacity:.9">Lamek Spare Parts · this week · tap for the catalogue</div>
+  </div>
+  <div class="rtitle">Series <span>142</span></div>${row([SERIES[0], SERIES[1], SERIES[2], SERIES[3]])}
+</div>${tabs("Home")}`;
+
+// 3. Movie detail and buying
+const m = MOVIES[1];
+const detail = `<div class="scroll" style="inset:0 0 74px">
+  <div style="position:relative;height:330px;overflow:hidden;background:linear-gradient(165deg,${m.c[0]},${m.c[1]})">
+    <svg viewBox="0 0 200 300" preserveAspectRatio="xMidYMid slice" style="position:absolute;inset:0;width:100%;height:100%">${MOTIFS.wave(m.c[2])}</svg>
+    <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.25),rgba(0,0,0,0) 30%,var(--bg))"></div>
+    <span style="position:absolute;top:52px;left:16px;width:34px;height:34px;border-radius:50%;background:rgba(0,0,0,.45);display:grid;place-items:center">${icon("chevronleft", 18)}</span>
+    <span style="position:absolute;top:52px;right:16px;width:34px;height:34px;border-radius:50%;background:rgba(0,0,0,.45);display:grid;place-items:center">${icon("heart", 16)}</span>
+    <div style="position:absolute;left:16px;right:16px;bottom:6px"><div class="display" style="font-size:34px;font-weight:600;text-transform:uppercase;line-height:1">Iron Harbor</div>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><span class="chip" style="font-size:10.5px;padding:3px 8px"><span style="color:var(--amber2)">${icon("star", 11, 0)}</span> 4.3</span><span class="chip" style="font-size:10.5px;padding:3px 8px">2024</span><span class="chip" style="font-size:10.5px;padding:3px 8px">2h 06m</span><span class="chip" style="font-size:10.5px;padding:3px 8px">4K</span><span class="chip" style="font-size:10.5px;padding:3px 8px">Action</span></div></div>
+  </div>
+  <div style="padding:10px 16px 0">
+    <p style="font-size:12.5px;color:var(--text2);line-height:1.55">A harbor pilot uncovers a smuggling ring and has one night to warn the port before the storm closes it.</p>
+    <div style="margin-top:14px;padding:14px;border-radius:16px;background:var(--surface);border:1px solid var(--line2)">
+      <div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:11px;color:var(--muted)">Price</div><div style="font-size:24px;font-weight:800">50 <span style="font-size:12px;color:var(--muted);font-weight:600">credits</span></div></div>
+        <span class="chip teal" style="font-size:11px">${icon("gift", 12)} You earn +5 points</span></div>
+      <div class="btn amber" style="width:100%;height:46px;margin-top:12px;font-size:15px">${icon("coins", 16)} Buy with IF Pay</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:12px;padding:10px;border-radius:12px;background:var(--bg2);border:1px dashed var(--line2)">
+        <span style="color:var(--amber2)">${icon("usb", 22)}</span><div style="font-size:11.5px;color:var(--text2);line-height:1.4">After paying, bring your USB or phone to the counter and show <b style="color:var(--text)">code 4821</b>: the shop copies it for you.</div>
+      </div>
+    </div>
+    <div class="rtitle" style="padding:0;margin-top:14px">More like this <span></span></div>
+    <div style="display:flex;gap:10px">${[MOVIES[3], MOVIES[7], MOVIES[2]].map((x) => `<div style="width:100px">${cover(x)}</div>`).join("")}</div>
+  </div>
+</div>${tabs("Home")}`;
+
+// 4. Wallet and rewards
+const wallet = `<div class="scroll">
+  <div style="padding:6px 16px 0"><div style="font-size:20px;font-weight:800">My wallet</div><div style="font-size:11.5px;color:var(--muted)">IntraForge Pay · Lamek shops</div></div>
+  <div style="margin:12px 16px 0;padding:16px;border-radius:20px;background:linear-gradient(135deg,#0f766e,#134e4a 55%,#0b2f2c);position:relative;overflow:hidden;box-shadow:0 20px 40px -20px rgba(45,212,191,.6)">
+    <div style="position:absolute;right:-30px;top:-30px;width:130px;height:130px;border-radius:50%;background:rgba(255,255,255,.08)"></div>
+    <div style="font-size:11.5px;color:#99f6e4">Balance</div>
+    <div style="font-size:34px;font-weight:800;letter-spacing:-.02em">1,090 <span style="font-size:14px;font-weight:600;color:#99f6e4">credits</span></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px"><span class="chip amber" style="font-size:10.5px">${icon("star", 10, 0)} Gold member</span><span style="font-size:11px;color:#ccfbf1">Selam Tesfaye</span></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 16px 0"><span class="btn" style="height:40px">${icon("qr", 15)} My pay QR</span><span class="btn" style="height:40px">${icon("plus", 15)} Top up</span></div>
+  <div style="margin:12px 16px 0;padding:14px;border-radius:16px;background:var(--surface);border:1px solid var(--line)">
+    <div style="display:flex;justify-content:space-between;align-items:baseline"><b style="font-size:13.5px">Reward points</b><span style="font-size:20px;font-weight:800;color:var(--teal)">395</span></div>
+    <div class="bar teal" style="margin-top:8px;height:8px"><i style="width:79%"></i></div>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:6px">105 more points and <b style="color:var(--amber2)">50 credits</b> drop into your wallet</div>
+    <div style="display:flex;gap:6px;margin-top:10px"><span class="chip" style="font-size:10.5px">${icon("film", 11)} 7 of 10 to a free title</span></div>
+  </div>
+  <div class="rtitle" style="margin-top:14px">Activity <span>All</span></div>
+  <div style="padding:0 16px">
+    <div class="act"><span class="ic" style="background:rgba(245,165,36,.12);color:var(--amber2)">${icon("film", 15)}</span><div style="flex:1"><b>3 titles · Desert Wind, Iron Harbor...</b><div style="font-size:11px;color:var(--muted)">Today 13:42 · copied at the counter</div></div><b>−150</b></div>
+    <div class="act"><span class="ic" style="background:rgba(45,212,191,.12);color:var(--teal)">${icon("gift", 15)}</span><div style="flex:1"><b>Cashback 10%</b><div style="font-size:11px;color:var(--muted)">Today 13:42</div></div><b style="color:var(--teal)">+15 pts</b></div>
+    <div class="act"><span class="ic" style="background:rgba(139,92,246,.14);color:#c4b5fd">${icon("wifi", 15)}</span><div style="flex:1"><b>Welcome gift</b><div style="font-size:11px;color:var(--muted)">2 Oct · joined on the shop Wi-Fi</div></div><b style="color:var(--teal)">+100 pts</b></div>
+  </div>
+</div>${tabs("Wallet")}`;
+
+document.write(`<div class="row4">
+  ${phone(join, "1 · Join on the shop Wi-Fi", "Open shop.local or scan the poster's QR")}
+  ${phone(home, "2 · Browse", "Featured, categories, rows and the shop's ads")}
+  ${phone(detail, "3 · Buy", "Pay with IF Pay, collect at the counter")}
+  ${phone(wallet, "4 · Wallet and rewards", "Credits, points and what they earned")}
+</div>`);
+hydrate();
+</script>
+</body></html>

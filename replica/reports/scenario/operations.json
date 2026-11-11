@@ -1,0 +1,55 @@
+{
+  "suites": "Backend 1,289 passed (full suite, 7 Nov) plus the sites (56) and storage (31) suites after today's changes; frontend 128 passed; shop-kit scripts 4 passed.",
+  "checks": [
+    {
+      "title": "Backup now: company data (control database)",
+      "why": "The daily backup and the 'Backup now' button save the company data: users, organizations, apps, settings, audit log.",
+      "status": "PASS",
+      "actual": "Backup written (390,860 bytes), then restored into a throw-away database and validated: 'restored and validated successfully'."
+    },
+    {
+      "title": "Backup now: business records (tenant databases, IntraForge Pay's ledger)",
+      "why": "The second backup holds the shop's own databases, Spare Parts, the Pharmacy and the Pay ledger.",
+      "status": "PASS",
+      "actual": "Backup written (491,188 bytes), restored into a throw-away database and validated successfully."
+    },
+    {
+      "title": "Backup now: stored files",
+      "why": "The third backup holds every uploaded file and website.",
+      "status": "PASS",
+      "actual": "Backup written (51,492 bytes), restored and validated successfully."
+    },
+    {
+      "title": "Restore (real restore over the running test copy)",
+      "why": "Restore puts the shop back to a backup. Run on 4 November against the same test copy: two changes were made after a backup, then the backup was restored.",
+      "status": "PASS",
+      "actual": "Both changes were gone after the restore, every service came back healthy, IntraForge Pay's ledger balanced (380.50 debit = 380.50 credit) and the public website kept answering."
+    },
+    {
+      "title": "Stop / Start / Restart services keep the internet tunnel",
+      "why": "Restarting used to leave the Cloudflare connector stopped, so websites went offline (fixed in 1.5.0).",
+      "status": "PASS",
+      "actual": "4 automated tests of the kit scripts pass (with a fake Docker); all 4 fail on the old script."
+    },
+    {
+      "title": "The redesigned Control Center opens and draws every window without cutting anything off",
+      "why": "At 125-150 % display scaling the old Control Center cut off text and hid buttons.",
+      "status": "PASS",
+      "actual": "Compiled with the C# compiler that ships with Windows; main window, Settings, Allow other PCs, Restore, Uninstall and the result window drawn at 150 % (pictures below)."
+    }
+  ],
+  "first_run": "The first run passed 20 of 25 steps. One failure was a real bug (step 5, fixed above). The other four were mistakes in the test's own expectations, corrected before the final run: step 7 expected the versions list to count the current content too (it lists earlier versions only, which is right); step 12 looked for the word 'profile' while the page is titled 'Data quality report'; step 16 expected the wallet to drop by exactly 5.00, but the new IntraForge Pay paid 0.25 cashback back (the cashback feature working); step 25 looked for the sign-out button behind an account menu, while it is directly in the sidebar.",
+  "confirmed": [
+    "Auto-publish under harmongt.uk: a new website was published as scenario-11081357.harmongt.uk with nobody pressing anything, and answered from the internet through Cloudflare (HTTP 200); switching auto-publish off took the name back (HTTP 404) and kept shop.harmongt.uk, which was published by hand.",
+    "IntraForge Pay cashback: a 5.00 payment paid 0.25 back into the customer's wallet.",
+    "Optimistic switches: an app's Disable/Enable reacts at once.",
+    "Smoother pages: page changes fade, dialogs ease in, new table rows fade in, and pages already seen open from memory."
+  ],
+  "not_covered": [
+    "Uninstall: not run on this PC, because it removes things for the whole PC (start-up entry, backup tasks, shortcut, firewall rules) and would affect the real shop. It needs a spare PC or a virtual machine.",
+    "A real Windows restart, a second PC on the shop network, and the installer on a brand-new PC: need the hardware.",
+    "The Android wallet app on a real phone: needs Shop network switched on and a phone; the app's code was checked, not run on a device.",
+    "Paying an invoice by scanning the QR with a phone camera: the QR was shown (step 15); the payment itself was confirmed through the wallet's own interface (step 16) and, on 4 November, by decoding the QR from Spare Parts and the Pharmacy.",
+    "Real money: IntraForge Pay uses simulated IF Credits only."
+  ]
+}

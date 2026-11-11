@@ -12,6 +12,7 @@ class RecordTests(TestCase):
         self.org = Organization.objects.create(name="Org", slug="org", created_by=self.user)
 
     def test_record_creates_an_event(self):
+        before = AuditEvent.objects.count()
         event = record(
             actor=self.user,
             organization_id=self.org.id,
@@ -19,7 +20,8 @@ class RecordTests(TestCase):
             resource_type="file_object",
             resource_id="some-id",
         )
-        self.assertEqual(AuditEvent.objects.count(), 1)
+        self.assertEqual(AuditEvent.objects.count(), before + 1)
+        self.assertEqual(AuditEvent.objects.filter(pk=event.pk, organization=self.org).count(), 1)
         self.assertEqual(event.result, AuditEvent.Result.SUCCESS)
         self.assertEqual(event.actor, self.user)
 
