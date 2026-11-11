@@ -481,3 +481,30 @@ in its schema. All 13 services up on `1.5.4-6fcb9da90` (Pay, Spare Parts and Pha
 `/login` and `/movies` answer 200, the portal API 404 for an unknown shop; `C:\IntraForge\IntraForgeMediaAgent.exe`
 in place; 1.5.3 kept in `.previous`. Not yet done: pairing the media agent on the shop PC and a real phone on the shop
 Wi-Fi.
+
+### Movie Shop additions, licensing, and kit 1.5.5 (2026-11-11)
+
+**Movie Shop** (`77c2c8d`): music (a song, a folder of songs = an album); the owner's own poster in Edit title, kept
+through re-scans; renaming the shop and libraries; editing a customer; password recovery only with the owner's
+permission (a one-time portal code, and a new one-time IF Pay wallet password through Pay's new
+`POST /internal/customers/<id>/reset-password`, Pay `feature/shop-app-customers` `44b16e2`); cancelling a portal order
+at the counter; the Movie Shop listed on the Apps page like the other apps (its sidebar link removed); faster copying
+(Windows `CopyFileEx`, unbuffered from 64 MB, one worker per customer drive, progress from a timer).
+
+**Licensing** (`43aaa1f`, ADR-0023): 30 days, then read-only without a licence; Ed25519-signed activation codes from
+the vendor's tool (`scripts/licensing`), one SN per PC kept by the vendor's registry, a master SN for the owner's own
+PCs; the kit writes the PC code and first-start day to `<data>\machine`. The vendor key pair and registry are in
+`C:\Users\<vendor>\intraforge\licensing`, outside every repository and kit.
+
+Checked: backend 54 Movie Shop and 13 licensing tests, the whole suite 1353 passed; frontend 36 files / 208 tests
+(run in two parts: the busy PC made vitest workers time out at start, not fail); Pay 28 tests. Kit
+`IntraForge-Local-1.5.5-43aaa1f56.zip` (914 MB, SHA-256 `ed6c77a1...ef69a1`) and `IntraForge-Setup-1.5.5-43aaa1f56.exe`
+(SHA-256 `60f29627...51b1cc`), Pay image = the cashback image with `ifpay` from `44b16e2`; 8/8 checksums, 12 images,
+`LICENSE_ENFORCED` and the machine mount in the compose file, no keys in the kit; `npm audit` 0, `pip-audit` none.
+Live on the test copy with the kit's images and a test PC code: the new agent scanned a song and a 4-song album (with
+its cover); a 300 MB film, the album and the song copied in 8 s, byte-identical, no `.part` left; the Apps page shows
+the shop and "Install Movie Shop"; a poster set in Edit title; the portal's Forgot password, the owner's one-time code
+and the reset (the customer signed in again); the Licence page in trial (30 days, the PC code) and activated with the
+master SN. **Shop PC upgraded 1.5.4 -> 1.5.5** (exit 0; safety backup 535,413 + 523,119 + 368,932 bytes; migrations
+licensing 0001 and movie_shop 0005) and **activated with the master SN** for its PC code `PC-0F7A-EA68-C3B9-C607`.
+The Spare Parts service app's label is being fixed in a separate session (lamek-star/spare-part-shop).
