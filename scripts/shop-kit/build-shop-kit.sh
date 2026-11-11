@@ -59,20 +59,32 @@ if [ -n "${PAY_IMAGE:-}" ]; then
   [ -n "${PAY_SOURCE:-}" ] || { echo "PAY_IMAGE needs PAY_SOURCE (where that Pay image was built from)" >&2; exit 1; }
   docker image inspect "$PAY_IMAGE" >/dev/null 2>&1 || { echo "$PAY_IMAGE is not on this machine" >&2; exit 1; }
 fi
+# SPAREPARTS_IMAGE + PHARMACY_IMAGE + SPAREPARTS_SOURCE take Spare Parts and its Pharmacy edition from a newer build of
+# the Spare Parts repository (build-spareparts-image.sh, or its own Dockerfile) instead of carrying them over; all
+# three are required together, and recorded.
+if [ -n "${SPAREPARTS_IMAGE:-}${PHARMACY_IMAGE:-}" ]; then
+  [ -n "${SPAREPARTS_IMAGE:-}" ] && [ -n "${PHARMACY_IMAGE:-}" ] && [ -n "${SPAREPARTS_SOURCE:-}" ] || {
+    echo "SPAREPARTS_IMAGE, PHARMACY_IMAGE and SPAREPARTS_SOURCE go together" >&2; exit 1; }
+  for ref in "$SPAREPARTS_IMAGE" "$PHARMACY_IMAGE"; do
+    docker image inspect "$ref" >/dev/null 2>&1 || { echo "$ref is not on this machine" >&2; exit 1; }
+  done
+fi
 CARRIED=()
 for name in intraforge-shop-spareparts intraforge-shop-pharmacy intraforge-shop-pay intraforge-runtime-node; do
   source_ref="$name:$CARRY_APPS_FROM"
   [ "$name" = intraforge-shop-pay ] && [ -n "${PAY_IMAGE:-}" ] && source_ref="$PAY_IMAGE"
+  [ "$name" = intraforge-shop-spareparts ] && [ -n "${SPAREPARTS_IMAGE:-}" ] && source_ref="$SPAREPARTS_IMAGE"
+  [ "$name" = intraforge-shop-pharmacy ] && [ -n "${PHARMACY_IMAGE:-}" ] && source_ref="$PHARMACY_IMAGE"
   docker image inspect "$source_ref" >/dev/null 2>&1 || { echo "$source_ref is not on this machine" >&2; exit 1; }
   docker tag "$source_ref" "$name:$TAG"
   if [ "$source_ref" = "$name:$CARRY_APPS_FROM" ]; then
     CARRIED+=("$name $(docker image inspect "$name:$TAG" --format '{{.Id}}')")
     echo "   carried over unchanged: $source_ref -> $name:$TAG"
   else
-    echo "   from a newer build: $source_ref ($PAY_SOURCE) -> $name:$TAG"
+    echo "   from a newer build: $source_ref -> $name:$TAG"
   fi
 done
-export CARRY_APPS_FROM PAY_SOURCE="${PAY_SOURCE:-}"
+export CARRY_APPS_FROM PAY_SOURCE="${PAY_SOURCE:-}" SPAREPARTS_SOURCE="${SPAREPARTS_SOURCE:-}"
 # The Cloudflare Tunnel connector: the exact release the compose template names (RUNNER_TUNNEL_IMAGE).
 TUNNEL_IMAGE="$(sed -n 's/^ *RUNNER_TUNNEL_IMAGE: *//p' "$HERE/template/docker-compose.yml" | tr -d '\r')"
 docker image inspect "$TUNNEL_IMAGE" >/dev/null 2>&1 || { echo "$TUNNEL_IMAGE is not on this machine (docker pull it once)" >&2; exit 1; }
@@ -129,6 +141,10 @@ docker save -o "$OUTW/images/intraforge-shop-images.tar" "${IMAGES[@]}"
   if [ -n "$PAY_SOURCE" ]; then
     echo "Pay:           IntraForge Pay from $PAY_SOURCE, image $(docker image inspect "intraforge-shop-pay:$TAG" --format '{{.Id}}')"
   fi
+  if [ -n "$SPAREPARTS_SOURCE" ]; then
+    echo "Spare Parts:   from $SPAREPARTS_SOURCE, image $(docker image inspect "intraforge-shop-spareparts:$TAG" --format '{{.Id}}')"
+    echo "Pharmacy:      from $SPAREPARTS_SOURCE, image $(docker image inspect "intraforge-shop-pharmacy:$TAG" --format '{{.Id}}')"
+  fi
   echo "Tunnel:      $TUNNEL_IMAGE (Cloudflare Tunnel connector, used only when the Super Administrator switches internet access on)"
   echo "Control Center: IntraForgeControlCenter.exe (.NET Framework 4.x) sha256 $(sha256sum "$CC_TMP/IntraForgeControlCenter.exe" | cut -d' ' -f1)"
 } > "$OUT/BUILD_INFO.txt"
@@ -139,13 +155,15 @@ import json, os, pathlib, subprocess, sys
 out = pathlib.Path(sys.argv[1]); head, version, built = sys.argv[2:5]; images = sys.argv[5:]
 def inspect(ref, fmt):
     return subprocess.run(["docker", "image", "inspect", ref, "--format", fmt], capture_output=True, text=True, check=True).stdout.strip()
+carried = "separate project, image carried over unchanged from kit " + os.environ.get("CARRY_APPS_FROM", "?")
+spareparts = ("separate project, " + os.environ["SPAREPARTS_SOURCE"]) if os.environ.get("SPAREPARTS_SOURCE") else carried
 purpose = {
     "intraforge-shop-backend": ("IntraForge backend, workers and scheduler (Django, Celery), migrations", f"built from source at {head[:9]}", "project"),
     "intraforge-shop-frontend": ("IntraForge web interface (Next.js)", f"built from source at {head[:9]}", "project"),
     "intraforge-shop-spareparts": ("Spare Parts / Inventory & Sales service application (Next.js), served inside IntraForge at /apps/spare-parts/ (no port of its own)",
-        "separate project, image carried over unchanged from kit " + os.environ.get("CARRY_APPS_FROM", "?"), "project (its npm dependencies keep their own licences)"),
+        spareparts, "project (its npm dependencies keep their own licences)"),
     "intraforge-shop-pharmacy": ("Pharmacy: the Spare Parts engine built as its pharmacy edition, served at /apps/pharmacy/",
-        "separate project, image carried over unchanged from kit " + os.environ.get("CARRY_APPS_FROM", "?"), "project (its npm dependencies keep their own licences)"),
+        spareparts, "project (its npm dependencies keep their own licences)"),
     "intraforge-shop-pay": ("IntraForge Pay service application (simulated IF Credits), served at /apps/pay-N/",
         ("separate project, " + os.environ["PAY_SOURCE"]) if os.environ.get("PAY_SOURCE") else
         ("separate project, image carried over unchanged from kit " + os.environ.get("CARRY_APPS_FROM", "?")),

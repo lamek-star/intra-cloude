@@ -36,6 +36,7 @@ urlpatterns = [
     path("movie-titles/<uuid:title_id>/", views.TitleDetailView.as_view(), name="movie-title-detail"),
     path("movie-titles/<uuid:title_id>/cover/", views.TitleCoverView.as_view(), name="movie-title-cover"),
     path("movie-shops/<uuid:shop_id>/sales/", views.SaleListCreateView.as_view(), name="movie-shop-sales"),
+    path("movie-shops/<uuid:shop_id>/today/", views.ShopTodayView.as_view(), name="movie-shop-today"),
     path(
         "movie-shops/<uuid:shop_id>/destinations/",
         views.DestinationsView.as_view(),

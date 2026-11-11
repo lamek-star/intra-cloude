@@ -265,3 +265,30 @@ class SaleTests(TestCase):
         )
         again = self.client.post(f"/api/v1/movie-sales/{sale['id']}/retry/").data
         self.assertEqual({ln["copy_status"] for ln in again["lines"]}, {"waiting"})
+
+    # The catalogue's "Today" card: what was sold since the browser's own midnight.
+    def test_today_counts_paid_sales_titles_and_credits_since_the_given_moment(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        url = f"/api/v1/movie-shops/{self.shop.id}/today/"
+        sale = self.sell().data
+        self.assertEqual(self.client.get(url).data["sales"], 0)  # not paid yet
+        self.client.post(f"/api/v1/movie-sales/{sale['id']}/cash/")
+        since = (timezone.now() - timedelta(hours=3)).isoformat()
+        day = self.client.get(url, {"since": since}).data
+        self.assertEqual((day["sales"], day["titles"], day["credits"]), (1, 2, 110))
+        self.assertEqual(day["since"], since)
+        later = (timezone.now() + timedelta(minutes=1)).isoformat()  # the future is not a day: UTC midnight
+        self.assertNotEqual(self.client.get(url, {"since": later}).data["since"], later)
+        self.assertEqual(self.client.get(url, {"since": "not a date"}).status_code, 200)
+
+    def test_a_member_without_selling_or_managing_cannot_see_the_day(self):
+        self.client.force_login(self.clerk)
+        self.assertEqual(self.client.get(f"/api/v1/movie-shops/{self.shop.id}/today/").status_code, 403)
+
+    def test_another_organization_cannot_see_the_day(self):
+        outsider = User.objects.create_user(email="today-outsider@example.com")
+        self.client.force_login(outsider)
+        self.assertEqual(self.client.get(f"/api/v1/movie-shops/{self.shop.id}/today/").status_code, 404)

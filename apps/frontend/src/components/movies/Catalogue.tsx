@@ -47,6 +47,12 @@ export function Catalogue({ shopId }: { shopId: string }) {
     enabled: shop.data?.can_manage === true,
     refetchInterval: 30000,
   });
+  const today = useQuery({
+    queryKey: ["movies", shopId, "today"],
+    queryFn: () => movies.today(shopId),
+    enabled: shop.data?.can_sell === true || shop.data?.can_manage === true,
+    refetchInterval: 30000,
+  });
   const categories = useQuery({ queryKey: ["movies", shopId, "categories", library], queryFn: () => movies.categories(shopId, library ?? undefined) });
   const titles = useQuery({
     queryKey: ["movies", shopId, "titles", library, category, query, limit],
@@ -217,6 +223,16 @@ export function Catalogue({ shopId }: { shopId: string }) {
                 </div>
               );
             })}
+            {today.data && (
+              <div className="mt-4 rounded-2xl border border-[#252e47] bg-[#141a2b] p-3.5" aria-label="Today">
+                <p className="text-sm font-semibold">Today</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                  {today.data.titles.toLocaleString()} {today.data.titles === 1 ? "title" : "titles"} sold · {today.data.credits.toLocaleString()} credits
+                  <br />
+                  {today.data.new_customers.toLocaleString()} new {today.data.new_customers === 1 ? "customer" : "customers"} on the portal
+                </p>
+              </div>
+            )}
           </aside>
 
           <section className="min-w-0">
@@ -247,8 +263,8 @@ export function Catalogue({ shopId }: { shopId: string }) {
                 </div>
               </form>
             </div>
-            <div className="mt-3 flex gap-2.5 overflow-x-auto pb-2">
-              <FolderTile name="Everything" count={cats.reduce((a, c) => a + c.count, 0)} active={category === null} onClick={() => setCategory(null)} />
+            <div className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-2.5">
+              <FolderTile all name="Everything" count={cats.reduce((a, c) => a + c.count, 0)} active={category === null} onClick={() => setCategory(null)} />
               {cats.map((c) => (
                 <FolderTile key={c.name} name={c.name} count={c.count} active={category === c.name} onClick={() => setCategory(c.name)} />
               ))}
@@ -265,7 +281,7 @@ export function Catalogue({ shopId }: { shopId: string }) {
             ) : titles.data && titles.data.results.length === 0 ? (
               <p className="mt-6 text-sm text-slate-500">{scanning ? "The media agent is scanning the folders..." : "No titles here yet."}</p>
             ) : (
-              <div className={`mt-4 grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-3 md:grid-cols-4 ${cart.length ? "xl:grid-cols-5" : "xl:grid-cols-6"}`}>
+              <div className={`mt-4 grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-3 md:grid-cols-4 ${cart.length ? "xl:grid-cols-4" : "xl:grid-cols-5 2xl:grid-cols-6"}`}>
                 {titles.data?.results.map((t) => (
                   <TitleCard
                     key={t.id}
@@ -326,18 +342,38 @@ export function Catalogue({ shopId }: { shopId: string }) {
   );
 }
 
-function FolderTile({ name, count, active, onClick }: { name: string; count: number; active: boolean; onClick: () => void }) {
+const FOLDER_COLOURS = [
+  "from-rose-500 to-rose-800",
+  "from-emerald-400 to-emerald-700",
+  "from-violet-500 to-violet-800",
+  "from-sky-400 to-sky-700",
+  "from-orange-400 to-orange-700",
+  "from-teal-400 to-teal-700",
+  "from-fuchsia-500 to-fuchsia-800",
+];
+
+/** A folder's colour, the same every time for the same name. */
+function folderColour(name: string): string {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return FOLDER_COLOURS[h % FOLDER_COLOURS.length];
+}
+
+function FolderTile({ name, count, active, onClick, all = false }: { name: string; count: number; active: boolean; onClick: () => void; all?: boolean }) {
   return (
     <button
       onClick={onClick}
       aria-pressed={active}
-      className={`flex min-w-[150px] items-center gap-3 rounded-2xl border p-3 text-left transition ${active ? "border-amber-400 bg-gradient-to-b from-amber-400/10 to-[#141a2b] shadow-[0_0_0_3px_rgba(245,165,36,.15)]" : "border-[#252e47] bg-[#141a2b] hover:border-[#323c5a]"}`}
+      className={`flex min-w-0 items-center gap-3 rounded-2xl border p-3 text-left transition ${active ? "border-amber-400 bg-gradient-to-b from-amber-400/10 to-[#141a2b] shadow-[0_0_0_3px_rgba(245,165,36,.15)]" : "border-[#252e47] bg-[#141a2b] hover:border-[#323c5a]"}`}
     >
-      <span className={`grid h-10 w-10 place-items-center rounded-xl ${active ? "bg-amber-400 text-amber-950" : "bg-[#1b2236] text-slate-300"}`}>
-        <Folder className="h-5 w-5" />
+      <span
+        className={`relative grid h-11 w-9 shrink-0 place-items-center rounded-lg bg-gradient-to-b text-white shadow-[4px_0_0_-1px_rgba(255,255,255,.08)] ${all ? "from-amber-300 to-amber-600" : folderColour(name)}`}
+        aria-hidden
+      >
+        <Folder className="h-4 w-4 opacity-90" />
       </span>
-      <span>
-        <span className="block text-sm font-semibold">{name}</span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-semibold">{name}</span>
         <span className="block text-xs text-slate-500">{titlesLabel(count)}</span>
       </span>
     </button>

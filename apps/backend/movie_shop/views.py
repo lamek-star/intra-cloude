@@ -718,3 +718,40 @@ class CustomerDetailView(OwnerView):
             customer, actor=request.user, data=request.data if isinstance(request.data, dict) else {}
         )
         return Response({"customer": _owner_customer_json(customer)})
+
+
+class ShopTodayView(OwnerView):
+    """The shop's day so far, for the catalogue's "Today" card: titles sold, credits taken and new portal
+    customers since ``since`` (the browser's own midnight, so the day is the shop's, not UTC's)."""
+
+    def get(self, request, shop_id):
+        from datetime import timedelta
+
+        from django.db.models import Count, Sum
+        from django.utils import timezone
+        from django.utils.dateparse import parse_datetime
+
+        from .models import Sale, SaleLine
+
+        shop = get_member_shop(request.user, shop_id)
+        if not (_can_sell(request.user, shop) or _can(request.user, "movies.manage", shop)):
+            return _forbidden()
+        now = timezone.now()
+        try:
+            since = parse_datetime(request.query_params.get("since", ""))
+        except ValueError:
+            since = None
+        # Only a real moment in the last two days; anything else means UTC midnight.
+        if since is None or since.tzinfo is None or not (now - timedelta(days=2) <= since <= now):
+            since = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        paid = shop.sales.filter(status__in=[Sale.Status.PAID, Sale.Status.DONE], paid_at__gte=since)
+        totals = paid.aggregate(sales=Count("id"), credits=Sum("total"))
+        return Response(
+            {
+                "since": since.isoformat(),
+                "sales": totals["sales"] or 0,
+                "titles": SaleLine.objects.filter(sale__in=paid).count(),
+                "credits": totals["credits"] or 0,
+                "new_customers": shop.customers.filter(created_at__gte=since).count(),
+            }
+        )
