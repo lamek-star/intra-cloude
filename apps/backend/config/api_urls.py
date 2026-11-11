@@ -25,4 +25,5 @@ urlpatterns: list[URLPattern | URLResolver] = [
     path("", include("sites.urls")),
     path("", include("system.api_urls")),
     path("", include("movie_shop.urls")),
+    path("", include("licensing.urls")),
 ]

@@ -80,6 +80,7 @@ LOCAL_APPS = [
     "service_apps",
     "sites",
     "movie_shop",
+    "licensing",
 ]
 
 # --- Service applications (ADR-0018) ---
@@ -131,6 +132,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "licensing.middleware.LicenceMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
@@ -514,3 +516,14 @@ LOGGING = {
         "django": {"handlers": ["console"], "level": "INFO", "propagate": False},
     },
 }
+
+
+# ---- licensing (ADR-0023) ----------------------------------------------------------------------------
+# Enforced in the shop kit (LICENSE_ENFORCED=true in its compose file): a 30-day trial, then read-only until a
+# serial number is activated for this PC. The public key belongs to the vendor's licence tool
+# (scripts/licensing); only the vendor holds the private key. The kit's start script writes this PC's code
+# into LICENSE_MACHINE_DIR.
+LICENSE_ENFORCED = env("LICENSE_ENFORCED", "false").lower() == "true"
+LICENSE_TRIAL_DAYS = int(env("LICENSE_TRIAL_DAYS", "30"))
+LICENSE_PUBLIC_KEY = env("LICENSE_PUBLIC_KEY", "zSfqFYK1MLzgjwzs8ae9uWBTK4LkiMJ3xPaEbXWYjIM=")
+LICENSE_MACHINE_DIR = env("LICENSE_MACHINE_DIR", "/run/intraforge/machine")

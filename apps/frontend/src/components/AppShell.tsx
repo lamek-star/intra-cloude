@@ -4,9 +4,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, ChevronDown, Clapperboard, Compass, LayoutDashboard, LayoutGrid, LogOut, Search, type LucideIcon } from "lucide-react";
+import { Building2, ChevronDown, Compass, LayoutDashboard, LayoutGrid, LogOut, Search, type LucideIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { prefetchRoute } from "@/lib/queries";
+import { LicenceBanner } from "./LicenceBanner";
 import { ConfirmProvider } from "@/components/ConfirmProvider";
 import { CommandPalette } from "@/components/CommandPalette";
 import { PageTransition } from "@/components/PageTransition";
@@ -91,9 +92,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </SidebarLink>
             <SidebarLink href="/orgs" icon={Building2}>
               Organizations
-            </SidebarLink>
-            <SidebarLink href="/movies" icon={Clapperboard}>
-              Movie Shop
             </SidebarLink>
           </nav>
 
@@ -204,6 +202,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               )}
             </div>
           </header>
+          <LicenceBanner />
           <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto p-4 sm:p-8 outline-none">
             <div className="mx-auto max-w-6xl">
               <PageTransition>{children}</PageTransition>

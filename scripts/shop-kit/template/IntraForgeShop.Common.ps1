@@ -540,3 +540,32 @@ function Set-ShopHostsEntries([string]$Address, [string[]]$HostNames, [string]$H
 function Remove-ShopHostsEntries([string]$HostsFile = "$env:SystemRoot\System32\drivers\etc\hosts") {
     Set-ShopHostsEntries -Address '' -HostNames @() -HostsFile $HostsFile
 }
+
+
+# This PC's licence identity (ADR-0023), for IntraForge to read at <data folder>\machine:
+#   pc-code      "PC-1A2B-3C4D-5E6F-7A8B": SHA-256 over the Windows machine id and the motherboard UUID (the same
+#                formula as apps/backend/licensing/codes.py pc_code), so the vendor's activation code fits this PC only;
+#   first-start  the day IntraForge first started on this PC, also kept in the registry so a reinstall does not give
+#                a new trial.
+function Write-ShopMachineIdentity {
+    $dir = Join-Path (Get-DataDir) 'machine'
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    $guid = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Cryptography' -Name MachineGuid -ErrorAction SilentlyContinue).MachineGuid
+    $uuid = try { (Get-CimInstance Win32_ComputerSystemProduct -ErrorAction Stop).UUID } catch { '' }
+    $text = 'IntraForge-PC:' + "$guid".ToLowerInvariant() + '|' + "$uuid".ToLowerInvariant()
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $hash = $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($text)) } finally { $sha.Dispose() }
+    $hex = -join ($hash[0..7] | ForEach-Object { $_.ToString('X2') })
+    $code = 'PC-' + $hex.Substring(0, 4) + '-' + $hex.Substring(4, 4) + '-' + $hex.Substring(8, 4) + '-' + $hex.Substring(12, 4)
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText((Join-Path $dir 'pc-code'), $code, $utf8)
+    $key = 'HKCU:\Software\IntraForge'
+    if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
+    $first = (Get-ItemProperty $key -Name FirstStart -ErrorAction SilentlyContinue).FirstStart
+    $file = Join-Path $dir 'first-start'
+    if (-not $first -and (Test-Path $file)) { $first = (Get-Content $file -TotalCount 1).Trim() }
+    if (-not $first) { $first = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd') }
+    Set-ItemProperty $key -Name FirstStart -Value $first
+    [IO.File]::WriteAllText($file, $first, $utf8)
+    return $code
+}

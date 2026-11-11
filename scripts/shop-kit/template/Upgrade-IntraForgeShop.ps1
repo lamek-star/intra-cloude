@@ -138,6 +138,7 @@ try {
     Compose-In $InstallDir run --rm backend python manage.py sync_service_apps
 
     Step 'Starting the new version'
+    try { [void](Write-ShopMachineIdentity) } catch { Write-Host "This PC's licence code could not be written: $($_.Exception.Message)" -ForegroundColor Yellow }
     Compose-In $InstallDir up -d --pull never
     Push-Location $InstallDir
     try { if (-not (Wait-ShopReady)) { throw 'The new version did not become healthy.' } }

@@ -18,10 +18,14 @@ x-backend: &backend
     SITES_RUNNER_URL: http://runner:8700
     # The Pharmacy (built-in, pilot preview) is offered in the shop; set BUILT_IN_APP_PREVIEWS= in .env to hide it.
     BUILT_IN_APP_PREVIEWS: ${BUILT_IN_APP_PREVIEWS-pharmacy}
+    # Licensing (ADR-0023): a 30-day trial, then read-only until a serial number is activated for this PC.
+    LICENSE_ENFORCED: "true"
   networks: [isolated]
   volumes:
     - ${SHOP_DATA_DIR:-C:/IntraForgeData}/backups:/backups
     - ./VERSION:/VERSION:ro
+    # This PC's licence code and first-start day, written by Start-IntraForgeShop.ps1 (Write-ShopMachineIdentity).
+    - ${SHOP_DATA_DIR:-C:/IntraForgeData}/machine:/run/intraforge/machine:ro
 
 services:
   postgres-control:

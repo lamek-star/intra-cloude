@@ -27,6 +27,8 @@ try {
         }
         catch { Write-ShopLog "shop Wi-Fi could not be started: $($_.Exception.Message)" }
     }
+    # This PC's licence identity (ADR-0023); never a reason for IntraForge not to start.
+    try { [void](Write-ShopMachineIdentity) } catch { Write-ShopLog "this PC's licence code could not be written: $($_.Exception.Message)" }
     $env:SHOP_HTTPS_PORT = "$(Get-ShopPort)"; $env:SHOP_DATA_DIR = ((Get-DataDir) -replace '\\', '/')
     # The shop's name server (ADR-0021) listens on this PC's shop-network address. If that address is gone (the router
     # gave the PC another one), start everything else without it: never a reason for IntraForge not to start.

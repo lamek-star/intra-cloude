@@ -169,8 +169,10 @@ same stock, receiving and selling, with medicines instead of products and item n
 
 ### The Movie Shop
 
-**Movie Shop** in the sidebar turns the films and series on the shop PC's own drives into a catalogue (ADR-0022). The
-files never move into IntraForge: it keeps their names, sizes, covers and prices.
+**Movie Shop** turns the films, series and music on the shop PC's own drives into a catalogue (ADR-0022). It is an app
+like the others: **Apps > Available to install > Movie Shop** creates a shop, and each shop then appears under
+**Installed applications** with **Open**. The files never move into IntraForge: it keeps their names, sizes, covers and
+prices.
 
 1. **New movie shop**: give it a name and choose the project that keeps the covers.
 2. **Connect the shop's drives**: create the connection key, then run the command shown once in PowerShell on the shop
@@ -179,9 +181,13 @@ files never move into IntraForge: it keeps their names, sizes, covers and prices
 3. **Choose the folders** (or type one, such as `D:\Movies`; a NAS works when it is mapped as a drive letter). Each
    folder inside becomes a category, each video a title, a folder of videos a series. The title and year come from the
    file name (`Desert Wind (2025).mp4`); a picture with the same name, or `poster.jpg` in the film's folder, becomes the
-   cover, and titles without one get a drawn cover.
+   cover, and titles without one get a drawn cover. **Music** works the same way: an audio file (`.mp3 .m4a .flac
+   .wav .aac .ogg .opus .wma`) is a song, and a folder of songs is an album.
 4. **Prices** sets one price for every title and one per category (in IntraForge Pay credits); **Edit** on a title
-   corrects its name, year or category, sets its own price or hides it. **Scan again** on a library after adding films.
+   corrects its name, year or category, sets its own price or hides it, and **Change poster** puts your own picture on
+   it (JPEG, PNG or WebP up to 3 MB); your poster stays when the folder is scanned again, until you choose **Use the
+   folder's picture**. **Scan again** on a library after adding films. The pencil next to the shop's name renames the
+   shop; **Rename** on a library renames it. Every dialog has **Cancel**, and nothing is saved until you press Save.
 
 5. **Selling at the counter** (needs `movies.sell` on the shop): plug the customer's USB drive into the shop PC and
    press **Add** on each title they want. The cart on the right lists the drive the media agent sees (the shop's own
@@ -207,9 +213,15 @@ files never move into IntraForge: it keeps their names, sizes, covers and prices
      first password **once**. Give both to the customer; the wallet makes them choose their own password at the
      first sign-in. You need the Pay Manager role (`ifpay.customers.manage`) in Pay. **Reject**, **Block** (signs
      them out and cancels their waiting orders) and **Unblock** are there too.
+   - **Edit** corrects a customer's name, phone number or birthday.
+   - **Forgotten passwords, with your permission only.** A customer who forgot their portal password chooses
+     **Forgot password?** on the portal; they show as **Asks for a new password** in Customers. **Password code** gives
+     you a one-time code (valid one hour, shown once) to hand them; they enter it under **I have a code** with a new
+     password, and their other sign-ins end. **Wallet password** gives their IF Pay wallet a new one-time password
+     (you need the Pay Manager role); the wallet asks them to choose their own again.
    - A customer's order appears in **Sales** marked PORTAL. When they come with their USB drive, open it, choose the
-     drive and IF Pay or cash, and press **Charge this order**: the free titles and their points apply then. A
-     cancelled or expired sale gives the points back.
+     drive and IF Pay or cash, and press **Charge this order**: the free titles and their points apply then. **Cancel
+     this order** cancels it; a cancelled or expired sale gives the points back.
 
 7. **Ads** in the header (needs `movies.manage`) puts ads at the top of your portal, marked "Ad": a new film, an offer,
    or another shop or business you advertise for (**For**). Give it a title, a short text, a picture (JPEG, PNG or
@@ -219,6 +231,16 @@ files never move into IntraForge: it keeps their names, sizes, covers and prices
    up or down, edit or delete it.
 
 Sell only films and series you hold the rights or a licence to sell.
+
+### The licence
+
+IntraForge Local Edition works fully for **30 days** from its first start; a line at the top of every page says how
+many days are left. After that, without a licence, it is **read-only**: everyone can still sign in, see and export
+everything, and backups keep running, but nothing can be added or changed. To activate (an administrator): open
+**Licence** (the link in that line, or `/license`), send **this PC's code** (`PC-....`) and your **serial number** to your
+IntraForge supplier, and enter the **activation code** they send back. An SN works on one PC; a new PC needs the
+supplier to move it. The copying speed of the Movie Shop: titles for one customer's drive copy one after another with
+Windows' own copy engine, and two customers' drives fill at the same time.
 
 ## 8. Real Features With No Screen Yet
 
