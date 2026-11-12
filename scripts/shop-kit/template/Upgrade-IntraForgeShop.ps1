@@ -183,6 +183,12 @@ catch {
     }
     finally { Pop-Location }
     Write-ShopLog "upgrade $fromVersion -> $toVersion FAILED ($reason); previous version restored: $back" 'shop.log'
+    # The media agent was stopped to replace its program file: start it again too (from the install folder).
+    $agentExe = Join-Path $InstallDir 'IntraForgeMediaAgent.exe'
+    if ((Get-Variable agentWasRunning -ValueOnly -ErrorAction SilentlyContinue) -and (Test-Path $agentExe) -and
+        -not (Get-Process -Name 'IntraForgeMediaAgent' -ErrorAction SilentlyContinue)) {
+        Start-Process -FilePath $agentExe -ArgumentList 'run' -WindowStyle Hidden -WorkingDirectory $InstallDir
+    }
     if ($back) { Write-Host 'The previous version is running again, with your data.' -ForegroundColor Green }
     else { Write-Host 'The previous version did not start by itself. Open the Control Center (Diagnostics), or restore the safety backup.' -ForegroundColor Red }
     exit 1

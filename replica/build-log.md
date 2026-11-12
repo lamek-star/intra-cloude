@@ -573,3 +573,14 @@ the owner accepted the Android SDK licence for this build): `assembleDebug` and 
 inside IntraForge). Debug APK `kits/IFPayWallet-debug-70680a3.apk` (SHA-256 `3409f801...0d0e`) for a real phone test.
 Found: `gradlew` became CRLF in a Windows checkout and broke ./gradlew in Linux; `.gitattributes` keeps it LF (Pay
 branch `fix/android-gradlew-lf`, `b3335b5`).
+
+**Shop PC upgraded 1.5.6 -> 1.5.7** (kit `IntraForge-Local-1.5.7-586a4bbe8.zip`, SHA-256 `2f7e2da9...71bd1a`; setup
+`e2be9bbb...4b9d`): the connectors live, 13 containers up, `readyz` 200, databases 0004 applied, licence active
+(master). It took four kits, each attempt changing nothing or rolling back cleanly, and each found a real bug, all
+fixed: an orphaned 1.5.5 start window held the staging folder (the owner ended it); the 1.5.6 upgrade had restarted
+the media agent with Setup's staging folder as its working folder, so it held that folder open (`8c78fa0`: agent
+started from the install folder, Setup falls back to a fresh dated staging folder); the upgrade's own start of the new
+version ignored the gone shop-network address (`586a4bb`: the profile is set once for every start in the upgrade);
+a rolled-back upgrade did not restart the media agent (fixed after; the agent was started again by hand, from the
+install folder). The shop network still names 192.168.8.63: Control Center > Settings > Shop network > Update the
+address, back on the shop Wi-Fi.
