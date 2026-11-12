@@ -242,23 +242,24 @@ IntraForge supplier, and enter the **activation code** they send back. An SN wor
 supplier to move it. The copying speed of the Movie Shop: titles for one customer's drive copy one after another with
 Windows' own copy engine, and two customers' drives fill at the same time.
 
-## 8. Real Features With No Screen Yet
+## 8. Where to Find the Newer Screens
 
-The interface above covers the core workflow. Everything below is fully
-built and tested on the server (see `docs/architecture/ROADMAP.md` for
-which phase implemented each) — just not wired to a page yet. Reach all
-of it at `https://localhost:8443/api/v1/`, which is itself a clickable,
-interactive interface (Django REST Framework's browsable API) once
-you're signed in — not raw JSON.
+Everything in IntraForge now has a page. The ones added most recently, and where they are:
 
-| Feature | What it does |
-|---|---|
-| Sharing | Grant one person or team read/write access to a single bucket or database, without making them a full organization member. |
-| Applications | Register a service account and issue it a bearer token, scoped to exactly the resources it needs — for scripts and integrations. |
-| Two-factor auth (MFA) | Enroll an authenticator app against your own account; sign-in then asks for a 6-digit code after your password. |
-| Connected databases | Point at an external PostgreSQL database and browse it live, read-only — nothing copied in. |
-| Audit log | Every sensitive action in an organization, who did it, and when — success or denied. |
-| Teams | Group members inside an organization below the organization level, for coarser sharing. |
+| Screen | Where | Who sees it |
+|---|---|---|
+| Storage and its usage | Organization page > **Storage**: every bucket you may open, with its files, size, kept versions and Trash, and the totals | Anyone with read access to a bucket |
+| Databases | Organization page > **Databases**: every database you may open, with its table count | Anyone with read access to a database |
+| Earlier versions of a file | A bucket > a file's **Versions**: **Download** an earlier content, or **Restore** it (the current content is kept, so you can go back) | Download: read access; Restore: write access |
+| Uploading a whole folder | A bucket > **Upload folder**: the folder's sub-folders are made in the bucket and each file goes into its own | Write access |
+| Backups | Dashboard > System health > **Backups**: the last good backup of each kind, whether its restore test passed, **Back up now**. Restoring is done in the Control Center on the shop PC | The Super Administrator |
+| Requests of an application | An application's page > **Requests**: every call it made with its credentials in the last 30 days, and its result | Read access to applications |
+| Logs of a hosted app | Organization page > **Websites** > a server app's **Logs** | Whoever may manage the site |
+| Signing in to another application | An application that is not IntraForge's own shows **"... wants to sign you in"** once, with what it will see; **Allow** or **Deny** | Everyone |
+| The customer portal's short address | On the shop network: **https://movies.lan:8443** opens the Movie Shop's portal | Customers on the shop Wi-Fi |
+
+Everything here is also reachable through the API at `/api/v1/` (Django REST Framework's browsable interface once
+you are signed in).
 
 ## 9. Troubleshooting
 
