@@ -138,7 +138,7 @@ phone on the shop's router.
 
 What it does: IntraForge also answers on the shop PC's network address; the Windows Firewall admits the shop's **Private**
 network only and **blocks public networks**; nothing is opened to the internet. **Settings > Shop network > This computer
-only** undoes all of it. If the Control Center says *"This PC's address changed"*, press **Update the address** there (and
+only** undoes all of it. To test from a second PC step by step, see [pilot/SECOND_PC_TEST_GUIDE.md](pilot/SECOND_PC_TEST_GUIDE.md). If the Control Center says *"This PC's address changed"*, press **Update the address** there (and
 reserve the address in the router). The shop PC must be on for the other PCs to work.
 
 ## 6. Backups

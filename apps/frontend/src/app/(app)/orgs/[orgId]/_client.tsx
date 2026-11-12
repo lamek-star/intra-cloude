@@ -22,6 +22,7 @@ import {
   TRow,
 } from "@/components/ui";
 import { MemberRoles, type OrganizationRoles } from "./MemberRoles";
+import { ResetPassword } from "./ResetPassword";
 
 export default function OrgDetailClient({ orgId }: { orgId: string }) {
   const [org, setOrg] = useState<Organization | null>(null);
@@ -111,6 +112,12 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
             <LinkButton href={`/orgs/${orgId}/units`} variant="secondary" size="sm">
               Units
             </LinkButton>
+            <LinkButton href={`/orgs/${orgId}/storage`} variant="secondary" size="sm">
+              Storage
+            </LinkButton>
+            <LinkButton href={`/orgs/${orgId}/databases`} variant="secondary" size="sm">
+              Databases
+            </LinkButton>
             <LinkButton href={`/orgs/${orgId}/audit`} variant="secondary" size="sm">
               Audit log
             </LinkButton>
@@ -170,6 +177,9 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
               <Th>Status</Th>
               <Th>Team</Th>
               {roles && <Th>Roles</Th>}
+              <Th>
+                <span className="sr-only">Password</span>
+              </Th>
             </THead>
             <tbody>
               {members.map((m) => (
@@ -208,6 +218,11 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
                       />
                     </Td>
                   )}
+                  <Td>
+                    {!m.application && m.status === "active" && (
+                      <ResetPassword orgId={orgId} membershipId={m.id} who={m.user.email} />
+                    )}
+                  </Td>
                 </TRow>
               ))}
             </tbody>

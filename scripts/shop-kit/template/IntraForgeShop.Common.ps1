@@ -471,7 +471,9 @@ function Test-ShopNameDomain([string]$Domain) {
 
 # The names and the page each one opens, for the apps this installation runs ("running services" from docker compose).
 function Get-ShopAppNames([string[]]$RunningServices) {
-    $names = [ordered]@{ intraforge = '/' }
+    # The Movie Shop's customer portal is part of IntraForge itself: https://movies.lan:8443 opens /portal/, which goes
+    # straight to the shop's portal (or offers a choice when several shops have one open).
+    $names = [ordered]@{ intraforge = '/'; movies = '/portal/' }
     if ($RunningServices -contains 'spareparts') { $names['spare-parts'] = '/apps/spare-parts/' }
     if ($RunningServices -contains 'pharmacy') { $names['pharmacy'] = '/apps/pharmacy/' }
     $pay = @($RunningServices | Where-Object { $_ -match '^pay-[1-3]$' } | Sort-Object) | Select-Object -First 1
@@ -510,7 +512,7 @@ function New-ShopNamesCaddy([string]$Domain, [System.Collections.Specialized.Ord
     $lines = @('# Written by Set-IntraForgeNetwork.ps1 (ADR-0021): each app''s own name opens that app.')
     foreach ($entry in $Names.GetEnumerator()) {
         if ($entry.Value -eq '/') { continue }
-        if ($entry.Key -notmatch '^[a-z0-9-]+$' -or $entry.Value -notmatch '^/apps/[a-z0-9-]+/$') { throw "Not a usable app name: $($entry.Key)" }
+        if ($entry.Key -notmatch '^[a-z0-9-]+$' -or $entry.Value -notmatch '^(/apps/[a-z0-9-]+/|/portal/)$') { throw "Not a usable app name: $($entry.Key)" }
         $id = $entry.Key -replace '-', '_'
         $lines += "@ifname_$id {", "`thost $($entry.Key).$Domain", "`tpath /", '}', "redir @ifname_$id $($entry.Value) 302"
     }

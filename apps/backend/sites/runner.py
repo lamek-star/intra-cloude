@@ -121,6 +121,10 @@ def status(site) -> dict:
     return _call("GET", f"/apps/{site.id.hex}")
 
 
+def logs(site) -> dict:
+    return _call("GET", f"/apps/{site.id.hex}/logs")
+
+
 # ---- the internet gate's tunnel (ADR-0020 decision 4)
 
 

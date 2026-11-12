@@ -132,7 +132,9 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "accounts.middleware.PasswordChangeMiddleware",
     "licensing.middleware.LicenceMiddleware",
+    "applications.middleware.ApiRequestLogMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
@@ -334,7 +336,25 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {
 # restores the latest backup set... this is a scheduled Celery Beat job,
 # not a manual checklist item that quietly stops happening"). Only takes
 # effect for the `beat` service, which schedules these against `worker`.
+# How long health samples and alerts are kept (system.health).
+HEALTH_HISTORY_DAYS = int(os.environ.get("HEALTH_HISTORY_DAYS", "14"))
+
+# How long an application's request log is kept (applications.ApiRequestLog).
+API_REQUEST_LOG_DAYS = int(os.environ.get("API_REQUEST_LOG_DAYS", "30"))
+
 CELERY_BEAT_SCHEDULE = {
+    "record-health-every-5-minutes": {
+        "task": "system.tasks.record_health_task",
+        "schedule": 300.0,
+    },
+    "clean-up-storage-nightly": {
+        "task": "storage.tasks.clean_up_storage",
+        "schedule": crontab(hour=4, minute=30),
+    },
+    "prune-api-request-log-nightly": {
+        "task": "applications.tasks.prune_api_request_log",
+        "schedule": crontab(hour=4, minute=15),
+    },
     "recover-app-operation-publication": {
         "task": "app_platform.tasks.recover_operation_publication",
         "schedule": 60.0,

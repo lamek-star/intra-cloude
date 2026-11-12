@@ -16,8 +16,9 @@ x-backend: &backend
   environment:
     # Hosted Node.js apps (ADR-0020) are started by the app runner below; SITES_RUNNER_TOKEN comes from .env.
     SITES_RUNNER_URL: http://runner:8700
-    # The Pharmacy (built-in, pilot preview) is offered in the shop; set BUILT_IN_APP_PREVIEWS= in .env to hide it.
-    BUILT_IN_APP_PREVIEWS: ${BUILT_IN_APP_PREVIEWS-pharmacy}
+    # Previews offered in the shop, each labelled as one: the Pharmacy (pilot preview), Repair Shop and Rentals
+    # (experimental). Set BUILT_IN_APP_PREVIEWS= in .env to hide them all.
+    BUILT_IN_APP_PREVIEWS: ${BUILT_IN_APP_PREVIEWS-pharmacy,repair_shop,rentals}
     # Licensing (ADR-0023): a 30-day trial, then read-only until a serial number is activated for this PC.
     LICENSE_ENFORCED: "true"
   networks: [isolated]

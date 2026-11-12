@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useState } from "react";
 import { Banknote, Check, CircleAlert, Clock, Coins, RefreshCw, ShieldCheck, Trash2, Usb, Wallet, X } from "lucide-react";
-import { copyProgress, formatBytes, movies, qrDataUrl, type Destination, type MovieShop, type MovieTitle, type Sale } from "@/lib/movies";
+import { copyProgress, formatBytes, movies, qrDataUrl, type CounterCustomer, type Destination, type MovieShop, type MovieTitle, type Sale } from "@/lib/movies";
 import { dark, DarkDialog, message } from "./Dialogs";
 
 /** The drives a sold title can go to, as the media agent sees them now (refreshed every 5 s): plug in, it appears. */
@@ -50,11 +50,34 @@ export function CartPanel({
 }) {
   const { drives, destination, setDestination } = useDestinations(shop.id);
   const [customer, setCustomer] = useState("");
+  const [phone, setPhone] = useState("");
+  const [matches, setMatches] = useState<CounterCustomer[]>([]);
+  const [member, setMember] = useState<CounterCustomer | null>(null);
+  const [usePoints, setUsePoints] = useState(false);
   const [method, setMethod] = useState<Sale["method"]>("ifpay");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const ids = { drive: useId(), customer: useId() };
+  const ids = { drive: useId(), customer: useId(), phone: useId() };
 
+  // The portal customer, found by phone number as the person at the counter types it.
+  useEffect(() => {
+    const digits = phone.replace(/\D/g, "");
+    if (member || digits.length < 6) return;
+    let alive = true;
+    const timer = window.setTimeout(() => {
+      movies
+        .findCustomer(shop.id, digits)
+        .then((r) => alive && setMatches(r.results))
+        .catch(() => alive && setMatches([]));
+    }, 300);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [phone, member, shop.id]);
+
+  // Matches show only for the number typed now (6 digits or more) and while no customer is chosen.
+  const shown = member || phone.replace(/\D/g, "").length < 6 ? [] : matches;
   const total = items.reduce((a, t) => a + t.price, 0);
   const size = items.reduce((a, t) => a + t.size_bytes, 0);
   const drive = drives.find((d) => d.root === destination);
@@ -64,9 +87,18 @@ export function CartPanel({
     setBusy(true);
     setError(null);
     try {
-      const sale = await movies.createSale(shop.id, { titles: items.map((t) => t.id), destination, method, customer_name: customer.trim() });
+      const sale = await movies.createSale(shop.id, {
+        titles: items.map((t) => t.id),
+        destination,
+        method,
+        customer_name: customer.trim(),
+        ...(member ? { customer: member.id, use_points: usePoints } : {}),
+      });
       onSold(sale);
       setCustomer("");
+      setPhone("");
+      setMember(null);
+      setUsePoints(false);
     } catch (err) {
       setError(message(err));
     } finally {
@@ -113,10 +145,61 @@ export function CartPanel({
         ))}
       </select>
       {tooBig && <p className="mt-1 text-xs text-red-300">Not enough room on this drive.</p>}
-      <label htmlFor={ids.customer} className={`${dark.label} mt-3`}>
-        Customer (optional)
+      <label htmlFor={ids.phone} className={`${dark.label} mt-3`}>
+        Portal customer (optional)
       </label>
-      <input id={ids.customer} className={dark.input} maxLength={120} value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="Name" />
+      {member ? (
+        <div className="rounded-lg border border-teal-400/40 bg-teal-400/10 p-2.5 text-sm">
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate font-semibold text-teal-100">
+              {member.name} <span className="font-normal text-slate-400">· ...{member.phone_end}</span>
+            </span>
+            <button onClick={() => setMember(null)} className="text-xs text-slate-400 hover:text-white">
+              Change
+            </button>
+          </div>
+          <label className="mt-2 flex items-center gap-2 text-xs text-slate-300">
+            <input type="checkbox" checked={usePoints} disabled={member.points === 0} onChange={(e) => setUsePoints(e.target.checked)} />
+            Use their {member.points} points
+          </label>
+          <p className="mt-1 text-[11px] text-slate-500">Their free titles and points are worked out when you charge.</p>
+        </div>
+      ) : (
+        <>
+          <input
+            id={ids.phone}
+            className={dark.input}
+            inputMode="tel"
+            maxLength={20}
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="Phone number, for their points"
+          />
+          {shown.length > 0 && (
+            <ul className="mt-1 overflow-hidden rounded-lg border border-[#323c5a]" aria-label="Matching customers">
+              {shown.map((m) => (
+                <li key={m.id}>
+                  <button
+                    className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-sm hover:bg-white/5"
+                    onClick={() => {
+                      setMember(m);
+                      setMatches([]);
+                    }}
+                  >
+                    <span className="min-w-0 flex-1 truncate">{m.name}</span>
+                    <span className="text-xs text-slate-500">...{m.phone_end}</span>
+                    <span className="text-xs font-bold text-amber-200">{m.points} pts</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <label htmlFor={ids.customer} className={`${dark.label} mt-3`}>
+            Or just a name (optional)
+          </label>
+          <input id={ids.customer} className={dark.input} maxLength={120} value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="Name" />
+        </>
+      )}
       <div className="mt-3 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Payment">
         {(
           [
@@ -137,7 +220,7 @@ export function CartPanel({
       </div>
       {error && <p className="mt-3 text-sm text-red-300">{error}</p>}
       <button className={`${dark.amber} mt-4 h-11 w-full`} disabled={busy || !destination || items.length === 0 || tooBig} onClick={() => void charge()}>
-        <Coins className="h-4 w-4" /> {busy ? "Starting..." : method === "ifpay" ? `Charge ${total} credits` : `Take ${total} in cash`}
+        <Coins className="h-4 w-4" /> {busy ? "Starting..." : member ? "Charge with their rewards" : method === "ifpay" ? `Charge ${total} credits` : `Take ${total} in cash`}
       </button>
     </aside>
   );

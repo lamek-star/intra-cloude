@@ -138,6 +138,15 @@ class PortalView(APIView):
         return response
 
 
+class PortalDirectoryView(PortalView):
+    """The shop's open portals, for the short address on the shop network (https://movies.lan:8443 opens
+    /portal/): just their names, so a phone can pick one. Nothing else about a shop is shown."""
+
+    def get(self, request):
+        shops = MovieShop.objects.filter(portal_open=True).order_by("name")[:20]
+        return Response({"shops": [{"id": str(s.id), "name": s.name} for s in shops]})
+
+
 class PortalHomeView(PortalView):
     def get(self, request, shop_id):
         shop = self.shop(shop_id)

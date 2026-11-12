@@ -46,3 +46,35 @@ class BackupRecord(models.Model):
 
     def __str__(self):
         return f"{self.backup_type} backup {self.id} ({self.status})"
+
+
+class HealthSample(models.Model):
+    """One run of the health checks (system.health.record, every 5 minutes): which checks passed. Kept
+    HEALTH_HISTORY_DAYS days."""
+
+    id = models.BigAutoField(primary_key=True)
+    at = models.DateTimeField(db_index=True)
+    checks = models.JSONField(default=dict)  # {"database:default": true, ...}
+
+    class Meta:
+        ordering = ["-at"]
+
+    def __str__(self):
+        return f"health at {self.at:%Y-%m-%d %H:%M}"
+
+
+class HealthAlert(models.Model):
+    """A check that failed twice in a row; closed by itself when the check passes again."""
+
+    id = models.BigAutoField(primary_key=True)
+    # Not "check": that would hide Django's Model.check().
+    check_name = models.CharField(max_length=60)
+    detail = models.CharField(max_length=300, blank=True)
+    opened_at = models.DateTimeField()
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-opened_at"]
+
+    def __str__(self):
+        return f"{self.check_name} alert from {self.opened_at:%Y-%m-%d %H:%M}"

@@ -23,9 +23,17 @@ class OAuthClientSerializer(serializers.ModelSerializer):
     class Meta:
         model = OAuthClient
         fields = [
-            "id", "name", "client_id", "application_type", "redirect_uris",
-            "post_logout_redirect_uris", "allowed_origins", "enabled", "requires_consent",
-            "created_at", "updated_at",
+            "id",
+            "name",
+            "client_id",
+            "application_type",
+            "redirect_uris",
+            "post_logout_redirect_uris",
+            "allowed_origins",
+            "enabled",
+            "requires_consent",
+            "created_at",
+            "updated_at",
         ]
         read_only_fields = ["id", "client_id", "created_at", "updated_at"]
 

@@ -1,14 +1,23 @@
 """An upgrade that fails rolls back to the previous release, which then runs on the already-migrated
 database. Every column a release adds must therefore have a database default, or the previous release's
-inserts (which do not name the column) fail. These are the columns 1.5.1 adds."""
+inserts (which do not name the column) fail. These are the columns 1.5.1 and 1.5.6 add."""
 
 from django.db import connection
 from django.test import TestCase
 
 from accounts.models import User
 from sites.models import InternetGateway, Site
+from storage.models import Bucket
 
-NEW_COLUMNS = [(User, "passkey_only"), (Site, "internet_auto"), (InternetGateway, "auto_domain")]
+NEW_COLUMNS = [
+    (User, "passkey_only"),
+    (Site, "internet_auto"),
+    (InternetGateway, "auto_domain"),
+    (User, "must_change_password"),
+    (Bucket, "trash_days"),
+    (Bucket, "version_days"),
+]
+NEW_USER_FIELDS = {"passkey_only", "must_change_password"}
 
 
 class RollbackSafetyTests(TestCase):
@@ -27,8 +36,8 @@ class RollbackSafetyTests(TestCase):
                     )
 
     def test_the_previous_release_can_still_create_a_user(self):
-        # An insert that does not name passkey_only, as the previous release's User model does.
-        columns = [f.column for f in User._meta.concrete_fields if f.name != "passkey_only"]
+        # An insert that names neither new column, as the previous release's User model does.
+        columns = [f.column for f in User._meta.concrete_fields if f.name not in NEW_USER_FIELDS]
         values = {
             "id": "00000000-0000-0000-0000-000000000001",
             "email": "old-release@example.com",
@@ -44,4 +53,6 @@ class RollbackSafetyTests(TestCase):
                 f"VALUES ({', '.join('now()' if c == 'date_joined' else '%s' for c in columns)})",
                 [values.get(c) for c in columns if c != "date_joined"],
             )
-        self.assertFalse(User.objects.get(email="old-release@example.com").passkey_only)
+        old = User.objects.get(email="old-release@example.com")
+        self.assertFalse(old.passkey_only)
+        self.assertFalse(old.must_change_password)

@@ -31,9 +31,7 @@ def register_application(*, organization, name: str, description: str, owner) ->
         application = Application.objects.create(
             organization=organization, name=name, description=description, owner=owner
         )
-        identity_user = User.objects.create_user(
-            email=f"service-account+{application.id}@service.internal"
-        )
+        identity_user = User.objects.create_user(email=f"service-account+{application.id}@service.internal")
         # No login is ever possible for this identity: no usable password
         # can be set for it, independent of anything a caller passes in
         # (defense in depth beyond simply omitting a password at creation).
@@ -141,9 +139,9 @@ def resolve_credential(token: str) -> ApplicationCredential:
         raise InvalidCredential("unrecognized token format") from exc
 
     try:
-        credential = ApplicationCredential.objects.select_related(
-            "service_account__identity_user"
-        ).get(id=credential_id)
+        credential = ApplicationCredential.objects.select_related("service_account__identity_user").get(
+            id=credential_id
+        )
     except ApplicationCredential.DoesNotExist as exc:
         raise InvalidCredential("unknown credential") from exc
 

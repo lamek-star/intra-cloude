@@ -83,9 +83,7 @@ def provision_role(role_name: str, password: str) -> None:
                 )
             )
             cur.execute(
-                sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC").format(
-                    sql.Identifier(tenant_db_name)
-                )
+                sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC").format(sql.Identifier(tenant_db_name))
             )
     except TenantRoleError:
         raise
@@ -135,9 +133,7 @@ def ensure_role(role_name: str, password: str) -> None:
                 )
             )
             cur.execute(
-                sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC").format(
-                    sql.Identifier(tenant_db_name)
-                )
+                sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC").format(sql.Identifier(tenant_db_name))
             )
     except psycopg.Error as exc:
         raise TenantRoleError("could not provision the tenant role") from exc

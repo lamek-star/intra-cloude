@@ -49,6 +49,9 @@ class User(AbstractBaseUser):
     # actually generate a valid code (`confirm_mfa_enrollment`) — never
     # enabled from possession of the secret alone.
     mfa_enabled = models.BooleanField(default=False)
+    # Set when an administrator gave this person a temporary password (accounts.services.reset_password):
+    # until they choose their own, the API refuses everything but changing it (PasswordChangeMiddleware).
+    must_change_password = models.BooleanField(default=False, db_default=False)
     mfa_secret_encrypted = models.BinaryField(null=True, blank=True)
     mfa_confirmed_at = models.DateTimeField(null=True, blank=True)
 
@@ -97,3 +100,17 @@ class Passkey(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.rp_id})"
+
+
+class MFARecoveryCode(models.Model):
+    """One of a person's one-time recovery codes for two-step sign-in, for when their authenticator is lost.
+    Only a hash is kept; the codes are shown once, when made."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="mfa_recovery_codes")
+    code_hash = models.CharField(max_length=64)
+    used_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"recovery code of {self.user_id}{' (used)' if self.used_at else ''}"

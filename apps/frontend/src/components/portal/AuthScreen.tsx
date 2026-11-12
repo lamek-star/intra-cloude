@@ -69,7 +69,7 @@ export function AuthScreen({
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#0a0d16] bg-[radial-gradient(700px_420px_at_80%_-10%,rgba(245,165,36,.18),transparent_60%),radial-gradient(600px_420px_at_0%_100%,rgba(45,212,191,.10),transparent_60%)] text-slate-100">
+    <div data-theme="light" className="flex min-h-screen flex-col bg-[#0a0d16] bg-[radial-gradient(700px_420px_at_80%_-10%,rgba(245,165,36,.18),transparent_60%),radial-gradient(600px_420px_at_0%_100%,rgba(45,212,191,.10),transparent_60%)] text-slate-100">
       <div className="mx-auto w-full max-w-md flex-1 px-5 pt-12 pb-10">
         <span className="grid h-14 w-14 place-items-center rounded-2xl bg-[radial-gradient(circle_at_30%_25%,#ffd27a,#f5a524_60%,#c97b05)] text-amber-950 shadow-[0_12px_30px_-10px_rgba(245,165,36,.7)]">
           <Clapperboard className="h-7 w-7" strokeWidth={2.2} />

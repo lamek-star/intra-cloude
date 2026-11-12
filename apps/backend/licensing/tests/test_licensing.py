@@ -105,6 +105,10 @@ class LicenceTests(TestCase):
         self.assertEqual((refused.status_code, refused.json()["code"]), (403, "licence_required"))
         self.assertEqual(self.client.get(f"/api/v1/organizations/{self.org.id}/").status_code, 200)
         self.assertEqual(APIClient().post("/api/v1/auth/logout/").status_code in (200, 204, 403), True)
+        # Signing in to an application still works: its consent screen is not "a change" (a bad request is a
+        # 400 from the screen itself, never licence_required).
+        consent = self.client.post("/api/v1/oauth/consent/", {"decision": "allow"}, format="json")
+        self.assertEqual(consent.status_code, 400)
 
     def test_activating_with_the_vendors_code_for_this_pc_lifts_the_limit(self):
         self.end_trial()

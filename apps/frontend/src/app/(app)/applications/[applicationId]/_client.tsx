@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { CheckCircle2, Layers3, RotateCw, ShieldOff, Wallet, XCircle } from "lucide-react";
 import {
@@ -10,6 +11,7 @@ import {
   type ApplicationCredential,
   type Environment,
   type Organization,
+  type Paginated,
   type ResourceGrant,
 } from "@/lib/api";
 import { ENVIRONMENT_TYPES, exampleEnvironmentName, namesProductionWithoutType } from "@/lib/environment-type";
@@ -572,6 +574,8 @@ export default function ApplicationDetailClient({ applicationId }: { application
         )}
       </section>
 
+      <RequestLog applicationId={applicationId} />
+
       <GrantPermissionModal
         open={grantModalOpen}
         applicationId={applicationId}
@@ -592,6 +596,86 @@ export default function ApplicationDetailClient({ applicationId }: { application
         }}
       />
     </div>
+  );
+}
+
+type LoggedRequest = { id: number; method: string; path: string; status: number; duration_ms: number; at: string };
+
+/** What the application has called with its credentials (newest first, kept 30 days). */
+function RequestLog({ applicationId }: { applicationId: string }) {
+  const [errorsOnly, setErrorsOnly] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const page = useQuery({
+    queryKey: ["application", applicationId, "requests", errorsOnly, offset],
+    queryFn: () =>
+      api.get<Paginated<LoggedRequest>>(
+        `/applications/${applicationId}/requests/?limit=25&offset=${offset}${errorsOnly ? "&errors=1" : ""}`,
+      ),
+    refetchInterval: 30000,
+  });
+  const rows = page.data?.results ?? [];
+  return (
+    <section className="mt-8">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-slate-600">Requests</h2>
+        <label className="flex items-center gap-2 text-xs text-slate-600">
+          <input
+            type="checkbox"
+            checked={errorsOnly}
+            onChange={(e) => {
+              setErrorsOnly(e.target.checked);
+              setOffset(0);
+            }}
+          />
+          Only the ones that failed
+        </label>
+      </div>
+      {page.isError ? (
+        <ErrorBanner message={page.error instanceof ApiError ? page.error.message : "The requests could not be loaded."} />
+      ) : rows.length === 0 ? (
+        <Card>
+          <p className="text-sm text-text-muted">
+            {page.isLoading ? "Loading..." : "No requests yet. Each call this application makes with its credentials shows here for 30 days."}
+          </p>
+        </Card>
+      ) : (
+        <>
+          <Table>
+            <THead>
+              <Th>When</Th>
+              <Th>Request</Th>
+              <Th>Result</Th>
+              <Th>Time</Th>
+            </THead>
+            <tbody>
+              {rows.map((r) => (
+                <TRow key={r.id}>
+                  <Td className="whitespace-nowrap text-text-muted">{new Date(r.at).toLocaleString()}</Td>
+                  <Td className="font-mono text-xs">
+                    {r.method} {r.path}
+                  </Td>
+                  <Td>
+                    <Badge tone={r.status >= 500 ? "danger" : r.status >= 400 ? "warning" : "success"}>{r.status}</Badge>
+                  </Td>
+                  <Td className="tabular-nums text-text-muted">{r.duration_ms} ms</Td>
+                </TRow>
+              ))}
+            </tbody>
+          </Table>
+          <div className="mt-2 flex items-center justify-end gap-2 text-xs text-slate-600">
+            <span>
+              {offset + 1}-{offset + rows.length} of {page.data?.count ?? 0}
+            </span>
+            <Button size="sm" variant="ghost" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 25))}>
+              Newer
+            </Button>
+            <Button size="sm" variant="ghost" disabled={!page.data?.next} onClick={() => setOffset(offset + 25)}>
+              Older
+            </Button>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 

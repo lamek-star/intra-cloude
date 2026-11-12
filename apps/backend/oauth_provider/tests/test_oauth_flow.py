@@ -24,8 +24,10 @@ REDIRECT_URI = "http://localhost:3000/auth/callback"
 
 def make_client(**overrides):
     defaults = {
-        "name": "Test Client", "redirect_uris": [REDIRECT_URI],
-        "post_logout_redirect_uris": [], "allowed_origins": [],
+        "name": "Test Client",
+        "redirect_uris": [REDIRECT_URI],
+        "post_logout_redirect_uris": [],
+        "allowed_origins": [],
     }
     defaults.update(overrides)
     client, secret = services.create_client(**defaults)
@@ -138,8 +140,11 @@ class AuthorizationCodeFlowTests(APITestCase):
         # not just "a token-shaped string came back".
         public_numbers_key = jwt.algorithms.RSAAlgorithm.from_jwk(__import__("json").dumps(signing_key))
         claims = jwt.decode(
-            response.data["id_token"], key=public_numbers_key, algorithms=["RS256"],
-            audience=self.client_app.client_id, issuer="https://localhost:8443",
+            response.data["id_token"],
+            key=public_numbers_key,
+            algorithms=["RS256"],
+            audience=self.client_app.client_id,
+            issuer="https://localhost:8443",
         )
         self.assertEqual(claims["sub"], str(self.user.id))
         self.assertEqual(claims["email"], "rider@example.com")
@@ -240,8 +245,11 @@ class AuthorizationCodeFlowTests(APITestCase):
 
         public_key = jwt.algorithms.RSAAlgorithm.from_jwk(_json.dumps(jwks["keys"][0]))
         claims = jwt.decode(
-            response.data["id_token"], key=public_key, algorithms=["RS256"],
-            audience=self.client_app.client_id, issuer="https://localhost:8443",
+            response.data["id_token"],
+            key=public_key,
+            algorithms=["RS256"],
+            audience=self.client_app.client_id,
+            issuer="https://localhost:8443",
         )
         self.assertEqual(claims["sub"], str(self.user.id))
         self.assertNotIn("org", claims)
@@ -271,3 +279,54 @@ class AuthorizationCodeFlowTests(APITestCase):
         claims = jwt.decode(token_response.data["id_token"], options={"verify_signature": False})
         self.assertNotIn("email", claims)
         self.assertEqual(claims["sub"], str(self.user.id))
+
+
+class ConsentTests(APITestCase):
+    """An application with requires_consent asks each person once (the consent screen) before any code."""
+
+    _authorize = AuthorizationCodeFlowTests._authorize
+
+    def setUp(self):
+        AuthorizationCodeFlowTests.setUp(self)
+        self.client_app.requires_consent = True
+        self.client_app.save(update_fields=["requires_consent"])
+        self.client.force_login(self.user)
+
+    def consent(self, decision, **extra):
+        body = {
+            "client_id": self.client_app.client_id,
+            "redirect_uri": REDIRECT_URI,
+            "scope": "openid profile email",
+            "state": "xyz",
+            "decision": decision,
+            **extra,
+        }
+        return self.client.post(reverse("oauth-consent"), body, format="json")
+
+    def test_it_goes_to_the_consent_screen_first_then_allow_lets_the_code_through(self):
+        first = self._authorize()
+        self.assertEqual(first.status_code, 302)
+        self.assertTrue(first.url.startswith("/oauth-consent?"))
+        self.assertFalse(OAuthAuthorizationCode.objects.exists())
+        info = self.client.get(
+            reverse("oauth-consent"),
+            {"client_id": self.client_app.client_id, "redirect_uri": REDIRECT_URI, "scope": "openid email"},
+        ).data
+        self.assertEqual((info["application"], info["account"]), ("Test Client", "rider@example.com"))
+        self.assertEqual([s["scope"] for s in info["scopes"]], ["email", "openid"])
+        self.assertEqual(self.consent("allow").data, {"decision": "allow"})
+        again = self._authorize()
+        self.assertIn("code", parse_qs(urlsplit(again.url).query))
+        # More than was allowed asks again; less does not.
+        self.assertTrue(self._authorize(scope="openid").url.startswith(REDIRECT_URI))
+
+    def test_deny_returns_access_denied_to_the_registered_address_only(self):
+        denied = self.consent("deny").data
+        self.assertEqual(denied["redirect"], f"{REDIRECT_URI}?error=access_denied&state=xyz")
+        self.assertEqual(self.consent("deny", redirect_uri="https://evil.example/cb").status_code, 400)
+        self.assertEqual(self.consent("allow", scope="openid admin").status_code, 400)
+        self.assertTrue(self._authorize().url.startswith("/oauth-consent?"))
+
+    def test_the_consent_api_needs_a_signed_in_person(self):
+        self.client.logout()
+        self.assertEqual(self.consent("allow").status_code, 403)

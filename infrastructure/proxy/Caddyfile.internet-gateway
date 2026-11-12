@@ -44,7 +44,21 @@
 		respond 404
 	}
 
-	@backend path /api/* /healthz /readyz
+	# The internal service-application API (ADR-0018) is for containers on the internal network only: from
+	# the internet it does not exist, exactly as in the LAN Caddyfile. (It also needs a service token; this
+	# keeps it off the internet even so.)
+	@internal path /api/v1/internal /api/v1/internal/*
+	handle @internal {
+		respond 404
+	}
+
+	# A service application's own internal API (e.g. IntraForge Pay's /apps/pay-N/internal/) neither.
+	@appinternal path_regexp ^/apps/[^/]+/internal(/.*)?$
+	handle @appinternal {
+		respond 404
+	}
+
+	@backend path /api/* /healthz /readyz /oauth/* /.well-known/*
 	handle @backend {
 		reverse_proxy backend:8000
 	}

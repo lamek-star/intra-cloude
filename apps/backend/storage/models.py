@@ -18,6 +18,11 @@ class Bucket(models.Model):
     )
     name = models.CharField(max_length=200)
     versioning_enabled = models.BooleanField(default=False)
+    # Automatic cleanup (storage.tasks.clean_up_storage, nightly): files in the Trash longer than trash_days
+    # are deleted for good (0 = only when emptied by hand); kept earlier versions older than version_days are
+    # deleted (0 = kept for ever). Database defaults: a rolled-back release inserts buckets without these.
+    trash_days = models.PositiveIntegerField(default=30, db_default=30)
+    version_days = models.PositiveIntegerField(default=0, db_default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="buckets_created"
@@ -73,9 +78,7 @@ class FileObject(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     bucket = models.ForeignKey(Bucket, on_delete=models.CASCADE, related_name="files")
-    folder = models.ForeignKey(
-        Folder, on_delete=models.CASCADE, related_name="files", null=True, blank=True
-    )
+    folder = models.ForeignKey(Folder, on_delete=models.CASCADE, related_name="files", null=True, blank=True)
     # Server-generated, never derived from user input (prevents path
     # traversal / key collision — Section 8 of the master prompt).
     object_key = models.CharField(max_length=255, unique=True, editable=False)
@@ -121,6 +124,10 @@ class FileVersion(models.Model):
     object_key = models.CharField(max_length=255, unique=True, editable=False)
     size = models.BigIntegerField()
     checksum_sha256 = models.CharField(max_length=64)
+    mime_type = models.CharField(max_length=255, blank=True)
+    # This content was quarantined by malware scanning when it was current: it can never be downloaded or
+    # brought back (the same rule as a quarantined file).
+    quarantined = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="file_versions_created"
@@ -131,3 +138,26 @@ class FileVersion(models.Model):
 
     def __str__(self):
         return f"{self.file} @ {self.created_at:%Y-%m-%d %H:%M:%S}"
+
+
+class FileShareLink(models.Model):
+    """A link that lets anyone who has it download one file until it expires (at most 30 days), is revoked, or
+    reaches its download limit. Only a hash of the link's token is kept; the link is shown once."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    file = models.ForeignKey(FileObject, on_delete=models.CASCADE, related_name="share_links")
+    token_hash = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField()
+    max_downloads = models.PositiveIntegerField(null=True, blank=True)
+    downloads = models.PositiveIntegerField(default=0)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="share_links_created"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"share link for {self.file_id} until {self.expires_at:%Y-%m-%d}"

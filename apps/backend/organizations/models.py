@@ -50,9 +50,7 @@ class Membership(models.Model):
         SUSPENDED = "suspended", "Suspended"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="memberships"
-    )
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="memberships")
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="memberships")
     team = models.ForeignKey(
         Team, on_delete=models.SET_NULL, related_name="memberships", null=True, blank=True

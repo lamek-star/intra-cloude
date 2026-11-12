@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { ShieldCheck, ShieldOff } from "lucide-react";
 import { api, ApiError, ensureCsrfCookie, type User } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Badge, Button, Card, CopyButton, ErrorBanner, Input, Label, PageHeader, PageLoading } from "@/components/ui";
 import { PasskeysCard } from "./passkeys-card";
+import { PasswordForm } from "@/components/PasswordForm";
+import { RecoveryCodesBox } from "@/components/RecoveryCodes";
 
 type Enrollment = { secret: string; provisioning_uri: string };
 
@@ -37,14 +39,41 @@ export default function AccountClient() {
         </dl>
       </Card>
 
+      <PasswordCard />
       <PasskeysCard user={user} onChanged={refresh} />
       <TwoStepSignIn user={user} onChanged={refresh} />
     </div>
   );
 }
 
+function PasswordCard() {
+  const [done, setDone] = useState(false);
+  return (
+    <Card className="space-y-3">
+      <h2 className="text-sm font-semibold text-text-primary">Password</h2>
+      <div aria-live="polite">{done && <p className="text-sm text-green-700">Your password is changed.</p>}</div>
+      <PasswordForm onDone={() => setDone(true)} />
+    </Card>
+  );
+}
+
 function TwoStepSignIn({ user, onChanged }: { user: User; onChanged: () => Promise<void> }) {
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
+  const [codes, setCodes] = useState<string[] | null>(null);
+  const [left, setLeft] = useState<number | null>(null);
+  const [renewing, setRenewing] = useState(false);
+
+  useEffect(() => {
+    if (!user.mfa_enabled) return;
+    let live = true;
+    api
+      .get<{ left: number }>("/auth/mfa/recovery-codes/")
+      .then((r) => live && setLeft(r.left))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [user.mfa_enabled, codes]);
   const [turningOff, setTurningOff] = useState(false);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -80,10 +109,21 @@ function TwoStepSignIn({ user, onChanged }: { user: User; onChanged: () => Promi
   const confirm = (e: FormEvent) => {
     e.preventDefault();
     return run(async () => {
-      await api.post("/auth/mfa/confirm/", { code: code.trim() });
+      const confirmed = await api.post<{ recovery_codes?: string[] }>("/auth/mfa/confirm/", { code: code.trim() });
       reset();
+      setCodes(confirmed?.recovery_codes ?? null);
       setDone("Two-step sign-in is on. You'll be asked for a code each time you sign in.");
       await onChanged();
+    });
+  };
+
+  const renew = (e: FormEvent) => {
+    e.preventDefault();
+    return run(async () => {
+      const r = await api.post<{ recovery_codes: string[] }>("/auth/mfa/recovery-codes/", { code: code.trim() });
+      reset();
+      setRenewing(false);
+      setCodes(r.recovery_codes);
     });
   };
 
@@ -168,10 +208,58 @@ function TwoStepSignIn({ user, onChanged }: { user: User; onChanged: () => Promi
         </form>
       )}
 
-      {user.mfa_enabled && !turningOff && (
-        <Button variant="secondary" onClick={() => setTurningOff(true)}>
-          Turn off two-step sign-in
-        </Button>
+      {codes && <RecoveryCodesBox codes={codes} onClose={() => setCodes(null)} />}
+
+      {user.mfa_enabled && !codes && left !== null && (
+        <p className={`text-sm ${left <= 2 ? "text-amber-700" : "text-slate-600"}`}>
+          {left === 0 ? "You have no recovery codes left." : `${left} recovery ${left === 1 ? "code" : "codes"} left.`}
+        </p>
+      )}
+
+      {user.mfa_enabled && !turningOff && !renewing && (
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={() => setRenewing(true)}>
+            New recovery codes
+          </Button>
+          <Button variant="secondary" onClick={() => setTurningOff(true)}>
+            Turn off two-step sign-in
+          </Button>
+        </div>
+      )}
+
+      {user.mfa_enabled && renewing && (
+        <form onSubmit={renew} className="space-y-4 rounded-lg border border-border-subtle bg-surface-sunken p-4">
+          <p className="text-sm text-slate-600">New codes replace all the old ones. Enter a current code from your authenticator app.</p>
+          <div className="max-w-48">
+            <Label htmlFor="mfa-renew-code">Current code</Label>
+            <Input
+              id="mfa-renew-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              required
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button type="submit" disabled={busy || code.trim().length !== 6}>
+              Make new codes
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                reset();
+                setRenewing(false);
+              }}
+              disabled={busy}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
       )}
 
       {user.mfa_enabled && turningOff && (

@@ -223,12 +223,17 @@ def _run_postgres_backup(backup_type: str) -> BackupRecord:
 
     cmd = [
         "pg_dump",
-        "-h", db["HOST"] or "localhost",
-        "-p", str(db["PORT"] or 5432),
-        "-U", db["USER"],
-        "-d", db["NAME"],
+        "-h",
+        db["HOST"] or "localhost",
+        "-p",
+        str(db["PORT"] or 5432),
+        "-U",
+        db["USER"],
+        "-d",
+        db["NAME"],
         "-Fc",
-        "-f", output_path,
+        "-f",
+        output_path,
     ]
     try:
         _run(cmd, password=db["PASSWORD"], timeout=PG_DUMP_TIMEOUT_SECONDS)
@@ -437,10 +442,14 @@ def _verify_postgres_backup_restorable(record: BackupRecord) -> BackupRecord:
         with _DecryptedTempFile(record.file_path) as plain_path:
             cmd = [
                 "pg_restore",
-                "-h", db["HOST"] or "localhost",
-                "-p", str(db["PORT"] or 5432),
-                "-U", db["USER"],
-                "-d", test_db_name,
+                "-h",
+                db["HOST"] or "localhost",
+                "-p",
+                str(db["PORT"] or 5432),
+                "-U",
+                db["USER"],
+                "-d",
+                test_db_name,
                 plain_path,
             ]
             _run(cmd, password=db["PASSWORD"], timeout=PG_RESTORE_TIMEOUT_SECONDS)
@@ -594,11 +603,16 @@ def _pg_restore_file(backup_type: str, file_path: str, *, replace: bool = False)
         else:
             cmd = [
                 "pg_restore",
-                "-h", db["HOST"] or "localhost",
-                "-p", str(db["PORT"] or 5432),
-                "-U", db["USER"],
-                "-d", target_db_name,
-                "--clean", "--if-exists",
+                "-h",
+                db["HOST"] or "localhost",
+                "-p",
+                str(db["PORT"] or 5432),
+                "-U",
+                db["USER"],
+                "-d",
+                target_db_name,
+                "--clean",
+                "--if-exists",
                 plain_path,
             ]
             _run(cmd, password=db["PASSWORD"], timeout=PG_RESTORE_TIMEOUT_SECONDS)
@@ -639,11 +653,20 @@ def _replace_database_contents(db: dict, dbname: str, dump_path: str) -> None:
     env = {**os.environ, "PGPASSWORD": db["PASSWORD"], "PGCONNECT_TIMEOUT": str(CONNECT_TIMEOUT_SECONDS)}
     psql_cmd = [
         "psql",
-        "-h", db["HOST"] or "localhost",
-        "-p", str(db["PORT"] or 5432),
-        "-U", db["USER"],
-        "-d", dbname,
-        "-X", "-q", "-v", "ON_ERROR_STOP=1", "-f", "-",
+        "-h",
+        db["HOST"] or "localhost",
+        "-p",
+        str(db["PORT"] or 5432),
+        "-U",
+        db["USER"],
+        "-d",
+        dbname,
+        "-X",
+        "-q",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-f",
+        "-",
     ]
     with tempfile.TemporaryFile() as restore_err, tempfile.TemporaryFile() as psql_err:
         psql = subprocess.Popen(
@@ -758,7 +781,9 @@ def _restore_object_storage_backup(record: BackupRecord) -> BackupRecord:
         record.restore_error = str(exc)[:2000]
         logger.error(
             "Object storage restore failed for backup %s after restoring %d object(s): %s",
-            record.id, len(restored_keys), exc,
+            record.id,
+            len(restored_keys),
+            exc,
         )
     else:
         record.restore_error = ""

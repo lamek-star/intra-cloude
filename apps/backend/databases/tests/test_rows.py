@@ -83,9 +83,7 @@ class RowCrudTests(RowTestBase):
         self.assertTrue(row["active"])  # column default_value=True
 
     def test_missing_required_field_is_rejected(self):
-        resp = self.client.post(
-            reverse("row-list-create", args=[self.table_id]), {"age": 40}, format="json"
-        )
+        resp = self.client.post(reverse("row-list-create", args=[self.table_id]), {"age": 40}, format="json")
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_wrong_type_is_rejected(self):

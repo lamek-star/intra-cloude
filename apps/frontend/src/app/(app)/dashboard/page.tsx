@@ -14,6 +14,7 @@ import { api, ApiError, type AuditEvent, type Organization, type Paginated, type
 import { useAuth } from "@/lib/auth-context";
 import { organizationsQuery, serviceAppsQuery } from "@/lib/queries";
 import { appHealthLines } from "@/lib/service-apps";
+import { healthSummary } from "@/lib/health";
 import { Badge, Card, EmptyState, ErrorBanner, PageHeader, PageLoading, Spinner, StatCard } from "@/components/ui";
 
 type OrgSummary = { org: Organization; workspaceCount: number | null };
@@ -264,6 +265,21 @@ export default function DashboardPage() {
 
       <div>
         <SectionHeader title="System health" />
+        <HealthAlertsNotice />
+        <p className="-mt-1 mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+          <Link href="/health" className="font-medium text-brand-600 hover:text-brand-500">
+            History and alerts
+          </Link>
+          <Link href="/backups" className="font-medium text-brand-600 hover:text-brand-500">
+            Backups
+          </Link>
+          <Link href="/internet" className="font-medium text-brand-600 hover:text-brand-500">
+            Internet access
+          </Link>
+          <Link href="/license" className="font-medium text-brand-600 hover:text-brand-500">
+            Licence
+          </Link>
+        </p>
         {health === null ? (
           <Card>
             <div className="flex items-center gap-2 text-sm text-text-muted">
@@ -282,6 +298,23 @@ export default function DashboardPage() {
         )}
       </div>
     </div>
+  );
+}
+
+/** Open health alerts, for the Super Administrator (anyone else gets a 403, and nothing is shown). */
+function HealthAlertsNotice() {
+  const health = useQuery({ queryKey: ["system", "health"], queryFn: healthSummary, retry: false, refetchInterval: 120000 });
+  const open = health.data?.alerts.filter((a) => a.closed_at === null) ?? [];
+  if (open.length === 0) return null;
+  return (
+    <Link
+      href="/health"
+      role="alert"
+      className="mb-3 block rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 hover:bg-red-100"
+    >
+      <strong>{open.length === 1 ? "1 health alert" : `${open.length} health alerts`}:</strong>{" "}
+      {open.map((a) => a.label).join(", ")}. See Health.
+    </Link>
   );
 }
 

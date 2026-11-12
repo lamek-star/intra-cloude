@@ -98,20 +98,53 @@ def _destination(shop: MovieShop, destination, needed_bytes: int) -> str:
     return drive["root"]
 
 
+def counter_customer(shop: MovieShop, customer_id):
+    """The approved portal customer of this shop a counter sale is for, or None when none is named."""
+    from .models import PortalCustomer
+
+    if customer_id in (None, ""):
+        return None
+    customer = (
+        PortalCustomer.objects.filter(
+            shop=shop, pk=customer_id, status=PortalCustomer.Status.APPROVED
+        ).first()
+        if _is_uuid(customer_id)
+        else None
+    )
+    if customer is None:
+        raise ValidationError({"customer": "Not an approved customer of this shop."})
+    return customer
+
+
 def create_sale(
-    *, shop: MovieShop, actor, title_ids, destination, method: str, customer_name: str = ""
+    *,
+    shop: MovieShop,
+    actor,
+    title_ids,
+    destination,
+    method: str,
+    customer_name: str = "",
+    customer_id=None,
+    use_points: bool = False,
 ) -> Sale:
+    """A counter sale. Naming an approved portal customer applies their rewards, as for their own portal
+    orders: every Nth title free, and their points when ``use_points``."""
+    from .portal import apply_rewards
+
     if method not in Sale.Method.values:
         raise ValidationError({"method": "ifpay or cash."})
     lines = build_lines(shop, title_ids)
     root = _destination(shop, destination, sum(line.size_bytes for line in lines))
     name = scanning.clean_text(customer_name, "customer_name", max_length=120, required=False)
+    customer = counter_customer(shop, customer_id)
     with transaction.atomic():
         sale = Sale.objects.create(
             shop=shop,
             number=new_number(),
             method=method,
-            customer_name=name,
+            customer_name=name or (customer.name if customer else ""),
+            customer=customer,
+            use_points=bool(use_points) and customer is not None,
             total=sum(line.price for line in lines),
             destination=root,
             folder=folder_name(shop.name),
@@ -120,6 +153,9 @@ def create_sale(
         for line in lines:
             line.sale = sale
         SaleLine.objects.bulk_create(lines)
+        if customer is not None:
+            apply_rewards(sale, lines)
+            sale.save(update_fields=["total", "discount", "points_used"])
     _start_payment(sale, actor)
     audit.record(
         actor=actor,
@@ -127,7 +163,14 @@ def create_sale(
         action="movie_shop.sale.create",
         resource_type="movie_shop",
         resource_id=shop.id,
-        context={"sale": sale.number, "titles": len(lines), "total": sale.total, "method": method},
+        context={
+            "sale": sale.number,
+            "titles": len(lines),
+            "total": sale.total,
+            "method": method,
+            "customer": str(customer.id) if customer else None,
+            "points_used": sale.points_used,
+        },
     )
     return sale
 

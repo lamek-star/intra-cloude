@@ -4,6 +4,11 @@ from . import views
 
 urlpatterns = [
     path(
+        "applications/<uuid:application_id>/requests/",
+        views.ApplicationRequestLogView.as_view(),
+        name="application-request-log",
+    ),
+    path(
         "organizations/<uuid:organization_id>/applications/",
         views.ApplicationListCreateView.as_view(),
         name="application-list-create",

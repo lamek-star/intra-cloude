@@ -184,6 +184,8 @@ export type User = {
   mfa_enabled: boolean;
   /** Password sign-in is off for this account: only a passkey signs in (ADR-0019). */
   passkey_only?: boolean;
+  /** An administrator gave this person a temporary password: they must choose their own before anything else. */
+  must_change_password?: boolean;
 };
 
 export type Organization = {
@@ -282,6 +284,8 @@ export type FileVersion = {
   file: string;
   size: number;
   checksum_sha256: string;
+  /** Quarantined by malware scanning when it was current: never downloads or comes back. */
+  quarantined: boolean;
   created_at: string;
   created_by: string;
   created_by_email: string;

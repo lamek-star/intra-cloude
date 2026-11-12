@@ -124,7 +124,7 @@ function SiteCard({ site, onChanged }: { site: Site; onChanged: () => Promise<vo
   const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const [dialog, setDialog] = useState<"versions" | "name" | null>(null);
+  const [dialog, setDialog] = useState<"versions" | "name" | "logs" | null>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const host = typeof window === "undefined" ? "localhost" : window.location.hostname;
   const address = siteAddress(site, host);
@@ -239,6 +239,11 @@ function SiteCard({ site, onChanged }: { site: Site; onChanged: () => Promise<vo
         <Button size="sm" variant="secondary" disabled={busy} onClick={() => setDialog("versions")}>
           Versions
         </Button>
+        {site.kind === "node" && (
+          <Button size="sm" variant="secondary" disabled={busy} onClick={() => setDialog("logs")}>
+            Logs
+          </Button>
+        )}
         {site.application && (
           <Link href={`/applications/${site.application}`} className="text-xs text-brand-600 hover:underline">
             Its application (data, files and Pay access)
@@ -260,6 +265,7 @@ function SiteCard({ site, onChanged }: { site: Site; onChanged: () => Promise<vo
 
       {dialog === "versions" && <VersionsModal site={site} onClose={() => setDialog(null)} onChanged={onChanged} />}
       {dialog === "name" && <NameModal site={site} onClose={() => setDialog(null)} onChanged={onChanged} />}
+      {dialog === "logs" && <LogsModal site={site} onClose={() => setDialog(null)} />}
     </Card>
   );
 }
@@ -443,6 +449,50 @@ function VersionsModal({ site, onClose, onChanged }: { site: Site; onClose: () =
           ))}
         </ul>
         <div className="flex justify-end">
+          <Button variant="ghost" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/** A server app's own output: its last 200 lines, refreshed on request (whoever manages the app). */
+function LogsModal({ site, onClose }: { site: Site; onClose: () => void }) {
+  const [log, setLog] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setLog((await api.get<{ log: string }>(`/sites/${site.id}/logs/`)).log);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [site.id]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one fetch when the dialog opens
+    void load();
+  }, [load]);
+
+  return (
+    <Modal open onClose={onClose} title={`Logs of ${site.name}`}>
+      <div className="space-y-3">
+        {error != null && <ErrorBanner message={error instanceof ApiError ? error.message : "The log could not be read."} error={error} />}
+        <pre className="max-h-96 min-h-32 overflow-auto rounded-md bg-surface-sunken p-3 font-mono text-xs whitespace-pre-wrap text-text-body">
+          {log === null ? "Loading..." : log || "The app has written nothing yet."}
+        </pre>
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => void load()} disabled={loading}>
+            {loading && <Spinner className="h-3.5 w-3.5" />}
+            Refresh
+          </Button>
           <Button variant="ghost" onClick={onClose}>
             Close
           </Button>

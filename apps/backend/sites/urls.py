@@ -24,6 +24,7 @@ urlpatterns = [
         name="site-list-create",
     ),
     path("sites/<uuid:site_id>/", views.SiteDetailView.as_view(), name="site-detail"),
+    path("sites/<uuid:site_id>/logs/", views.SiteLogsView.as_view(), name="site-logs"),
     path(
         "sites/<uuid:site_id>/versions/",
         views.SiteVersionListCreateView.as_view(),

@@ -52,9 +52,7 @@ class TeamMembershipTests(TeamTestBase):
         membership = Membership.objects.get(user=self.member, organization_id=self.org_id)
         self.assertEqual(str(membership.team_id), self.team_id)
 
-        remove = self.client.delete(
-            reverse("team-member-detail", args=[self.team_id, self.member.id])
-        )
+        remove = self.client.delete(reverse("team-member-detail", args=[self.team_id, self.member.id]))
         self.assertEqual(remove.status_code, status.HTTP_204_NO_CONTENT)
         membership.refresh_from_db()
         self.assertIsNone(membership.team_id)

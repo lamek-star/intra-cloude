@@ -43,7 +43,10 @@ class OAuthClientAdminTests(APITestCase):
         self.client.force_login(self.admin)
         response = self.client.post(
             reverse("oauth-client-list-create"),
-            {"name": "Harmoney Spare Parts", "redirect_uris": ["https://spareparts.example.com/auth/callback"]},
+            {
+                "name": "Harmoney Spare Parts",
+                "redirect_uris": ["https://spareparts.example.com/auth/callback"],
+            },
             format="json",
         )
         self.assertEqual(response.status_code, 201)
@@ -83,7 +86,9 @@ class OAuthClientAdminTests(APITestCase):
         self.assertFalse(client.enabled)
 
     def test_admin_can_rotate_the_secret_and_the_old_one_stops_working(self):
-        client, old_secret = services.create_client(name="Rotate Me", redirect_uris=["https://x.example.com/cb"])
+        client, old_secret = services.create_client(
+            name="Rotate Me", redirect_uris=["https://x.example.com/cb"]
+        )
         self.assertTrue(services.verify_client_secret(client, old_secret))
 
         self.client.force_login(self.admin)

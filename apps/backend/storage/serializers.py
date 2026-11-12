@@ -6,7 +6,16 @@ from .models import Bucket, FileObject, FileVersion, Folder
 class BucketSerializer(serializers.ModelSerializer):
     class Meta:
         model = Bucket
-        fields = ["id", "project", "name", "versioning_enabled", "created_at", "created_by"]
+        fields = [
+            "id",
+            "project",
+            "name",
+            "versioning_enabled",
+            "trash_days",
+            "version_days",
+            "created_at",
+            "created_by",
+        ]
         read_only_fields = fields
 
 
@@ -58,7 +67,16 @@ class FileVersionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = FileVersion
-        fields = ["id", "file", "size", "checksum_sha256", "created_at", "created_by", "created_by_email"]
+        fields = [
+            "id",
+            "file",
+            "size",
+            "checksum_sha256",
+            "quarantined",
+            "created_at",
+            "created_by",
+            "created_by_email",
+        ]
         read_only_fields = fields
 
 

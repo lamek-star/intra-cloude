@@ -164,16 +164,17 @@ function LoginPageInner() {
               <Label htmlFor="code">Authenticator code</Label>
               <Input
                 id="code"
-                inputMode="numeric"
+                autoComplete="one-time-code"
                 autoFocus
-                maxLength={6}
+                maxLength={12}
                 required
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 placeholder="123456"
               />
               <p className="mt-1.5 text-xs text-slate-500">
-                This account uses two-step sign-in. Enter the six-digit code from your authenticator app.
+                This account uses two-step sign-in. Enter the six-digit code from your authenticator app, or one of
+                your recovery codes if you no longer have the app.
               </p>
             </div>
           )}

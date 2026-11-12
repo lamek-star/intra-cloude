@@ -155,7 +155,7 @@ export function Portal({ shopId }: { shopId: string }) {
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col bg-[#0a0d16] bg-[radial-gradient(700px_400px_at_90%_-10%,rgba(245,165,36,.12),transparent_60%),radial-gradient(600px_400px_at_0%_110%,rgba(45,212,191,.08),transparent_60%)] text-slate-100">
+    <div data-theme="light" className="flex min-h-screen flex-col bg-[#0a0d16] bg-[radial-gradient(700px_400px_at_90%_-10%,rgba(245,165,36,.12),transparent_60%),radial-gradient(600px_400px_at_0%_110%,rgba(45,212,191,.08),transparent_60%)] text-slate-100">
       <div className="mx-auto flex w-full max-w-xl flex-1 flex-col">{children}</div>
     </div>
   );

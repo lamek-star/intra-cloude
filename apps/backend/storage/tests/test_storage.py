@@ -261,6 +261,90 @@ class FileVersioningTests(StorageTestBase):
         self.assertEqual(FileVersion.objects.filter(file_id=file_id).count(), 0)
 
 
+class VersionDownloadRestoreTests(StorageTestBase):
+    def setUp(self):
+        super().setUp()
+        bucket = self.client.post(
+            reverse("bucket-list-create", args=[self.project_id]),
+            {"name": "kept", "versioning_enabled": True},
+        )
+        self.versioned = bucket.data["id"]
+        first = _upload_file(
+            self.client,
+            reverse("file-list-create", args=[self.versioned]),
+            content=b"v1",
+            display_filename="a.txt",
+        )
+        self.file_id = first.data["id"]
+        self.client.post(
+            reverse("file-version-upload", args=[self.file_id]),
+            {"file": _make_upload(b"version two", "a.txt")},
+            format="multipart",
+        )
+        self.version_id = self.client.get(reverse("file-version-upload", args=[self.file_id])).data[0]["id"]
+
+    def test_an_earlier_content_downloads_and_restoring_it_keeps_the_replaced_one(self):
+        got = self.client.get(reverse("file-version-download", args=[self.file_id, self.version_id]))
+        self.assertEqual(got.status_code, status.HTTP_200_OK)
+        self.assertEqual(b"".join(got.streaming_content), b"v1")
+        back = self.client.post(reverse("file-version-restore", args=[self.file_id, self.version_id]))
+        self.assertEqual(back.status_code, status.HTTP_200_OK, back.data)
+        self.assertEqual(back.data["size"], 2)
+        current = self.client.get(reverse("file-download", args=[self.file_id]))
+        self.assertEqual(b"".join(current.streaming_content), b"v1")
+        kept = self.client.get(reverse("file-version-upload", args=[self.file_id])).data
+        self.assertEqual([v["size"] for v in kept], [len(b"version two")])
+        self.assertTrue(AuditEvent.objects.filter(action="storage.file.restore_version").exists())
+
+    def test_reading_needs_storage_read_restoring_needs_storage_write(self):
+        reader = User.objects.create_user(email="versions-reader@example.com", password="x")
+        Membership.objects.create(user=reader, organization_id=self.org_id, status=Membership.Status.ACTIVE)
+        self.client.force_login(reader)
+        url = reverse("file-version-download", args=[self.file_id, self.version_id])
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_403_FORBIDDEN)
+        restore = reverse("file-version-restore", args=[self.file_id, self.version_id])
+        self.assertEqual(self.client.post(restore).status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_another_files_version_or_another_organization_is_not_found(self):
+        other = _upload_file(
+            self.client,
+            reverse("file-list-create", args=[self.versioned]),
+            content=b"x",
+            display_filename="b.txt",
+        ).data["id"]
+        mixed = reverse("file-version-download", args=[other, self.version_id])
+        self.assertEqual(self.client.get(mixed).status_code, status.HTTP_404_NOT_FOUND)
+        outsider = User.objects.create_user(email="versions-outsider2@example.com", password="x")
+        self.client.force_login(outsider)
+        url = reverse("file-version-download", args=[self.file_id, self.version_id])
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_404_NOT_FOUND)
+
+    @override_settings(MALWARE_SCAN_ENABLED=True)
+    def test_quarantined_earlier_content_never_downloads_or_comes_back(self):
+        with patch(
+            "storage.services.scanning.scan_stream",
+            return_value=scanning.ScanResult(clean=False, signature="Test.Signature"),
+        ):
+            bad = _upload_file(
+                self.client,
+                reverse("file-list-create", args=[self.versioned]),
+                content=b"evil",
+                display_filename="c.txt",
+            ).data["id"]
+        with patch("storage.services.scanning.scan_stream", return_value=scanning.ScanResult(clean=True)):
+            self.client.post(
+                reverse("file-version-upload", args=[bad]),
+                {"file": _make_upload(b"fine", "c.txt")},
+                format="multipart",
+            )
+        kept = self.client.get(reverse("file-version-upload", args=[bad])).data
+        self.assertTrue(kept[0]["quarantined"])
+        url = reverse("file-version-download", args=[bad, kept[0]["id"]])
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_403_FORBIDDEN)
+        restore = self.client.post(reverse("file-version-restore", args=[bad, kept[0]["id"]]))
+        self.assertEqual(restore.status_code, status.HTTP_409_CONFLICT)
+
+
 def _make_upload(content, name):
     return SimpleUploadedFile(name, content, content_type="text/plain")
 
@@ -332,9 +416,7 @@ class MalwareScanningTests(StorageTestBase):
 
     @override_settings(MALWARE_SCAN_ENABLED=True)
     def test_clean_result_is_stored_active(self):
-        with patch(
-            "storage.services.scanning.scan_stream", return_value=scanning.ScanResult(clean=True)
-        ):
+        with patch("storage.services.scanning.scan_stream", return_value=scanning.ScanResult(clean=True)):
             resp = _upload_file(
                 self.client, reverse("file-list-create", args=[self.bucket_id]), display_filename="ok.txt"
             )
@@ -395,13 +477,20 @@ class BucketDetailTests(StorageTestBase):
         outsider = User.objects.create_user(email="detail-outsider@example.com", password="x")
         Membership.objects.create(user=outsider, organization_id=self.org_id, status=Membership.Status.ACTIVE)
         self.client.force_login(outsider)
-        self.assertEqual(self.client.get(reverse("bucket-detail", args=[self.bucket_id])).status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(
+            self.client.get(reverse("bucket-detail", args=[self.bucket_id])).status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
 
     def test_another_organization_cannot_read_it_by_id(self):
         stranger = User.objects.create_user(email="detail-stranger@example.com", password="x")
         self.client.force_login(stranger)
         self.client.post(reverse("organization-list-create"), {"name": "Other shop"})
-        self.assertEqual(self.client.get(reverse("bucket-detail", args=[self.bucket_id])).status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(
+            self.client.get(reverse("bucket-detail", args=[self.bucket_id])).status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
 
 class BucketListVisibilityTests(StorageTestBase):
     """BucketListCreateView.get previously listed every bucket in a
@@ -461,6 +550,136 @@ class BucketListVisibilityTests(StorageTestBase):
 
         resp = self.client.get(reverse("bucket-list-create", args=[self.project_id]))
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        self.assertEqual(
-            {b["id"] for b in resp.data}, {self.bucket_id, self.other_bucket_id}
+        self.assertEqual({b["id"] for b in resp.data}, {self.bucket_id, self.other_bucket_id})
+
+
+class OrganizationBucketListTests(StorageTestBase):
+    """The organization's Storage page: every bucket the caller may read, with what it holds."""
+
+    def test_lists_buckets_with_files_bytes_versions_and_trash(self):
+        url = reverse("file-list-create", args=[self.bucket_id])
+        kept = _upload_file(self.client, url, content=b"12345", display_filename="a.txt").data["id"]
+        gone = _upload_file(self.client, url, content=b"123", display_filename="b.txt").data["id"]
+        self.client.delete(reverse("file-detail", args=[gone]))
+        listed = self.client.get(reverse("organization-bucket-list", args=[self.org_id])).data
+        self.assertEqual(len(listed), 1)
+        row = listed[0]
+        self.assertEqual((row["id"], row["name"], row["project_name"]), (self.bucket_id, "docs", "Proj"))
+        self.assertEqual((row["files"], row["bytes"], row["trash_files"], row["trash_bytes"]), (1, 5, 1, 3))
+        self.assertEqual(row["versions"], 0)
+        self.assertTrue(kept)
+
+    def test_a_member_without_storage_read_sees_none_and_an_outsider_gets_404(self):
+        url = reverse("organization-bucket-list", args=[self.org_id])
+        member = User.objects.create_user(email="org-buckets-member@example.com", password="x")
+        Membership.objects.create(user=member, organization_id=self.org_id, status=Membership.Status.ACTIVE)
+        self.client.force_login(member)
+        self.assertEqual(self.client.get(url).data, [])
+        outsider = User.objects.create_user(email="org-buckets-outsider@example.com", password="x")
+        self.client.force_login(outsider)
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_404_NOT_FOUND)
+
+
+class ShareLinkTests(StorageTestBase):
+    """A link that lets anyone with it download one file, until it expires, is revoked or is used up."""
+
+    def setUp(self):
+        super().setUp()
+        url = reverse("file-list-create", args=[self.bucket_id])
+        self.file_id = _upload_file(
+            self.client, url, content=b"shared bytes", display_filename="price.txt"
+        ).data["id"]
+
+    def make(self, **body):
+        return self.client.post(reverse("file-share-links", args=[self.file_id]), body, format="json")
+
+    def test_anyone_with_the_link_downloads_until_the_limit_and_revoke_stops_it(self):
+        made = self.make(days=7, max_downloads=2)
+        self.assertEqual(made.status_code, 201, made.data)
+        token = made.data["path"].rsplit("/", 1)[1]
+        stranger = self.client_class()
+        info = stranger.get(reverse("public-share", args=[token])).data
+        self.assertEqual((info["name"], info["size"]), ("price.txt", len(b"shared bytes")))
+        for _ in range(2):
+            got = stranger.get(reverse("public-share-download", args=[token]))
+            self.assertEqual(b"".join(got.streaming_content), b"shared bytes")
+        self.assertEqual(stranger.get(reverse("public-share-download", args=[token])).status_code, 404)
+        listed = self.client.get(reverse("file-share-links", args=[self.file_id])).data
+        self.assertEqual((listed[0]["downloads"], "path" in listed[0]), (2, False))
+        other = self.make(days=1).data["path"].rsplit("/", 1)[1]
+        self.client.post(reverse("share-link-revoke", args=[self.make(days=1).data["id"]]))
+        self.client.post(reverse("share-link-revoke", args=[listed[0]["id"]]))
+        self.assertEqual(stranger.get(reverse("public-share", args=[other])).status_code, 200)
+        self.assertTrue(AuditEvent.objects.filter(action="storage.share_link.download").exists())
+
+    def test_expired_deleted_or_unknown_links_are_not_found_and_days_are_1_to_30(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from storage.models import FileShareLink
+
+        self.assertEqual(self.make(days=0).status_code, 400)
+        self.assertEqual(self.make(days=31).status_code, 400)
+        token = self.make(days=1).data["path"].rsplit("/", 1)[1]
+        FileShareLink.objects.update(expires_at=timezone.now() - timedelta(seconds=1))
+        self.assertEqual(self.client_class().get(reverse("public-share", args=[token])).status_code, 404)
+        token = self.make(days=1).data["path"].rsplit("/", 1)[1]
+        self.client.delete(reverse("file-detail", args=[self.file_id]))
+        self.assertEqual(self.client_class().get(reverse("public-share", args=[token])).status_code, 404)
+        self.assertEqual(self.client_class().get(reverse("public-share", args=["nope"])).status_code, 404)
+
+    def test_making_links_needs_storage_share(self):
+        member = User.objects.create_user(email="share-member@example.com", password="x")
+        Membership.objects.create(user=member, organization_id=self.org_id, status=Membership.Status.ACTIVE)
+        self.client.force_login(member)
+        self.assertEqual(self.make(days=3).status_code, status.HTTP_403_FORBIDDEN)
+
+
+class StorageCleanupTests(StorageTestBase):
+    """Automatic cleanup: the Trash after trash_days, kept versions after version_days."""
+
+    def test_old_trash_and_old_versions_go_and_newer_ones_stay(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from storage.services import clean_up_bucket
+
+        bucket = self.client.post(
+            reverse("bucket-list-create", args=[self.project_id]),
+            {"name": "tidy", "versioning_enabled": True},
+        ).data["id"]
+        url = reverse("file-list-create", args=[bucket])
+        old = _upload_file(self.client, url, content=b"old", display_filename="old.txt").data["id"]
+        recent = _upload_file(self.client, url, content=b"recent", display_filename="recent.txt").data["id"]
+        kept = _upload_file(self.client, url, content=b"v1", display_filename="kept.txt").data["id"]
+        self.client.post(
+            reverse("file-version-upload", args=[kept]),
+            {"file": _make_upload(b"v2", "kept.txt")},
+            format="multipart",
         )
+        self.client.delete(reverse("file-detail", args=[old]))
+        self.client.delete(reverse("file-detail", args=[recent]))
+        FileObject.objects.filter(id=old).update(updated_at=timezone.now() - timedelta(days=31))
+        FileVersion.objects.filter(file_id=kept).update(created_at=timezone.now() - timedelta(days=100))
+        patched = self.client.patch(
+            reverse("bucket-detail", args=[bucket]), {"version_days": 90}, format="json"
+        )
+        self.assertEqual((patched.data["trash_days"], patched.data["version_days"]), (30, 90))
+        from storage.models import Bucket
+
+        removed = clean_up_bucket(Bucket.objects.get(id=bucket))
+        self.assertEqual((removed["files"], removed["versions"]), (1, 1))
+        self.assertFalse(FileObject.objects.filter(id=old).exists())
+        self.assertTrue(FileObject.objects.filter(id=recent).exists())
+        self.assertEqual(FileVersion.objects.filter(file_id=kept).count(), 0)
+        self.assertTrue(AuditEvent.objects.filter(action="storage.cleanup").exists())
+
+    def test_cleanup_settings_need_storage_manage_and_sane_numbers(self):
+        url = reverse("bucket-detail", args=[self.bucket_id])
+        self.assertEqual(self.client.patch(url, {"trash_days": -1}, format="json").status_code, 400)
+        member = User.objects.create_user(email="cleanup-member@example.com", password="x")
+        Membership.objects.create(user=member, organization_id=self.org_id, status=Membership.Status.ACTIVE)
+        self.client.force_login(member)
+        self.assertEqual(self.client.patch(url, {"trash_days": 1}, format="json").status_code, 403)

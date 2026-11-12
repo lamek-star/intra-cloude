@@ -21,7 +21,8 @@ from system.models import BackupRecord
 class RestoreBackupCommandTests(TestCase):
     def test_refuses_to_run_without_yes(self):
         record = BackupRecord.objects.create(
-            backup_type=BackupRecord.BackupType.CONTROL_DB, status=BackupRecord.Status.SUCCESS,
+            backup_type=BackupRecord.BackupType.CONTROL_DB,
+            status=BackupRecord.Status.SUCCESS,
             file_path="/backups/whatever.dump",
         )
         with self.assertRaisesMessage(CommandError, "--yes"):
@@ -37,7 +38,8 @@ class RestoreBackupCommandTests(TestCase):
 
     def test_success_prints_confirmation_and_emits_an_audit_event(self):
         record = BackupRecord.objects.create(
-            backup_type=BackupRecord.BackupType.CONTROL_DB, status=BackupRecord.Status.SUCCESS,
+            backup_type=BackupRecord.BackupType.CONTROL_DB,
+            status=BackupRecord.Status.SUCCESS,
             file_path="/backups/whatever.dump",
         )
         fake_restored = BackupRecord.objects.get(id=record.id)
@@ -58,7 +60,8 @@ class RestoreBackupCommandTests(TestCase):
 
     def test_failure_raises_CommandError_and_emits_an_error_audit_event(self):
         record = BackupRecord.objects.create(
-            backup_type=BackupRecord.BackupType.CONTROL_DB, status=BackupRecord.Status.SUCCESS,
+            backup_type=BackupRecord.BackupType.CONTROL_DB,
+            status=BackupRecord.Status.SUCCESS,
             file_path="/backups/whatever.dump",
         )
         fake_restored = BackupRecord.objects.get(id=record.id)

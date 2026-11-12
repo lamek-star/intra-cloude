@@ -72,8 +72,12 @@ def get_enabled_client(client_id: str) -> OAuthClient | None:
 
 
 def create_client(
-    *, name: str, redirect_uris: list[str], post_logout_redirect_uris: list[str] | None = None,
-    allowed_origins: list[str] | None = None, created_by=None,
+    *,
+    name: str,
+    redirect_uris: list[str],
+    post_logout_redirect_uris: list[str] | None = None,
+    allowed_origins: list[str] | None = None,
+    created_by=None,
 ) -> tuple[OAuthClient, str]:
     """Returns (client, plaintext_secret) — the plaintext is never stored;
     only this call site and rotate_client_secret ever see it."""
@@ -128,8 +132,14 @@ def verify_pkce(*, code_challenge: str, code_challenge_method: str, code_verifie
 
 
 def issue_authorization_code(
-    *, client: OAuthClient, user, redirect_uri: str, scope: str,
-    code_challenge: str, code_challenge_method: str, nonce: str,
+    *,
+    client: OAuthClient,
+    user,
+    redirect_uri: str,
+    scope: str,
+    code_challenge: str,
+    code_challenge_method: str,
+    nonce: str,
 ) -> str:
     code = generate_token(32)
     OAuthAuthorizationCode.objects.create(
@@ -156,7 +166,12 @@ class TokenResponse:
 
 
 def exchange_authorization_code(
-    *, client_id: str, client_secret: str, code: str, redirect_uri: str, code_verifier: str,
+    *,
+    client_id: str,
+    client_secret: str,
+    code: str,
+    redirect_uri: str,
+    code_verifier: str,
 ) -> TokenResponse:
     """Every failure mode raises OAuthError with the exact RFC 6749
     error code — deliberately checked in an order that never leaks which
@@ -354,3 +369,32 @@ def issue_id_token(*, client: OAuthClient, user, nonce: str, scope: str) -> str:
     return jwt.encode(
         claims, private_pem, algorithm=signing_key.algorithm, headers={"kid": str(signing_key.id)}
     )
+
+
+# ---- consent (OAuthClient.requires_consent) ----------------------------------------------------------------
+SCOPE_WORDS = {
+    "openid": "Know who you are (your IntraForge account)",
+    "profile": "Your name",
+    "email": "Your e-mail address",
+}
+
+
+def has_consent(user, client, scopes: set[str]) -> bool:
+    """True when the client needs no consent, or this person already allowed at least these scopes."""
+    if not client.requires_consent:
+        return True
+    from .models import OAuthConsent
+
+    consent = OAuthConsent.objects.filter(client=client, user=user).first()
+    return consent is not None and scopes.issubset(set(consent.scope.split()))
+
+
+def grant_consent(user, client, scopes: set[str]) -> None:
+    from .models import OAuthConsent
+
+    consent, created = OAuthConsent.objects.get_or_create(
+        client=client, user=user, defaults={"scope": " ".join(sorted(scopes))}
+    )
+    if not created:
+        consent.scope = " ".join(sorted(set(consent.scope.split()) | scopes))
+        consent.save(update_fields=["scope", "updated_at"])

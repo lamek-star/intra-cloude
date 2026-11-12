@@ -69,6 +69,10 @@ export type SaleLine = {
   free: boolean;
 };
 
+export type CounterCustomer = { id: string; name: string; phone_end: string; points: number };
+
+export type ShopToday = { since: string; sales: number; titles: number; credits: number; new_customers: number };
+
 export type Sale = {
   id: string;
   shop: string;
@@ -175,8 +179,19 @@ export const movies = {
   renameShop: (id: string, name: string) => api.patch<MovieShop>(`/movie-shops/${id}/`, { name }),
   renameLibrary: (libraryId: string, name: string) => api.patch<MovieLibrary>(`/movie-libraries/${libraryId}/`, { name }),
   destinations: (id: string) => api.get<{ agent_seen_at: string | null; drives: Destination[] }>(`/movie-shops/${id}/destinations/`),
-  createSale: (id: string, body: { titles: string[]; destination: string; method: Sale["method"]; customer_name: string }) =>
-    api.post<Sale>(`/movie-shops/${id}/sales/`, body),
+  createSale: (
+    id: string,
+    body: { titles: string[]; destination: string; method: Sale["method"]; customer_name: string; customer?: string; use_points?: boolean },
+  ) => api.post<Sale>(`/movie-shops/${id}/sales/`, body),
+  /** An approved portal customer, by at least 6 digits of their phone number (for the counter). */
+  findCustomer: (id: string, phone: string) =>
+    api.get<{ results: CounterCustomer[] }>(`/movie-shops/${id}/counter-customers/?phone=${encodeURIComponent(phone)}`),
+  /** The shop's day so far, counted from the browser's own midnight. */
+  today: (id: string) => {
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    return api.get<ShopToday>(`/movie-shops/${id}/today/?since=${encodeURIComponent(midnight.toISOString())}`);
+  },
   sales: (id: string, offset = 0) => api.get<Paginated<Sale>>(`/movie-shops/${id}/sales/?limit=25&offset=${offset}`),
   sale: (saleId: string) => api.get<Sale>(`/movie-sales/${saleId}/`),
   saleAction: (saleId: string, action: "cash" | "cancel" | "retry") => api.post<Sale>(`/movie-sales/${saleId}/${action}/`),

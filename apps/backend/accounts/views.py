@@ -12,7 +12,14 @@ from audit.models import AuditEvent
 
 from . import passkeys, services
 from .models import User
-from .serializers import LoginSerializer, MFACodeSerializer, RegisterSerializer, UserSerializer
+from .serializers import (
+    LoginSerializer,
+    MFACodeSerializer,
+    MFAVerifySerializer,
+    PasswordChangeSerializer,
+    RegisterSerializer,
+    UserSerializer,
+)
 
 # Distinct from Django's own SESSION_KEY: a session carrying only this
 # key is a "password verified, second factor not yet given" state, not
@@ -111,7 +118,7 @@ class MFALoginVerifyView(APIView):
         if not pending_id:
             return Response({"detail": "No MFA login in progress."}, status=status.HTTP_400_BAD_REQUEST)
 
-        serializer = MFACodeSerializer(data=request.data)
+        serializer = MFAVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         try:
@@ -169,10 +176,11 @@ class MFAConfirmView(APIView):
         serializer = MFACodeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            services.confirm_mfa_enrollment(user=request.user, code=serializer.validated_data["code"])
+            codes = services.confirm_mfa_enrollment(user=request.user, code=serializer.validated_data["code"])
         except services.MFAError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(UserSerializer(request.user).data)
+        # The recovery codes are in this answer only: they are never shown again.
+        return Response({**UserSerializer(request.user).data, "recovery_codes": codes})
 
 
 class MFADisableView(APIView):
@@ -337,3 +345,50 @@ class PasskeyCheckVerifyView(APIView):
             audit.record(actor=user, organization_id=None, action="auth.passkey_check")
         passkeys.mark_checked(request)
         return Response(UserSerializer(user).data)
+
+
+class MFARecoveryCodesView(APIView):
+    """GET: how many recovery codes are left. POST (a current 6-digit code): 10 new ones, the old ones
+    gone."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth"
+
+    def get(self, request):
+        return Response(
+            {"left": services.recovery_codes_left(request.user), "enabled": request.user.mfa_enabled}
+        )
+
+    def post(self, request):
+        serializer = MFACodeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        code = serializer.validated_data["code"]
+        if not (code.isdigit() and services.verify_mfa_code(user=request.user, code=code)):
+            return Response({"detail": "invalid code"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"recovery_codes": services.new_recovery_codes(request.user)})
+
+
+class PasswordChangeView(APIView):
+    """The person changes their own password (their current one, then a new one). Their session stays signed
+    in."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth"
+
+    def post(self, request):
+        from django.contrib.auth import update_session_auth_hash
+
+        serializer = PasswordChangeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            services.change_password(
+                user=request.user,
+                current=serializer.validated_data["current_password"],
+                new=serializer.validated_data["new_password"],
+            )
+        except services.PasswordError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        update_session_auth_hash(request, request.user)
+        return Response(UserSerializer(request.user).data)

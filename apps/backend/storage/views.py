@@ -1,8 +1,9 @@
 from django.http import Http404, StreamingHttpResponse
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 
 from audit import services as audit
@@ -26,10 +27,13 @@ from .services import (
     UploadTooLarge,
     create_folder,
     delete_file,
+    get_file_version,
     get_member_bucket,
     get_member_file,
     record_download,
+    record_version_download,
     restore_file,
+    restore_version,
     upload_file,
     upload_new_version,
 )
@@ -159,6 +163,27 @@ class BucketDetailView(APIView):
             return Response(status=status.HTTP_403_FORBIDDEN)
         if _environment_scope_denied(request, bucket):
             return Response(status=status.HTTP_403_FORBIDDEN)
+        return Response(BucketSerializer(bucket).data)
+
+    def patch(self, request, bucket_id):
+        """The bucket's automatic cleanup (storage.manage): trash_days and version_days."""
+        from .services import set_cleanup
+
+        bucket = get_member_bucket(request.user, bucket_id)
+        if not _require(request, "storage.manage", bucket.organization_id, bucket_id=bucket.id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, bucket):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        data = request.data if isinstance(request.data, dict) else {}
+        try:
+            set_cleanup(
+                bucket,
+                actor=request.user,
+                trash_days=data.get("trash_days"),
+                version_days=data.get("version_days"),
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(BucketSerializer(bucket).data)
 
 
@@ -353,9 +378,225 @@ class FileDownloadView(APIView):
 
         record_download(file_obj, actor=request.user)
         body = get_client().get_stream(file_obj.object_key)
-        response = StreamingHttpResponse(
-            body.iter_chunks(1024 * 1024), content_type=file_obj.mime_type
-        )
+        response = StreamingHttpResponse(body.iter_chunks(1024 * 1024), content_type=file_obj.mime_type)
         response["Content-Disposition"] = safe_content_disposition(file_obj.display_filename)
         response["Content-Length"] = str(file_obj.size)
+        return response
+
+
+class FileVersionDownloadView(APIView):
+    """Downloads one kept earlier content of a file (storage.read), streamed like the current one."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, file_id, version_id):
+        file_obj = get_member_file(request.user, file_id)
+        if not _require(request, "storage.read", file_obj.organization_id, bucket_id=file_obj.bucket_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, file_obj.bucket):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        version = get_file_version(file_obj, version_id)
+        if version.quarantined:
+            return Response(
+                {
+                    "detail": "This earlier content was quarantined by malware scanning "
+                    "and cannot be downloaded."
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        record_version_download(file_obj, version, actor=request.user)
+        body = get_client().get_stream(version.object_key)
+        response = StreamingHttpResponse(
+            body.iter_chunks(1024 * 1024), content_type=version.mime_type or "application/octet-stream"
+        )
+        response["Content-Disposition"] = safe_content_disposition(file_obj.display_filename)
+        response["Content-Length"] = str(version.size)
+        return response
+
+
+class FileVersionRestoreView(APIView):
+    """Makes an earlier content the current one (storage.write); the replaced content is kept."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, file_id, version_id):
+        file_obj = get_member_file(request.user, file_id)
+        if not _require(request, "storage.write", file_obj.organization_id, bucket_id=file_obj.bucket_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, file_obj.bucket):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        version = get_file_version(file_obj, version_id)
+        try:
+            file_obj = restore_version(file_obj, version, actor=request.user)
+        except RestoreRefused as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response(FileObjectSerializer(file_obj).data)
+
+
+class OrganizationBucketListView(APIView):
+    """Every bucket in an organization the caller may read (storage.read, role-wide or a grant on that bucket,
+    the same check as each project's list), with what it holds: files in use, their bytes, the bytes of kept
+    earlier versions, and the Trash. For the organization's Storage page and its usage summary."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, organization_id):
+        from django.db.models import Count, Q, Sum
+
+        from organizations.services import get_member_organization
+
+        from .models import FileVersion
+
+        organization = get_member_organization(request.user, organization_id)
+        buckets = [
+            b
+            for b in Bucket.objects.filter(project__workspace__organization=organization)
+            .select_related("project__workspace")
+            .order_by("project__workspace__name", "project__name", "name")
+            if _require(request, "storage.read", organization.id, bucket_id=b.id)
+            and not _environment_scope_denied(request, b)
+        ]
+        ids = [b.id for b in buckets]
+        active, deleted = FileObject.Status.ACTIVE, FileObject.Status.DELETED
+        files = {
+            row["bucket"]: row
+            for row in FileObject.objects.filter(bucket_id__in=ids)
+            .values("bucket")
+            .annotate(
+                files=Count("id", filter=Q(status=active)),
+                bytes=Sum("size", filter=Q(status=active)),
+                trash_files=Count("id", filter=Q(status=deleted)),
+                trash_bytes=Sum("size", filter=Q(status=deleted)),
+            )
+        }
+        versions = {
+            row["file__bucket"]: row
+            for row in FileVersion.objects.filter(file__bucket_id__in=ids)
+            .values("file__bucket")
+            .annotate(versions=Count("id"), version_bytes=Sum("size"))
+        }
+        out = []
+        for b in buckets:
+            f, v = files.get(b.id, {}), versions.get(b.id, {})
+            out.append(
+                {
+                    "id": str(b.id),
+                    "name": b.name,
+                    "project": str(b.project_id),
+                    "project_name": b.project.name,
+                    "workspace_name": b.project.workspace.name,
+                    "versioning_enabled": b.versioning_enabled,
+                    "files": f.get("files") or 0,
+                    "bytes": f.get("bytes") or 0,
+                    "versions": v.get("versions") or 0,
+                    "version_bytes": v.get("version_bytes") or 0,
+                    "trash_files": f.get("trash_files") or 0,
+                    "trash_bytes": f.get("trash_bytes") or 0,
+                    "created_at": b.created_at.isoformat(),
+                }
+            )
+        return Response(out)
+
+
+def _share_link_json(link) -> dict:
+    return {
+        "id": str(link.id),
+        "expires_at": link.expires_at.isoformat(),
+        "max_downloads": link.max_downloads,
+        "downloads": link.downloads,
+        "created_at": link.created_at.isoformat(),
+        "created_by_email": link.created_by.email if link.created_by else None,
+        "revoked_at": link.revoked_at.isoformat() if link.revoked_at else None,
+    }
+
+
+class FileShareLinkListCreateView(APIView):
+    """A file's share links (storage.share on its bucket). POST {days, max_downloads?} makes one; its address
+    is in that answer only."""
+
+    permission_classes = [IsAuthenticated]
+
+    def _file(self, request, file_id):
+        file_obj = get_member_file(request.user, file_id)
+        if not _require(request, "storage.share", file_obj.organization_id, bucket_id=file_obj.bucket_id):
+            return None, Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, file_obj.bucket):
+            return None, Response(status=status.HTTP_403_FORBIDDEN)
+        return file_obj, None
+
+    def get(self, request, file_id):
+        file_obj, refused = self._file(request, file_id)
+        if refused:
+            return refused
+        links = file_obj.share_links.select_related("created_by")
+        return Response([_share_link_json(link) for link in links])
+
+    def post(self, request, file_id):
+        from .services import ShareLinkRefused, create_share_link
+
+        file_obj, refused = self._file(request, file_id)
+        if refused:
+            return refused
+        data = request.data if isinstance(request.data, dict) else {}
+        try:
+            link, token = create_share_link(
+                file=file_obj,
+                actor=request.user,
+                days=data.get("days"),
+                max_downloads=data.get("max_downloads"),
+            )
+        except ShareLinkRefused as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({**_share_link_json(link), "path": f"/share/{token}"}, status=status.HTTP_201_CREATED)
+
+
+class FileShareLinkRevokeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, link_id):
+        from .models import FileShareLink
+        from .services import revoke_share_link
+
+        link = FileShareLink.objects.select_related("file").filter(pk=link_id).first()
+        if link is None:
+            raise Http404
+        file_obj = get_member_file(request.user, link.file_id)  # 404 outside the organization
+        if not _require(request, "storage.share", file_obj.organization_id, bucket_id=file_obj.bucket_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        revoke_share_link(link, actor=request.user)
+        return Response(_share_link_json(link))
+
+
+class PublicShareView(APIView):
+    """What a share link opens, for anyone who has it: the file's name and size (GET), or the file itself
+    (download/). Nothing else about the organization is shown; a link that does not work is a plain 404."""
+
+    authentication_classes: list = []
+    permission_classes = [AllowAny]
+    throttle_classes = [AnonRateThrottle]
+
+    def get(self, request, token, download=False):
+        from .services import count_share_download, share_link_for_token
+
+        link = share_link_for_token(token)
+        if link is None:
+            raise Http404
+        file_obj = link.file
+        if not download:
+            return Response(
+                {
+                    "name": file_obj.display_filename,
+                    "size": file_obj.size,
+                    "mime_type": file_obj.mime_type,
+                    "expires_at": link.expires_at.isoformat(),
+                }
+            )
+        if not count_share_download(link):
+            raise Http404
+        body = get_client().get_stream(file_obj.object_key)
+        response = StreamingHttpResponse(body.iter_chunks(1024 * 1024), content_type=file_obj.mime_type)
+        response["Content-Disposition"] = safe_content_disposition(file_obj.display_filename)
+        response["Content-Length"] = str(file_obj.size)
+        response["Cache-Control"] = "no-store"
+        response["X-Robots-Tag"] = "noindex"
         return response

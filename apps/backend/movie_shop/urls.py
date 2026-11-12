@@ -36,6 +36,12 @@ urlpatterns = [
     path("movie-titles/<uuid:title_id>/", views.TitleDetailView.as_view(), name="movie-title-detail"),
     path("movie-titles/<uuid:title_id>/cover/", views.TitleCoverView.as_view(), name="movie-title-cover"),
     path("movie-shops/<uuid:shop_id>/sales/", views.SaleListCreateView.as_view(), name="movie-shop-sales"),
+    path("movie-shops/<uuid:shop_id>/today/", views.ShopTodayView.as_view(), name="movie-shop-today"),
+    path(
+        "movie-shops/<uuid:shop_id>/counter-customers/",
+        views.CounterCustomerFindView.as_view(),
+        name="movie-shop-counter-customers",
+    ),
     path(
         "movie-shops/<uuid:shop_id>/destinations/",
         views.DestinationsView.as_view(),
@@ -102,6 +108,7 @@ urlpatterns = [
         name="movie-customer-points",
     ),
     # The customer portal itself (no IntraForge sign-in; its own cookie)
+    path("portal/", portal_views.PortalDirectoryView.as_view(), name="portal-directory"),
     path("portal/<shop_id>/", portal_views.PortalHomeView.as_view(), name="portal-home"),
     path("portal/<shop_id>/signup/", portal_views.PortalSignUpView.as_view(), name="portal-signup"),
     path("portal/<shop_id>/login/", portal_views.PortalSignInView.as_view(), name="portal-login"),

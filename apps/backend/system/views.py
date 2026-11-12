@@ -104,9 +104,7 @@ class MetricsView(APIView):
         for name, up in checks.items():
             lines.append(f'pdc_dependency_up{{dependency="{name}"}} {1 if up else 0}')
 
-        return HttpResponse(
-            "\n".join(lines) + "\n", content_type="text/plain; version=0.0.4; charset=utf-8"
-        )
+        return HttpResponse("\n".join(lines) + "\n", content_type="text/plain; version=0.0.4; charset=utf-8")
 
 
 class VersionView(APIView):

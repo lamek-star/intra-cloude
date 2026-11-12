@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { FileText, Folder as FolderIcon, FolderPlus } from "lucide-react";
+import { FileText, Folder as FolderIcon, FolderPlus, FolderUp } from "lucide-react";
+import { uploadFolder } from "./folderUpload";
 import { useProjectTrail } from "@/lib/project-trail";
 import {
   api,
@@ -31,6 +32,8 @@ import {
 import { ShareSection } from "@/components/ShareSection";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { FileVersions } from "./FileVersions";
+import { ShareLinks } from "./ShareLinks";
+import { CleanupSettings } from "./CleanupSettings";
 import { formatBytes } from "./format";
 
 type View = "files" | "trash";
@@ -65,7 +68,12 @@ export default function BucketDetailClient({
   const [search, setSearch] = useState("");
   const [folderModalOpen, setFolderModalOpen] = useState(false);
   const [versionsOf, setVersionsOf] = useState<FileObject | null>(null);
+  const [sharing, setSharing] = useState<FileObject | null>(null);
+  const [cleanup, setCleanup] = useState<{ trash_days: number; version_days: number } | null>(null);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const [folderProgress, setFolderProgress] = useState<string | null>(null);
   const confirm = useConfirm();
 
   const current = path.length ? path[path.length - 1] : null;
@@ -101,11 +109,12 @@ export default function BucketDetailClient({
       // Opened straight from its address (a bookmark, a refresh): the link's name and project are not in the URL,
       // so the bucket itself says them.
       let project = projectId;
-      if (!initialName || !project) {
-        const bucket = await api.get<{ name?: string; project?: string }>(`/buckets/${bucketId}/`);
-        if (!initialName && bucket.name) setBucketName(bucket.name);
-        project = project ?? bucket.project ?? null;
-      }
+      const bucket = await api.get<{ name?: string; project?: string; trash_days?: number; version_days?: number }>(
+        `/buckets/${bucketId}/`,
+      );
+      if (!initialName && bucket.name) setBucketName(bucket.name);
+      project = project ?? bucket.project ?? null;
+      if (bucket.trash_days !== undefined) setCleanup({ trash_days: bucket.trash_days, version_days: bucket.version_days ?? 0 });
       if (project) {
         const p = await api.get<Project>(`/projects/${project}/`);
         setProject(p);
@@ -169,6 +178,34 @@ export default function BucketDetailClient({
     }
   }
 
+  async function handleFolderUpload(fileList: FileList | null) {
+    if (!fileList || fileList.length === 0) return;
+    setUploading(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await ensureCsrfCookie();
+      const result = await uploadFolder(bucketId, current, Array.from(fileList), (done, total) =>
+        setFolderProgress(`${done} of ${total}`),
+      );
+      await loadContents(current, "files", search || undefined);
+      if (result.failed.length === 0) {
+        setNotice(`${result.uploaded} ${result.uploaded === 1 ? "file" : "files"} uploaded with their folders.`);
+      } else {
+        const shown = result.failed.slice(0, 5).map((f) => `${f.path}: ${f.reason}`);
+        const more = result.failed.length > 5 ? ` and ${result.failed.length - 5} more` : "";
+        setError(`${result.uploaded} uploaded; ${result.failed.length} could not be: ${shown.join("; ")}${more}.`);
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Upload failed.");
+      setErrorDetail(err);
+    } finally {
+      setUploading(false);
+      setFolderProgress(null);
+      if (folderInputRef.current) folderInputRef.current.value = "";
+    }
+  }
+
   async function handleDelete(file: FileObject) {
     if (
       !(await confirm({
@@ -223,10 +260,33 @@ export default function BucketDetailClient({
               className="hidden"
               onChange={(e) => handleUpload(e.target.files)}
             />
+            <input
+              ref={(el) => {
+                folderInputRef.current = el;
+                // Not in React's types: lets the person choose a folder; its files keep their paths.
+                el?.setAttribute("webkitdirectory", "");
+              }}
+              type="file"
+              multiple
+              className="hidden"
+              data-testid="folder-input"
+              onChange={(e) => void handleFolderUpload(e.target.files)}
+            />
+            {cleanup && (
+              <Button variant="ghost" onClick={() => setCleanupOpen(true)}>
+                Cleanup
+              </Button>
+            )}
             {!inTrash && (
               <Button variant="secondary" onClick={() => setFolderModalOpen(true)}>
                 <FolderPlus aria-hidden="true" className="h-4 w-4" />
                 New folder
+              </Button>
+            )}
+            {!inTrash && (
+              <Button variant="secondary" onClick={() => folderInputRef.current?.click()} disabled={uploading}>
+                <FolderUp aria-hidden="true" className="h-4 w-4" />
+                {folderProgress ? `Uploading ${folderProgress}` : "Upload folder"}
               </Button>
             )}
             <Button onClick={() => fileInputRef.current?.click()} disabled={uploading || inTrash}>
@@ -395,6 +455,9 @@ export default function BucketDetailClient({
                         <button onClick={() => setVersionsOf(f)} className="text-brand-600 hover:text-brand-700">
                           Versions
                         </button>
+                        <button onClick={() => setSharing(f)} className="text-brand-600 hover:text-brand-700">
+                          Share link
+                        </button>
                         <button onClick={() => handleDelete(f)} className="text-red-600 hover:text-red-700">
                           Delete
                         </button>
@@ -424,6 +487,22 @@ export default function BucketDetailClient({
           setFolders((prev) => [...prev, folder].sort((a, b) => a.name.localeCompare(b.name)));
         }}
       />
+
+      {sharing && <ShareLinks file={sharing} onClose={() => setSharing(null)} />}
+
+      {cleanupOpen && cleanup && (
+        <CleanupSettings
+          bucketId={bucketId}
+          trashDays={cleanup.trash_days}
+          versionDays={cleanup.version_days}
+          onClose={() => setCleanupOpen(false)}
+          onSaved={(b) => {
+            setCleanup({ trash_days: b.trash_days, version_days: b.version_days });
+            setCleanupOpen(false);
+            setNotice("Cleanup settings saved.");
+          }}
+        />
+      )}
 
       {versionsOf && (
         <FileVersions

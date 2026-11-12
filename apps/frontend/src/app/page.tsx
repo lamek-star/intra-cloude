@@ -184,7 +184,7 @@ export default function LandingPage() {
         {/* ---- Call to action ---- */}
         <section className="px-4 pb-20 sm:px-8">
           <Reveal>
-            <div className="relative mx-auto max-w-6xl overflow-hidden rounded-3xl bg-navy px-6 py-14 text-center sm:px-12">
+            <div data-theme="light" className="relative mx-auto max-w-6xl overflow-hidden rounded-3xl bg-navy px-6 py-14 text-center sm:px-12">
               <div aria-hidden="true" className={`${s.glow} -top-20 left-1/4 h-72 w-72 bg-brand-500/40`} />
               <div aria-hidden="true" className={`${s.glow} right-1/4 -bottom-24 h-72 w-72 bg-teal-500/30`} style={{ animationDelay: "-9s" }} />
               <h2 className="relative text-3xl font-semibold tracking-tight text-balance text-white sm:text-4xl">Ready to forge your private cloud?</h2>
