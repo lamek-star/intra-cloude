@@ -257,6 +257,16 @@ Everything in IntraForge now has a page. The ones added most recently, and where
 | Logs of a hosted app | Organization page > **Websites** > a server app's **Logs** | Whoever may manage the site |
 | Signing in to another application | An application that is not IntraForge's own shows **"... wants to sign you in"** once, with what it will see; **Allow** or **Deny** | Everyone |
 | The customer portal's short address | On the shop network: **https://movies.lan:8443** opens the Movie Shop's portal | Customers on the shop Wi-Fi |
+| Share links | A bucket > a file's **Share link**: a link anyone can open to download that one file, for 1 to 30 days, optionally limited to some downloads; **Stop** ends it | Share access to the bucket |
+| Automatic cleanup | A bucket > **Cleanup**: how many days files stay in the Trash (30 unless changed) and how long earlier versions are kept; IntraForge tidies every night | Manage access to the bucket |
+| Recovery codes | Your account > Two-step sign-in: 10 one-time codes are shown when you switch it on (save them); **New recovery codes** replaces them. At sign-in, a recovery code works instead of the 6-digit code | Everyone using two-step sign-in |
+| Changing your password | Your account > **Password** | Everyone |
+| A staff member forgot their password | Organization page > Members > **Reset password**: a temporary password to hand over; they choose their own when they sign in. Not possible for someone who also works in an organization you do not manage | Administrators (users.manage) |
+| Dark mode | The sidebar (or the account menu on a phone): **Theme** switches between like this computer, light and dark | Everyone |
+| Health history and alerts | Dashboard > System health > **History and alerts**: every check every 5 minutes for two weeks, and alerts (also shown on the dashboard) when something keeps failing, a backup is old, the disk is nearly full or the background jobs stopped | The Super Administrator |
+| Repair Shop and Rentals | **Apps**: two more built-in applications, offered as Experimental previews | Administrators who install apps |
+| A portal customer at the counter | Movie Shop > the cart > **Portal customer**: type their phone number (6 digits or more) to pick them; their free titles and, if ticked, their points apply | Staff who sell |
+| More than one IF Pay counter | IF Pay > Simulated sales > **Counters** (Pay Manager) names them; each cashier chooses theirs above the amount; the day's total is shown per counter and for the shop, in the shop's own time zone | Pay staff |
 
 Everything here is also reachable through the API at `/api/v1/` (Django REST Framework's browsable interface once
 you are signed in).
