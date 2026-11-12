@@ -54,6 +54,12 @@ function Compose-In {
 }
 
 Start-DockerIfNeeded
+# This PC left its shop-network address: every start in this upgrade (the installed version, the new one, a rollback)
+# leaves the name server out, as Start-IntraForgeShop.ps1 does; otherwise Docker refuses port 53 on the gone address.
+if (Test-ShopNamesAddressGone) {
+    $env:COMPOSE_PROFILES = $script:WithoutNamesProfile
+    Write-ShopLog "upgrade: this PC no longer has the shop-network address $(Get-ShopSetting 'SHOP_LAN_ADDRESS' ''); starting without the shop names" 'shop.log'
+}
 Step 'Safety backup of everything (with the installed version)'
 if ((Invoke-Kit $InstallDir 'Start-IntraForgeShop.ps1' @('-NoBrowser')) -ne 0) {
     # Versions before 1.5.6 could not start once the PC had left its shop-network address (their start script
