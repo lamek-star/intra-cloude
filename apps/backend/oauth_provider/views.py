@@ -3,6 +3,7 @@ from urllib.parse import quote, urlencode
 from django.conf import settings
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from rest_framework import status
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -65,9 +66,7 @@ class AuthorizeView(APIView):
         requested_scopes = set(request.GET.get("scope", "").split())
 
         if response_type not in SUPPORTED_RESPONSE_TYPES:
-            return _redirect_with_params(
-                redirect_uri, {"error": "unsupported_response_type", "state": state}
-            )
+            return _redirect_with_params(redirect_uri, {"error": "unsupported_response_type", "state": state})
         if code_challenge_method != "S256" or not code_challenge:
             return _redirect_with_params(
                 redirect_uri,
@@ -79,6 +78,10 @@ class AuthorizeView(APIView):
         if not request.user.is_authenticated:
             login_next = f"{request.path}?{request.META.get('QUERY_STRING', '')}"
             return HttpResponseRedirect(f"/login?next={quote(login_next, safe='')}")
+
+        # An application that is not IntraForge's own asks the person first (the consent screen).
+        if not services.has_consent(request.user, client, requested_scopes):
+            return HttpResponseRedirect(f"/oauth-consent?{request.META.get('QUERY_STRING', '')}")
 
         scope = " ".join(sorted(requested_scopes))
         code = services.issue_authorization_code(
@@ -117,9 +120,7 @@ class TokenView(APIView):
     def post(self, request):
         data = request.data
         if data.get("grant_type") != "authorization_code":
-            return Response(
-                {"error": "unsupported_grant_type"}, status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": "unsupported_grant_type"}, status=status.HTTP_400_BAD_REQUEST)
         try:
             result = services.exchange_authorization_code(
                 client_id=data.get("client_id", ""),
@@ -169,7 +170,7 @@ class UserInfoView(APIView):
         header = request.META.get("HTTP_AUTHORIZATION", "")
         if not header.startswith("Bearer "):
             return Response({"error": "invalid_token"}, status=status.HTTP_401_UNAUTHORIZED)
-        access_token = services.resolve_access_token(header[len("Bearer "):].strip())
+        access_token = services.resolve_access_token(header[len("Bearer ") :].strip())
         if access_token is None:
             return Response({"error": "invalid_token"}, status=status.HTTP_401_UNAUTHORIZED)
         return Response(services.userinfo_claims(access_token.user, access_token.scope))
@@ -258,8 +259,11 @@ class OAuthClientListCreateView(APIView):
             created_by=request.user,
         )
         audit.record(
-            actor=request.user, organization_id=None, action="oauth_client.create",
-            resource_type="oauth_client", resource_id=client.id,
+            actor=request.user,
+            organization_id=None,
+            action="oauth_client.create",
+            resource_type="oauth_client",
+            resource_id=client.id,
         )
         body = OAuthClientSerializer(client).data
         body["client_secret"] = secret  # shown exactly once
@@ -289,8 +293,11 @@ class OAuthClientDetailView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         audit.record(
-            actor=request.user, organization_id=None, action="oauth_client.update",
-            resource_type="oauth_client", resource_id=client.id,
+            actor=request.user,
+            organization_id=None,
+            action="oauth_client.update",
+            resource_type="oauth_client",
+            resource_id=client.id,
         )
         return Response(OAuthClientSerializer(client).data)
 
@@ -307,11 +314,72 @@ class OAuthClientRotateSecretView(APIView):
             return Response(status=status.HTTP_404_NOT_FOUND)
         secret = services.rotate_client_secret(client)
         audit.record(
-            actor=request.user, organization_id=None, action="oauth_client.rotate_secret",
-            resource_type="oauth_client", resource_id=client.id,
+            actor=request.user,
+            organization_id=None,
+            action="oauth_client.rotate_secret",
+            resource_type="oauth_client",
+            resource_id=client.id,
         )
         return Response({"client_secret": secret})
 
 
 def _get_client_or_404(client_pk):
     return OAuthClient.objects.filter(pk=client_pk).first()
+
+
+class ConsentView(APIView):
+    """The consent screen's API (session only). GET says which application asks for what; POST records
+    Allow (the screen then goes back to /oauth/authorize) or Deny (the answer is the application's
+    redirect_uri with error=access_denied, built here only after redirect_uri is checked against the
+    client)."""
+
+    authentication_classes = [SessionAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def _client_and_scopes(self, data):
+        client = services.get_enabled_client(str(data.get("client_id", "")))
+        if client is None or not services.validate_redirect_uri(client, str(data.get("redirect_uri", ""))):
+            return None, None
+        scopes = set(str(data.get("scope", "")).split())
+        if not scopes or not scopes.issubset(services.SUPPORTED_SCOPES):
+            return None, None
+        return client, scopes
+
+    def get(self, request):
+        client, scopes = self._client_and_scopes(request.query_params)
+        if client is None:
+            return Response(
+                {"detail": "This sign-in request is not valid."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(
+            {
+                "application": client.name,
+                "account": request.user.email,
+                "scopes": [{"scope": s, "words": services.SCOPE_WORDS[s]} for s in sorted(scopes)],
+            }
+        )
+
+    def post(self, request):
+        data = request.data if isinstance(request.data, dict) else {}
+        client, scopes = self._client_and_scopes(data)
+        if client is None:
+            return Response(
+                {"detail": "This sign-in request is not valid."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        allow = data.get("decision") == "allow"
+        if allow:
+            services.grant_consent(request.user, client, scopes)
+        audit.record(
+            actor=request.user,
+            organization_id=None,
+            action="oauth.consent.allow" if allow else "oauth.consent.deny",
+            resource_type="oauth_client",
+            resource_id=client.id,
+            context={"scope": " ".join(sorted(scopes))},
+        )
+        if allow:
+            return Response({"decision": "allow"})
+        clean = {
+            k: v for k, v in {"error": "access_denied", "state": str(data.get("state", ""))}.items() if v
+        }
+        return Response({"decision": "deny", "redirect": f"{data['redirect_uri']}?{urlencode(clean)}"})

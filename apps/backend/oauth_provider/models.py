@@ -55,10 +55,9 @@ class OAuthClient(models.Model):
     post_logout_redirect_uris = models.JSONField(default=list, blank=True)
     allowed_origins = models.JSONField(default=list, blank=True)
     enabled = models.BooleanField(default=True)
-    # Reserved for a future real consent screen (see the module
-    # docstring) — every currently-registered client is implicitly
-    # trusted/first-party, so this is always False today, but the field
-    # exists so introducing consent later doesn't need a schema change.
+    # True for an application that is not IntraForge's own: each person is asked once, on the consent screen
+    # (/oauth-consent), before it receives anything about them; their answer is kept in OAuthConsent. False
+    # (IntraForge's own apps, e.g. Spare Parts) signs in without asking.
     requires_consent = models.BooleanField(default=False)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -161,3 +160,21 @@ class OAuthSigningKey(models.Model):
 
     def __str__(self):
         return f"OIDC signing key {self.id} ({'active' if self.active else 'retired'})"
+
+
+class OAuthConsent(models.Model):
+    """A person's "Allow" for one application, and the scopes it covered. An application asking for more
+    later asks again; deleting the row (or the client) withdraws it."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    client = models.ForeignKey(OAuthClient, on_delete=models.CASCADE, related_name="consents")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    scope = models.CharField(max_length=500)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["client", "user"], name="one_consent_per_client_user")]
+
+    def __str__(self):
+        return f"{self.user_id} allowed {self.client_id}: {self.scope}"

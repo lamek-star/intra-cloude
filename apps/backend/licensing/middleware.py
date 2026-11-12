@@ -1,13 +1,13 @@
 """Read-only without a licence (ADR-0023): after the trial, without a valid licence, a request that would
-change something is refused -- except signing in and out, activating the licence, and the internal service
-API."""
+change something is refused -- except signing in and out (IntraForge's own, and answering an application's
+consent screen), activating the licence, and the internal service API."""
 
 from django.http import JsonResponse
 
 from . import services
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
-ALWAYS_ALLOWED = ("/api/v1/auth/", "/api/v1/license/", "/api/v1/internal/")
+ALWAYS_ALLOWED = ("/api/v1/auth/", "/api/v1/license/", "/api/v1/internal/", "/api/v1/oauth/consent/")
 
 
 class LicenceMiddleware:
