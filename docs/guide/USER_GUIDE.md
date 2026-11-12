@@ -266,6 +266,7 @@ Everything in IntraForge now has a page. The ones added most recently, and where
 | Health history and alerts | Dashboard > System health > **History and alerts**: every check every 5 minutes for two weeks, and alerts (also shown on the dashboard) when something keeps failing, a backup is old, the disk is nearly full or the background jobs stopped | The Super Administrator |
 | Repair Shop and Rentals | **Apps**: two more built-in applications, offered as Experimental previews | Administrators who install apps |
 | A portal customer at the counter | Movie Shop > the cart > **Portal customer**: type their phone number (6 digits or more) to pick them; their free titles and, if ticked, their points apply | Staff who sell |
+| MySQL, MariaDB and SQL Server databases | A project > **Connect a database** > Database type: read an outside database's tables live, without copying them (PostgreSQL as before, now MySQL/MariaDB and SQL Server). Use a database user that may only read | Administrators who manage connections |
 | More than one IF Pay counter | IF Pay > Simulated sales > **Counters** (Pay Manager) names them; each cashier chooses theirs above the amount; the day's total is shown per counter and for the shop, in the shop's own time zone | Pay staff |
 
 Everything here is also reachable through the API at `/api/v1/` (Django REST Framework's browsable interface once

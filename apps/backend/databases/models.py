@@ -153,6 +153,8 @@ class ConnectedDatabase(models.Model):
 
     class Engine(models.TextChoices):
         POSTGRESQL = "postgresql", "PostgreSQL"
+        MYSQL = "mysql", "MySQL / MariaDB"
+        SQLSERVER = "sqlserver", "SQL Server"
 
     class SSLMode(models.TextChoices):
         DISABLE = "disable", "Disable"

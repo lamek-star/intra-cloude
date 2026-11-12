@@ -108,13 +108,33 @@ class ConnectedDatabaseCreateSerializer(serializers.Serializer):
         choices=ConnectedDatabase.Engine.choices, default=ConnectedDatabase.Engine.POSTGRESQL
     )
     host = serializers.CharField(max_length=255)
-    port = serializers.IntegerField(min_value=1, max_value=65535, default=5432)
+    # Left out, it is the engine's usual port (validate below).
+    port = serializers.IntegerField(min_value=1, max_value=65535, required=False)
     database_name = serializers.CharField(max_length=200)
     username = serializers.CharField(max_length=200)
     password = serializers.CharField(write_only=True, trim_whitespace=False)
     sslmode = serializers.ChoiceField(
         choices=ConnectedDatabase.SSLMode.choices, default=ConnectedDatabase.SSLMode.REQUIRE
     )
+
+    def validate(self, attrs):
+        from .connectors import DEFAULT_PORTS
+
+        engine = attrs.get("engine", ConnectedDatabase.Engine.POSTGRESQL)
+        attrs.setdefault("port", DEFAULT_PORTS[engine])
+        if (
+            engine == ConnectedDatabase.Engine.SQLSERVER
+            and attrs.get("sslmode") == ConnectedDatabase.SSLMode.VERIFY_FULL
+        ):
+            raise serializers.ValidationError(
+                {
+                    "sslmode": (
+                        "SQL Server connections can be encrypted (Require) but their certificate "
+                        "cannot be verified here."
+                    )
+                }
+            )
+        return attrs
 
     def validate_host(self, value):
         # Fast, friendly feedback at creation time — connectors.py's

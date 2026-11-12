@@ -6,14 +6,14 @@ sets, not from memory.
 
 ## Software inside the product
 
-### Python (production runtime image, 40 packages)
+### Python (production runtime image, 42 packages)
 
 | Licence family | Packages |
 | --- | --- |
 | BSD | 15 |
-| MIT | 15 |
+| MIT | 16 (with `PyMySQL`, the MySQL/MariaDB connector, 1.5.6) |
 | Apache-2.0 | 7 |
-| **LGPL** | 3: `psycopg`, `psycopg-binary` (the PostgreSQL driver; its wheel bundles libpq), `clamd` |
+| **LGPL** | 4: `psycopg`, `psycopg-binary` (the PostgreSQL driver; its wheel bundles libpq), `clamd`, `pymssql` (the SQL Server connector, 1.5.6; its wheel bundles FreeTDS, also LGPL) |
 | GPL / AGPL | **none** |
 
 LGPL used **unmodified as a library** (installed with pip, replaceable by the customer) is compatible with shipping
@@ -60,7 +60,7 @@ not exist (see [SBOM.md](SBOM.md): the SBOM covers the backend image, the fronte
 
 1. Counsel review of MinIO (AGPL-3.0) and a decision: comply and pin, or replace behind the storage abstraction.
 2. Refresh `legal/THIRD_PARTY_NOTICES.md` (the 2026-09-06 review; it still lists the LGPL `sharp`, which the frontend
-   image no longer ships) and **ship it with the product and the installer** (LGPL texts for `psycopg`/`clamd`, CC-BY
+   image no longer ships) and **ship it with the product and the installer** (LGPL texts for `psycopg`/`clamd`/`pymssql` with FreeTDS, CC-BY
    attribution for `caniuse-lite`, Apache-2.0 notices, MinIO's AGPL terms).
 3. Pin every infrastructure image to a digest.
 4. A complete appliance inventory (the WSL rootfs and the installer's toolchain).
