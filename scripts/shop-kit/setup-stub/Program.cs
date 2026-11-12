@@ -193,11 +193,24 @@ static class Scripts
 
     // An earlier version is installed: unpack this version next to it and let its Upgrade script take over (safety backup first,
     // previous version put back if anything fails). The unpacking never touches data.
+    // Where this upgrade unpacks: .upgrade-staging, cleared first. A program still running from an earlier one (1.5.6's
+    // upgrade restarted the media agent with that folder as its working folder) keeps it open and it cannot be cleared:
+    // then a new, dated folder is used instead of failing. Leftovers are removed whenever they are free.
+    static string FreshStaging(string dir)
+    {
+        foreach (string old in Directory.GetDirectories(dir, ".upgrade-staging*"))
+        {
+            try { Directory.Delete(old, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+        string staging = Path.Combine(dir, ".upgrade-staging");
+        if (Directory.Exists(staging)) staging = Path.Combine(dir, ".upgrade-staging-" + DateTime.Now.ToString("yyyyMMddHHmmss"));
+        return staging;
+    }
+
     public static int Upgrade(Payload payload, string dir, bool quiet, string data, Action<string> output)
     {
         CloseControlCenter(dir);
-        string staging = Path.Combine(dir, ".upgrade-staging");
-        if (Directory.Exists(staging)) Directory.Delete(staging, true);
+        string staging = FreshStaging(dir);
         Log.Heading("Unpacking the new version (about a minute)");
         payload.ExtractKit(staging, null);
         Log.Good("Unpacked.");

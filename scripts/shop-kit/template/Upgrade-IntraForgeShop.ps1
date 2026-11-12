@@ -77,7 +77,8 @@ $keep = @('.env', '.install-complete', '.setup-extracted', '.previous', '.upgrad
 Step 'Keeping the previous program files'
 if (Test-Path $previous) { Remove-Item -Recurse -Force $previous }
 New-Item -ItemType Directory -Path $previous | Out-Null
-Get-ChildItem -Force $InstallDir | Where-Object { $keep -notcontains $_.Name } | ForEach-Object { Copy-Item -Recurse -Force $_.FullName $previous }
+# Any .upgrade-staging* folder is Setup's (a fresh one is used when an old one is still held open).
+Get-ChildItem -Force $InstallDir | Where-Object { $keep -notcontains $_.Name -and $_.Name -notlike '.upgrade-staging*' } | ForEach-Object { Copy-Item -Recurse -Force $_.FullName $previous }
 Copy-Item -Force (Join-Path $InstallDir '.env') (Join-Path $previous '.env')
 $keysCopy = Join-Path (Get-DataDir) 'keys\intraforge-keys.env'
 $keysBefore = if (Test-Path $keysCopy) { [IO.File]::ReadAllBytes($keysCopy) } else { $null }
@@ -96,7 +97,7 @@ try {
     Get-Process -Name 'IntraForgeMediaAgent' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
     Step 'Installing the new program files'
-    Get-ChildItem -Force $newKit | Where-Object { @('.env', '.install-complete', '.setup-extracted', '.previous', '.upgrade-staging') -notcontains $_.Name } |
+    Get-ChildItem -Force $newKit | Where-Object { @('.env', '.install-complete', '.setup-extracted', '.previous') -notcontains $_.Name -and $_.Name -notlike '.upgrade-staging*' } |
         ForEach-Object { Copy-Item -Recurse -Force $_.FullName $InstallDir }
 
     Step 'Adding the settings this version needs to the keys'
@@ -158,7 +159,9 @@ try {
     finally { Pop-Location }
     $upgraded = $true
     $agentExe = Join-Path $InstallDir 'IntraForgeMediaAgent.exe'
-    if ($agentWasRunning -and (Test-Path $agentExe)) { Start-Process -FilePath $agentExe -ArgumentList 'run' -WindowStyle Hidden }
+    # From the install folder: started from here it would inherit Setup's staging folder as its working folder and
+    # keep it open, so the next upgrade could not clear it ("used by another process").
+    if ($agentWasRunning -and (Test-Path $agentExe)) { Start-Process -FilePath $agentExe -ArgumentList 'run' -WindowStyle Hidden -WorkingDirectory $InstallDir }
 }
 catch {
     $reason = $_.Exception.Message
