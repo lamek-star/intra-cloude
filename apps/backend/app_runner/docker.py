@@ -147,7 +147,7 @@ class Docker:
             if exc.status != 404:
                 raise
 
-    def logs(self, name: str, tail: int = 40) -> str:
+    def logs(self, name: str, tail: int = 40, max_chars: int = 4000) -> str:
         raw = self._request(
             "GET",
             f"/containers/{urllib.parse.quote(name)}/logs",
@@ -160,7 +160,7 @@ class Docker:
             size = int.from_bytes(raw[i + 4 : i + 8], "big")
             out.append(raw[i + 8 : i + 8 + size])
             i += 8 + size
-        return b"".join(out).decode("utf-8", "replace")[-4000:]
+        return b"".join(out).decode("utf-8", "replace")[-max_chars:]
 
     def exec(self, container: str, cmd: list[str]) -> int:
         created = self._request(

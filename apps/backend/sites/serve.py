@@ -147,9 +147,10 @@ def certificate_allowed(request):
     name = (request.GET.get("domain") or "").strip().lower()
     if not name:
         return HttpResponse(status=404)
-    allowed = name in settings.OWN_TLS_HOSTNAMES or Site.objects.filter(
-        hostname=name, status=Site.Status.ACTIVE
-    ).exists()
+    allowed = (
+        name in settings.OWN_TLS_HOSTNAMES
+        or Site.objects.filter(hostname=name, status=Site.Status.ACTIVE).exists()
+    )
     return HttpResponse(status=200 if allowed else 404)
 
 

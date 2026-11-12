@@ -30,7 +30,7 @@ from . import recipe
 from .docker import Docker, DockerError
 
 MAX_UPLOAD = 1024 * 1024 * 1024  # 1 GiB of app files at most
-_PATH = re.compile(r"^/apps/([0-9a-f]{32})(/deploy|/stop|/start|/route)?$")
+_PATH = re.compile(r"^/apps/([0-9a-f]{32})(/deploy|/stop|/start|/route|/logs)?$")
 
 
 class Runner:
@@ -224,6 +224,13 @@ class Runner:
             out["log"] = self.docker.logs(recipe.names(site)["container"])
         return out
 
+    def logs(self, site: str) -> dict:
+        """The app's own output (its last 200 lines), for the app's Logs panel, whether it runs or not."""
+        name = recipe.names(site)["container"]
+        if self.docker.inspect(name) is None:
+            return {"state": "missing", "log": ""}
+        return {"log": self.docker.logs(name, tail=200, max_chars=40000)}
+
     def reconcile(self) -> None:
         """After a restart of the proxy (an upgrade recreates it), put it back on every app's network and
         make sure it has loaded the routes."""
@@ -374,6 +381,8 @@ def make_handler(runner: Runner, token: str):
                     return self._reply(200, runner.remove(site))
                 if method == "GET" and action == "":
                     return self._reply(200, runner.status(site))
+                if method == "GET" and action == "/logs":
+                    return self._reply(200, runner.logs(site))
                 return self._reply(405, {"error": "method not allowed"})
             except (recipe.RecipeError, ValueError, tarfile.TarError) as exc:
                 return self._reply(400, {"error": str(exc)[:300]})

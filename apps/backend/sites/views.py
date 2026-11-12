@@ -270,3 +270,26 @@ class SiteInternetView(APIView):
         except services.SiteError as exc:
             return _bad_request(exc)
         return Response(SiteDetailSerializer(site).data)
+
+
+class SiteLogsView(APIView):
+    """A server app's own output, its last 200 lines (sites.manage: an app's log can hold what its
+    settings hold, so reading the site is not enough)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, site_id):
+        from . import runner
+
+        site = get_member_site(request.user, site_id)
+        if not _can(request.user, "sites.manage", site):
+            return _forbidden()
+        if site.kind != Site.Kind.NODE:
+            return Response({"detail": "Only a server app has a log."}, status=status.HTTP_400_BAD_REQUEST)
+        if not runner.configured():
+            return Response({"detail": "The app runner is not part of this installation."}, status=503)
+        try:
+            answer = runner.logs(site)
+        except (runner.RunnerUnavailable, runner.RunnerRefused):
+            return Response({"detail": "The app runner did not answer. Try again in a moment."}, status=503)
+        return Response({"log": str(answer.get("log") or ""), "state": answer.get("state", "")})

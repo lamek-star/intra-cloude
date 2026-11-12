@@ -105,6 +105,23 @@ class ServerAppLifecycleTests(SiteTestBase):
             format="multipart",
         )
 
+    def test_the_logs_panel_shows_the_apps_own_output_to_whoever_manages_it(self):
+        site_id = self._create_app().data["id"]
+        self.state = {"log": "listening on 8080 | GET / 200"}
+        r = self.client.get(reverse("site-logs", args=[site_id]))
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data["log"], "listening on 8080 | GET / 200")
+        self.assertEqual(self.calls[-1]["path"], f"/apps/{Site.objects.get(id=site_id).id.hex}/logs")
+        static = self.client.post(
+            reverse("site-list-create", args=[self.org_id]),
+            {"name": "Plain", "slug": "plain-site", "file": upload({"index.html": INDEX})},
+            format="multipart",
+        ).data["id"]
+        self.assertEqual(self.client.get(reverse("site-logs", args=[static])).status_code, 400)
+        reader = self._member("logs-reader@example.com")
+        self.client.force_login(reader)
+        self.assertEqual(self.client.get(reverse("site-logs", args=[site_id])).status_code, 403)
+
     def test_publishing_a_node_app_deploys_it_with_its_own_credential(self):
         resp = self._create_app()
         self.assertEqual(resp.status_code, 201, resp.data)
@@ -280,4 +297,6 @@ class RunnerApiTests(SimpleTestCase):
         self.assertEqual(get(f"/apps/{site}")[0], 401)
         self.assertEqual(get(f"/apps/{site}", "wrong")[0], 401)
         self.assertEqual(get(f"/apps/{site}", "s" * 32), (200, {"state": "missing", "log": ""}))
+        self.assertEqual(get(f"/apps/{site}/logs")[0], 401)
+        self.assertEqual(get(f"/apps/{site}/logs", "s" * 32), (200, {"state": "missing", "log": ""}))
         self.assertEqual(get("/apps/../../etc", "s" * 32)[0], 404)
