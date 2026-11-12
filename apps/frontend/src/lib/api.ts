@@ -184,6 +184,8 @@ export type User = {
   mfa_enabled: boolean;
   /** Password sign-in is off for this account: only a passkey signs in (ADR-0019). */
   passkey_only?: boolean;
+  /** An administrator gave this person a temporary password: they must choose their own before anything else. */
+  must_change_password?: boolean;
 };
 
 export type Organization = {

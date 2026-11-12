@@ -60,9 +60,7 @@ def create_organization(*, name: str, created_by, slug: str | None = None) -> Or
         try:
             with transaction.atomic():
                 org = Organization.objects.create(name=name, slug=candidate_slug, created_by=created_by)
-                Membership.objects.create(
-                    user=created_by, organization=org, status=Membership.Status.ACTIVE
-                )
+                Membership.objects.create(user=created_by, organization=org, status=Membership.Status.ACTIVE)
                 assign_role(
                     user=created_by,
                     role_slug="organization-administrator",

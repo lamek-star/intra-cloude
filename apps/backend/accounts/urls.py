@@ -12,6 +12,8 @@ urlpatterns = [
     path("auth/mfa/confirm/", views.MFAConfirmView.as_view(), name="mfa-confirm"),
     path("auth/mfa/disable/", views.MFADisableView.as_view(), name="mfa-disable"),
     path("auth/mfa/verify/", views.MFALoginVerifyView.as_view(), name="mfa-verify"),
+    path("auth/mfa/recovery-codes/", views.MFARecoveryCodesView.as_view(), name="mfa-recovery-codes"),
+    path("auth/password/", views.PasswordChangeView.as_view(), name="auth-password"),
     path("auth/passkeys/", views.PasskeyListView.as_view(), name="passkey-list"),
     path(
         "auth/passkeys/register/options/",

@@ -78,9 +78,7 @@ class LoginLogoutTests(APITestCase):
         self.assertEqual(response.data["email"], "user@example.com")
 
     def test_login_with_wrong_password_is_rejected(self):
-        response = self.client.post(
-            reverse("auth-login"), {"email": "user@example.com", "password": "wrong"}
-        )
+        response = self.client.post(reverse("auth-login"), {"email": "user@example.com", "password": "wrong"})
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_login_with_unknown_email_is_rejected(self):

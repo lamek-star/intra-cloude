@@ -259,3 +259,30 @@ class TeamMemberDetailView(APIView):
 
         remove_team_member(team=team, user=target_user, actor=request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class MembershipPasswordResetView(APIView):
+    """An administrator gives a staff member a temporary password (shown once) when they forgot theirs:
+    users.manage here, and in every other organization the person belongs to
+    (accounts.services.can_reset_password). The person is signed out everywhere and must choose their own
+    password at the next sign-in."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, organization_id, membership_id):
+        from accounts import services as account_services
+
+        org = _get_member_organization(request.user, organization_id)
+        if not has_permission(request.user, "users.manage", organization_id=org.id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        try:
+            membership = Membership.objects.select_related("user").get(id=membership_id, organization=org)
+        except Membership.DoesNotExist as exc:
+            raise Http404 from exc
+        try:
+            temporary = account_services.reset_password(
+                actor=request.user, target=membership.user, organization_id=org.id
+            )
+        except account_services.PasswordError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        return Response({"email": membership.user.email, "temporary_password": temporary})
