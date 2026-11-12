@@ -191,3 +191,38 @@ class ApplicationResourceGrantDetailView(APIView):
             raise Http404
         revoke_resource_permission(grant=grant, revoked_by=request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ApplicationRequestLogView(APIView):
+    """The application's recent requests (application.read): newest first, paginated; ?errors=1 shows only
+    the ones that did not succeed (status 400 and above)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, application_id):
+        from rest_framework.pagination import LimitOffsetPagination
+
+        from .models import ApiRequestLog
+
+        application = get_member_application(request.user, application_id)
+        if not has_permission(request.user, "application.read", organization_id=application.organization_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        qs = ApiRequestLog.objects.filter(application=application)
+        if request.query_params.get("errors") == "1":
+            qs = qs.filter(status__gte=400)
+        paginator = LimitOffsetPagination()
+        page = paginator.paginate_queryset(qs, request, view=self)
+        return paginator.get_paginated_response(
+            [
+                {
+                    "id": r.id,
+                    "method": r.method,
+                    "path": r.path,
+                    "status": r.status,
+                    "duration_ms": r.duration_ms,
+                    "at": r.at.isoformat(),
+                    "credential": str(r.credential_id) if r.credential_id else None,
+                }
+                for r in page
+            ]
+        )

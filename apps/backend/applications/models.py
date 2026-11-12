@@ -70,9 +70,7 @@ class ApplicationCredential(models.Model):
     applications/services.py — never persisted, never logged."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    service_account = models.ForeignKey(
-        ServiceAccount, on_delete=models.CASCADE, related_name="credentials"
-    )
+    service_account = models.ForeignKey(ServiceAccount, on_delete=models.CASCADE, related_name="credentials")
     # Nullable for backward compatibility with credentials issued before
     # Environment existed, and because an Application-level credential
     # with no environment at all remains a valid, supported shape (not
@@ -114,3 +112,27 @@ class ApplicationCredential(models.Model):
     @property
     def organization_id(self):
         return self.service_account.organization_id
+
+
+class ApiRequestLog(models.Model):
+    """One request an application made with its bearer credential, for the application's Requests page: what
+    it called and how it went. Never the query string, a body or a header (they can carry data or the
+    secret itself). Kept API_REQUEST_LOG_DAYS days (applications.tasks.prune_api_request_log)."""
+
+    id = models.BigAutoField(primary_key=True)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE, related_name="request_log")
+    credential = models.ForeignKey(
+        ApplicationCredential, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    method = models.CharField(max_length=8)
+    path = models.CharField(max_length=300)
+    status = models.PositiveSmallIntegerField()
+    duration_ms = models.PositiveIntegerField()
+    at = models.DateTimeField(db_index=True)
+
+    class Meta:
+        ordering = ["-at", "-id"]
+        indexes = [models.Index(fields=["application", "-at"], name="app_request_log_recent")]
+
+    def __str__(self):
+        return f"{self.method} {self.path} -> {self.status}"

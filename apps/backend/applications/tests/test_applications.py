@@ -223,9 +223,7 @@ class CredentialLifecycleTests(ApplicationTestBase):
         token = issued.data["secret"]
         credential_id = issued.data["id"]
 
-        self.client.post(
-            reverse("application-credential-revoke", args=[self.application_id, credential_id])
-        )
+        self.client.post(reverse("application-credential-revoke", args=[self.application_id, credential_id]))
         self.client.logout()
 
         resp = self.client.get(reverse("auth-me"), **self._auth_headers(token))
@@ -263,3 +261,61 @@ class CredentialLifecycleTests(ApplicationTestBase):
 
         resp = self.client.post(reverse("application-credential-list-create", args=[self.application_id]))
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class RequestLogTests(ApplicationTestBase):
+    """The application's Requests page: each bearer-credential request, never a person's own."""
+
+    def setUp(self):
+        super().setUp()
+        app = self.client.post(reverse("application-list-create", args=[self.org_id]), {"name": "Bot"})
+        self.application_id = app.data["id"]
+        self.token = self.client.post(
+            reverse("application-credential-list-create", args=[self.application_id])
+        ).data["secret"]
+
+    def test_requests_with_the_credential_are_recorded_without_the_query_string(self):
+        from applications.models import ApiRequestLog
+
+        before = ApiRequestLog.objects.count()
+        self.client.get(reverse("auth-me"))  # the person's own session: not recorded
+        self.assertEqual(ApiRequestLog.objects.count(), before)
+        bot = self.client_class()
+        bot.get(reverse("auth-me") + "?secret=x", HTTP_AUTHORIZATION=f"Bearer {self.token}")
+        bot.get(
+            reverse("file-list-create", args=[self.bucket_a_id]), HTTP_AUTHORIZATION=f"Bearer {self.token}"
+        )
+        url = reverse("application-request-log", args=[self.application_id])
+        log = self.client.get(url).data
+        self.assertEqual(log["count"], 2)
+        self.assertEqual([r["status"] for r in log["results"]], [403, 200])
+        self.assertEqual(log["results"][1]["path"], reverse("auth-me"))
+        self.assertEqual([r["status"] for r in self.client.get(url, {"errors": "1"}).data["results"]], [403])
+
+    def test_reading_the_log_needs_application_read_and_membership(self):
+        member = User.objects.create_user(email="log-member@example.com", password="x")
+        Membership.objects.create(user=member, organization_id=self.org_id, status=Membership.Status.ACTIVE)
+        self.client.force_login(member)
+        url = reverse("application-request-log", args=[self.application_id])
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_403_FORBIDDEN)
+        outsider = User.objects.create_user(email="log-outsider@example.com", password="x")
+        self.client.force_login(outsider)
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_old_rows_are_pruned(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from applications.models import ApiRequestLog
+        from applications.tasks import prune_api_request_log
+
+        ApiRequestLog.objects.create(
+            application_id=self.application_id,
+            method="GET",
+            path="/old/",
+            status=200,
+            duration_ms=1,
+            at=timezone.now() - timedelta(days=40),
+        )
+        self.assertEqual(prune_api_request_log(), 1)
