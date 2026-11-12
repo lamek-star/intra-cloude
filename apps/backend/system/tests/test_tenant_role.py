@@ -67,6 +67,7 @@ class _TenantRoleTestBase(TestCase):
             connect_timeout=10,
         )
 
+
 class ProvisionTenantRoleTests(_TenantRoleTestBase):
     def test_new_role_can_create_a_schema_but_not_a_database(self):
         provision_role(self.role_name, self.password)
@@ -84,14 +85,17 @@ class ProvisionTenantRoleTests(_TenantRoleTestBase):
     def test_new_role_is_not_superuser_and_cannot_createdb_or_createrole(self):
         provision_role(self.role_name, self.password)
 
-        with psycopg.connect(
-            host=self.db["HOST"] or "localhost",
-            port=int(self.db["PORT"] or 5432),
-            dbname="postgres",
-            user=self.db["USER"],
-            password=self.db["PASSWORD"],
-            autocommit=True,
-        ) as conn, conn.cursor() as cur:
+        with (
+            psycopg.connect(
+                host=self.db["HOST"] or "localhost",
+                port=int(self.db["PORT"] or 5432),
+                dbname="postgres",
+                user=self.db["USER"],
+                password=self.db["PASSWORD"],
+                autocommit=True,
+            ) as conn,
+            conn.cursor() as cur,
+        ):
             cur.execute(
                 "SELECT rolsuper, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname = %s",
                 [self.role_name],

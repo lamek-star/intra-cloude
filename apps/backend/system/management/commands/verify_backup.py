@@ -27,9 +27,7 @@ class Command(BaseCommand):
 
         record = backups.verify_backup_restorable(latest)
         if record.verified_restorable:
-            self.stdout.write(
-                self.style.SUCCESS(f"Backup {record.id} restored and validated successfully.")
-            )
+            self.stdout.write(self.style.SUCCESS(f"Backup {record.id} restored and validated successfully."))
         else:
             raise CommandError(
                 f"Backup {record.id} failed restoration verification: {record.verification_error}"

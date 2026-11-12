@@ -18,7 +18,8 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("record_id", type=str, help="BackupRecord id (UUID)")
         parser.add_argument(
-            "--yes", action="store_true",
+            "--yes",
+            action="store_true",
             help="Required acknowledgement that this replaces the target's live data.",
         )
 

@@ -264,6 +264,17 @@ export default function DashboardPage() {
 
       <div>
         <SectionHeader title="System health" />
+        <p className="-mt-1 mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+          <Link href="/backups" className="font-medium text-brand-600 hover:text-brand-500">
+            Backups
+          </Link>
+          <Link href="/internet" className="font-medium text-brand-600 hover:text-brand-500">
+            Internet access
+          </Link>
+          <Link href="/license" className="font-medium text-brand-600 hover:text-brand-500">
+            Licence
+          </Link>
+        </p>
         {health === null ? (
           <Card>
             <div className="flex items-center gap-2 text-sm text-text-muted">
