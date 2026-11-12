@@ -508,3 +508,41 @@ and the reset (the customer signed in again); the Licence page in trial (30 days
 master SN. **Shop PC upgraded 1.5.4 -> 1.5.5** (exit 0; safety backup 535,413 + 523,119 + 368,932 bytes; migrations
 licensing 0001 and movie_shop 0005) and **activated with the master SN** for its PC code `PC-0F7A-EA68-C3B9-C607`.
 The Spare Parts service app's label is being fixed in a separate session (lamek-star/spare-part-shop).
+
+## 2026-11-12 -- 1.5.6: the missing screens, the after-release upgrades, loose ends, a second-PC test plan
+
+**Screens that were missing** (roadmap 3.4): organization-wide Storage (with usage) and Databases pages; download or
+restore an earlier version of a file (versions now record whether their content was quarantined, and quarantined
+content never comes back); folder upload; a Backups page (Super Administrator; restoring stays in the Control
+Center); an API request log per application (bearer-credential requests only, 30 days); a Logs panel for hosted
+server apps; an OAuth consent screen (`requires_consent` existed and was never enforced: an app registered as "ask
+first" got a code without asking -- fixed).
+
+**Upgrades:** expiring share links and nightly cleanup of the Trash and old versions; MFA recovery codes; changing
+one's password and an administrator's password reset (only for someone whose every organization the admin manages,
+never the Super Administrator; the person must choose their own before anything else works); dark mode; health
+history and alerts; Repair Shop and Rentals templates (Experimental); IF Pay at more than one counter (Pay
+`feature/counters`, migration 0006, a trigger keeps a request's counter in its own shop and unchanged), with
+"today" in the shop's own time zone instead of UTC.
+
+**Loose ends:** portal customers' rewards at the Movie Shop counter (a narrow phone lookup for sellers); movies.lan
+and `/portal/`; the internet-gateway Caddyfile now hides the internal APIs and routes `/oauth/*`; the user guide's
+section 8 rewritten; the Spare Parts / Pharmacy label (shop name, product, captioned part number, print or download)
+in the kit instead of the 1.4.0 carry-over (`build-shop-kit.sh` takes `SPAREPARTS_IMAGE`/`PHARMACY_IMAGE`).
+`docs/pilot/SECOND_PC_TEST_GUIDE.md`: a numbered test plan for a real second PC and a phone.
+
+Found while testing and fixed: a model field named `check` hid Django's `Model.check()` (E020, seen only by
+`manage.py check`); `must_change_password` and the bucket cleanup columns needed database defaults for a rollback;
+the generated light-mode colours had taken Tailwind's default shades from the dark block (error banners dark in
+light mode), found driving the test copy; the first counters Pay image copied the code to `/app` instead of
+`/srv/ifpay`, caught before the kit.
+
+Checked: the whole backend suite passed; frontend 37 files / 211 tests; Pay 32 tests (real PostgreSQL); kit tests
+(Pester) 6. Live on the test copy with these images: 15 screens driven by Playwright in light and dark (sign-in with
+two-step, dark mode kept after reload, Storage/Databases, share link and the public page, cleanup, folder upload,
+version restore with the content checked, Backups, Health, new recovery codes, the members' Reset password, the
+Movie Shop's Today card and counter customer field, `/portal/` opening the shop, the built-in gallery with Repair
+Shop and Rentals, Pay counters, the Spare Parts label). `npm audit` 0, `pip-audit` none (base and prod).
+Kit `IntraForge-Local-1.5.6-a45d88424.zip` (966,761,878 bytes, SHA-256 `198f5f71...a4702d5c`), 8/8 checksums;
+`IntraForge-Setup-1.5.6-a45d88424.exe` (SHA-256 `004f7c4e...f101f028`). Not done: MySQL / SQL Server connectors
+(need new drivers and test databases downloaded; waiting for the owner's yes); the shop PC is still on 1.5.5.
