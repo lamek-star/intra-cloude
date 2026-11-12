@@ -3,6 +3,7 @@ import { Inter, Oswald } from "next/font/google";
 import { AuthProvider } from "@/lib/auth-context";
 import { QueryProvider } from "@/lib/query";
 import { TourRequestCapture } from "@/components/TourRequestCapture";
+import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
 // next/font self-hosts the font files at build time (downloaded once,
@@ -37,7 +38,11 @@ export const viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`h-full antialiased ${inter.variable} ${oswald.variable}`}>
+    <html lang="en" className={`h-full antialiased ${inter.variable} ${oswald.variable}`} suppressHydrationWarning>
+      <head>
+        {/* Sets data-theme before the first paint (dark mode without a white flash). */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+      </head>
       <body className="min-h-full flex flex-col bg-surface-canvas text-text-primary font-sans">
         <QueryProvider>
           <TourRequestCapture />

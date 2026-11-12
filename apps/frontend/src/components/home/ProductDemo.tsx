@@ -109,7 +109,7 @@ export function ProductDemo() {
             </div>
           </div>
           {/* The app's navy rail */}
-          <div className="absolute top-9 bottom-0 left-0 w-[128px] bg-navy px-2.5 pt-3">
+          <div data-theme="light" className="absolute top-9 bottom-0 left-0 w-[128px] bg-navy px-2.5 pt-3">
             <div className="mb-4 flex items-center gap-1.5 px-1">
               {/* eslint-disable-next-line @next/next/no-img-element -- fixed-size static brand asset */}
               <img src="/brand/icon-48.png" alt="" width={18} height={18} />

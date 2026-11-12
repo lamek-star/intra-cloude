@@ -90,7 +90,7 @@ export function Catalogue({ shopId }: { shopId: string }) {
   }
 
   return (
-    <div className="-m-4 min-h-[calc(100vh)] bg-[#0a0d16] bg-[radial-gradient(900px_500px_at_85%_-10%,rgba(245,165,36,.10),transparent_60%),radial-gradient(700px_500px_at_10%_110%,rgba(45,212,191,.07),transparent_60%)] p-4 text-slate-100 sm:-m-8 sm:p-6">
+    <div data-theme="light" className="-m-4 min-h-[calc(100vh)] bg-[#0a0d16] bg-[radial-gradient(900px_500px_at_85%_-10%,rgba(245,165,36,.10),transparent_60%),radial-gradient(700px_500px_at_10%_110%,rgba(45,212,191,.07),transparent_60%)] p-4 text-slate-100 sm:-m-8 sm:p-6">
       {/* Header */}
       <div className="flex flex-wrap items-center gap-4 border-b border-[#252e47] pb-4">
         <Link href="/movies" className="rounded-lg p-1.5 text-slate-400 hover:bg-white/5 hover:text-white" aria-label="All movie shops">

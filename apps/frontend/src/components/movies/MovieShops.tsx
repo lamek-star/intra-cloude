@@ -24,7 +24,7 @@ export function MovieShops() {
   const loading = shops.some((q) => q.isLoading);
 
   return (
-    <div className="-m-4 min-h-[calc(100vh)] bg-[#0a0d16] bg-[radial-gradient(900px_500px_at_85%_-10%,rgba(245,165,36,.10),transparent_60%)] p-4 text-slate-100 sm:-m-8 sm:p-8">
+    <div data-theme="light" className="-m-4 min-h-[calc(100vh)] bg-[#0a0d16] bg-[radial-gradient(900px_500px_at_85%_-10%,rgba(245,165,36,.10),transparent_60%)] p-4 text-slate-100 sm:-m-8 sm:p-8">
       <div className="mx-auto max-w-5xl">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>

@@ -16,6 +16,7 @@ import { api } from "@/lib/api";
 import { COPYRIGHT, versionLabel } from "@/lib/brand";
 import { markTourSeen, readTourState, shouldShowTour } from "@/lib/tour";
 import { WelcomeTour } from "@/components/WelcomeTour";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
@@ -67,7 +68,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <CommandPalette open={paletteOpen} setOpen={setPaletteOpen} />
       <WelcomeTour open={tourOpen} onClose={closeTour} version={about?.version} />
       <div className="flex min-h-screen bg-surface-canvas text-text-primary">
-        <aside className="hidden w-60 shrink-0 flex-col bg-navy p-4 sm:flex">
+        <aside data-theme="light" className="hidden w-60 shrink-0 flex-col bg-navy p-4 sm:flex">
           <div className="mb-6 flex items-center gap-2.5 px-1">
             {/* eslint-disable-next-line @next/next/no-img-element -- fixed-size static brand asset, not user/CMS content; next/image's optimizer needs `sharp` in production, not worth the dependency for a handful of pre-sized PNGs. */}
             <img src="/brand/icon-64.png" alt="" width={32} height={32} className="h-8 w-8 shrink-0" />
@@ -128,6 +129,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Compass aria-hidden="true" className="h-3.5 w-3.5" />
             Take the tour
           </button>
+          <ThemeToggle className="mt-1 flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-xs font-medium text-slate-300 hover:bg-white/5 hover:text-white" />
           {/* Two lines: the narrow rail would otherwise break the owner's name at its hyphen. */}
           <p className="mt-3 px-2.5 text-[11px] leading-snug text-on-chrome-muted">
             <span className="block">{versionLabel(about?.version)}</span>
@@ -190,6 +192,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     >
                       Take the tour
                     </button>
+                    <ThemeToggle className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900" />
                     <button
                       role="menuitem"
                       onClick={handleLogout}

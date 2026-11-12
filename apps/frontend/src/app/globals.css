@@ -227,3 +227,187 @@
     animation-delay: 0s !important;
   }
 }
+
+/* ---- Dark mode (components/ThemeToggle.tsx sets data-theme on <html>) ----------------------------------------
+   Every colour in the app comes from a CSS variable, so dark mode redefines the variables: the slate scale turned
+   around, IntraForge's surfaces dark and its text light, pale tints dark and dark text shades light. The button
+   shades behind white text (500/600) keep their light-mode values, so their contrast holds. A part of the page that
+   is dark by design (the Movie Shop, its customer portal) carries data-theme="light", which restores the light
+   values for everything inside it. Generated from the light values in this file and Tailwind's palette. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-slate-50: oklch(12.9% 0.042 264.695);
+  --color-slate-100: oklch(20.8% 0.042 265.755);
+  --color-slate-200: oklch(27.9% 0.041 260.031);
+  --color-slate-300: oklch(37.2% 0.044 257.287);
+  --color-slate-400: oklch(44.6% 0.043 257.281);
+  --color-slate-500: oklch(55.4% 0.046 257.417);
+  --color-slate-600: oklch(70.4% 0.04 256.788);
+  --color-slate-700: oklch(86.9% 0.022 252.894);
+  --color-slate-800: oklch(92.9% 0.013 255.508);
+  --color-slate-900: oklch(96.8% 0.007 247.896);
+  --color-slate-950: oklch(98.4% 0.003 247.858);
+  --color-surface-canvas: #0b1120;
+  --color-surface-raised: #111827;
+  --color-surface-sunken: #0b1120;
+  --color-surface-muted: #131c2e;
+  --color-bg: #0b1120;
+  --color-surface: #111827;
+  --color-text: #f1f5f9;
+  --color-text-primary: #f1f5f9;
+  --color-text-body: #cbd5e1;
+  --color-text-secondary: #cbd5e1;
+  --color-text-tertiary: #94a3b8;
+  --color-text-muted: #94a3b8;
+  --color-text-placeholder: #8492a6;
+  --color-border: #243044;
+  --color-border-subtle: #243044;
+  --color-border-strong: #334155;
+  --color-border-input: #64748b;
+  --color-warning-tint: #33240a;
+  --color-warning-fg: #fbbf24;
+  --color-danger-tint: #3a1212;
+  --color-danger-fg: #fca5a5;
+  --color-info-tint: #0c2140;
+  --color-info-fg: #93c5fd;
+  --color-success-tint: #052e16;
+  --color-success-fg: #4ade80;
+  --color-brand-50: #0c2140;
+  --color-brand-100: #12305e;
+  --color-brand-700: #93c5fd;
+  --color-teal-50: #042f2e;
+  --color-teal-700: #5eead4;
+  --color-green-50: #052e16;
+  --color-green-700: #4ade80;
+  --color-amber-50: #33240a;
+  --color-amber-100: #45300a;
+  --color-amber-200: #5c400d;
+  --color-amber-700: #fbbf24;
+  --color-amber-800: #fcd34d;
+  --color-amber-900: #fde68a;
+  --color-red-50: #3a1212;
+  --color-red-100: #4c1717;
+  --color-red-200: #641d1d;
+  --color-red-700: #f87171;
+  --color-red-800: #fca5a5;
+  --color-red-900: #fecaca;
+  --color-blue-50: #0c2140;
+  --color-blue-100: #12305e;
+  --color-blue-200: #1e3a8a;
+  --color-blue-700: #93c5fd;
+  --color-blue-800: #bfdbfe;
+  --color-blue-900: #dbeafe;
+  --color-emerald-50: #052e1f;
+  --color-emerald-100: #064e3b;
+  --color-emerald-200: #065f46;
+  --color-emerald-700: #34d399;
+  --color-emerald-800: #6ee7b7;
+  --color-emerald-900: #a7f3d0;
+  --color-orange-50: #341a06;
+  --color-orange-100: #4a2408;
+  --color-orange-200: #62300b;
+  --color-orange-700: #fb923c;
+  --color-orange-800: #fdba74;
+  --color-orange-900: #fed7aa;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --color-slate-50: oklch(98.4% 0.003 247.858);
+  --color-slate-100: oklch(96.8% 0.007 247.896);
+  --color-slate-200: oklch(92.9% 0.013 255.508);
+  --color-slate-300: oklch(86.9% 0.022 252.894);
+  --color-slate-400: oklch(70.4% 0.04 256.788);
+  --color-slate-500: oklch(55.4% 0.046 257.417);
+  --color-slate-600: oklch(44.6% 0.043 257.281);
+  --color-slate-700: oklch(37.2% 0.044 257.287);
+  --color-slate-800: oklch(27.9% 0.041 260.031);
+  --color-slate-900: oklch(20.8% 0.042 265.755);
+  --color-slate-950: oklch(12.9% 0.042 264.695);
+  --color-surface-canvas: #f8fafc;
+  --color-surface-raised: #ffffff;
+  --color-surface-sunken: #f1f5f9;
+  --color-surface-muted: #f8fafc;
+  --color-bg: #f8fafc;
+  --color-surface: #ffffff;
+  --color-text: #0f172a;
+  --color-text-primary: #0f172a;
+  --color-text-body: #334155;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #64748b;
+  --color-text-muted: #64748b;
+  --color-text-placeholder: #64748b;
+  --color-border: #e2e8f0;
+  --color-border-subtle: #e2e8f0;
+  --color-border-strong: #cbd5e1;
+  --color-border-input: #8492a6;
+  --color-warning-tint: #fffbeb;
+  --color-warning-fg: #b45309;
+  --color-danger-tint: #fef2f2;
+  --color-danger-fg: #b91c1c;
+  --color-info-tint: #eff6ff;
+  --color-info-fg: #1d4ed8;
+  --color-success-tint: #f0fdf4;
+  --color-success-fg: #15803d;
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-700: #1d4ed8;
+  --color-teal-50: #f0fdfa;
+  --color-teal-700: #0f766e;
+  --color-green-50: #f0fdf4;
+  --color-green-700: #15803d;
+  --color-amber-50: #33240a;
+  --color-amber-100: #45300a;
+  --color-amber-200: #5c400d;
+  --color-amber-700: #fbbf24;
+  --color-amber-800: #fcd34d;
+  --color-amber-900: #fde68a;
+  --color-red-50: #3a1212;
+  --color-red-100: #4c1717;
+  --color-red-200: #641d1d;
+  --color-red-700: #f87171;
+  --color-red-800: #fca5a5;
+  --color-red-900: #fecaca;
+  --color-blue-50: #0c2140;
+  --color-blue-100: #12305e;
+  --color-blue-200: #1e3a8a;
+  --color-blue-700: #93c5fd;
+  --color-blue-800: #bfdbfe;
+  --color-blue-900: #dbeafe;
+  --color-emerald-50: #052e1f;
+  --color-emerald-100: #064e3b;
+  --color-emerald-200: #065f46;
+  --color-emerald-700: #34d399;
+  --color-emerald-800: #6ee7b7;
+  --color-emerald-900: #a7f3d0;
+  --color-orange-50: #341a06;
+  --color-orange-100: #4a2408;
+  --color-orange-200: #62300b;
+  --color-orange-700: #fb923c;
+  --color-orange-800: #fdba74;
+  --color-orange-900: #fed7aa;
+}
+
+/* White surfaces and the blue/green/red text that read too dark on a dark page. :where() keeps these as weak as
+   the utilities they replace (and sit in the same layer), so hover: variants still win; nothing inside a light
+   part changes. */
+@layer utilities {
+:where([data-theme="dark"]) .bg-white:not(:where([data-theme="light"] *)) {
+  background-color: var(--color-surface-raised);
+}
+:where([data-theme="dark"]) :is(.text-brand-600, .text-blue-600, .text-accent):not(:where([data-theme="light"] *)) {
+  color: #60a5fa;
+}
+:where([data-theme="dark"]) :is(.text-green-600, .text-success):not(:where([data-theme="light"] *)) {
+  color: #4ade80;
+}
+:where([data-theme="dark"]) :is(.text-red-600, .text-danger):not(:where([data-theme="light"] *)) {
+  color: #f87171;
+}
+:where([data-theme="dark"]) .text-teal-600:not(:where([data-theme="light"] *)) {
+  color: #2dd4bf;
+}
+:where([data-theme="dark"]) .text-amber-600:not(:where([data-theme="light"] *)) {
+  color: #fbbf24;
+}
+}

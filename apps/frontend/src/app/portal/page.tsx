@@ -20,7 +20,7 @@ export default function PortalDirectoryPage() {
   }, [only, router]);
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[#0a0d16] p-6 text-slate-100">
+    <main data-theme="light" className="grid min-h-screen place-items-center bg-[#0a0d16] p-6 text-slate-100">
       <div className="w-full max-w-sm text-center">
         <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-amber-400/15 text-amber-300">
           <Film className="h-6 w-6" />

@@ -24,7 +24,7 @@ export function DarkDialog({ title, onClose, children, wide = false }: { title: 
   const titleId = useId();
   useDialogA11y(true, onClose, ref);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div data-theme="light" className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="dialog-backdrop absolute inset-0 bg-[#05070d]/70 backdrop-blur-[2px]" onClick={onClose} />
       <div
         ref={ref}
