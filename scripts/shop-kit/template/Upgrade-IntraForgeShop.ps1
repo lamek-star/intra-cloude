@@ -55,7 +55,20 @@ function Compose-In {
 
 Start-DockerIfNeeded
 Step 'Safety backup of everything (with the installed version)'
-if ((Invoke-Kit $InstallDir 'Start-IntraForgeShop.ps1' @('-NoBrowser')) -ne 0) { throw 'The installed IntraForge did not start, so it cannot be backed up. Nothing was changed. See Control Center > Diagnostics.' }
+if ((Invoke-Kit $InstallDir 'Start-IntraForgeShop.ps1' @('-NoBrowser')) -ne 0) {
+    # Versions before 1.5.6 could not start once the PC had left its shop-network address (their start script
+    # cleared the name server's profile with an empty string, which PowerShell treats as no setting at all). Start the
+    # installed version here without the name server; anything else is a real failure.
+    $started = $false
+    if (Test-ShopNamesAddressGone) {
+        Write-ShopLog 'upgrade: the installed version could not start on a gone shop-network address; starting it without the shop names' 'shop.log'
+        $env:COMPOSE_PROFILES = $script:WithoutNamesProfile
+        $env:SHOP_HTTPS_PORT = "$(Get-ShopPort)"; $env:SHOP_DATA_DIR = ((Get-DataDir) -replace '\\', '/')
+        Push-Location $InstallDir
+        try { & docker compose up -d --pull never; $started = ($LASTEXITCODE -eq 0) -and (Wait-ShopReady) } finally { Pop-Location }
+    }
+    if (-not $started) { throw 'The installed IntraForge did not start, so it cannot be backed up. Nothing was changed. See Control Center > Diagnostics.' }
+}
 if ((Invoke-Kit $InstallDir 'Backup-IntraForgeShop.ps1') -ne 0) { throw 'The safety backup failed, so nothing was changed.' }
 Write-ShopLog "upgrade $fromVersion -> ${toVersion}: safety backup taken" 'shop.log'
 

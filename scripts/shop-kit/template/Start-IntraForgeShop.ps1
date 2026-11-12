@@ -32,11 +32,9 @@ try {
     $env:SHOP_HTTPS_PORT = "$(Get-ShopPort)"; $env:SHOP_DATA_DIR = ((Get-DataDir) -replace '\\', '/')
     # The shop's name server (ADR-0021) listens on this PC's shop-network address. If that address is gone (the router
     # gave the PC another one), start everything else without it: never a reason for IntraForge not to start.
-    $lan = Get-ShopSetting 'SHOP_LAN_ADDRESS' ''
-    if ((Get-ShopSetting 'COMPOSE_PROFILES' '') -match 'names' -and $lan -and
-        -not (Get-NetIPAddress -IPAddress $lan -ErrorAction SilentlyContinue)) {
-        $env:COMPOSE_PROFILES = ''
-        Write-ShopLog "shop names not started: this PC no longer has the address $lan (Control Center > Settings > Shop network > Update the address)"
+    if (Test-ShopNamesAddressGone) {
+        $env:COMPOSE_PROFILES = $script:WithoutNamesProfile
+        Write-ShopLog "shop names not started: this PC no longer has the address $(Get-ShopSetting 'SHOP_LAN_ADDRESS' '') (Control Center > Settings > Shop network > Update the address)"
     }
     & docker compose up -d --pull never
     $upExit = $LASTEXITCODE

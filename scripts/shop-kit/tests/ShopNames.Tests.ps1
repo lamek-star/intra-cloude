@@ -47,6 +47,19 @@ Describe 'the shop''s own names' {
         $text | Should Not Match 'host intraforge\.lan'
     }
 
+    It 'starts without the name server when this PC left its shop-network address, and never with an empty profile' {
+        $script:KitDir = $TestDrive
+        Set-Content (Join-Path $TestDrive '.env') "COMPOSE_PROFILES=names`r`nSHOP_LAN_ADDRESS=203.0.113.9"
+        Test-ShopNamesAddressGone | Should Be $true
+        Set-Content (Join-Path $TestDrive '.env') "COMPOSE_PROFILES=names`r`nSHOP_LAN_ADDRESS=127.0.0.1"
+        Test-ShopNamesAddressGone | Should Be $false
+        Set-Content (Join-Path $TestDrive '.env') "COMPOSE_PROFILES=`r`nSHOP_LAN_ADDRESS=203.0.113.9"
+        Test-ShopNamesAddressGone | Should Be $false
+        # An empty value would delete the variable in Windows PowerShell and bring back .env's 'names'.
+        $script:WithoutNamesProfile | Should Not BeNullOrEmpty
+        ($script:WithoutNamesProfile -split ',') -contains 'names' | Should Be $false
+    }
+
     It 'writes and replaces only its own block in the hosts file, and removes it' {
         $hosts = Join-Path $TestDrive 'hosts'
         Set-Content $hosts "127.0.0.1`tlocalhost`r`n# someone else's line"

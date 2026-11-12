@@ -573,6 +573,8 @@ function CreateDatabaseModal({
   );
 }
 
+const ENGINE_PORTS = { postgresql: 5432, mysql: 3306, sqlserver: 1433 } as const;
+
 function CreateConnectedDatabaseModal({
   open,
   projectId,
@@ -585,6 +587,7 @@ function CreateConnectedDatabaseModal({
   onCreated: (cdb: ConnectedDatabase) => void;
 }) {
   const [name, setName] = useState("");
+  const [engine, setEngine] = useState<"postgresql" | "mysql" | "sqlserver">("postgresql");
   const [host, setHost] = useState("");
   const [port, setPort] = useState("5432");
   const [databaseName, setDatabaseName] = useState("");
@@ -602,6 +605,7 @@ function CreateConnectedDatabaseModal({
     try {
       const cdb = await api.post<ConnectedDatabase>(`/projects/${projectId}/connected-databases/`, {
         name,
+        engine,
         host,
         port: Number(port),
         database_name: databaseName,
@@ -638,6 +642,24 @@ function CreateConnectedDatabaseModal({
             onChange={(e) => setName(e.target.value)}
             placeholder="Analytics warehouse"
           />
+        </div>
+        <div>
+          <Label htmlFor="cdb-engine">Database type</Label>
+          <Select
+            id="cdb-engine"
+            value={engine}
+            onChange={(e) => {
+              const next = e.target.value as typeof engine;
+              setEngine(next);
+              setPort(String(ENGINE_PORTS[next]));
+              if (next === "sqlserver" && sslmode === "verify-full") setSslmode("require");
+            }}
+          >
+            <option value="postgresql">PostgreSQL</option>
+            <option value="mysql">MySQL / MariaDB</option>
+            <option value="sqlserver">SQL Server</option>
+          </Select>
+          <p className="mt-1 text-xs text-slate-500">Read-only: IntraForge only reads tables; use a database user that may only read.</p>
         </div>
         <div className="grid grid-cols-3 gap-3">
           <div className="col-span-2">
@@ -700,8 +722,11 @@ function CreateConnectedDatabaseModal({
             <option value="disable">Disable</option>
             <option value="prefer">Prefer</option>
             <option value="require">Require</option>
-            <option value="verify-full">Verify full</option>
+            {engine !== "sqlserver" && <option value="verify-full">Verify full</option>}
           </Select>
+          {engine === "sqlserver" && (
+            <p className="mt-1 text-xs text-slate-500">SQL Server connections can be encrypted (Require), but their certificate cannot be checked.</p>
+          )}
         </div>
         <p className="text-xs text-slate-500">
           The password is encrypted at rest and never shown again after this form -- not even to you.

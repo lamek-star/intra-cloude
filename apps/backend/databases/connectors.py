@@ -6,15 +6,18 @@ entirely separate from the TenantDatabase DDL/DML code path
 never treated as platform-native storage — nothing here ever writes to
 the external database.
 
-PostgreSQL is the only connector implemented so far (ADR-0009 Final
-Recommendation: PostgreSQL first, connected-mode read operations before
-write pass-through or import-mode copying). Future engines (MySQL/
-MariaDB/SQL Server/SQLite — Section 15 of the master prompt) implement
-the same three operations against their own driver.
+PostgreSQL came first (ADR-0009); MySQL/MariaDB (PyMySQL) and SQL Server
+(pymssql) implement the same three operations against their own driver
+(ADR-0024), with the same rules: the host is checked against the SSRF
+guard on every connection and the connection goes to the address that was
+checked, only SELECT statements are ever sent, table names are quoted by
+the driver's own identifier rules and are cross-checked by the caller
+against a fresh schema read.
 """
 
 import ipaddress
 import socket
+import ssl
 from dataclasses import dataclass
 
 import psycopg
@@ -203,4 +206,254 @@ class PostgresConnector:
         return {"count": total, "limit": limit, "offset": offset, "results": rows}
 
 
-CONNECTORS = {"postgresql": PostgresConnector()}
+def _jsonable(value):
+    """A cell as the API can send it: binary columns as their size (never their bytes), sets as lists."""
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return f"<{len(bytes(value))} bytes>"
+    if isinstance(value, (set, frozenset)):
+        return sorted(value)
+    return value
+
+
+def _clean_rows(rows) -> list[dict]:
+    return [{k: _jsonable(v) for k, v in row.items()} for row in rows]
+
+
+# ---- MySQL / MariaDB ---------------------------------------------------------------------------------------
+class _NamedTLSContext(ssl.SSLContext):
+    """The connection goes to the checked IP address, but the certificate must be for the host's name: the
+    driver would otherwise ask TLS to verify the IP."""
+
+    expected_name = ""
+
+    def wrap_socket(self, sock, *args, server_hostname=None, **kwargs):
+        return super().wrap_socket(sock, *args, server_hostname=self.expected_name, **kwargs)
+
+
+def _mysql_identifier(name: str) -> str:
+    return "`" + name.replace("`", "``") + "`"
+
+
+class MySQLConnector:
+    """MySQL 5.7+/8.x and MariaDB, through PyMySQL. The session is set READ ONLY as well."""
+
+    def _connect(self, params: ConnectionParams):
+        import pymysql
+
+        addresses = assert_host_is_safe(params.host)
+        context = None
+        if params.sslmode == "verify-full":
+            context = _NamedTLSContext(ssl.PROTOCOL_TLS_CLIENT)
+            context.expected_name = params.host
+            context.load_default_certs()
+        elif params.sslmode in ("prefer", "require"):
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+        try:
+            conn = pymysql.connect(
+                host=addresses[0],
+                port=params.port,
+                user=params.username,
+                password=params.password,
+                database=params.database,
+                connect_timeout=CONNECT_TIMEOUT_SECONDS,
+                read_timeout=30,
+                ssl=context,
+                ssl_disabled=params.sslmode == "disable",
+                autocommit=True,
+                charset="utf8mb4",
+            )
+        except pymysql.err.MySQLError as exc:
+            raise ConnectionFailed("could not connect to the external database") from exc
+        try:
+            with conn.cursor() as cur:
+                if params.sslmode in ("require", "verify-full"):
+                    # PyMySQL quietly carries on without TLS when the server does not offer it.
+                    cur.execute("SHOW SESSION STATUS LIKE 'Ssl_cipher'")
+                    row = cur.fetchone()
+                    if not row or not row[1]:
+                        raise ConnectionFailed("the external database does not offer an encrypted connection")
+                cur.execute("SET SESSION TRANSACTION READ ONLY")
+        except pymysql.err.MySQLError as exc:
+            conn.close()
+            raise ConnectionFailed("could not connect to the external database") from exc
+        except ConnectionFailed:
+            conn.close()
+            raise
+        return conn
+
+    def test_connection(self, params: ConnectionParams) -> None:
+        import pymysql
+
+        conn = self._connect(params)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+        except pymysql.err.MySQLError as exc:
+            raise ConnectionFailed("could not connect to the external database") from exc
+        finally:
+            conn.close()
+
+    def introspect_schema(self, params: ConnectionParams) -> list[TableInfo]:
+        import pymysql
+
+        conn = self._connect(params)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT c.TABLE_NAME, c.COLUMN_NAME, c.COLUMN_TYPE, c.IS_NULLABLE
+                    FROM information_schema.COLUMNS c
+                    JOIN information_schema.TABLES t
+                      ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME
+                    WHERE c.TABLE_SCHEMA = DATABASE() AND t.TABLE_TYPE IN ('BASE TABLE', 'VIEW')
+                    ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION
+                    """
+                )
+                rows = cur.fetchall()
+        except pymysql.err.MySQLError as exc:
+            raise ConnectionFailed("could not read schema from the external database") from exc
+        finally:
+            conn.close()
+        tables: dict[str, list[ColumnInfo]] = {}
+        for table_name, column_name, data_type, is_nullable in rows:
+            tables.setdefault(str(table_name), []).append(
+                ColumnInfo(name=str(column_name), data_type=str(data_type), is_nullable=is_nullable == "YES")
+            )
+        return [TableInfo(name=name, columns=cols) for name, cols in tables.items()]
+
+    def list_rows(
+        self, params: ConnectionParams, table_name: str, *, limit: int = DEFAULT_LIMIT, offset: int = 0
+    ) -> dict:
+        import pymysql
+        from pymysql.cursors import DictCursor
+
+        limit = max(1, min(limit, MAX_LIMIT))
+        offset = max(0, offset)
+        table = _mysql_identifier(table_name)
+        conn = self._connect(params)
+        try:
+            with conn.cursor(DictCursor) as cur:
+                cur.execute(f"SELECT COUNT(*) AS n FROM {table}")  # noqa: S608 - quoted identifier, cross-checked name
+                total = int(cur.fetchone()["n"])
+                cur.execute(f"SELECT * FROM {table} LIMIT %s OFFSET %s", [limit, offset])  # noqa: S608
+                rows = cur.fetchall()
+        except pymysql.err.MySQLError as exc:
+            raise ConnectionFailed("could not read rows from the external database") from exc
+        finally:
+            conn.close()
+        return {"count": total, "limit": limit, "offset": offset, "results": _clean_rows(rows)}
+
+
+# ---- SQL Server --------------------------------------------------------------------------------------------
+def _sqlserver_identifier(name: str) -> str:
+    return "[" + name.replace("]", "]]") + "]"
+
+
+# What each IntraForge TLS choice asks of SQL Server (FreeTDS). The driver cannot check the server's
+# certificate, so "verify-full" is refused rather than quietly weakened (ConnectedDatabaseCreateSerializer
+# refuses it up front too).
+_SQLSERVER_ENCRYPTION = {"disable": "off", "prefer": "request", "require": "require"}
+
+
+class SQLServerConnector:
+    """Microsoft SQL Server 2016+ and Azure SQL, through pymssql (FreeTDS). Tables of the dbo schema."""
+
+    def _connect(self, params: ConnectionParams):
+        import pymssql
+
+        if params.sslmode not in _SQLSERVER_ENCRYPTION:
+            raise ConnectionFailed(
+                "SQL Server connections can be encrypted (require) but not certificate-verified"
+            )
+        addresses = assert_host_is_safe(params.host)
+        try:
+            return pymssql.connect(
+                server=addresses[0],
+                port=str(params.port),
+                user=params.username,
+                password=params.password,
+                database=params.database,
+                login_timeout=CONNECT_TIMEOUT_SECONDS,
+                timeout=30,
+                encryption=_SQLSERVER_ENCRYPTION[params.sslmode],
+                autocommit=True,
+                tds_version="7.4",
+            )
+        except pymssql.Error as exc:
+            raise ConnectionFailed("could not connect to the external database") from exc
+
+    def test_connection(self, params: ConnectionParams) -> None:
+        import pymssql
+
+        conn = self._connect(params)
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            cur.fetchall()
+        except pymssql.Error as exc:
+            raise ConnectionFailed("could not connect to the external database") from exc
+        finally:
+            conn.close()
+
+    def introspect_schema(self, params: ConnectionParams) -> list[TableInfo]:
+        import pymssql
+
+        conn = self._connect(params)
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT c.TABLE_NAME, c.COLUMN_NAME, c.DATA_TYPE, c.IS_NULLABLE
+                FROM INFORMATION_SCHEMA.COLUMNS c
+                JOIN INFORMATION_SCHEMA.TABLES t
+                  ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME
+                WHERE c.TABLE_SCHEMA = 'dbo'
+                ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION
+                """
+            )
+            rows = cur.fetchall()
+        except pymssql.Error as exc:
+            raise ConnectionFailed("could not read schema from the external database") from exc
+        finally:
+            conn.close()
+        tables: dict[str, list[ColumnInfo]] = {}
+        for table_name, column_name, data_type, is_nullable in rows:
+            tables.setdefault(str(table_name), []).append(
+                ColumnInfo(name=str(column_name), data_type=str(data_type), is_nullable=is_nullable == "YES")
+            )
+        return [TableInfo(name=name, columns=cols) for name, cols in tables.items()]
+
+    def list_rows(
+        self, params: ConnectionParams, table_name: str, *, limit: int = DEFAULT_LIMIT, offset: int = 0
+    ) -> dict:
+        import pymssql
+
+        limit = max(1, min(limit, MAX_LIMIT))
+        offset = max(0, offset)
+        table = "[dbo]." + _sqlserver_identifier(table_name)
+        conn = self._connect(params)
+        try:
+            cur = conn.cursor(as_dict=True)
+            cur.execute(f"SELECT COUNT_BIG(*) AS n FROM {table}")  # noqa: S608 - quoted identifier, cross-checked
+            total = int(cur.fetchone()["n"])
+            cur.execute(
+                f"SELECT * FROM {table} ORDER BY (SELECT NULL) OFFSET %d ROWS FETCH NEXT %d ROWS ONLY",  # noqa: S608
+                (offset, limit),
+            )
+            rows = cur.fetchall()
+        except pymssql.Error as exc:
+            raise ConnectionFailed("could not read rows from the external database") from exc
+        finally:
+            conn.close()
+        return {"count": total, "limit": limit, "offset": offset, "results": _clean_rows(rows)}
+
+
+CONNECTORS = {
+    "postgresql": PostgresConnector(),
+    "mysql": MySQLConnector(),
+    "sqlserver": SQLServerConnector(),
+}
+
+DEFAULT_PORTS = {"postgresql": 5432, "mysql": 3306, "sqlserver": 1433}

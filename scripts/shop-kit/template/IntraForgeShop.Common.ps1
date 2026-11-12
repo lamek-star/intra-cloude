@@ -213,6 +213,20 @@ function Invoke-ElevatedScript([string]$Script, [string]$Arguments) {
     return $process.ExitCode
 }
 
+# The shop's name server (ADR-0021) listens on this PC's shop-network address. True when it is switched on but that
+# address is gone (the PC moved to another network, or the router gave it another address): then IntraForge must start
+# without it, never not at all.
+function Test-ShopNamesAddressGone {
+    $lan = Get-ShopSetting 'SHOP_LAN_ADDRESS' ''
+    return ((Get-ShopSetting 'COMPOSE_PROFILES' '') -match 'names' -and $lan -and
+        -not (Get-NetIPAddress -IPAddress $lan -ErrorAction SilentlyContinue))
+}
+
+# A profile no service has. Not an empty string: in Windows PowerShell `$env:X = ''` DELETES the variable, so compose
+# fell back to .env's COMPOSE_PROFILES=names and started the name server on the gone address, which Docker refused --
+# and IntraForge did not start at all.
+$script:WithoutNamesProfile = 'without-names'
+
 function Wait-ShopReady([int]$Tries = 60) {
     for ($i = 0; $i -lt $Tries; $i++) {
         if (Test-Quiet { docker compose exec -T backend python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/readyz', timeout=5).status == 200 else 1)" }) { return $true }
