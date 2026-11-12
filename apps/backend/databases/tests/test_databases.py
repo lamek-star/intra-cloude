@@ -161,7 +161,7 @@ class TableColumnForeignKeyTests(DatabaseBuilderTestBase):
         )
         resp = self.client.post(
             reverse("column-create", args=[table.data["id"]]),
-            {"name": "a\"; DROP TABLE widgets; --", "data_type": "text"},
+            {"name": 'a"; DROP TABLE widgets; --', "data_type": "text"},
             format="json",
         )
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
@@ -247,9 +247,7 @@ class TableColumnForeignKeyTests(DatabaseBuilderTestBase):
 class DatabaseBuilderPermissionTests(DatabaseBuilderTestBase):
     def test_member_without_database_create_permission_is_forbidden(self):
         member = User.objects.create_user(email="plain@example.com", password="x")
-        Membership.objects.create(
-            user=member, organization_id=self.org_id, status=Membership.Status.ACTIVE
-        )
+        Membership.objects.create(user=member, organization_id=self.org_id, status=Membership.Status.ACTIVE)
         self.client.force_login(member)
 
         resp = self.client.post(
@@ -272,9 +270,7 @@ class SchemaReadVisibilityTests(DatabaseBuilderTestBase):
 
     def setUp(self):
         super().setUp()
-        db = self.client.post(
-            reverse("tenant-database-list-create", args=[self.project_id]), {"name": "CRM"}
-        )
+        db = self.client.post(reverse("tenant-database-list-create", args=[self.project_id]), {"name": "CRM"})
         self.db_id = db.data["id"]
         table = self.client.post(reverse("table-list-create", args=[self.db_id]), {"name": "contacts"})
         self.table_id = table.data["id"]
@@ -495,3 +491,27 @@ class LinkedRowLookupTests(DatabaseBuilderTestBase):
         )
         resp = self.client.get(reverse("row-list-create", args=[self.books_id]), {"ids": self.book_ids[0]})
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class OrganizationDatabaseListTests(DatabaseBuilderTestBase):
+    """The organization's Databases page: every database the caller may read, across its projects."""
+
+    def setUp(self):
+        super().setUp()
+        db = self.client.post(reverse("tenant-database-list-create", args=[self.project_id]), {"name": "CRM"})
+        self.db_id = db.data["id"]
+        self.client.post(reverse("table-list-create", args=[self.db_id]), {"name": "contacts"})
+        self.url = reverse("organization-tenant-database-list", args=[self.org_id])
+
+    def test_lists_the_databases_with_their_table_count(self):
+        listed = self.client.get(self.url).data
+        self.assertEqual([(d["id"], d["name"], d["tables"]) for d in listed], [(self.db_id, "CRM", 1)])
+
+    def test_a_member_without_database_read_sees_none_and_an_outsider_gets_404(self):
+        member = User.objects.create_user(email="org-dbs-member@example.com", password="x")
+        Membership.objects.create(user=member, organization_id=self.org_id, status=Membership.Status.ACTIVE)
+        self.client.force_login(member)
+        self.assertEqual(self.client.get(self.url).data, [])
+        outsider = User.objects.create_user(email="org-dbs-outsider@example.com", password="x")
+        self.client.force_login(outsider)
+        self.assertEqual(self.client.get(self.url).status_code, status.HTTP_404_NOT_FOUND)

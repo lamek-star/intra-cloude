@@ -507,9 +507,7 @@ class ConnectedDatabaseDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, connected_database_id):
-        connected_database = connection_ops.get_member_connected_database(
-            request.user, connected_database_id
-        )
+        connected_database = connection_ops.get_member_connected_database(request.user, connected_database_id)
         _, error = _handle_connection(
             lambda: connection_ops.require_connection_manage(
                 request.user,
@@ -523,9 +521,7 @@ class ConnectedDatabaseDetailView(APIView):
         return Response(ConnectedDatabaseSerializer(connected_database).data)
 
     def delete(self, request, connected_database_id):
-        connected_database = connection_ops.get_member_connected_database(
-            request.user, connected_database_id
-        )
+        connected_database = connection_ops.get_member_connected_database(request.user, connected_database_id)
         _, error = _handle_connection(
             lambda: connection_ops.delete_connected_database(
                 actor=request.user, connected_database=connected_database, request_id=_request_id(request)
@@ -540,9 +536,7 @@ class ConnectedDatabaseTestView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, connected_database_id):
-        connected_database = connection_ops.get_member_connected_database(
-            request.user, connected_database_id
-        )
+        connected_database = connection_ops.get_member_connected_database(request.user, connected_database_id)
         result, error = _handle_connection(
             lambda: connection_ops.test_connected_database(
                 actor=request.user, connected_database=connected_database, request_id=_request_id(request)
@@ -557,9 +551,7 @@ class ConnectedDatabaseSchemaView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, connected_database_id):
-        connected_database = connection_ops.get_member_connected_database(
-            request.user, connected_database_id
-        )
+        connected_database = connection_ops.get_member_connected_database(request.user, connected_database_id)
         result, error = _handle_connection(
             lambda: connection_ops.get_connected_database_schema(
                 actor=request.user, connected_database=connected_database, request_id=_request_id(request)
@@ -567,18 +559,14 @@ class ConnectedDatabaseSchemaView(APIView):
         )
         if error:
             return error
-        return Response(
-            [{"name": t.name, "columns": [c.__dict__ for c in t.columns]} for t in result]
-        )
+        return Response([{"name": t.name, "columns": [c.__dict__ for c in t.columns]} for t in result])
 
 
 class ConnectedDatabaseTableRowsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, connected_database_id, table_name):
-        connected_database = connection_ops.get_member_connected_database(
-            request.user, connected_database_id
-        )
+        connected_database = connection_ops.get_member_connected_database(request.user, connected_database_id)
         try:
             limit = int(request.query_params.get("limit", 50))
             offset = int(request.query_params.get("offset", 0))
@@ -598,3 +586,42 @@ class ConnectedDatabaseTableRowsView(APIView):
         if error:
             return error
         return Response(result)
+
+
+class OrganizationTenantDatabaseListView(APIView):
+    """Every database in an organization the caller may read (database.read, role-wide or a grant on that
+    database, the same check as each project's list), with how many tables it has."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, organization_id):
+        from django.db.models import Count
+
+        from environments.services import check_environment_scope
+        from organizations.services import get_member_organization
+
+        from .models import TenantDatabase
+
+        organization = get_member_organization(request.user, organization_id)
+        databases = (
+            TenantDatabase.objects.filter(project__workspace__organization=organization)
+            .select_related("project__workspace")
+            .annotate(table_count=Count("tables"))
+            .order_by("project__workspace__name", "project__name", "name")
+        )
+        return Response(
+            [
+                {
+                    "id": str(db.id),
+                    "name": db.name,
+                    "project": str(db.project_id),
+                    "project_name": db.project.name,
+                    "workspace_name": db.project.workspace.name,
+                    "tables": db.table_count,
+                    "created_at": db.created_at.isoformat(),
+                }
+                for db in databases
+                if _can_read_database(request, organization.id, db.id)
+                and check_environment_scope(request, tenant_database=db)
+            ]
+        )

@@ -133,9 +133,7 @@ class DBForeignKey(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     column = models.OneToOneField(DBColumn, on_delete=models.CASCADE, related_name="foreign_key")
     references_table = models.ForeignKey(DBTable, on_delete=models.CASCADE, related_name="referenced_by")
-    references_column = models.ForeignKey(
-        DBColumn, on_delete=models.CASCADE, related_name="referenced_by_fk"
-    )
+    references_column = models.ForeignKey(DBColumn, on_delete=models.CASCADE, related_name="referenced_by_fk")
     on_delete = models.CharField(max_length=20, choices=OnDelete.choices, default=OnDelete.RESTRICT)
     created_at = models.DateTimeField(auto_now_add=True)
 

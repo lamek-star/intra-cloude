@@ -551,3 +551,30 @@ class BucketListVisibilityTests(StorageTestBase):
         resp = self.client.get(reverse("bucket-list-create", args=[self.project_id]))
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual({b["id"] for b in resp.data}, {self.bucket_id, self.other_bucket_id})
+
+
+class OrganizationBucketListTests(StorageTestBase):
+    """The organization's Storage page: every bucket the caller may read, with what it holds."""
+
+    def test_lists_buckets_with_files_bytes_versions_and_trash(self):
+        url = reverse("file-list-create", args=[self.bucket_id])
+        kept = _upload_file(self.client, url, content=b"12345", display_filename="a.txt").data["id"]
+        gone = _upload_file(self.client, url, content=b"123", display_filename="b.txt").data["id"]
+        self.client.delete(reverse("file-detail", args=[gone]))
+        listed = self.client.get(reverse("organization-bucket-list", args=[self.org_id])).data
+        self.assertEqual(len(listed), 1)
+        row = listed[0]
+        self.assertEqual((row["id"], row["name"], row["project_name"]), (self.bucket_id, "docs", "Proj"))
+        self.assertEqual((row["files"], row["bytes"], row["trash_files"], row["trash_bytes"]), (1, 5, 1, 3))
+        self.assertEqual(row["versions"], 0)
+        self.assertTrue(kept)
+
+    def test_a_member_without_storage_read_sees_none_and_an_outsider_gets_404(self):
+        url = reverse("organization-bucket-list", args=[self.org_id])
+        member = User.objects.create_user(email="org-buckets-member@example.com", password="x")
+        Membership.objects.create(user=member, organization_id=self.org_id, status=Membership.Status.ACTIVE)
+        self.client.force_login(member)
+        self.assertEqual(self.client.get(url).data, [])
+        outsider = User.objects.create_user(email="org-buckets-outsider@example.com", password="x")
+        self.client.force_login(outsider)
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_404_NOT_FOUND)

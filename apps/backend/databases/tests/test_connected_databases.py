@@ -157,9 +157,7 @@ class ConnectionLifecycleTests(ConnectedDatabaseTestBase):
         listing = self.client.get(reverse("connected-database-list-create", args=[self.project_id]))
         self.assertEqual(listing.status_code, status.HTTP_403_FORBIDDEN)
 
-        detail = self.client.get(
-            reverse("connected-database-detail", args=[self.connected_database_id])
-        )
+        detail = self.client.get(reverse("connected-database-detail", args=[self.connected_database_id]))
         self.assertEqual(detail.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_schema_introspection_returns_real_table_and_columns(self):

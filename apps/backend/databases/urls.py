@@ -9,6 +9,11 @@ urlpatterns = [
         name="tenant-database-list-create",
     ),
     path(
+        "organizations/<uuid:organization_id>/tenant-databases/",
+        views.OrganizationTenantDatabaseListView.as_view(),
+        name="organization-tenant-database-list",
+    ),
+    path(
         "tenant-databases/<uuid:tenant_database_id>/",
         views.TenantDatabaseDetailView.as_view(),
         name="tenant-database-detail",

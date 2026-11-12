@@ -60,8 +60,10 @@ class UpdateRowIfTests(UpdateRowIfTestBase):
     def test_missing_row_raises_not_found_not_conflict(self):
         with self.assertRaises(RowNotFound):
             update_row_if(
-                self.table, "00000000-0000-0000-0000-000000000000",
-                expected={"status": "pending"}, data={"status": "approved"},
+                self.table,
+                "00000000-0000-0000-0000-000000000000",
+                expected={"status": "pending"},
+                data={"status": "approved"},
             )
 
     def test_empty_expected_matches_any_current_value(self):
@@ -70,7 +72,8 @@ class UpdateRowIfTests(UpdateRowIfTestBase):
 
     def test_multiple_expected_columns_and_multiple_set_columns(self):
         updated = update_row_if(
-            self.table, self.row["id"],
+            self.table,
+            self.row["id"],
             expected={"status": "pending", "closed_by": None},
             data={"status": "approved", "closed_by": "alice"},
         )

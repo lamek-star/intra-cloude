@@ -192,9 +192,7 @@ class FieldSetUniqueConstraintTests(IndexingTestBase):
         self.col_a = services.add_column(
             actor=self.actor, table=self.table, name="warehouse", data_type="text"
         )
-        self.col_b = services.add_column(
-            actor=self.actor, table=self.table, name="product", data_type="text"
-        )
+        self.col_b = services.add_column(actor=self.actor, table=self.table, name="product", data_type="text")
 
     def test_add_on_clean_data_succeeds_and_is_deterministically_named(self):
         constraint_id = uuid.uuid4()

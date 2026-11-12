@@ -54,18 +54,14 @@ class SchemaChangeAuditTests(APITestCase):
         self.assertEqual(response.data["count"], 2)
         self.assertTrue(all(e["action"] == "database.create" for e in response.data["results"]))
 
-        empty = self.client.get(
-            reverse("audit-event-list", args=[self.org_id]), {"action": "no.such.action"}
-        )
+        empty = self.client.get(reverse("audit-event-list", args=[self.org_id]), {"action": "no.such.action"})
         self.assertEqual(empty.data["count"], 0)
 
     def test_denied_schema_change_is_audited_as_denied(self):
         member = User.objects.create_user(email="plain-audit@example.com", password="x")
         from organizations.models import Membership
 
-        Membership.objects.create(
-            user=member, organization_id=self.org_id, status=Membership.Status.ACTIVE
-        )
+        Membership.objects.create(user=member, organization_id=self.org_id, status=Membership.Status.ACTIVE)
         self.client.force_login(member)
         self.client.post(reverse("tenant-database-list-create", args=[self.project_id]), {"name": "Nope"})
 

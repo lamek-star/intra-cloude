@@ -111,6 +111,12 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
             <LinkButton href={`/orgs/${orgId}/units`} variant="secondary" size="sm">
               Units
             </LinkButton>
+            <LinkButton href={`/orgs/${orgId}/storage`} variant="secondary" size="sm">
+              Storage
+            </LinkButton>
+            <LinkButton href={`/orgs/${orgId}/databases`} variant="secondary" size="sm">
+              Databases
+            </LinkButton>
             <LinkButton href={`/orgs/${orgId}/audit`} variant="secondary" size="sm">
               Audit log
             </LinkButton>

@@ -409,3 +409,68 @@ class FileVersionRestoreView(APIView):
         except RestoreRefused as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         return Response(FileObjectSerializer(file_obj).data)
+
+
+class OrganizationBucketListView(APIView):
+    """Every bucket in an organization the caller may read (storage.read, role-wide or a grant on that bucket,
+    the same check as each project's list), with what it holds: files in use, their bytes, the bytes of kept
+    earlier versions, and the Trash. For the organization's Storage page and its usage summary."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, organization_id):
+        from django.db.models import Count, Q, Sum
+
+        from organizations.services import get_member_organization
+
+        from .models import FileVersion
+
+        organization = get_member_organization(request.user, organization_id)
+        buckets = [
+            b
+            for b in Bucket.objects.filter(project__workspace__organization=organization)
+            .select_related("project__workspace")
+            .order_by("project__workspace__name", "project__name", "name")
+            if _require(request, "storage.read", organization.id, bucket_id=b.id)
+            and not _environment_scope_denied(request, b)
+        ]
+        ids = [b.id for b in buckets]
+        active, deleted = FileObject.Status.ACTIVE, FileObject.Status.DELETED
+        files = {
+            row["bucket"]: row
+            for row in FileObject.objects.filter(bucket_id__in=ids)
+            .values("bucket")
+            .annotate(
+                files=Count("id", filter=Q(status=active)),
+                bytes=Sum("size", filter=Q(status=active)),
+                trash_files=Count("id", filter=Q(status=deleted)),
+                trash_bytes=Sum("size", filter=Q(status=deleted)),
+            )
+        }
+        versions = {
+            row["file__bucket"]: row
+            for row in FileVersion.objects.filter(file__bucket_id__in=ids)
+            .values("file__bucket")
+            .annotate(versions=Count("id"), version_bytes=Sum("size"))
+        }
+        out = []
+        for b in buckets:
+            f, v = files.get(b.id, {}), versions.get(b.id, {})
+            out.append(
+                {
+                    "id": str(b.id),
+                    "name": b.name,
+                    "project": str(b.project_id),
+                    "project_name": b.project.name,
+                    "workspace_name": b.project.workspace.name,
+                    "versioning_enabled": b.versioning_enabled,
+                    "files": f.get("files") or 0,
+                    "bytes": f.get("bytes") or 0,
+                    "versions": v.get("versions") or 0,
+                    "version_bytes": v.get("version_bytes") or 0,
+                    "trash_files": f.get("trash_files") or 0,
+                    "trash_bytes": f.get("trash_bytes") or 0,
+                    "created_at": b.created_at.isoformat(),
+                }
+            )
+        return Response(out)

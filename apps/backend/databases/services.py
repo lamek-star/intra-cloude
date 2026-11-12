@@ -149,9 +149,7 @@ def create_tenant_database(
     if not name or len(name) > 200:
         raise SchemaValidationError("name must be between 1 and 200 characters")
 
-    tenant_db = TenantDatabase(
-        id=_database_id or uuid.uuid4(), project=project, name=name, created_by=actor
-    )
+    tenant_db = TenantDatabase(id=_database_id or uuid.uuid4(), project=project, name=name, created_by=actor)
     tenant_db.schema_name = f"db_{tenant_db.id.hex}"
 
     ddl = sql.SQL("CREATE SCHEMA {schema}").format(schema=sql.Identifier(tenant_db.schema_name))
@@ -200,9 +198,7 @@ def create_table(
     table_id = uuid.uuid4()
     pk_column_id = uuid.uuid4()
 
-    ddl = sql.SQL(
-        "CREATE TABLE {schema}.{table} ({pk} UUID PRIMARY KEY DEFAULT gen_random_uuid())"
-    ).format(
+    ddl = sql.SQL("CREATE TABLE {schema}.{table} ({pk} UUID PRIMARY KEY DEFAULT gen_random_uuid())").format(
         schema=sql.Identifier(tenant_database.schema_name),
         table=sql.Identifier(name),
         pk=sql.Identifier("id"),

@@ -8,6 +8,11 @@ urlpatterns = [
         views.BucketListCreateView.as_view(),
         name="bucket-list-create",
     ),
+    path(
+        "organizations/<uuid:organization_id>/buckets/",
+        views.OrganizationBucketListView.as_view(),
+        name="organization-bucket-list",
+    ),
     path("buckets/<uuid:bucket_id>/", views.BucketDetailView.as_view(), name="bucket-detail"),
     path(
         "buckets/<uuid:bucket_id>/folders/",

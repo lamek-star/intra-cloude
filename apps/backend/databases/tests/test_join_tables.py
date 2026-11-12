@@ -156,6 +156,7 @@ class JoinTableConstraintTests(TestCase):
                 actor=self.actor, table=self.table, column_a=self.column_a, column_b=self.column_a
             )
 
+
 class ManagedSchemaGuardTests(TransactionTestCase):
     """A join table is always created inside an already-provisioned App
     Platform runtime (via allow_managed_schema=True, exactly like every
