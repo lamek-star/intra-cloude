@@ -546,3 +546,13 @@ Shop and Rentals, Pay counters, the Spare Parts label). `npm audit` 0, `pip-audi
 Kit `IntraForge-Local-1.5.6-a45d88424.zip` (966,761,878 bytes, SHA-256 `198f5f71...a4702d5c`), 8/8 checksums;
 `IntraForge-Setup-1.5.6-a45d88424.exe` (SHA-256 `004f7c4e...f101f028`). Not done: MySQL / SQL Server connectors
 (need new drivers and test databases downloaded; waiting for the owner's yes); the shop PC is still on 1.5.5.
+
+**Shop PC upgraded 1.5.5 -> 1.5.6** with kit `IntraForge-Local-1.5.6-3e17bed44.zip` (SHA-256 `394870be...36eb11`; setup
+`3bd753c3...573b7`). The first attempt (kit `a45d88424`) stopped before changing anything: the PC had moved from the
+shop Wi-Fi (shop network on at 192.168.8.63) to a phone's hotspot, and every start had failed since -- the start
+script's `$env:COMPOSE_PROFILES = ''` deletes the variable in Windows PowerShell, so compose took `names` from `.env`
+and Docker refused port 53 on the gone address. Fixed (`3e17bed44`: a profile no service has; the upgrade starts a
+pre-1.5.6 installation the same way), Pester test added. The second attempt took the safety backup and upgraded
+(exit 0): 13 containers up, `readyz` 200, the new migrations applied, licence still active (master). The shop
+network still names 192.168.8.63: back on the shop Wi-Fi, Control Center > Settings > Shop network > Update the
+address.
