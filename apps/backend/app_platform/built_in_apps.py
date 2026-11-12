@@ -166,6 +166,37 @@ CATALOG: dict[str, BuiltInApp] = {
             evidence=("Provisions and passes its template tests; no end-to-end qualification has been run.",),
         ),
         BuiltInApp(
+            key="repair_shop",
+            label="Repair Shop",
+            summary=(
+                "Job cards for a repair counter: customers and their devices, the fault, status and promised "
+                "date, parts and labour, and payments."
+            ),
+            highlights=("Job cards", "Devices", "Parts and labour", "Payments"),
+            status=Status.EXPERIMENTAL,
+            evidence=(
+                "app_platform/tests/test_repair_rentals_templates.py (validates, installs, provisions; a job "
+                "with its parts, labour and payment through the record API; job numbers are unique).",
+                "No end-to-end qualification with a shop's staff has been run.",
+            ),
+        ),
+        BuiltInApp(
+            key="rentals",
+            label="Rentals",
+            summary=(
+                "Hire items out: items and their daily price, customers, bookings with dates, deposit and "
+                "condition on return, and payments."
+            ),
+            highlights=("Items", "Bookings", "Deposits", "Payments"),
+            status=Status.EXPERIMENTAL,
+            evidence=(
+                "app_platform/tests/test_repair_rentals_templates.py (validates, installs, provisions; a "
+                "booking through the record API; one booking per item starting on the same day).",
+                "Overlapping bookings of one item are not prevented; no end-to-end qualification has "
+                "been run.",
+            ),
+        ),
+        BuiltInApp(
             key="crm",
             label="Customer Pipeline",
             summary=("Accounts, contacts, leads, campaigns, opportunities, activities and notes."),

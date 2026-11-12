@@ -24,3 +24,11 @@ def verify_latest_backup_task(backup_type: str) -> str | None:
         return None
     record = backups.verify_backup_restorable(latest)
     return str(record.id)
+
+
+@shared_task
+def record_health_task() -> int:
+    """The health checks' sample every 5 minutes (system.health)."""
+    from . import health
+
+    return health.record().id

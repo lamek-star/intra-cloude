@@ -96,3 +96,16 @@ class BackupRunView(_AdminOnly):
             context={"types": started, "already_running": sorted(busy)},
         )
         return Response({"started": started, "already_running": sorted(busy)}, status=202)
+
+
+class HealthView(_AdminOnly):
+    """Health history and alerts for this installation (Super Administrator only)."""
+
+    def get(self, request):
+        from . import health
+
+        if not self.is_admin:
+            return Response(
+                {"detail": "Only the Super Administrator can see this installation's health."}, status=403
+            )
+        return Response(health.summary())

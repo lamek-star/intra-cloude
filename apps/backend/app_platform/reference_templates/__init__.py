@@ -14,6 +14,8 @@ from .hr import hr_reference_definition
 from .pharmacy import pharmacy_reference_definition
 from .procurement import procurement_reference_definition
 from .projects import projects_reference_definition
+from .rentals import rentals_reference_definition
+from .repair_shop import repair_shop_reference_definition
 from .school import school_reference_definition
 from .spare_parts import spare_parts_reference_definition
 from .warehouses import warehouses_reference_definition
@@ -59,6 +61,14 @@ REGISTRY = {
         "label": "Warehouses -- Bin-Level Logistics",
         "builder": warehouses_reference_definition,
     },
+    "repair_shop": {
+        "label": "Repair Shop -- Job Cards",
+        "builder": repair_shop_reference_definition,
+    },
+    "rentals": {
+        "label": "Rentals -- Items & Bookings",
+        "builder": rentals_reference_definition,
+    },
 }
 
 __all__ = [
@@ -69,6 +79,8 @@ __all__ = [
     "hr_reference_definition",
     "pharmacy_reference_definition",
     "procurement_reference_definition",
+    "rentals_reference_definition",
+    "repair_shop_reference_definition",
     "projects_reference_definition",
     "school_reference_definition",
     "spare_parts_reference_definition",
