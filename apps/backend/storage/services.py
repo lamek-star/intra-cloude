@@ -389,3 +389,202 @@ def record_version_download(file: FileObject, version: FileVersion, *, actor) ->
         resource_id=file.id,
         context={"version": str(version.id)},
     )
+
+
+# ---- share links -------------------------------------------------------------------------------------------
+SHARE_LINK_MAX_DAYS = 30
+
+
+class ShareLinkRefused(Exception):
+    """A share link that cannot be made; the message says why."""
+
+
+def _hash_share_token(token: str) -> str:
+    return hashlib.sha256(("ifshare:" + token).encode()).hexdigest()
+
+
+def create_share_link(*, file: FileObject, actor, days, max_downloads=None):
+    """A new link for one file in use; returns (link, token). The token is the only time the link is
+    complete."""
+    import secrets
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from .models import FileShareLink
+
+    if file.status != FileObject.Status.ACTIVE:
+        raise ShareLinkRefused("Only a file in use can be shared.")
+    try:
+        days = int(days)
+    except (TypeError, ValueError) as exc:
+        raise ShareLinkRefused("Choose for how many days the link works (1 to 30).") from exc
+    if not 1 <= days <= SHARE_LINK_MAX_DAYS:
+        raise ShareLinkRefused("A link works for 1 to 30 days.")
+    if max_downloads in ("", None):
+        max_downloads = None
+    else:
+        try:
+            max_downloads = int(max_downloads)
+        except (TypeError, ValueError) as exc:
+            raise ShareLinkRefused("The download limit must be a number.") from exc
+        if not 1 <= max_downloads <= 10000:
+            raise ShareLinkRefused("The download limit must be between 1 and 10000.")
+    token = secrets.token_urlsafe(24)
+    link = FileShareLink.objects.create(
+        file=file,
+        token_hash=_hash_share_token(token),
+        expires_at=timezone.now() + timedelta(days=days),
+        max_downloads=max_downloads,
+        created_by=actor,
+    )
+    audit.record(
+        actor=actor,
+        organization_id=file.organization_id,
+        action="storage.share_link.create",
+        resource_type="file_object",
+        resource_id=file.id,
+        context={"link": str(link.id), "days": days, "max_downloads": max_downloads},
+    )
+    return link, token
+
+
+def share_link_for_token(token: str):
+    """The link a token opens, or None when it is unknown, expired, revoked, used up, or its file is no longer
+    an ordinary file in use (deleted or quarantined): from outside, all of those look the same."""
+    from django.utils import timezone
+
+    from .models import FileShareLink
+
+    if not token or len(token) > 100:
+        return None
+    link = (
+        FileShareLink.objects.select_related("file__bucket__project__workspace")
+        .filter(token_hash=_hash_share_token(token))
+        .first()
+    )
+    if (
+        link is None
+        or link.revoked_at is not None
+        or link.expires_at <= timezone.now()
+        or (link.max_downloads is not None and link.downloads >= link.max_downloads)
+        or link.file.status != FileObject.Status.ACTIVE
+    ):
+        return None
+    return link
+
+
+def count_share_download(link) -> bool:
+    """Counts one download; False when the limit was reached meanwhile (two downloads at once cannot both take
+    the last one)."""
+    from django.db.models import F, Q
+
+    from .models import FileShareLink
+
+    allowed = Q(max_downloads__isnull=True) | Q(downloads__lt=F("max_downloads"))
+    counted = FileShareLink.objects.filter(allowed, pk=link.pk).update(downloads=F("downloads") + 1)
+    if counted:
+        audit.record(
+            actor=None,
+            organization_id=link.file.organization_id,
+            action="storage.share_link.download",
+            resource_type="file_object",
+            resource_id=link.file_id,
+            context={"link": str(link.id)},
+        )
+    return bool(counted)
+
+
+def revoke_share_link(link, *, actor) -> None:
+    from django.utils import timezone
+
+    if link.revoked_at is None:
+        link.revoked_at = timezone.now()
+        link.save(update_fields=["revoked_at"])
+    audit.record(
+        actor=actor,
+        organization_id=link.file.organization_id,
+        action="storage.share_link.revoke",
+        resource_type="file_object",
+        resource_id=link.file_id,
+        context={"link": str(link.id)},
+    )
+
+
+# ---- automatic cleanup -------------------------------------------------------------------------------------
+def set_cleanup(bucket: Bucket, *, actor, trash_days=None, version_days=None) -> Bucket:
+    changed = {}
+    for name, value in (("trash_days", trash_days), ("version_days", version_days)):
+        if value is None:
+            continue
+        try:
+            value = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{name} must be a number of days") from exc
+        if not 0 <= value <= 3650:
+            raise ValueError(f"{name} must be between 0 and 3650 days")
+        setattr(bucket, name, value)
+        changed[name] = value
+    if changed:
+        bucket.save(update_fields=list(changed))
+        audit.record(
+            actor=actor,
+            organization_id=bucket.organization_id,
+            action="storage.bucket.cleanup_settings",
+            resource_type="bucket",
+            resource_id=bucket.id,
+            context=changed,
+        )
+    return bucket
+
+
+def clean_up_bucket(bucket: Bucket, *, now=None) -> dict:
+    """Deletes for good what the bucket's settings say has been kept long enough: files in the Trash longer
+    than trash_days (their kept versions too), and kept versions older than version_days. Storage objects
+    first, then the rows; an object that cannot be deleted keeps its row, to be tried again tomorrow."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    now = now or timezone.now()
+    client = get_client()
+    removed = {"files": 0, "versions": 0, "bytes": 0}
+    if bucket.trash_days:
+        old = FileObject.objects.filter(
+            bucket=bucket,
+            status=FileObject.Status.DELETED,
+            updated_at__lt=now - timedelta(days=bucket.trash_days),
+        ).prefetch_related("versions")
+        for file in old:
+            try:
+                for version in file.versions.all():
+                    client.delete(version.object_key)
+                client.delete(file.object_key)
+            except Exception:  # noqa: BLE001 - logged; the row stays, so tomorrow's run tries again
+                logger.warning("cleanup could not delete the objects of file %s", file.id, exc_info=True)
+                continue
+            removed["files"] += 1
+            removed["bytes"] += file.size + sum(v.size for v in file.versions.all())
+            file.delete()
+    if bucket.version_days:
+        for version in FileVersion.objects.filter(
+            file__bucket=bucket, created_at__lt=now - timedelta(days=bucket.version_days)
+        ):
+            try:
+                client.delete(version.object_key)
+            except Exception:  # noqa: BLE001 - as above
+                logger.warning("cleanup could not delete version %s", version.id, exc_info=True)
+                continue
+            removed["versions"] += 1
+            removed["bytes"] += version.size
+            version.delete()
+    if removed["files"] or removed["versions"]:
+        audit.record(
+            actor=None,
+            organization_id=bucket.organization_id,
+            action="storage.cleanup",
+            resource_type="bucket",
+            resource_id=bucket.id,
+            context=removed,
+        )
+    return removed

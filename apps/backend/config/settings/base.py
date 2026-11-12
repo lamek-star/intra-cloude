@@ -340,6 +340,10 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {
 API_REQUEST_LOG_DAYS = int(os.environ.get("API_REQUEST_LOG_DAYS", "30"))
 
 CELERY_BEAT_SCHEDULE = {
+    "clean-up-storage-nightly": {
+        "task": "storage.tasks.clean_up_storage",
+        "schedule": crontab(hour=4, minute=30),
+    },
     "prune-api-request-log-nightly": {
         "task": "applications.tasks.prune_api_request_log",
         "schedule": crontab(hour=4, minute=15),

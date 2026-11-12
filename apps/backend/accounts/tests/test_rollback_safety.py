@@ -7,12 +7,15 @@ from django.test import TestCase
 
 from accounts.models import User
 from sites.models import InternetGateway, Site
+from storage.models import Bucket
 
 NEW_COLUMNS = [
     (User, "passkey_only"),
     (Site, "internet_auto"),
     (InternetGateway, "auto_domain"),
     (User, "must_change_password"),
+    (Bucket, "trash_days"),
+    (Bucket, "version_days"),
 ]
 NEW_USER_FIELDS = {"passkey_only", "must_change_password"}
 

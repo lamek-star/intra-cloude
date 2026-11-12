@@ -32,6 +32,8 @@ import {
 import { ShareSection } from "@/components/ShareSection";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { FileVersions } from "./FileVersions";
+import { ShareLinks } from "./ShareLinks";
+import { CleanupSettings } from "./CleanupSettings";
 import { formatBytes } from "./format";
 
 type View = "files" | "trash";
@@ -66,6 +68,9 @@ export default function BucketDetailClient({
   const [search, setSearch] = useState("");
   const [folderModalOpen, setFolderModalOpen] = useState(false);
   const [versionsOf, setVersionsOf] = useState<FileObject | null>(null);
+  const [sharing, setSharing] = useState<FileObject | null>(null);
+  const [cleanup, setCleanup] = useState<{ trash_days: number; version_days: number } | null>(null);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [folderProgress, setFolderProgress] = useState<string | null>(null);
@@ -104,11 +109,12 @@ export default function BucketDetailClient({
       // Opened straight from its address (a bookmark, a refresh): the link's name and project are not in the URL,
       // so the bucket itself says them.
       let project = projectId;
-      if (!initialName || !project) {
-        const bucket = await api.get<{ name?: string; project?: string }>(`/buckets/${bucketId}/`);
-        if (!initialName && bucket.name) setBucketName(bucket.name);
-        project = project ?? bucket.project ?? null;
-      }
+      const bucket = await api.get<{ name?: string; project?: string; trash_days?: number; version_days?: number }>(
+        `/buckets/${bucketId}/`,
+      );
+      if (!initialName && bucket.name) setBucketName(bucket.name);
+      project = project ?? bucket.project ?? null;
+      if (bucket.trash_days !== undefined) setCleanup({ trash_days: bucket.trash_days, version_days: bucket.version_days ?? 0 });
       if (project) {
         const p = await api.get<Project>(`/projects/${project}/`);
         setProject(p);
@@ -266,6 +272,11 @@ export default function BucketDetailClient({
               data-testid="folder-input"
               onChange={(e) => void handleFolderUpload(e.target.files)}
             />
+            {cleanup && (
+              <Button variant="ghost" onClick={() => setCleanupOpen(true)}>
+                Cleanup
+              </Button>
+            )}
             {!inTrash && (
               <Button variant="secondary" onClick={() => setFolderModalOpen(true)}>
                 <FolderPlus aria-hidden="true" className="h-4 w-4" />
@@ -444,6 +455,9 @@ export default function BucketDetailClient({
                         <button onClick={() => setVersionsOf(f)} className="text-brand-600 hover:text-brand-700">
                           Versions
                         </button>
+                        <button onClick={() => setSharing(f)} className="text-brand-600 hover:text-brand-700">
+                          Share link
+                        </button>
                         <button onClick={() => handleDelete(f)} className="text-red-600 hover:text-red-700">
                           Delete
                         </button>
@@ -473,6 +487,22 @@ export default function BucketDetailClient({
           setFolders((prev) => [...prev, folder].sort((a, b) => a.name.localeCompare(b.name)));
         }}
       />
+
+      {sharing && <ShareLinks file={sharing} onClose={() => setSharing(null)} />}
+
+      {cleanupOpen && cleanup && (
+        <CleanupSettings
+          bucketId={bucketId}
+          trashDays={cleanup.trash_days}
+          versionDays={cleanup.version_days}
+          onClose={() => setCleanupOpen(false)}
+          onSaved={(b) => {
+            setCleanup({ trash_days: b.trash_days, version_days: b.version_days });
+            setCleanupOpen(false);
+            setNotice("Cleanup settings saved.");
+          }}
+        />
+      )}
 
       {versionsOf && (
         <FileVersions

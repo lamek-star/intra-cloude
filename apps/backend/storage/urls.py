@@ -15,6 +15,23 @@ urlpatterns = [
     ),
     path("buckets/<uuid:bucket_id>/", views.BucketDetailView.as_view(), name="bucket-detail"),
     path(
+        "files/<uuid:file_id>/share-links/",
+        views.FileShareLinkListCreateView.as_view(),
+        name="file-share-links",
+    ),
+    path(
+        "share-links/<uuid:link_id>/revoke/",
+        views.FileShareLinkRevokeView.as_view(),
+        name="share-link-revoke",
+    ),
+    path("share/<str:token>/", views.PublicShareView.as_view(), name="public-share"),
+    path(
+        "share/<str:token>/download/",
+        views.PublicShareView.as_view(),
+        {"download": True},
+        name="public-share-download",
+    ),
+    path(
         "buckets/<uuid:bucket_id>/folders/",
         views.FolderListCreateView.as_view(),
         name="folder-list-create",
