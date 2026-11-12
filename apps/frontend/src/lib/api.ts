@@ -282,6 +282,8 @@ export type FileVersion = {
   file: string;
   size: number;
   checksum_sha256: string;
+  /** Quarantined by malware scanning when it was current: never downloads or comes back. */
+  quarantined: boolean;
   created_at: string;
   created_by: string;
   created_by_email: string;

@@ -27,4 +27,14 @@ urlpatterns = [
         views.FileVersionUploadView.as_view(),
         name="file-version-upload",
     ),
+    path(
+        "files/<uuid:file_id>/versions/<uuid:version_id>/download/",
+        views.FileVersionDownloadView.as_view(),
+        name="file-version-download",
+    ),
+    path(
+        "files/<uuid:file_id>/versions/<uuid:version_id>/restore/",
+        views.FileVersionRestoreView.as_view(),
+        name="file-version-restore",
+    ),
 ]

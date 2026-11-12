@@ -211,6 +211,8 @@ def upload_new_version(*, file: FileObject, uploaded_file, creator) -> FileObjec
                 object_key=old_key,
                 size=file.size,
                 checksum_sha256=file.checksum_sha256,
+                mime_type=file.mime_type,
+                quarantined=file.status == FileObject.Status.QUARANTINED,
                 created_by=creator,
             )
         file.object_key = new_key
@@ -328,4 +330,62 @@ def record_download(file: FileObject, *, actor) -> None:
         action="storage.file.download",
         resource_type="file_object",
         resource_id=file.id,
+    )
+
+
+def get_file_version(file: FileObject, version_id) -> FileVersion:
+    """One of this file's kept earlier contents; any other id (another file's version) is not found."""
+    version = FileVersion.objects.filter(file=file, pk=version_id).first()
+    if version is None:
+        raise Http404
+    return version
+
+
+def restore_version(file: FileObject, version: FileVersion, *, actor) -> FileObject:
+    """Makes an earlier content the file's current one. The content it replaces is kept as a version, so
+    nothing is lost and the step can be undone the same way. Quarantined content never comes back."""
+    if version.quarantined:
+        raise RestoreRefused(
+            "This earlier content was quarantined by malware scanning and cannot be brought back."
+        )
+    if file.status != FileObject.Status.ACTIVE:
+        raise RestoreRefused("Only a file in use can go back to an earlier content.")
+    with transaction.atomic():
+        locked = FileObject.objects.select_for_update().get(pk=file.pk)
+        chosen = FileVersion.objects.select_for_update().filter(pk=version.pk, file=locked).first()
+        if chosen is None or locked.status != FileObject.Status.ACTIVE:
+            raise RestoreRefused("This earlier content is no longer available.")
+        FileVersion.objects.create(
+            file=locked,
+            object_key=locked.object_key,
+            size=locked.size,
+            checksum_sha256=locked.checksum_sha256,
+            mime_type=locked.mime_type,
+            created_by=actor,
+        )
+        locked.object_key = chosen.object_key
+        locked.size = chosen.size
+        locked.checksum_sha256 = chosen.checksum_sha256
+        locked.mime_type = chosen.mime_type or locked.mime_type
+        locked.save(update_fields=["object_key", "size", "checksum_sha256", "mime_type", "updated_at"])
+        chosen.delete()
+    audit.record(
+        actor=actor,
+        organization_id=locked.organization_id,
+        action="storage.file.restore_version",
+        resource_type="file_object",
+        resource_id=locked.id,
+        context={"version_created_at": chosen.created_at.isoformat(), "size": locked.size},
+    )
+    return locked
+
+
+def record_version_download(file: FileObject, version: FileVersion, *, actor) -> None:
+    audit.record(
+        actor=actor,
+        organization_id=file.organization_id,
+        action="storage.file.download",
+        resource_type="file_object",
+        resource_id=file.id,
+        context={"version": str(version.id)},
     )

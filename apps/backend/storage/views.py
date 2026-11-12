@@ -26,10 +26,13 @@ from .services import (
     UploadTooLarge,
     create_folder,
     delete_file,
+    get_file_version,
     get_member_bucket,
     get_member_file,
     record_download,
+    record_version_download,
     restore_file,
+    restore_version,
     upload_file,
     upload_new_version,
 )
@@ -353,9 +356,56 @@ class FileDownloadView(APIView):
 
         record_download(file_obj, actor=request.user)
         body = get_client().get_stream(file_obj.object_key)
-        response = StreamingHttpResponse(
-            body.iter_chunks(1024 * 1024), content_type=file_obj.mime_type
-        )
+        response = StreamingHttpResponse(body.iter_chunks(1024 * 1024), content_type=file_obj.mime_type)
         response["Content-Disposition"] = safe_content_disposition(file_obj.display_filename)
         response["Content-Length"] = str(file_obj.size)
         return response
+
+
+class FileVersionDownloadView(APIView):
+    """Downloads one kept earlier content of a file (storage.read), streamed like the current one."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, file_id, version_id):
+        file_obj = get_member_file(request.user, file_id)
+        if not _require(request, "storage.read", file_obj.organization_id, bucket_id=file_obj.bucket_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, file_obj.bucket):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        version = get_file_version(file_obj, version_id)
+        if version.quarantined:
+            return Response(
+                {
+                    "detail": "This earlier content was quarantined by malware scanning "
+                    "and cannot be downloaded."
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        record_version_download(file_obj, version, actor=request.user)
+        body = get_client().get_stream(version.object_key)
+        response = StreamingHttpResponse(
+            body.iter_chunks(1024 * 1024), content_type=version.mime_type or "application/octet-stream"
+        )
+        response["Content-Disposition"] = safe_content_disposition(file_obj.display_filename)
+        response["Content-Length"] = str(version.size)
+        return response
+
+
+class FileVersionRestoreView(APIView):
+    """Makes an earlier content the current one (storage.write); the replaced content is kept."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, file_id, version_id):
+        file_obj = get_member_file(request.user, file_id)
+        if not _require(request, "storage.write", file_obj.organization_id, bucket_id=file_obj.bucket_id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        if _environment_scope_denied(request, file_obj.bucket):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        version = get_file_version(file_obj, version_id)
+        try:
+            file_obj = restore_version(file_obj, version, actor=request.user)
+        except RestoreRefused as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response(FileObjectSerializer(file_obj).data)

@@ -73,9 +73,7 @@ class FileObject(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     bucket = models.ForeignKey(Bucket, on_delete=models.CASCADE, related_name="files")
-    folder = models.ForeignKey(
-        Folder, on_delete=models.CASCADE, related_name="files", null=True, blank=True
-    )
+    folder = models.ForeignKey(Folder, on_delete=models.CASCADE, related_name="files", null=True, blank=True)
     # Server-generated, never derived from user input (prevents path
     # traversal / key collision — Section 8 of the master prompt).
     object_key = models.CharField(max_length=255, unique=True, editable=False)
@@ -121,6 +119,10 @@ class FileVersion(models.Model):
     object_key = models.CharField(max_length=255, unique=True, editable=False)
     size = models.BigIntegerField()
     checksum_sha256 = models.CharField(max_length=64)
+    mime_type = models.CharField(max_length=255, blank=True)
+    # This content was quarantined by malware scanning when it was current: it can never be downloaded or
+    # brought back (the same rule as a quarantined file).
+    quarantined = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="file_versions_created"

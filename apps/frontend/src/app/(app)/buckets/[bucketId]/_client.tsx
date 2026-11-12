@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { FileText, Folder as FolderIcon, FolderPlus } from "lucide-react";
+import { FileText, Folder as FolderIcon, FolderPlus, FolderUp } from "lucide-react";
+import { uploadFolder } from "./folderUpload";
 import { useProjectTrail } from "@/lib/project-trail";
 import {
   api,
@@ -66,6 +67,8 @@ export default function BucketDetailClient({
   const [folderModalOpen, setFolderModalOpen] = useState(false);
   const [versionsOf, setVersionsOf] = useState<FileObject | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const [folderProgress, setFolderProgress] = useState<string | null>(null);
   const confirm = useConfirm();
 
   const current = path.length ? path[path.length - 1] : null;
@@ -169,6 +172,34 @@ export default function BucketDetailClient({
     }
   }
 
+  async function handleFolderUpload(fileList: FileList | null) {
+    if (!fileList || fileList.length === 0) return;
+    setUploading(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await ensureCsrfCookie();
+      const result = await uploadFolder(bucketId, current, Array.from(fileList), (done, total) =>
+        setFolderProgress(`${done} of ${total}`),
+      );
+      await loadContents(current, "files", search || undefined);
+      if (result.failed.length === 0) {
+        setNotice(`${result.uploaded} ${result.uploaded === 1 ? "file" : "files"} uploaded with their folders.`);
+      } else {
+        const shown = result.failed.slice(0, 5).map((f) => `${f.path}: ${f.reason}`);
+        const more = result.failed.length > 5 ? ` and ${result.failed.length - 5} more` : "";
+        setError(`${result.uploaded} uploaded; ${result.failed.length} could not be: ${shown.join("; ")}${more}.`);
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Upload failed.");
+      setErrorDetail(err);
+    } finally {
+      setUploading(false);
+      setFolderProgress(null);
+      if (folderInputRef.current) folderInputRef.current.value = "";
+    }
+  }
+
   async function handleDelete(file: FileObject) {
     if (
       !(await confirm({
@@ -223,10 +254,28 @@ export default function BucketDetailClient({
               className="hidden"
               onChange={(e) => handleUpload(e.target.files)}
             />
+            <input
+              ref={(el) => {
+                folderInputRef.current = el;
+                // Not in React's types: lets the person choose a folder; its files keep their paths.
+                el?.setAttribute("webkitdirectory", "");
+              }}
+              type="file"
+              multiple
+              className="hidden"
+              data-testid="folder-input"
+              onChange={(e) => void handleFolderUpload(e.target.files)}
+            />
             {!inTrash && (
               <Button variant="secondary" onClick={() => setFolderModalOpen(true)}>
                 <FolderPlus aria-hidden="true" className="h-4 w-4" />
                 New folder
+              </Button>
+            )}
+            {!inTrash && (
+              <Button variant="secondary" onClick={() => folderInputRef.current?.click()} disabled={uploading}>
+                <FolderUp aria-hidden="true" className="h-4 w-4" />
+                {folderProgress ? `Uploading ${folderProgress}` : "Upload folder"}
               </Button>
             )}
             <Button onClick={() => fileInputRef.current?.click()} disabled={uploading || inTrash}>
