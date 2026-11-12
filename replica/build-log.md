@@ -556,3 +556,20 @@ pre-1.5.6 installation the same way), Pester test added. The second attempt took
 (exit 0): 13 containers up, `readyz` 200, the new migrations applied, licence still active (master). The shop
 network still names 192.168.8.63: back on the shop Wi-Fi, Control Center > Settings > Shop network > Update the
 address.
+
+## 2026-11-12 -- after 1.5.6: MySQL/SQL Server connectors, the phone wallet built and unit-tested
+
+**Connectors** (`7dc9aa4`, `4cba4a3`, ADR-0024): MySQL/MariaDB (PyMySQL 1.2.4, MIT) and SQL Server (pymssql 2.4.6,
+LGPL with FreeTDS) under the PostgreSQL connector's rules (SSRF guard and the checked address, SELECT only, a READ
+ONLY MySQL session, names checked against the live schema and quoted per engine, binary as size). SQL Server refuses
+verify-full (FreeTDS cannot check the certificate). Tested against real MySQL 8.4 and SQL Server 2022 Developer (the
+owner accepted Microsoft's licence for this test): the whole databases app passes (139), with both servers.
+Found: the drivers were pinned only in base.txt while the image installs prod.txt -- pinned in prod.txt and dev.txt,
+and the built image imports both. `pip-audit` on the two: none. Not yet in a kit (1.5.6 was built before).
+
+**Phone wallet** (`70680a3`): built in a throwaway Linux container (Temurin 17/21, Android SDK 36, build-tools 35/36;
+the owner accepted the Android SDK licence for this build): `assembleDebug` and `testDebugUnitTest` pass, 16 tests,
+0 failures (ShopTrustTest 4/4 for the fix); 7 live tests skipped (they target the standalone pilot server, not Pay
+inside IntraForge). Debug APK `kits/IFPayWallet-debug-70680a3.apk` (SHA-256 `3409f801...0d0e`) for a real phone test.
+Found: `gradlew` became CRLF in a Windows checkout and broke ./gradlew in Linux; `.gitattributes` keeps it LF (Pay
+branch `fix/android-gradlew-lf`, `b3335b5`).
