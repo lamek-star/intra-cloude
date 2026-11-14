@@ -162,6 +162,11 @@
     if (firstAvailable) firstAvailable.checked = true;
   }
 
+  function showSetup(problems) {
+    $("setup-notice").hidden = false;
+    $("setup-problems").replaceChildren(...(problems || []).map((p) => el("li", { text: p })));
+  }
+
   async function loadInfo() {
     try {
       info = await api("GET", "info");
@@ -170,9 +175,7 @@
       fillPackages(info.packages, info.cafe.currency);
     } catch (err) {
       if (err.data && err.data.error === "setup") {
-        $("setup-notice").hidden = false;
-        const ul = $("setup-problems");
-        ul.replaceChildren(...(err.data.problems || []).map((p) => el("li", { text: p })));
+        showSetup(err.data.problems);
         $("packages-list").replaceChildren(el("p", { class: "muted", text: "Prices will appear here soon." }));
       } else {
         $("packages-list").replaceChildren(el("p", { class: "muted", text: "Prices could not be loaded. Pull down to refresh." }));
@@ -294,6 +297,7 @@
       error.textContent = err.message;
       error.hidden = false;
       if (err.data && err.data.error === "sold_out") loadInfo();
+      if (err.data && err.data.error === "setup") showSetup(err.data.problems);
     } finally {
       button.disabled = false;
     }

@@ -138,7 +138,7 @@ again. The page remembers an unfinished payment, so switching to the wallet and 
 | `tools/make_zip.py` | Builds `dist/internet-cafe-site.zip` (code only; tests and tools stay out) |
 
 ```
-npm test                     # 20 tests: reserving, paying, expiry, sold out, concurrent buyers, the sweep, HTTP security
+npm test                     # 21 tests: reserving, paying, expiry, sold out, concurrent buyers, the sweep, HTTP security
 python tools/make_zip.py     # dist/internet-cafe-site.zip
 ```
 

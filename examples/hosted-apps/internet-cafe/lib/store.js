@@ -55,8 +55,13 @@ function asList(data) {
   return [];
 }
 
-function createStore(client, { cacheMs = 30000 } = {}) {
+const WRITE_PROBLEM =
+  'The website may read the café database but not change it. Developer > Applications > this website > Resource permissions > Grant permission: "database.write", resource type "databases.tenant_database", the database\'s ID.';
+const WRITE_PROBLEM_MS = 5 * 60 * 1000;
+
+function createStore(client, { cacheMs = 30000, now = Date.now } = {}) {
   let found = null; // { databaseId, databaseName, tables: { name: id }, problems: [] }
+  let writeDeniedAt = 0;
   let cache = { at: 0, settings: null, packages: null };
 
   async function discover() {
@@ -120,13 +125,28 @@ function createStore(client, { cacheMs = 30000 } = {}) {
     const query = new URLSearchParams(params).toString();
     return client.get(`tables/${tables[table]}/rows/${query ? `?${query}` : ""}`);
   }
+  // IntraForge refusing a write (403) means the website was given read but not write on the database: a set-up
+  // problem the owner fixes in one place, so it is reported like the others (and on /api/setup for a few minutes).
+  async function write(call) {
+    try {
+      const result = await call();
+      writeDeniedAt = 0;
+      return result;
+    } catch (err) {
+      if (!(err && err.status === 403)) throw err;
+      writeDeniedAt = now();
+      const setupError = new Error("IntraForge refused a change to the café database (no write permission).");
+      setupError.setup = [WRITE_PROBLEM];
+      throw setupError;
+    }
+  }
   async function insert(table, values) {
     const { tables } = await ensure();
-    return client.post(`tables/${tables[table]}/rows/`, values);
+    return write(() => client.post(`tables/${tables[table]}/rows/`, values));
   }
   async function update(table, rowId, values) {
     const { tables } = await ensure();
-    return client.patch(`tables/${tables[table]}/rows/${rowId}/`, values);
+    return write(() => client.patch(`tables/${tables[table]}/rows/${rowId}/`, values));
   }
 
   async function load(force = false) {
@@ -161,7 +181,9 @@ function createStore(client, { cacheMs = 30000 } = {}) {
     } catch (err) {
       return { ready: false, problems: [`IntraForge refused: ${err.message}`] };
     }
-    return { ready: found.problems.length === 0, database: found.databaseName, problems: found.problems };
+    const problems = [...found.problems];
+    if (writeDeniedAt && now() - writeDeniedAt < WRITE_PROBLEM_MS) problems.push(WRITE_PROBLEM);
+    return { ready: problems.length === 0, database: found.databaseName, problems };
   }
 
   return { rows, insert, update, load, availableCount, setupStatus, invalidate: () => (cache.at = 0) };

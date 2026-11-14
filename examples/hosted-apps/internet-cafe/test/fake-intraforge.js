@@ -29,7 +29,8 @@ function createFake({ tables = TABLES, unique = UNIQUE } = {}) {
   }
   const payments = new Map();
   const calls = [];
-  const fake = { calls, payments, data, meta, failPayWith: null, delayMs: 0 };
+  // denyWrites: IntraForge's answer when the website has database.read but not database.write.
+  const fake = { calls, payments, data, meta, failPayWith: null, delayMs: 0, denyWrites: false };
 
   function tableById(id) {
     return Object.values(meta).find((t) => t.id === id);
@@ -62,6 +63,9 @@ function createFake({ tables = TABLES, unique = UNIQUE } = {}) {
     if (fake.delayMs) await new Promise((r) => setTimeout(r, fake.delayMs));
     const url = new URL(path, "http://x/");
     const p = url.pathname.replace(/^\//, "");
+    if (fake.denyWrites && method !== "GET" && p.startsWith("tables/")) {
+      throw new IntraForgeError(403, "You do not have permission to perform this action.", {});
+    }
     if (method === "GET" && p === "organizations/") return { results: [{ id: "org-1", name: "Cafe" }] };
     if (method === "GET" && p === "organizations/org-1/tenant-databases/") return [db];
     if (method === "GET" && p === `tenant-databases/${db.id}/tables/`) return Object.values(meta);

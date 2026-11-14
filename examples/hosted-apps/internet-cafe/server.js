@@ -177,6 +177,7 @@ function createApp({ store, orders }) {
     } catch (err) {
       if (err instanceof UserError) return sendJson(res, err.status, { error: err.code, message: err.message });
       if (err && err.setup) {
+        if (req.method !== "GET") log(`setup: ${err.message}`);
         return sendJson(res, 503, { error: "setup", message: "The website is not set up yet.", problems: err.setup });
       }
       log(`error: ${err && err.message ? err.message : err}`);

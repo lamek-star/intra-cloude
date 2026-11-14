@@ -118,6 +118,31 @@ test("lookups are rate limited per address", async (t) => {
   assert.equal(other.status, 404);
 });
 
+test("read but no write permission: buying says exactly which permission is missing", async (t) => {
+  const { fake, pkg } = seeded();
+  fake.denyWrites = true;
+  const { server, base } = await start(fake);
+  t.after(() => server.close());
+  const buy = () =>
+    fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId: pkg.id, phone: "0912345678" }),
+    });
+  const res = await buy();
+  assert.equal(res.status, 503);
+  const body = await res.json();
+  assert.equal(body.error, "setup");
+  assert.ok(body.problems[0].includes("database.write"));
+  const setup = await (await fetch(`${base}/api/setup`)).json();
+  assert.equal(setup.ready, false);
+  assert.ok(setup.problems.some((p) => p.includes("database.write")));
+  // Once the owner grants it, the next sale goes through and the problem is gone.
+  fake.denyWrites = false;
+  assert.equal((await buy()).status, 201);
+  assert.deepEqual((await (await fetch(`${base}/api/setup`)).json()).problems, []);
+});
+
 test("not set up yet: a plain setup answer instead of an error", async (t) => {
   const fake = createFake({ tables: { cafe_settings: { key: ["varchar"], value: ["text"] } }, unique: {} });
   const { server, base } = await start(fake);
