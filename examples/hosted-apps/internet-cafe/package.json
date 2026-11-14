@@ -1,0 +1,12 @@
+{
+  "name": "internet-cafe-site",
+  "version": "1.0.0",
+  "private": true,
+  "description": "An internet café website for IntraForge's hosted apps: buy Wi-Fi time with IF Pay.",
+  "main": "server.js",
+  "scripts": {
+    "test": "node --test test/orders.test.js test/server.test.js",
+    "zip": "python tools/make_zip.py"
+  },
+  "engines": { "node": ">=20" }
+}

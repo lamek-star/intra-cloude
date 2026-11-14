@@ -1,4 +1,4 @@
-# Lesson 8 — Practice and help
+# Lesson 9 — Practice and help
 
 ## A training day plan
 

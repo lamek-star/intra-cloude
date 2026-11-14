@@ -1,6 +1,6 @@
-# Lesson 8 — Practice and help — Checklists
+# Lesson 9 — Practice and help — Checklists
 
-Topic for: shop owners, managers and staff. Source: IntraForge Training Guide, Lesson 8 — Practice and help.
+Topic for: shop owners, managers and staff. Source: IntraForge Training Guide, Lesson 9 — Practice and help.
 
 **Opening the shop (owner):** the Control Center is green · the dashboard shows no health alert · last night's backup
 is "Done" with "Restore tested".

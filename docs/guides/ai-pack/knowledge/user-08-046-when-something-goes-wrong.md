@@ -1,6 +1,6 @@
-# Lesson 8 — Practice and help — When something goes wrong
+# Lesson 9 — Practice and help — When something goes wrong
 
-Topic for: shop owners, managers and staff. Source: IntraForge Training Guide, Lesson 8 — Practice and help.
+Topic for: shop owners, managers and staff. Source: IntraForge Training Guide, Lesson 9 — Practice and help.
 
 | What you see | What to do |
 |---|---|

@@ -457,3 +457,63 @@ Screenshot: `screenshots/web/85-pharmacy-dashboard.png` — The Pharmacy dashboa
 Screenshot: `screenshots/web/86-pharmacy-medicines.png` — Pharmacy app: the medicines list
 
 ![Pharmacy app: the medicines list](http://localhost:8765/screenshots/web/86-pharmacy-medicines.png)
+
+## The café website on a phone
+
+Screenshot: `screenshots/web/90-cafe-home.png` — The café website on a phone
+
+![The café website on a phone](http://localhost:8765/screenshots/web/90-cafe-home.png)
+
+## Internet café website: the Wi-Fi prices (a package with no codes left shows Sold out)
+
+Screenshot: `screenshots/web/91-cafe-prices.png` — Internet café website: the Wi-Fi prices (a package with no codes left shows Sold out)
+
+![Internet café website: the Wi-Fi prices (a package with no codes left shows Sold out)](http://localhost:8765/screenshots/web/91-cafe-prices.png)
+
+## Choosing a package
+
+Screenshot: `screenshots/web/92-cafe-choose.png` — Choosing a package
+
+![Choosing a package](http://localhost:8765/screenshots/web/92-cafe-choose.png)
+
+## Paying
+
+Screenshot: `screenshots/web/93-cafe-pay.png` — Paying
+
+![Paying](http://localhost:8765/screenshots/web/93-cafe-pay.png)
+
+## Confirming in the wallet
+
+Screenshot: `screenshots/web/94-cafe-wallet-confirm.png` — Confirming in the wallet
+
+![Confirming in the wallet](http://localhost:8765/screenshots/web/94-cafe-wallet-confirm.png)
+
+## The Wi-Fi code
+
+Screenshot: `screenshots/web/95-cafe-paid-code.png` — The Wi-Fi code
+
+![The Wi-Fi code](http://localhost:8765/screenshots/web/95-cafe-paid-code.png)
+
+## Finding a code again
+
+Screenshot: `screenshots/web/96-cafe-find-code.png` — Finding a code again
+
+![Finding a code again](http://localhost:8765/screenshots/web/96-cafe-find-code.png)
+
+## How to connect
+
+Screenshot: `screenshots/web/97-cafe-how-to-connect.png` — How to connect
+
+![How to connect](http://localhost:8765/screenshots/web/97-cafe-how-to-connect.png)
+
+## An expired payment
+
+Screenshot: `screenshots/web/98-cafe-expired.png` — An expired payment
+
+![An expired payment](http://localhost:8765/screenshots/web/98-cafe-expired.png)
+
+## Internet café website on a computer screen
+
+Screenshot: `screenshots/web/99-cafe-desktop.png` — Internet café website on a computer screen
+
+![Internet café website on a computer screen](http://localhost:8765/screenshots/web/99-cafe-desktop.png)

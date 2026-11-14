@@ -42,6 +42,8 @@ EXTRA_CAPTIONS = {
     "web/81-spareparts-catalogue.png": "Spare Parts shop app: the reference catalogue",
     "web/82-spareparts-admin.png": "Spare Parts shop app: administration and settings",
     "web/86-pharmacy-medicines.png": "Pharmacy app: the medicines list",
+    "web/91-cafe-prices.png": "Internet café website: the Wi-Fi prices (a package with no codes left shows Sold out)",
+    "web/99-cafe-desktop.png": "Internet café website on a computer screen",
 }
 
 IMAGE = re.compile(r"^!\[([^\]]*)\]\((?:\.\./)?screenshots/([^)]+)\)\s*$")

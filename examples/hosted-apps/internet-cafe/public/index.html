@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Internet Café</title>
+  <meta name="description" content="Wi-Fi time, PCs and printing. Buy Wi-Fi time with IF Pay.">
+  <meta name="theme-color" content="#0f2a2e">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <a class="brand" href="#top" aria-label="Home">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><use href="#i-logo"/></svg>
+        <span class="brand-name" data-cafe="cafe_name">Internet Café</span>
+      </a>
+      <nav class="nav" aria-label="Sections">
+        <a href="#prices">Prices</a>
+        <a href="#mycode">My code</a>
+        <a href="#contact">Contact</a>
+        <a class="btn btn-sm btn-accent" href="#buy">Buy time</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="wrap hero-inner">
+        <div class="hero-text">
+          <p class="eyebrow"><svg class="i" aria-hidden="true"><use href="#i-wifi"/></svg> Wi-Fi · PCs · Printing</p>
+          <h1 data-cafe="cafe_name">Internet Café</h1>
+          <p class="lead" data-cafe="tagline">Fast Wi-Fi, comfortable PCs and printing — pay with IF Pay.</p>
+          <div class="hero-actions">
+            <a class="btn btn-accent btn-lg" href="#buy"><svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg> Buy Wi-Fi time</a>
+            <a class="btn btn-ghost btn-lg" href="#mycode">I already paid</a>
+          </div>
+          <ul class="hero-facts">
+            <li><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg> <span data-cafe="hours">Every day 8:00 – 22:00</span></li>
+            <li><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg> Pay in your IF Pay wallet</li>
+          </ul>
+        </div>
+        <div class="hero-card" aria-hidden="true">
+          <div class="ticket">
+            <div class="ticket-top">
+              <svg class="i i-lg"><use href="#i-wifi"/></svg>
+              <span>Wi-Fi voucher</span>
+            </div>
+            <div class="ticket-code">YOUR-CODE</div>
+            <div class="ticket-meta"><span>1 hour</span><span>Paid with IF Pay</span></div>
+          </div>
+          <div class="signal"><span></span><span></span><span></span><span></span></div>
+        </div>
+      </div>
+    </section>
+
+    <div id="setup-notice" class="wrap notice notice-warn" hidden role="status">
+      <strong>This website is still being set up.</strong>
+      <span>Buying online opens as soon as the café finishes it. You can still buy time at the counter.</span>
+      <ul id="setup-problems" class="setup-problems"></ul>
+    </div>
+
+    <section class="section" id="services" aria-labelledby="services-h">
+      <div class="wrap">
+        <h2 id="services-h">What we offer</h2>
+        <div class="grid services" id="services-list"></div>
+      </div>
+    </section>
+
+    <section class="section section-alt" id="prices" aria-labelledby="prices-h">
+      <div class="wrap">
+        <h2 id="prices-h">Wi-Fi prices</h2>
+        <p class="muted">Prices in <span data-cafe="currency">IF Credits</span>. Pay on your phone with IF Pay and get your code at once.</p>
+        <div class="grid packages" id="packages-list" aria-live="polite">
+          <div class="card skeleton"></div><div class="card skeleton"></div><div class="card skeleton"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="buy" aria-labelledby="buy-h">
+      <div class="wrap narrow">
+        <h2 id="buy-h">Buy Wi-Fi time</h2>
+        <ol class="steps" aria-label="Steps">
+          <li data-step="choose" class="active">Choose</li>
+          <li data-step="pay">Pay</li>
+          <li data-step="done">Get online</li>
+        </ol>
+
+        <div class="panel" id="step-choose">
+          <form id="buy-form" novalidate>
+            <fieldset>
+              <legend>1. Choose your time</legend>
+              <div class="choices" id="choice-list"></div>
+            </fieldset>
+            <label for="phone">2. Your phone number</label>
+            <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="e.g. 0912 345 678" required>
+            <p class="hint">We use it only so you can find your code again.</p>
+            <div id="buy-error" class="notice notice-bad" hidden role="alert"></div>
+            <button class="btn btn-accent btn-lg btn-block" id="buy-btn" type="submit">
+              <svg class="i" aria-hidden="true"><use href="#i-wallet"/></svg> Pay with IF Pay
+            </button>
+          </form>
+        </div>
+
+        <div class="panel" id="step-pay" hidden>
+          <div class="pay-head">
+            <div>
+              <p class="muted small">Order <strong id="pay-number"></strong></p>
+              <p class="pay-amount" id="pay-amount"></p>
+              <p class="muted" id="pay-package"></p>
+            </div>
+            <div class="countdown" id="pay-countdown" aria-live="off"></div>
+          </div>
+          <div class="pay-body">
+            <figure class="qr">
+              <img id="pay-qr" alt="IF Pay QR code for this payment" width="220" height="220">
+              <figcaption>Scan with the IF Credits Wallet app</figcaption>
+            </figure>
+            <div class="pay-phone">
+              <p><strong>Paying on this phone?</strong> Copy the payment code, open your wallet and paste it.</p>
+              <div class="code-row">
+                <input id="pay-code" readonly aria-label="Payment code">
+                <button class="btn btn-sm" type="button" id="copy-pay-code">Copy</button>
+              </div>
+              <a class="btn btn-ghost btn-block" id="open-wallet" target="_blank" rel="noopener">Open my IF Pay wallet</a>
+            </div>
+          </div>
+          <p class="waiting" id="pay-status" role="status"><span class="dot"></span> Waiting for your payment…</p>
+          <button class="btn btn-link" type="button" id="pay-cancel">Choose a different package</button>
+        </div>
+
+        <div class="panel panel-success" id="step-done" hidden>
+          <div class="success-badge"><svg class="i i-lg" aria-hidden="true"><use href="#i-check"/></svg></div>
+          <h3>Paid — here is your Wi-Fi code</h3>
+          <p class="muted" id="done-package"></p>
+          <div class="voucher" id="done-voucher" aria-label="Your Wi-Fi code"></div>
+          <button class="btn btn-sm" type="button" id="copy-voucher">Copy code</button>
+          <p class="muted small">Order <strong id="done-number"></strong> · Receipt <strong id="done-receipt"></strong></p>
+          <p class="hint">Keep the order number: with your phone number it finds this code again under <a href="#mycode">My code</a>.</p>
+          <div id="done-notice" class="notice notice-warn" hidden></div>
+          <a class="btn btn-accent btn-block" href="#connect">How to connect</a>
+          <button class="btn btn-link" type="button" id="buy-again">Buy more time</button>
+        </div>
+
+        <div class="panel" id="step-ended" hidden>
+          <h3 id="ended-title">This payment expired</h3>
+          <p class="muted" id="ended-text">Nothing was charged. You can start again.</p>
+          <button class="btn btn-accent" type="button" id="start-again">Start again</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-alt" id="mycode" aria-labelledby="mycode-h">
+      <div class="wrap narrow">
+        <h2 id="mycode-h">Find my code</h2>
+        <p class="muted">Paid already? Enter your order number and phone number.</p>
+        <form id="lookup-form" class="panel" novalidate>
+          <label for="lookup-number">Order number</label>
+          <input id="lookup-number" autocomplete="off" autocapitalize="characters" placeholder="IC-XXXX-XXXX" required>
+          <label for="lookup-phone">Phone number</label>
+          <input id="lookup-phone" type="tel" inputmode="tel" autocomplete="tel" required>
+          <div id="lookup-error" class="notice notice-bad" hidden role="alert"></div>
+          <button class="btn btn-accent btn-block" type="submit">Show my code</button>
+          <div id="lookup-result" class="lookup-result" hidden aria-live="polite"></div>
+        </form>
+      </div>
+    </section>
+
+    <section class="section" id="connect" aria-labelledby="connect-h">
+      <div class="wrap">
+        <h2 id="connect-h">How to connect</h2>
+        <ol class="howto">
+          <li><svg class="i" aria-hidden="true"><use href="#i-wifi"/></svg><div><strong>Join the Wi-Fi</strong><span>Choose <b data-cafe="wifi_name">Cafe-WiFi</b> in your phone's Wi-Fi list.</span></div></li>
+          <li><svg class="i" aria-hidden="true"><use href="#i-login"/></svg><div><strong>The login page opens</strong><span>If it does not, open any website in your browser.</span></div></li>
+          <li><svg class="i" aria-hidden="true"><use href="#i-key"/></svg><div><strong>Type your code</strong><span>Enter the Wi-Fi code from this website and press Connect.</span></div></li>
+          <li><svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg><div><strong>You are online</strong><span>Your time starts. Buy more here whenever you need it.</span></div></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="section section-alt" id="contact" aria-labelledby="contact-h">
+      <div class="wrap contact">
+        <div>
+          <h2 id="contact-h">About us</h2>
+          <p data-cafe="about"></p>
+        </div>
+        <div class="contact-card">
+          <h3>Visit or call</h3>
+          <ul class="contact-list">
+            <li id="c-address" hidden><svg class="i" aria-hidden="true"><use href="#i-pin"/></svg><span data-cafe="address"></span></li>
+            <li><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg><span data-cafe="hours"></span></li>
+            <li id="c-phone" hidden><svg class="i" aria-hidden="true"><use href="#i-phone"/></svg><a id="c-phone-link"></a></li>
+            <li id="c-whatsapp" hidden><svg class="i" aria-hidden="true"><use href="#i-chat"/></svg><a id="c-whatsapp-link" target="_blank" rel="noopener">WhatsApp</a></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <span>© <span id="year"></span> <span data-cafe="cafe_name">Internet Café</span></span>
+      <span class="muted">Payments by IntraForge Pay</span>
+    </div>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <svg class="sprite" width="0" height="0" aria-hidden="true">
+    <defs>
+      <symbol id="i-logo" viewBox="0 0 32 32"><rect x="1" y="1" width="30" height="30" rx="9" fill="currentColor"/><path d="M8 13.5a11.5 11.5 0 0 1 16 0M11 17a7 7 0 0 1 10 0M14 20.5a2.8 2.8 0 0 1 4 0" fill="none" stroke="#0f2a2e" stroke-width="2.4" stroke-linecap="round"/><circle cx="16" cy="24" r="1.7" fill="#0f2a2e"/></symbol>
+      <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M2 9a15 15 0 0 1 20 0M12 20h.01" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v6c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h14a2 2 0 0 1 2 2v3h-4a2 2 0 0 0 0 4h4v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 5 5 9-10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-login" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="m11 12 9-9M17 6l3 3M14 9l2 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="9" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+      <symbol id="i-phone" viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-12.3 7.5L3 21l2-5.5A8.5 8.5 0 1 1 21 11.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+      <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 21h8M12 17v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-printer" viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+      <symbol id="i-coffee" viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 0 1 0 8h-1M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4zM6 2v2M10 2v2M14 2v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 2 3 6.5 7 .8-5.2 4.8 1.5 7L12 17.6 5.7 21l1.5-7L2 9.3l7-.8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+    </defs>
+  </svg>
+</body>
+</html>

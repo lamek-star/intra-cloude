@@ -109,6 +109,10 @@ storage, settings and audit.
 - **Server apps**: the `runner` container starts a hosted Node.js app in its own locked container (non-root,
   read-only, no capabilities, memory/CPU limits, no internet). The backend never talks to Docker; it calls the runner's
   fixed operations with a token (`sites/runner.py`).
+- **A worked example:** `examples/hosted-apps/internet-cafe/` is a complete server app — an internet café website that
+  keeps its data in an IntraForge database (read/write grant only), takes payments through the Pay bridge
+  (`POST /api/v1/pay/payment-requests/` with its `IF_API_TOKEN`) and has its own tests. Copy its `lib/intraforge.js`
+  and `lib/store.js` patterns for a new hosted app.
 - **Internet access** (`sites/internet.py`): off by default; the Super Administrator can publish a chosen site through a
   Cloudflare Tunnel. Only hosted sites are ever published — never IntraForge, its API or a service app.
 

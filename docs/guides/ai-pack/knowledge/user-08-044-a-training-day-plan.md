@@ -1,6 +1,6 @@
-# Lesson 8 — Practice and help — A training day plan
+# Lesson 9 — Practice and help — A training day plan
 
-Topic for: shop owners, managers and staff. Source: IntraForge Training Guide, Lesson 8 — Practice and help.
+Topic for: shop owners, managers and staff. Source: IntraForge Training Guide, Lesson 9 — Practice and help.
 
 | Time | Activity |
 |---|---|
