@@ -1,0 +1,3 @@
+# Intermediate HTML (absolute file:// image paths of the machine that built it); the PDFs are the deliverables.
+out/*.html
+screenshots/web/capture-results.txt
