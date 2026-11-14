@@ -324,19 +324,22 @@ function Get-ShopProject {
     return 'intraforge-shop'
 }
 function Get-HostedAppContainers([switch]$Running) {
-    $all = if ($Running) { @() } else { @('-a') }
+    # Assigned, not "$all = if (...) { @('-a') }": an if-expression unrolls the one-element array into the string '-a',
+    # which splats as the characters '-' and 'a' ("'docker ps' accepts no arguments") -- every list came back empty.
+    $all = @()
+    if (-not $Running) { $all = @('-a') }
     $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
     $names = @(& docker ps @all --filter "label=intraforge.project=$(Get-ShopProject)" --format '{{.Names}}' 2>$null | Where-Object { $_ })
     $ErrorActionPreference = $previous
     return $names
 }
 # Is this container one of this installation's hosted apps (or its tunnel connector)?
+# Asked through the label filter, never "docker inspect --format '{{index .Config.Labels "..."}}'": Windows PowerShell 5.1
+# drops the inner double quotes when it passes an argument to a native program, so that template failed to parse
+# ('function "intraforge" not defined'), every container looked foreign, and Start-HostedApps brought none back.
 function Test-HostedAppContainer([string]$Name) {
     if ($Name -notmatch '^[a-zA-Z0-9][a-zA-Z0-9_.-]*$') { return $false }
-    $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    $label = (& docker inspect --format '{{index .Config.Labels "intraforge.project"}}' $Name 2>$null | Select-Object -First 1)
-    $ErrorActionPreference = $previous
-    return ("$label".Trim() -eq (Get-ShopProject))
+    return ((Get-HostedAppContainers) -ccontains $Name)
 }
 function Get-HostedAppsStateFile { return (Join-Path (Get-DataDir) 'logs\hosted-apps-running.txt') }
 
@@ -355,8 +358,10 @@ function Start-HostedApps {
     if (-not (Test-Path $file)) { return }
     # Every container Stop-HostedApps stopped -- the apps and the tunnel connector, whose restart policy does not bring it
     # back after an explicit stop -- provided it still belongs to this installation.
-    foreach ($name in (Get-Content $file | Where-Object { Test-HostedAppContainer $_ })) {
-        if (-not (Test-Quiet { docker start $name })) { Write-Warning "Could not start the hosted app $name." }
+    foreach ($name in (Get-Content $file | Where-Object { $_ })) {
+        if (-not (Test-HostedAppContainer $name)) { Write-ShopLog "hosted app not started: $name is not one of this installation's apps"; continue }
+        if (Test-Quiet { docker start $name }) { Write-ShopLog "hosted app started: $name" }
+        else { Write-Warning "Could not start the hosted app $name."; Write-ShopLog "hosted app could not be started: $name" }
     }
     Remove-Item -Force $file
 }
