@@ -132,6 +132,16 @@ Every tab is real; none is a placeholder any more.
 API Logs and Usage accept browser sessions only and need membership plus `application.read`: an application's key
 cannot read every application's traffic.
 
+**Daily request limits** (`applications/quotas.py`): `Application.daily_request_limit` (empty = no limit) is set with
+`PATCH applications/<id>/` by a person holding `application.credentials.manage` — never by an application key, which
+could lift its own limit (audit `application.limit.update`). It is enforced in `ServiceAccountAuthentication`, so it
+covers every endpoint a key can reach, also those with their own `throttle_classes` (uploads, imports) that DRF's
+default throttles never see. One shared counter per application per day lives in the cache (Valkey, shared by all
+gunicorn workers); a day is `settings.TIME_ZONE` (UTC). Over the limit: 429 with `Retry-After` until midnight, and the
+refused request is still written to `ApiRequestLog`. If the cache is down the request is allowed and a warning logged:
+the limit protects resources, it is not an access rule. The application page shows "N of LIMIT today"; Usage has a
+"Today / daily limit" column. People's own sessions are never counted.
+
 ## 5.5 Licensing (ADR-0023)
 
 A new installation has a 30-day trial. Then it needs a **serial number** and an **activation code** made for that PC's
