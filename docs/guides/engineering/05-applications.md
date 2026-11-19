@@ -116,6 +116,22 @@ storage, settings and audit.
 - **Internet access** (`sites/internet.py`): off by default; the Super Administrator can publish a chosen site through a
   Cloudflare Tunnel. Only hosted sites are ever published — never IntraForge, its API or a service app.
 
+## 5.4a The Developer section (Organization > Developer)
+
+Every tab is real; none is a placeholder any more.
+
+| Tab | Backed by |
+|---|---|
+| Overview, Applications, Environments, Webhooks, SDKs, Docs | `applications/`, `environments/` (unchanged) |
+| Database, Storage | the organization-wide lists (`organizations/<id>/tenant-databases/`, `.../buckets/`), the same pages as Organization > Databases / Storage, shown with the Developer tab bar |
+| API Keys | each application's own credentials endpoint, combined in the browser (same permission check per application); flags active keys unused for 30+ days; revoke with a confirmation |
+| API Logs | `GET organizations/<id>/api-requests/` (`?application=`, `?errors=1`, `?method=`, limit/offset) over `ApiRequestLog` (`applications/activity.py`) |
+| Usage | `GET organizations/<id>/api-usage/?days=1..30` (never more than `API_REQUEST_LOG_DAYS`): per application requests, failures, average/slowest time, last request; per day |
+| Auth | the platform OAuth/OpenID provider's client admin (`oauth-clients/`, Super Administrator only, whole installation); a new client **asks each person for consent unless the Super Administrator unticks it** for IntraForge's own apps |
+
+API Logs and Usage accept browser sessions only and need membership plus `application.read`: an application's key
+cannot read every application's traffic.
+
 ## 5.5 Licensing (ADR-0023)
 
 A new installation has a 30-day trial. Then it needs a **serial number** and an **activation code** made for that PC's

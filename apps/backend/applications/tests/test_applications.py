@@ -319,3 +319,66 @@ class RequestLogTests(ApplicationTestBase):
             at=timezone.now() - timedelta(days=40),
         )
         self.assertEqual(prune_api_request_log(), 1)
+
+
+class OrganizationActivityTests(ApplicationTestBase):
+    """Developer > API Logs and Usage: every application's requests in one organization."""
+
+    def setUp(self):
+        super().setUp()
+        from django.utils import timezone
+
+        from applications.models import ApiRequestLog
+
+        self.bot = self.client.post(reverse("application-list-create", args=[self.org_id]), {"name": "Bot"}).data["id"]
+        self.web = self.client.post(reverse("application-list-create", args=[self.org_id]), {"name": "Web"}).data["id"]
+        self.idle = self.client.post(reverse("application-list-create", args=[self.org_id]), {"name": "Idle"}).data["id"]
+        now = timezone.now()
+        for app, method, code, ms in [
+            (self.bot, "GET", 200, 10),
+            (self.bot, "POST", 403, 30),
+            (self.web, "GET", 200, 20),
+        ]:
+            ApiRequestLog.objects.create(application_id=app, method=method, path="/api/v1/x/", status=code, duration_ms=ms, at=now)
+        # Another organization's traffic must never appear.
+        other = self.client.post(reverse("organization-list-create"), {"name": "Other"}).data["id"]
+        stranger = self.client.post(reverse("application-list-create", args=[other]), {"name": "Stranger"}).data["id"]
+        ApiRequestLog.objects.create(application_id=stranger, method="GET", path="/s/", status=200, duration_ms=1, at=now)
+        self.log = reverse("organization-request-log", args=[self.org_id])
+        self.usage = reverse("organization-api-usage", args=[self.org_id])
+
+    def test_the_log_lists_every_application_of_this_organization_only_with_filters(self):
+        data = self.client.get(self.log).data
+        self.assertEqual(data["count"], 3)
+        self.assertEqual({r["application_name"] for r in data["results"]}, {"Bot", "Web"})
+        self.assertEqual(self.client.get(self.log, {"errors": "1"}).data["count"], 1)
+        self.assertEqual(self.client.get(self.log, {"application": self.web}).data["count"], 1)
+        self.assertEqual(self.client.get(self.log, {"method": "post"}).data["count"], 1)
+        self.assertEqual(self.client.get(self.log, {"application": "nope"}).status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_usage_counts_requests_errors_and_lists_idle_applications(self):
+        data = self.client.get(self.usage, {"days": "999"}).data
+        self.assertLessEqual(data["days"], 30)
+        self.assertEqual(data["totals"], {"requests": 3, "errors": 1})
+        apps = {a["name"]: a for a in data["applications"]}
+        self.assertEqual(set(apps), {"Bot", "Web", "Idle"})
+        self.assertEqual((apps["Bot"]["requests"], apps["Bot"]["errors"], apps["Bot"]["avg_ms"], apps["Bot"]["max_ms"]), (2, 1, 20, 30))
+        self.assertEqual((apps["Idle"]["requests"], apps["Idle"]["last_at"]), (0, None))
+        self.assertEqual(sum(d["requests"] for d in data["daily"]), 3)
+
+    def test_needs_membership_application_read_and_a_person_not_a_key(self):
+        token = self.client.post(reverse("application-credential-list-create", args=[self.bot])).data["secret"]
+        for url in (self.log, self.usage):
+            self.assertIn(
+                self.client_class().get(url, HTTP_AUTHORIZATION=f"Bearer {token}").status_code,
+                (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN),
+            )
+        member = User.objects.create_user(email="activity-member@example.com", password="x")
+        Membership.objects.create(user=member, organization_id=self.org_id, status=Membership.Status.ACTIVE)
+        self.client.force_login(member)
+        for url in (self.log, self.usage):
+            self.assertEqual(self.client.get(url).status_code, status.HTTP_403_FORBIDDEN)
+        outsider = User.objects.create_user(email="activity-outsider@example.com", password="x")
+        self.client.force_login(outsider)
+        for url in (self.log, self.usage):
+            self.assertEqual(self.client.get(url).status_code, status.HTTP_404_NOT_FOUND)

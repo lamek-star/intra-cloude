@@ -6,6 +6,7 @@ import { Archive, Files, HardDrive, History } from "lucide-react";
 import { api, ApiError, type Organization } from "@/lib/api";
 import { EmptyState, ErrorBanner, PageHeader, PageLoading, StatCard, Table, Td, Th, THead, TRow } from "@/components/ui";
 import { formatBytes } from "../../../buckets/[bucketId]/format";
+import { DeveloperNav } from "@/components/DeveloperNav";
 
 export type OrgBucket = {
   id: string;
@@ -24,7 +25,8 @@ export type OrgBucket = {
 };
 
 /** Every bucket in the organization the person may read, and what the organization's storage holds. */
-export default function OrgStorageClient({ orgId }: { orgId: string }) {
+/** `inDeveloper`: shown as the Developer section's Storage tab (its breadcrumb and tab bar) instead of on its own. */
+export default function OrgStorageClient({ orgId, inDeveloper = false }: { orgId: string; inDeveloper?: boolean }) {
   const org = useQuery({ queryKey: ["org", orgId], queryFn: () => api.get<Organization>(`/organizations/${orgId}/`) });
   const buckets = useQuery({
     queryKey: ["org", orgId, "buckets"],
@@ -50,8 +52,14 @@ export default function OrgStorageClient({ orgId }: { orgId: string }) {
       <PageHeader
         title="Storage"
         description="Every bucket you may open in this organization, and how much space its files take."
-        breadcrumbs={[{ label: "Organizations", href: "/orgs" }, { label: orgName, href: `/orgs/${orgId}` }, { label: "Storage" }]}
+        breadcrumbs={[
+          { label: "Organizations", href: "/orgs" },
+          { label: orgName, href: `/orgs/${orgId}` },
+          ...(inDeveloper ? [{ label: "Developer", href: `/orgs/${orgId}/developer` }] : []),
+          { label: "Storage" },
+        ]}
       />
+      {inDeveloper && <DeveloperNav orgId={orgId} active="storage" />}
       {buckets.isError && (
         <div className="mb-4">
           <ErrorBanner

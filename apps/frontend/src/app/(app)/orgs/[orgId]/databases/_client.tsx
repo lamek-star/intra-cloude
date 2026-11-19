@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiError, type Organization } from "@/lib/api";
 import { EmptyState, ErrorBanner, PageHeader, PageLoading, Table, Td, Th, THead, TRow } from "@/components/ui";
+import { DeveloperNav } from "@/components/DeveloperNav";
 
 export type OrgDatabase = {
   id: string;
@@ -16,7 +17,8 @@ export type OrgDatabase = {
 };
 
 /** Every database in the organization the person may read, across its workspaces and projects. */
-export default function OrgDatabasesClient({ orgId }: { orgId: string }) {
+/** `inDeveloper`: shown as the Developer section's Database tab (its breadcrumb and tab bar) instead of on its own. */
+export default function OrgDatabasesClient({ orgId, inDeveloper = false }: { orgId: string; inDeveloper?: boolean }) {
   const org = useQuery({ queryKey: ["org", orgId], queryFn: () => api.get<Organization>(`/organizations/${orgId}/`) });
   const dbs = useQuery({
     queryKey: ["org", orgId, "databases"],
@@ -32,8 +34,14 @@ export default function OrgDatabasesClient({ orgId }: { orgId: string }) {
       <PageHeader
         title="Databases"
         description="Every database you may open in this organization."
-        breadcrumbs={[{ label: "Organizations", href: "/orgs" }, { label: orgName, href: `/orgs/${orgId}` }, { label: "Databases" }]}
+        breadcrumbs={[
+          { label: "Organizations", href: "/orgs" },
+          { label: orgName, href: `/orgs/${orgId}` },
+          ...(inDeveloper ? [{ label: "Developer", href: `/orgs/${orgId}/developer` }] : []),
+          { label: "Databases" },
+        ]}
       />
+      {inDeveloper && <DeveloperNav orgId={orgId} active="database" />}
       {dbs.isError && (
         <div className="mb-4">
           <ErrorBanner message={dbs.error instanceof ApiError ? dbs.error.message : "The databases could not be loaded."} error={dbs.error} />

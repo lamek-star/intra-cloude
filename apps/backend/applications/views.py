@@ -1,5 +1,6 @@
 from django.http import Http404
 from rest_framework import status
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -191,6 +192,62 @@ class ApplicationResourceGrantDetailView(APIView):
             raise Http404
         revoke_resource_permission(grant=grant, revoked_by=request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class _OrgActivityView(APIView):
+    """Organization-wide request log and usage (Developer > API Logs, Usage): a member with application.read,
+    in a browser session only -- an application's own credential must not read every application's traffic."""
+
+    authentication_classes = [SessionAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def _organization(self, request, organization_id):
+        organization = get_member_organization(request.user, organization_id)
+        if not has_permission(request.user, "application.read", organization_id=organization.id):
+            return None
+        return organization
+
+
+class OrganizationRequestLogView(_OrgActivityView):
+    """?application=<id>, ?errors=1, ?method=GET; newest first, paginated (limit/offset)."""
+
+    def get(self, request, organization_id):
+        import uuid
+
+        from rest_framework.pagination import LimitOffsetPagination
+
+        from . import activity
+
+        organization = self._organization(request, organization_id)
+        if organization is None:
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        application_id = request.query_params.get("application")
+        if application_id:
+            try:
+                application_id = uuid.UUID(application_id)
+            except ValueError:
+                return Response({"detail": "application must be an application id."}, status=status.HTTP_400_BAD_REQUEST)
+        qs = activity.org_request_log(
+            organization.id,
+            application_id=application_id or None,
+            errors_only=request.query_params.get("errors") == "1",
+            method=(request.query_params.get("method") or "").upper() or None,
+        )
+        paginator = LimitOffsetPagination()
+        page = paginator.paginate_queryset(qs, request, view=self)
+        return paginator.get_paginated_response([activity.request_row(r) for r in page])
+
+
+class OrganizationUsageView(_OrgActivityView):
+    """?days=1..30 (default 7, never more than the log keeps)."""
+
+    def get(self, request, organization_id):
+        from . import activity
+
+        organization = self._organization(request, organization_id)
+        if organization is None:
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        return Response(activity.org_usage(organization.id, activity.clamp_days(request.query_params.get("days"))))
 
 
 class ApplicationRequestLogView(APIView):
