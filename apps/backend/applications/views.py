@@ -19,6 +19,7 @@ from .models import Application, ApplicationCredential
 from .serializers import (
     ApplicationCreateSerializer,
     ApplicationCredentialSerializer,
+    ApplicationLimitSerializer,
     ApplicationSerializer,
     ResourceGrantCreateSerializer,
     ResourceGrantSerializer,
@@ -69,6 +70,23 @@ class ApplicationDetailView(APIView):
         application = get_member_application(request.user, application_id)
         if not has_permission(request.user, "application.read", organization_id=application.organization_id):
             return Response(status=status.HTTP_403_FORBIDDEN)
+        return Response(ApplicationSerializer(application).data)
+
+    def patch(self, request, application_id):
+        """The daily request limit, by a person who manages the application's credentials -- never by an
+        application's own credential (it could lift its own limit)."""
+        application = get_member_application(request.user, application_id)
+        if isinstance(request.auth, ApplicationCredential) or not has_permission(
+            request.user, "application.credentials.manage", organization_id=application.organization_id
+        ):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        serializer = ApplicationLimitSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        services.set_daily_request_limit(
+            application=application,
+            limit=serializer.validated_data["daily_request_limit"],
+            actor=request.user,
+        )
         return Response(ApplicationSerializer(application).data)
 
 

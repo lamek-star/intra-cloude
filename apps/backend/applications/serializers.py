@@ -4,10 +4,27 @@ from .models import Application, ApplicationCredential
 
 
 class ApplicationSerializer(serializers.ModelSerializer):
+    # Requests counted today against daily_request_limit (applications/quotas.py).
+    requests_today = serializers.SerializerMethodField()
+
     class Meta:
         model = Application
-        fields = ["id", "organization", "name", "description", "owner", "created_at"]
+        fields = [
+            "id", "organization", "name", "description", "owner", "created_at",
+            "daily_request_limit", "requests_today",
+        ]
         read_only_fields = fields
+
+    def get_requests_today(self, obj) -> int:
+        from .quotas import used_today
+
+        return used_today(obj.id)
+
+
+class ApplicationLimitSerializer(serializers.Serializer):
+    """PATCH applications/<id>/: a whole number of requests per day, or null for no limit."""
+
+    daily_request_limit = serializers.IntegerField(min_value=1, max_value=10_000_000, allow_null=True)
 
 
 class ApplicationCreateSerializer(serializers.Serializer):

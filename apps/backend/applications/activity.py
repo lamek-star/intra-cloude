@@ -10,6 +10,7 @@ from django.db.models.functions import TruncDate
 from django.utils import timezone
 
 from .models import ApiRequestLog, Application
+from .quotas import used_today
 
 MAX_USAGE_DAYS = 30
 METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
@@ -75,6 +76,8 @@ def org_usage(organization_id, days: int, now=None) -> dict:
                 "avg_ms": round(row["avg_ms"]) if row.get("avg_ms") is not None else None,
                 "max_ms": row.get("max_ms"),
                 "last_at": row["last_at"].isoformat() if row.get("last_at") else None,
+                "daily_request_limit": app.daily_request_limit,
+                "requests_today": used_today(app.id),
             }
         )
     daily = [

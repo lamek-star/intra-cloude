@@ -5,8 +5,9 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Activity, AlertTriangle, AppWindow } from "lucide-react";
 import { api, ApiError, type Organization } from "@/lib/api";
-import { EmptyState, ErrorBanner, PageHeader, PageLoading, StatCard, Table, Td, Th, THead, TRow } from "@/components/ui";
+import { Badge, EmptyState, ErrorBanner, PageHeader, PageLoading, StatCard, Table, Td, Th, THead, TRow } from "@/components/ui";
 import { DeveloperNav } from "@/components/DeveloperNav";
+import { limitPercent, limitText } from "@/app/(app)/applications/[applicationId]/DailyLimit";
 
 type AppUsage = {
   id: string;
@@ -16,6 +17,8 @@ type AppUsage = {
   avg_ms: number | null;
   max_ms: number | null;
   last_at: string | null;
+  daily_request_limit?: number | null;
+  requests_today?: number;
 };
 type Day = { date: string; requests: number; errors: number };
 export type Usage = {
@@ -143,6 +146,7 @@ export default function UsageClient({ orgId }: { orgId: string }) {
                 <Th>Average</Th>
                 <Th>Slowest</Th>
                 <Th>Last request</Th>
+                <Th>Today / daily limit</Th>
               </THead>
               <tbody>
                 {data.applications.map((a) => (
@@ -159,6 +163,12 @@ export default function UsageClient({ orgId }: { orgId: string }) {
                     <Td className="tabular-nums text-text-muted">{a.avg_ms === null ? "—" : `${a.avg_ms} ms`}</Td>
                     <Td className="tabular-nums text-text-muted">{a.max_ms === null ? "—" : `${a.max_ms} ms`}</Td>
                     <Td className="text-text-muted">{a.last_at ? new Date(a.last_at).toLocaleString() : "None in this period"}</Td>
+                    <Td className="tabular-nums">
+                      {limitText(a.daily_request_limit, a.requests_today)}
+                      {(limitPercent(a.daily_request_limit, a.requests_today) ?? 0) >= 100 && (
+                        <span className="ml-2"><Badge tone="danger">Limit reached</Badge></span>
+                      )}
+                    </Td>
                   </TRow>
                 ))}
               </tbody>

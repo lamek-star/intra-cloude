@@ -18,6 +18,7 @@ import { ENVIRONMENT_TYPES, exampleEnvironmentName, namesProductionWithoutType }
 import { listOrgResources, type OrgResource } from "@/lib/org-resources";
 import { appPayAccess, PAY_CHECKOUT, SERVICE_APP_RESOURCE } from "@/lib/app-pay";
 import type { ServiceApp, ServiceAppList } from "@/lib/service-apps";
+import { DailyLimit } from "./DailyLimit";
 import {
   Badge,
   Button,
@@ -502,6 +503,11 @@ export default function ApplicationDetailClient({ applicationId }: { application
           />
         </section>
       )}
+
+      <section>
+        <h2 className="mb-3 text-sm font-semibold text-slate-600">Limits</h2>
+        <DailyLimit application={application} onChange={setApplication} />
+      </section>
 
       {grants && (
         <section>

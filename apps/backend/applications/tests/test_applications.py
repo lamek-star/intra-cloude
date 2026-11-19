@@ -382,3 +382,100 @@ class OrganizationActivityTests(ApplicationTestBase):
         self.client.force_login(outsider)
         for url in (self.log, self.usage):
             self.assertEqual(self.client.get(url).status_code, status.HTTP_404_NOT_FOUND)
+
+
+class DailyLimitTests(ApplicationTestBase):
+    """Application.daily_request_limit (applications/quotas.py): counted where the bearer credential is
+    accepted, so every endpoint the credential reaches is covered; set only by a person who manages the
+    application's credentials."""
+
+    def setUp(self):
+        super().setUp()
+        self.app_id = self.client.post(reverse("application-list-create", args=[self.org_id]), {"name": "Bot"}).data["id"]
+        self.token = self.client.post(reverse("application-credential-list-create", args=[self.app_id])).data["secret"]
+        self.detail = reverse("application-detail", args=[self.app_id])
+
+    def _bot_get(self, token=None):
+        return self.client_class().get(reverse("auth-me"), HTTP_AUTHORIZATION=f"Bearer {token or self.token}")
+
+    def test_no_limit_by_default_and_every_request_is_counted(self):
+        for _ in range(5):
+            self.assertEqual(self._bot_get().status_code, status.HTTP_200_OK)
+        data = self.client.get(self.detail).data
+        self.assertIsNone(data["daily_request_limit"])
+        self.assertEqual(data["requests_today"], 5)
+
+    def test_over_the_limit_is_refused_until_tomorrow_and_shown_in_the_log(self):
+        from audit.models import AuditEvent
+
+        resp = self.client.patch(self.detail, {"daily_request_limit": 3}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["daily_request_limit"], 3)
+        self.assertTrue(AuditEvent.objects.filter(action="application.limit.update", resource_id=str(self.app_id)).exists())
+        self.assertEqual([self._bot_get().status_code for _ in range(3)], [200, 200, 200])
+        refused = self._bot_get()
+        self.assertEqual(refused.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        self.assertIn("all 3 requests", str(refused.data))
+        self.assertGreater(int(refused["Retry-After"]), 0)
+        log = self.client.get(reverse("application-request-log", args=[self.app_id])).data
+        self.assertEqual(log["results"][0]["status"], 429)
+        # A person's own session is never counted; another application is not affected.
+        self.assertEqual(self.client.get(reverse("auth-me")).status_code, status.HTTP_200_OK)
+        other = self.client.post(reverse("application-list-create", args=[self.org_id]), {"name": "Other"}).data["id"]
+        other_token = self.client.post(reverse("application-credential-list-create", args=[other])).data["secret"]
+        self.assertEqual(self._bot_get(other_token).status_code, status.HTTP_200_OK)
+        # Raising (or removing) the limit lets the application work again the same day.
+        self.client.patch(self.detail, {"daily_request_limit": None}, format="json")
+        self.assertEqual(self._bot_get().status_code, status.HTTP_200_OK)
+
+    def test_the_limit_also_covers_endpoints_with_their_own_throttles(self):
+        self.client.patch(self.detail, {"daily_request_limit": 1}, format="json")
+        self._bot_get()
+        files = self.client_class().get(
+            reverse("file-list-create", args=[self.bucket_a_id]), HTTP_AUTHORIZATION=f"Bearer {self.token}"
+        )
+        self.assertEqual(files.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
+    def test_only_a_person_who_manages_credentials_sets_the_limit(self):
+        from organizations.models import Organization
+        from permissions.services import assign_role
+
+        for bad in (0, -1, "many", 10_000_001):
+            self.assertEqual(
+                self.client.patch(self.detail, {"daily_request_limit": bad}, format="json").status_code,
+                status.HTTP_400_BAD_REQUEST,
+            )
+        # The application itself can never lift its own limit.
+        own = self.client_class().patch(
+            self.detail, {"daily_request_limit": None}, format="json", HTTP_AUTHORIZATION=f"Bearer {self.token}"
+        )
+        self.assertIn(own.status_code, (status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND))
+        viewer = User.objects.create_user(email="limit-viewer@example.com", password="x")
+        Membership.objects.create(user=viewer, organization_id=self.org_id, status=Membership.Status.ACTIVE)
+        assign_role(user=viewer, role_slug="viewer", organization=Organization.objects.get(id=self.org_id))
+        self.client.force_login(viewer)
+        self.assertEqual(
+            self.client.patch(self.detail, {"daily_request_limit": 5}, format="json").status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        outsider = User.objects.create_user(email="limit-outsider@example.com", password="x")
+        self.client.force_login(outsider)
+        self.assertEqual(
+            self.client.patch(self.detail, {"daily_request_limit": 5}, format="json").status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+        self.assertIsNone(Application.objects.get(id=self.app_id).daily_request_limit)
+
+    def test_usage_shows_the_limit_and_todays_count(self):
+        self.client.patch(self.detail, {"daily_request_limit": 50}, format="json")
+        self._bot_get()
+        self._bot_get()
+        apps = {a["name"]: a for a in self.client.get(reverse("organization-api-usage", args=[self.org_id])).data["applications"]}
+        self.assertEqual((apps["Bot"]["daily_request_limit"], apps["Bot"]["requests_today"]), (50, 2))
+
+    def test_an_unreachable_cache_allows_the_request(self):
+        from unittest import mock
+
+        self.client.patch(self.detail, {"daily_request_limit": 1}, format="json")
+        with mock.patch("applications.quotas.cache.incr", side_effect=ConnectionError("valkey down")):
+            self.assertEqual([self._bot_get().status_code for _ in range(3)], [200, 200, 200])

@@ -458,6 +458,9 @@ export type Application = {
   description: string;
   owner: string;
   created_at: string;
+  /** Requests its credentials may make per day; null = no limit (applications/quotas.py). */
+  daily_request_limit?: number | null;
+  requests_today?: number;
 };
 
 export type ApplicationCredential = {

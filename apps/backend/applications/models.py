@@ -18,6 +18,8 @@ class Application(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="applications_owned"
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    # Requests the application's credentials may make per day (applications/quotas.py); empty = no limit.
+    daily_request_limit = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
         constraints = [

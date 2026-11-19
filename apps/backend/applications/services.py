@@ -105,6 +105,23 @@ def revoke_credential(*, credential: ApplicationCredential, actor) -> None:
     )
 
 
+def set_daily_request_limit(*, application: Application, limit: int | None, actor) -> Application:
+    """How many requests the application's credentials may make per day (applications/quotas.py); None = no
+    limit. The caller checks application.credentials.manage."""
+    before = application.daily_request_limit
+    application.daily_request_limit = limit
+    application.save(update_fields=["daily_request_limit"])
+    audit.record(
+        actor=actor,
+        organization_id=application.organization_id,
+        action="application.limit.update",
+        resource_type="application",
+        resource_id=application.id,
+        context={"daily_request_limit": limit, "before": before},
+    )
+    return application
+
+
 def rotate_credential(*, credential: ApplicationCredential, actor) -> tuple[ApplicationCredential, str]:
     with transaction.atomic():
         revoke_credential(credential=credential, actor=actor)
@@ -139,7 +156,9 @@ def resolve_credential(token: str) -> ApplicationCredential:
         raise InvalidCredential("unrecognized token format") from exc
 
     try:
-        credential = ApplicationCredential.objects.select_related("service_account__identity_user").get(
+        credential = ApplicationCredential.objects.select_related(
+            "service_account__identity_user", "service_account__application"
+        ).get(
             id=credential_id
         )
     except ApplicationCredential.DoesNotExist as exc:

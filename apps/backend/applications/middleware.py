@@ -20,7 +20,8 @@ class ApiRequestLogMiddleware:
         response = self.get_response(request)
         from .models import ApiRequestLog, ApplicationCredential
 
-        credential = getattr(request, "auth", None)
+        # Also a request refused for the daily limit (applications/quotas.py), whose request.auth DRF cleared.
+        credential = getattr(request, "auth", None) or getattr(request, "quota_refused_credential", None)
         if isinstance(credential, ApplicationCredential):
             try:
                 ApiRequestLog.objects.create(

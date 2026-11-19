@@ -10,6 +10,7 @@ model (see applications/models.py:ServiceAccount docstring).
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
+from . import quotas
 from .services import InvalidCredential, resolve_credential
 
 
@@ -30,6 +31,14 @@ class ServiceAccountAuthentication(BaseAuthentication):
         except InvalidCredential as exc:
             raise AuthenticationFailed("Invalid or expired credential.") from exc
 
+        application = credential.service_account.application
+        try:
+            quotas.count_and_check(application.id, application.daily_request_limit)
+        except quotas.DailyLimitReached:
+            # DRF clears request.auth when authentication raises; this keeps the refused request in the
+            # application's request log (applications/middleware.py), so the owner sees why it stopped.
+            request._request.quota_refused_credential = credential
+            raise
         return credential.service_account.identity_user, credential
 
     def authenticate_header(self, request):
