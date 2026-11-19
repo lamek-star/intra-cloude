@@ -257,6 +257,9 @@ class OAuthClientListCreateView(APIView):
             post_logout_redirect_uris=serializer.validated_data.get("post_logout_redirect_uris", []),
             allowed_origins=serializer.validated_data.get("allowed_origins", []),
             created_by=request.user,
+            # A client registered here is someone else's application unless the Super Administrator says it is
+            # IntraForge's own: it asks each person first (consent screen) by default, never silently.
+            requires_consent=serializer.validated_data.get("requires_consent", True),
         )
         audit.record(
             actor=request.user,

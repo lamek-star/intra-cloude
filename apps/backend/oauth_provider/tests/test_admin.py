@@ -59,6 +59,18 @@ class OAuthClientAdminTests(APITestCase):
         self.assertNotIn("client_secret", detail.data)
         self.assertNotIn("client_secret_hash", detail.data)
 
+    def test_a_registered_client_asks_for_consent_unless_the_admin_says_otherwise(self):
+        self.client.force_login(self.admin)
+        url = reverse("oauth-client-list-create")
+        outside = self.client.post(url, {"name": "Outside", "redirect_uris": ["https://o.example.com/cb"]}, format="json")
+        self.assertTrue(outside.data["requires_consent"])
+        own = self.client.post(
+            url,
+            {"name": "Own", "redirect_uris": ["https://own.example.com/cb"], "requires_consent": False},
+            format="json",
+        )
+        self.assertFalse(own.data["requires_consent"])
+
     def test_creating_a_client_with_no_redirect_uri_is_rejected(self):
         self.client.force_login(self.admin)
         response = self.client.post(

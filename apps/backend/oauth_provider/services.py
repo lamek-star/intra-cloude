@@ -78,9 +78,12 @@ def create_client(
     post_logout_redirect_uris: list[str] | None = None,
     allowed_origins: list[str] | None = None,
     created_by=None,
+    requires_consent: bool = False,
 ) -> tuple[OAuthClient, str]:
     """Returns (client, plaintext_secret) — the plaintext is never stored;
-    only this call site and rotate_client_secret ever see it."""
+    only this call site and rotate_client_secret ever see it.
+    `requires_consent`: each person is asked before the client learns anything
+    about them; the admin API passes True unless told otherwise."""
     client_id = CLIENT_ID_PREFIX + generate_token(16)
     secret = generate_token(32)
     client = OAuthClient.objects.create(
@@ -91,6 +94,7 @@ def create_client(
         post_logout_redirect_uris=post_logout_redirect_uris or [],
         allowed_origins=allowed_origins or [],
         created_by=created_by,
+        requires_consent=requires_consent,
     )
     return client, secret
 
