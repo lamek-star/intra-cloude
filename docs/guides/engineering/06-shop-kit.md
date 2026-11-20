@@ -18,8 +18,9 @@ The shop runs IntraForge from the **Docker-runtime kit** in `scripts/shop-kit/`,
 ## Building a kit (on the build machine, online, Docker Desktop running)
 
 ```bash
-KIT_VERSION=1.5.7 CARRY_APPS_FROM=1.4.0-dbf44f593 MINIO_TAG=RELEASE.2025-09-07T16-13-09Z \
-PAY_IMAGE=intraforge-shop-pay:1.5.6-counters PAY_SOURCE="<pay repo and commit>" \
+KIT_VERSION=1.5.9 CARRY_APPS_FROM=1.4.0-dbf44f593 MINIO_TAG=RELEASE.2025-09-07T16-13-09Z \
+PAY_IMAGE=intraforge-shop-pay:1.5.9-srv PAY_SOURCE="<pay repo and commit>" \
+PAY_REPO=<pay checkout> PAY_REF=<pay commit> \
 SPAREPARTS_IMAGE=intraforge-shop-spareparts:labels PHARMACY_IMAGE=intraforge-shop-pharmacy:labels \
 SPAREPARTS_SOURCE="<spare-part-shop commit>" \
 bash scripts/shop-kit/build-shop-kit.sh <output-folder>
