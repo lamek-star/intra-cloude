@@ -584,3 +584,15 @@ version ignored the gone shop-network address (`586a4bb`: the profile is set onc
 a rolled-back upgrade did not restart the media agent (fixed after; the agent was started again by hand, from the
 install folder). The shop network still names 192.168.8.63: Control Center > Settings > Shop network > Update the
 address, back on the shop Wi-Fi.
+
+**Kit 1.5.8 built** (2026-11-20, not yet installed on the shop PC): `IntraForge-Local-1.5.8-d1b24cecc.zip` (SHA-256
+`9e7c16c8...55f776f7`) and `IntraForge-Setup-1.5.8-d1b24cecc.exe` (with Docker Desktop and WSL; SHA-256
+`3dfdffa7...65fbffb2`), both checksums verified, every image in the tar, SHA256SUMS OK. Contents since 1.5.7:
+IntraForge `d1b24ce` -- hosted websites start again after a restart and Remove-HostedApps works (`1d67770`, two
+PowerShell 5.1 faults), the Developer tabs (`8d2048a`), the OAuth consent default (`f0b31dd`), per-application daily
+request limits (`a57bcbb`, migration applications 0004); Pay `4f72e0d` (feat/wallet-release-signing: counters, the
+download serving the wallet that reads version 2 codes, release-signed wallet 0.3.0, APK `fe07d625...`); Spare Parts
+and Pharmacy `d9fa49f` (feat/languages: English, Arabic, Amharic, Tigrinya, printing in the chosen language). Pay and
+Spare Parts images built from `git archive` of those commits (no working-tree files). Not yet run on the test copy as
+a whole kit: the upgrade on the shop PC (with its safety backup and rollback) is the next step. Phones with a 0.2.0
+wallet uninstall it once before installing 0.3.0. Translations are machine drafts awaiting native review.
