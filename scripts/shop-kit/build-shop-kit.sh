@@ -58,6 +58,21 @@ CARRY_APPS_FROM="${CARRY_APPS_FROM:?set CARRY_APPS_FROM to the earlier kit tag w
 if [ -n "${PAY_IMAGE:-}" ]; then
   [ -n "${PAY_SOURCE:-}" ] || { echo "PAY_IMAGE needs PAY_SOURCE (where that Pay image was built from)" >&2; exit 1; }
   docker image inspect "$PAY_IMAGE" >/dev/null 2>&1 || { echo "$PAY_IMAGE is not on this machine" >&2; exit 1; }
+  # The image must RUN that code. Pay runs from its WorkingDir (/srv/ifpay); kits 1.5.6-1.5.8 copied the new code into
+  # /app/ifpay, a folder Pay never reads, and shipped the 1.5.0 code for three releases. PAY_REPO + PAY_REF name the
+  # commit; its `ifpay` tree must equal <WorkingDir>/ifpay in the image, file for file (compiled __pycache__ aside).
+  [ -n "${PAY_REPO:-}" ] && [ -n "${PAY_REF:-}" ] || {
+    echo "PAY_IMAGE needs PAY_REPO and PAY_REF (the checkout and commit whose ifpay the image must run)" >&2; exit 1; }
+  # (sed: Windows' sha256sum marks names with "*", Linux with a space; the contents are what is compared)
+  tree_hash='LC_ALL=C find ifpay -type f ! -path "*/__pycache__/*" | LC_ALL=C sort | xargs sha256sum | sed "s/ [ *]/  /" | sha256sum | cut -c1-64'
+  PAY_TREE="$(mktemp -d)"
+  git -C "$(cygpath -m "$PAY_REPO")" archive "$PAY_REF" ifpay | tar -x -C "$PAY_TREE"
+  WANT="$(cd "$PAY_TREE" && sh -c "$tree_hash")"
+  HAVE="$(docker run --rm --entrypoint sh "$PAY_IMAGE" -c "$tree_hash")"
+  rm -rf "$PAY_TREE"
+  [ "$WANT" = "$HAVE" ] || {
+    echo "$PAY_IMAGE does not run $PAY_REF: its <WorkingDir>/ifpay differs from that commit ($HAVE vs $WANT)" >&2; exit 1; }
+  echo "   Pay image runs $PAY_REF (code tree $WANT)"
 fi
 # SPAREPARTS_IMAGE + PHARMACY_IMAGE + SPAREPARTS_SOURCE take Spare Parts and its Pharmacy edition from a newer build of
 # the Spare Parts repository (build-spareparts-image.sh, or its own Dockerfile) instead of carrying them over; all
