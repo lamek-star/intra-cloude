@@ -596,3 +596,14 @@ and Pharmacy `d9fa49f` (feat/languages: English, Arabic, Amharic, Tigrinya, prin
 Spare Parts images built from `git archive` of those commits (no working-tree files). Not yet run on the test copy as
 a whole kit: the upgrade on the shop PC (with its safety backup and rollback) is the next step. Phones with a 0.2.0
 wallet uninstall it once before installing 0.3.0. Translations are machine drafts awaiting native review.
+
+**Shop PC upgraded 1.5.7 -> 1.5.8** (2026-11-20, first attempt, exit 0): safety backup taken, 13 compose containers
+on the 1.5.8 images, `readyz` 200, migration applications 0004 applied, Spare Parts `1.5.8+d9fa49f` (four languages),
+the café website kept running (page 200), media agent running from `C:\IntraForge`. The shop-network address is still
+gone (192.168.8.48), so the upgrade started without the shop names, as designed.
+**Found: Pay code has not been updated on the shop since 1.5.0.** The Pay base image runs from `/srv/ifpay`
+(WorkingDir); the overlay recipe used for 1.5.6-counters and for 1.5.8 copied the new `ifpay` into `/app/ifpay`, a
+folder the base image does not even have, so the running Pay is still the 1.5.0 cashback code (counters 1b53eb7, the
+download fix b029942 and the signed wallet 4f72e0d were in the images but never ran). The signed wallet APK was put
+by hand into `/srv/ifpay/ifpay/static/download/` again (served checksum `fe07d625...`), until a kit with a corrected
+Pay image (`COPY ifpay /srv/ifpay/ifpay`) and a build-time check that the running path holds the intended commit.
