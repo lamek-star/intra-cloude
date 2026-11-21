@@ -242,6 +242,17 @@ IntraForge supplier, and enter the **activation code** they send back. An SN wor
 supplier to move it. The copying speed of the Movie Shop: titles for one customer's drive copy one after another with
 Windows' own copy engine, and two customers' drives fill at the same time.
 
+### Features: choosing which parts IntraForge shows
+
+Setup asks which parts to show, under **Show these parts**: **Business apps** (Spare Parts, Pharmacy, App templates),
+**Pay and Movie Shop**, **Websites and Developer** (hosted websites, internet access, the Developer section) and
+**Files, databases, reports** (storage, databases, import, analytics, dashboards, sharing). All four are ticked unless you
+untick them. Later, the **Super Administrator** changes them on **Features** (Dashboard, under System health; or
+`/features`). A part that is off is hidden for everyone and the server refuses it too; nothing is deleted, and switching it
+back on brings everything back as it was. People using an app that is switched off are signed out of it. Switch
+**Internet access** off before hiding Websites and Developer (IntraForge says so if you forget). Sign-in, organizations,
+members, teams, units, the audit log, backups and the licence are always there. Details: ADR-0025.
+
 ## 8. Where to Find the Newer Screens
 
 Everything in IntraForge now has a page. The ones added most recently, and where they are:

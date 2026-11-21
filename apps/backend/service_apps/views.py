@@ -13,6 +13,8 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from system import features
+
 from . import services, sessions
 from .deployments import get_deployment
 from .models import ServiceApp
@@ -207,7 +209,7 @@ class ServiceAppSignInInfoView(APIView):
 
     def get(self, request, app_id):
         app = ServiceApp.objects.filter(pk=app_id, enabled=True, removed_at__isnull=True).first()
-        if app is None or get_deployment(app.deployment) is None:
+        if app is None or get_deployment(app.deployment) is None or not features.app_type_enabled(app.app_type):
             raise Http404
         return Response(
             {

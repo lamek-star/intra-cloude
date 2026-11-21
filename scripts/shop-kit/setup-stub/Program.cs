@@ -25,6 +25,8 @@ using System.Windows.Forms;
 sealed class SetupOptions
 {
     public string Dir = @"C:\IntraForge", Data, Port, SparePartsPort, BackupTime, UiPreview;
+    /// <summary>The feature groups to show: "all", "none" or keys joined by commas (system/features.py). Null: not asked.</summary>
+    public string Features;
     public bool Quiet, Check, ExtractOnly, NoRestart, Resume, NoStartup;
     public string DataOrDefault { get { return Data ?? @"C:\IntraForgeData"; } }
 
@@ -33,7 +35,7 @@ sealed class SetupOptions
         SetupOptions o = new SetupOptions();
         o.Dir = Arg(args, "dir") ?? o.Dir;
         o.Data = Arg(args, "data"); o.Port = Arg(args, "port"); o.SparePartsPort = Arg(args, "sparepartsport");
-        o.BackupTime = Arg(args, "backuptime"); o.UiPreview = Arg(args, "uipreview");
+        o.BackupTime = Arg(args, "backuptime"); o.UiPreview = Arg(args, "uipreview"); o.Features = Arg(args, "features");
         o.Quiet = Flag(args, "quiet"); o.Check = Flag(args, "check"); o.ExtractOnly = Flag(args, "extractonly");
         o.NoRestart = Flag(args, "norestart"); o.Resume = Flag(args, "resume"); o.NoStartup = Flag(args, "nostartup");
         return o;
@@ -59,6 +61,7 @@ sealed class SetupOptions
         if (Data != null) extra += " -DataDir \"" + Data.Replace("\"", "") + "\"";
         if (BackupTime != null) extra += " -BackupTime " + TimeSpan.Parse(BackupTime).ToString(@"hh\:mm");
         if (NoStartup) extra += " -NoStartup";
+        if (Features != null) extra += " -Features \"" + Features.Replace("\"", "").Replace(" ", "") + "\"";
         if (Resume) extra += " -Resume";
         if (quiet) extra += " -Quiet";
         if (noRestart) extra += " -NoRestart";

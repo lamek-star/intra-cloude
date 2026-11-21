@@ -2,6 +2,7 @@
 proxy refuses /api/v1/internal/), authenticated with the deployment's service token, and scoped to
 that deployment's own instance: there is no way to name another instance."""
 
+from system import features
 from django.http import FileResponse
 from rest_framework import status
 from rest_framework.exceptions import NotFound
@@ -78,7 +79,12 @@ class InternalHeartbeatView(_Internal):
 class InternalIntrospectView(_Internal):
     def post(self, request):
         app = self.instance(request)
-        result = sessions.introspect(app, str(request.data.get("token", "")))
+        # A switched-off feature group signs everyone out of its applications (system/features.py).
+        result = (
+            sessions.introspect(app, str(request.data.get("token", "")))
+            if features.app_type_enabled(app.app_type)
+            else None
+        )
         if result is None:
             return Response({"active": False}, status=status.HTTP_401_UNAUTHORIZED)
         return Response(

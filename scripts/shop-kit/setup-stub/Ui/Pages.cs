@@ -351,6 +351,18 @@ sealed partial class SetupForm
             }
         }
 
+        if (pc == null || !pc.Blocked)
+        {
+            // Which parts of IntraForge to show (system/features.py); the Features page changes them later.
+            Theme.Text1(g, "Show these parts (you can change this later on the Features page)", Small, Theme.Text3, X0, 422);
+            for (int i = 0; i < FeatureKeys.Length; i++)
+            {
+                int k = i;
+                Check(g, X0 + (i % 2) * 245, 444 + (i / 2) * 24, "feature-" + FeatureKeys[i], FeatureLabels[i], featureOn[i],
+                    delegate { featureOn[k] = !featureOn[k]; Invalidate(); });
+            }
+        }
+
         Footer(g, "clock", "About 10 minutes · needs no internet");
         Button(g, new RectangleF(X1 - 210, 498, 90, 38), "cancel", "Cancel", Kind.Ghost, TryClose);
         Button(g, new RectangleF(X1 - 112, 498, 112, 38), "install", "Install", Kind.Primary, delegate { StartRun(InstallRun.Kind.Install); }, ready && dirBox.Text.Trim().Length > 2, true);

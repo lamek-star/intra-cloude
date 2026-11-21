@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { unlessDisabled, useFeatures } from "@/lib/features";
 import { Database, Folder, Layers, Plug } from "lucide-react";
 import {
   api,
@@ -39,6 +40,7 @@ const CONNECTED_DB_STATUS_TONE = {
 } as const;
 
 export default function ProjectDetailClient({ projectId }: { projectId: string }) {
+  const features = useFeatures();
   const [project, setProject] = useState<Project | null>(null);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [org, setOrg] = useState<Organization | null>(null);
@@ -59,9 +61,10 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
       setProject(p);
       const [ws, b, db, cdb] = await Promise.all([
         api.get<Workspace>(`/workspaces/${p.workspace}/`),
-        api.get<Bucket[]>(`/projects/${projectId}/buckets/`),
-        api.get<TenantDatabase[]>(`/projects/${projectId}/tenant-databases/`),
-        api.get<ConnectedDatabase[]>(`/projects/${projectId}/connected-databases/`),
+        // Files, databases, reports switched off (lib/features.ts): the sections are hidden, not an error.
+        unlessDisabled(api.get<Bucket[]>(`/projects/${projectId}/buckets/`), []),
+        unlessDisabled(api.get<TenantDatabase[]>(`/projects/${projectId}/tenant-databases/`), []),
+        unlessDisabled(api.get<ConnectedDatabase[]>(`/projects/${projectId}/connected-databases/`), []),
       ]);
       setWorkspace(ws);
       setBuckets(b);
@@ -106,12 +109,16 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
           { label: project.name },
         ]}
         actions={
-          <LinkButton href={`/projects/${projectId}/apps`} variant="primary">
-            Applications
-          </LinkButton>
+          features.on("business_apps") ? (
+            <LinkButton href={`/projects/${projectId}/apps`} variant="primary">
+              Applications
+            </LinkButton>
+          ) : null
         }
       />
 
+      {features.on("files_data") && (
+      <>
       <div className="mb-8">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-600">Storage buckets</h2>
@@ -228,8 +235,10 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
           </div>
         )}
       </div>
+      </>
+      )}
 
-      {appInstances && (
+      {appInstances && features.on("business_apps") && (
         <div className="mt-8">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-600">Apps</h2>

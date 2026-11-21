@@ -20,6 +20,7 @@
 | [0016](0016-tenant-operation-journal.md) | Tenant operation journal and quantity ledgers | Accepted for Local Edition |
 | [0017](0017-inventory-operation-authority.md) | Business-operation authority over stock (sell / receive / adjust / transfer) | Accepted |
 | [0018](0018-service-applications.md) | Service applications: separately deployed apps on IntraForge storage, identity and audit | Accepted |
+| [0025](0025-feature-groups.md) | Feature groups: chosen in Setup, changed by the Super Administrator, refused by the server | Accepted |
 
 New architecturally significant decisions get a new numbered ADR here
 rather than silently changing behavior described in an existing one.

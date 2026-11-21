@@ -23,8 +23,10 @@ import {
 } from "@/components/ui";
 import { MemberRoles, type OrganizationRoles } from "./MemberRoles";
 import { ResetPassword } from "./ResetPassword";
+import { useFeatures } from "@/lib/features";
 
 export default function OrgDetailClient({ orgId }: { orgId: string }) {
+  const features = useFeatures();
   const [org, setOrg] = useState<Organization | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[] | null>(null);
   const [members, setMembers] = useState<Membership[] | null>(null);
@@ -97,27 +99,37 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
         description={`/${org.slug}`}
         actions={
           <>
-            <LinkButton href={`/orgs/${orgId}/app-templates`} variant="secondary" size="sm">
-              Apps
-            </LinkButton>
-            <LinkButton href={`/orgs/${orgId}/sites`} variant="secondary" size="sm">
-              Websites
-            </LinkButton>
-            <LinkButton href={`/orgs/${orgId}/developer`} variant="secondary" size="sm">
-              Developer
-            </LinkButton>
+            {features.on("business_apps") && (
+              <LinkButton href={`/orgs/${orgId}/app-templates`} variant="secondary" size="sm">
+                Apps
+              </LinkButton>
+            )}
+            {features.on("websites_developer") && (
+              <>
+                <LinkButton href={`/orgs/${orgId}/sites`} variant="secondary" size="sm">
+                  Websites
+                </LinkButton>
+                <LinkButton href={`/orgs/${orgId}/developer`} variant="secondary" size="sm">
+                  Developer
+                </LinkButton>
+              </>
+            )}
             <LinkButton href={`/orgs/${orgId}/teams`} variant="secondary" size="sm">
               Teams
             </LinkButton>
             <LinkButton href={`/orgs/${orgId}/units`} variant="secondary" size="sm">
               Units
             </LinkButton>
-            <LinkButton href={`/orgs/${orgId}/storage`} variant="secondary" size="sm">
-              Storage
-            </LinkButton>
-            <LinkButton href={`/orgs/${orgId}/databases`} variant="secondary" size="sm">
-              Databases
-            </LinkButton>
+            {features.on("files_data") && (
+              <>
+                <LinkButton href={`/orgs/${orgId}/storage`} variant="secondary" size="sm">
+                  Storage
+                </LinkButton>
+                <LinkButton href={`/orgs/${orgId}/databases`} variant="secondary" size="sm">
+                  Databases
+                </LinkButton>
+              </>
+            )}
             <LinkButton href={`/orgs/${orgId}/audit`} variant="secondary" size="sm">
               Audit log
             </LinkButton>

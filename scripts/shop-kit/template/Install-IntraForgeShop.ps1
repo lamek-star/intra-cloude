@@ -24,6 +24,10 @@
     each is restored into the new installation. Requires -KeysFile.
 .PARAMETER BackupTime
     Time of the daily backup task. Default 19:00.
+.PARAMETER Features
+    Which parts of IntraForge to show: all (default: nothing written, every part), none, or feature group keys joined by
+    commas (business_apps,pay_media,websites_developer,files_data). Written to the keys as INTRAFORGE_FEATURES; it only
+    seeds the first value -- afterwards the Super Administrator changes it on the Features page.
 .PARAMETER NoStartup
     Do not register automatic start at Windows sign-in (not recommended).
 #>
@@ -35,7 +39,8 @@ param(
     [string]$KeysFile,
     [string]$RestoreFrom,
     [string]$BackupTime = '19:00',
-    [switch]$NoStartup
+    [switch]$NoStartup,
+    [string]$Features
 )
 
 Set-Location $PSScriptRoot
@@ -153,6 +158,22 @@ else {
 # password of its database role. Added to keys that predate them (an older keys file or an interrupted install).
 foreach ($name in 'SERVICE_APP_SPAREPARTS_TOKEN', 'SERVICE_APP_SPAREPARTS_DB_PASSWORD', 'SERVICE_APP_PAY1_TOKEN', 'SERVICE_APP_PAY1_DB_PASSWORD', 'SERVICE_APP_PHARMACY_TOKEN', 'SERVICE_APP_PHARMACY_DB_PASSWORD', 'SITES_RUNNER_TOKEN') {
     if ($text -notmatch "(?m)^$name=.+") { $text = $text.TrimEnd("`n") + "`n$name=$(New-Secret 36)`n" }
+}
+# The parts of IntraForge to show (system/features.py), chosen in Setup. Unset means every part.
+if ($PSBoundParameters.ContainsKey('Features')) {
+    $known = @('business_apps', 'pay_media', 'websites_developer', 'files_data')
+    $choice = $Features.Trim().ToLowerInvariant()
+    $text = (($text -split "`n") | Where-Object { $_ -notmatch '^INTRAFORGE_FEATURES=' }) -join "`n"
+    if ($choice -ne 'all') {
+        $keys = @()
+        if ($choice -ne 'none' -and $choice -ne '') {
+            $keys = @($choice -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+            $unknown = @($keys | Where-Object { $known -notcontains $_ })
+            if ($unknown.Count -gt 0) { throw "Unknown feature group: $($unknown -join ', '). Use: $($known -join ', '), all or none." }
+        }
+        $text = $text.TrimEnd("`n") + "`nINTRAFORGE_FEATURES=$($keys -join ',')`n"
+    }
+    Write-Host "Parts shown: $(if ($choice -eq 'all') { 'all' } elseif ($choice -in @('none', '')) { 'none (switch them on later on the Features page)' } else { $choice })"
 }
 [IO.File]::WriteAllText($envPath, $text, (New-Object System.Text.UTF8Encoding($false)))
 $keysCopy = Join-Path $DataDir 'keys\intraforge-keys.env'

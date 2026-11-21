@@ -1,6 +1,7 @@
 from django.urls import include, path
 
 from sites import serve as site_serve
+from system.features import WEBSITES_DEVELOPER, gate_view, gated
 
 urlpatterns = [
     # Liveness/readiness are unauthenticated and unversioned by convention —
@@ -9,7 +10,7 @@ urlpatterns = [
     # OAuth2/OIDC protocol endpoints (/oauth/*, /.well-known/openid-configuration)
     # are unversioned and root-level by spec/convention, exactly like the
     # infrastructure endpoints above — see oauth_provider/urls.py.
-    path("", include("oauth_provider.urls")),
+    path("", include(gated(WEBSITES_DEVELOPER, "oauth_provider.urls"))),
     # Versioned API root (Section 14 of the master prompt). Individual
     # module apps mount their own routers here as they're implemented,
     # starting Phase 2 (accounts/organizations/permissions).
@@ -17,8 +18,8 @@ urlpatterns = [
     # Hosted websites (ADR-0019). Reached only through the proxy's sites port, which rewrites
     # https://<PC>:8445/<slug>/... to /_sites/<slug>/... and strips cookies; IntraForge's own port
     # answers 404.
-    path("_sites/", include("sites.serve_urls")),
+    path("_sites/", include(gated(WEBSITES_DEVELOPER, "sites.serve_urls"))),
     # The proxy's on-demand TLS check for a site's own name (internal network only; never routed from
     # outside).
-    path("_sites-certificate/", site_serve.certificate_allowed),
+    path("_sites-certificate/", gate_view(WEBSITES_DEVELOPER, site_serve.certificate_allowed)),
 ]

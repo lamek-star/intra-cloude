@@ -23,6 +23,8 @@ from permissions.services import has_permission
 from storage.models import Bucket, FileObject, Folder
 from workspaces.models import Project, Workspace
 
+from system import features
+
 from . import provisioning
 from .deployments import Deployment, all_deployments, get_deployment
 from .models import ServiceApp, ServiceAppAuditReceipt
@@ -76,10 +78,13 @@ def visible_apps(user) -> list[ServiceApp]:
     manage. Anything else in those organizations -- and everything in other organizations -- is
     invisible."""
     apps = ServiceApp.objects.filter(organization_id__in=_active_org_ids(user)).select_related("organization")
+    # A switched-off feature group hides its application types everywhere (system/features.py).
+    on = {t for t in {a.app_type for a in apps} if features.app_type_enabled(t)}
     return [
         a
         for a in apps
-        if can_manage(user, a) or (a.removed_at is None and (can_open(user, a) or can_configure(user, a)))
+        if a.app_type in on
+        and (can_manage(user, a) or (a.removed_at is None and (can_open(user, a) or can_configure(user, a))))
     ]
 
 
@@ -108,7 +113,7 @@ def installable_deployments(user) -> list[dict]:
             "organizations": [str(o) for o in orgs],
         }
         for d in all_deployments().values()
-        if d.key not in taken
+        if d.key not in taken and features.app_type_enabled(d.app_type.key)
     ]
 
 
@@ -130,6 +135,7 @@ def install(
     deployment = get_deployment(deployment_key)
     if deployment is None:
         raise ValidationError({"deployment": "This application is not available in this installation."})
+    features.require_app_type(deployment.app_type.key)
     organization = get_member_organization(actor, organization_id)
     if not has_permission(actor, MANAGE, organization_id=organization.id):
         raise PermissionDenied("Installing applications needs the app_instance.manage capability.")

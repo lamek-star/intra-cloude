@@ -18,6 +18,7 @@ import urllib.error
 import urllib.request
 import uuid
 
+from system import features
 from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
 
 from organizations.models import Membership
@@ -53,6 +54,8 @@ def pay_for(caller: ServiceApp, *, reading: bool = False) -> tuple[ServiceApp, D
     status is allowed while Pay is switched off: a customer may already have paid."""
     if caller.app_type == PAY_TYPE:
         raise PermissionDenied("IntraForge Pay cannot ask itself for a payment.")
+    if not reading and not features.app_type_enabled(PAY_TYPE):
+        raise PayRefused("IntraForge Pay is switched off on this installation.")
     candidates = list(
         ServiceApp.objects.filter(
             organization_id=caller.organization_id, app_type=PAY_TYPE, removed_at__isnull=True

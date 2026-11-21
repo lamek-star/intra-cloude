@@ -279,6 +279,9 @@ export default function DashboardPage() {
           <Link href="/license" className="font-medium text-brand-600 hover:text-brand-500">
             Licence
           </Link>
+          <Link href="/features" className="font-medium text-brand-600 hover:text-brand-500">
+            Features
+          </Link>
         </p>
         {health === null ? (
           <Card>

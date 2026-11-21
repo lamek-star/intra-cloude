@@ -32,6 +32,7 @@ import {
   Spinner,
 } from "@/components/ui";
 import { MovieShopCards, MovieShopInstallCard, useMovieShops } from "./MovieShopApps";
+import { useFeatures } from "@/lib/features";
 
 function openError(err: unknown): string {
   if (err instanceof ApiError) {
@@ -54,7 +55,8 @@ export default function AppsClient() {
   const [openErr, setOpenErr] = useState<string | null>(null);
   const [installing, setInstalling] = useState<InstallableApp | null>(null);
   const uploaded = useQuery(uploadedAppsQuery(orgs));
-  const movieShops = useMovieShops(orgs);
+  const features = useFeatures();
+  const movieShops = useMovieShops(features.on("pay_media") ? orgs : []);
 
   const load = useCallback(() => queryClient.invalidateQueries({ queryKey: keys.serviceApps }), [queryClient]);
 
@@ -172,7 +174,7 @@ export default function AppsClient() {
                 </Card>
               </li>
             ))}
-            <MovieShopInstallCard orgs={orgs} />
+            {features.on("pay_media") && <MovieShopInstallCard orgs={orgs} />}
           </ul>
         </section>
       )}

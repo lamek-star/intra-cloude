@@ -10,6 +10,8 @@ model (see applications/models.py:ServiceAccount docstring).
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
+from system import features
+
 from . import quotas
 from .services import InvalidCredential, resolve_credential
 
@@ -25,6 +27,9 @@ class ServiceAccountAuthentication(BaseAuthentication):
         token = header[len(prefix) :].strip()
         if not token:
             return None
+        # Developer switched off (system/features.py): no application credential works, whatever it names.
+        if not features.is_enabled(features.WEBSITES_DEVELOPER):
+            raise AuthenticationFailed("Application access is switched off on this installation.")
 
         try:
             credential = resolve_credential(token)

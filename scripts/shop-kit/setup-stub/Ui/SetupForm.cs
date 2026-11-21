@@ -29,6 +29,10 @@ sealed partial class SetupForm : Form
     InstallRun run;
     bool startWithWindows = true, openNow = true, showTour = true, showDetails, copied;
     string backupTime = "19:00";
+    // The feature groups (system/features.py), all on by default; the Super Administrator can change them later.
+    static readonly string[] FeatureKeys = { "business_apps", "pay_media", "websites_developer", "files_data" };
+    static readonly string[] FeatureLabels = { "Business apps", "Pay and Movie Shop", "Websites and Developer", "Files, databases, reports" };
+    readonly bool[] featureOn = { true, true, true, true };
     readonly TextBox dirBox, dataBox;
     readonly RichTextBox details;
     readonly System.Windows.Forms.Timer animation;
@@ -134,7 +138,7 @@ sealed partial class SetupForm : Form
             options.Dir = dirBox.Text.Trim().Length > 0 ? dirBox.Text.Trim() : options.Dir;
             string data = dataBox.Text.Trim();
             if (data.Length > 0 && !string.Equals(data, @"C:\IntraForgeData", StringComparison.OrdinalIgnoreCase)) options.Data = data;
-            if (!options.Resume) { options.NoStartup = !startWithWindows; options.BackupTime = backupTime; }
+            if (!options.Resume) { options.NoStartup = !startWithWindows; options.BackupTime = backupTime; options.Features = FeatureChoice(); }
         }
         run = new InstallRun(kind, options, payload);
         run.Changed += delegate { UI(OnRunChanged); };
@@ -174,6 +178,15 @@ sealed partial class SetupForm : Form
             d.Description = what; d.SelectedPath = Directory.Exists(box.Text) ? box.Text : "";
             if (d.ShowDialog(this) == DialogResult.OK) box.Text = d.SelectedPath;
         }
+    }
+
+    /// <summary>"all" (nothing written: every part), "none", or the chosen keys joined by commas.</summary>
+    string FeatureChoice()
+    {
+        List<string> on = new List<string>();
+        for (int i = 0; i < FeatureKeys.Length; i++) if (featureOn[i]) on.Add(FeatureKeys[i]);
+        if (on.Count == FeatureKeys.Length) return "all";
+        return on.Count == 0 ? "none" : string.Join(",", on.ToArray());
     }
 
     void PickBackupTime(RectangleF anchor)

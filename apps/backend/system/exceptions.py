@@ -14,9 +14,24 @@ def structured_exception_handler(exc, context):
     a request ID, never in the response body (Section 14 of the master
     prompt: never leak stack traces or internal details through the API).
     """
-    response = drf_exception_handler(exc, context)
+    from .features import DISABLED_MESSAGE, FeatureDisabled
 
     request = context.get("request")
+    if isinstance(exc, FeatureDisabled):
+        return Response(
+            {
+                "error": {
+                    "code": "feature_disabled",
+                    "message": DISABLED_MESSAGE,
+                    "group": exc.group,
+                    "request_id": getattr(request, "request_id", None),
+                }
+            },
+            status=403,
+        )
+
+    response = drf_exception_handler(exc, context)
+
     request_id = getattr(request, "request_id", None) or str(uuid.uuid4())
 
     if response is None:

@@ -23,10 +23,13 @@
     Time of the daily backup (passed to Install-IntraForgeShop.ps1). Default 19:00.
 .PARAMETER NoStartup
     Do not start IntraForge by itself at sign-in (passed to Install-IntraForgeShop.ps1).
+.PARAMETER Features
+    Which parts of IntraForge to show: all (default), none, or feature group keys joined by commas
+    (business_apps,pay_media,websites_developer,files_data). Passed to Install-IntraForgeShop.ps1.
 #>
 [CmdletBinding()]
 param([int]$Port = 8443, [int]$SparePartsPort = 3000, [string]$DataDir = 'C:\IntraForgeData', [switch]$Quiet, [switch]$NoRestart, [switch]$Resume,
-      [string]$KeysFile, [string]$RestoreFrom, [string]$BackupTime = '19:00', [switch]$NoStartup)
+      [string]$KeysFile, [string]$RestoreFrom, [string]$BackupTime = '19:00', [switch]$NoStartup, [string]$Features)
 
 Set-Location $PSScriptRoot
 . (Join-Path $PSScriptRoot 'IntraForgeShop.Common.ps1')
@@ -53,6 +56,7 @@ if ($KeysFile) { $recovery += " -KeysFile `"$KeysFile`"" }
 if ($RestoreFrom) { $recovery += " -RestoreFrom `"$RestoreFrom`"" }
 $recovery += " -BackupTime $BackupTime"
 if ($NoStartup) { $recovery += ' -NoStartup' }
+if ($PSBoundParameters.ContainsKey('Features')) { $recovery += " -Features `"$Features`"" }
 function Request-Restart([string]$Why) {
     $powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
     $resume = "`"$powershell`" -NoProfile -ExecutionPolicy Bypass -File `"$PSScriptRoot\Setup-IntraForge.ps1`" -Resume -Port $Port -DataDir `"$DataDir`"$recovery"
@@ -120,6 +124,7 @@ if (-not (Test-DockerUsersToken) -and (Test-Path 'C:\Program Files\Docker\Docker
 Step 'Installing IntraForge'
 $installArgs = @{ Port = $Port; DataDir = $DataDir; BackupTime = $BackupTime }
 if ($NoStartup) { $installArgs.NoStartup = $true }
+if ($PSBoundParameters.ContainsKey('Features')) { $installArgs.Features = $Features }
 if ($KeysFile) { $installArgs.KeysFile = $KeysFile }
 if ($RestoreFrom) { $installArgs.RestoreFrom = $RestoreFrom }
 & (Join-Path $PSScriptRoot 'Install-IntraForgeShop.ps1') @installArgs

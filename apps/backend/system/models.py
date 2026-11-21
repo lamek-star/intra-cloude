@@ -78,3 +78,17 @@ class HealthAlert(models.Model):
 
     def __str__(self):
         return f"{self.check_name} alert from {self.opened_at:%Y-%m-%d %H:%M}"
+
+
+class FeatureSettings(models.Model):
+    """Which feature groups this installation shows and serves (system/features.py). One row (pk=1), seeded from
+    INTRAFORGE_FEATURES the first time it is read, then changed only by the Super Administrator."""
+
+    enabled = models.JSONField(default=list)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        "accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+
+    def __str__(self):
+        return "features: " + (", ".join(self.enabled or []) or "none")
