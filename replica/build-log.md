@@ -607,3 +607,44 @@ folder the base image does not even have, so the running Pay is still the 1.5.0 
 download fix b029942 and the signed wallet 4f72e0d were in the images but never ran). The signed wallet APK was put
 by hand into `/srv/ifpay/ifpay/static/download/` again (served checksum `fe07d625...`), until a kit with a corrected
 Pay image (`COPY ifpay /srv/ifpay/ifpay`) and a build-time check that the running path holds the intended commit.
+
+## 2026-11-20 to 2026-11-22 -- kits 1.5.9, 1.5.10, 1.5.11
+
+**Kit 1.5.9 and the shop PC on it** (2026-11-20): the Pay image recipe now copies Pay into the folder the base image
+runs from (`/srv/ifpay`), and the kit build refuses a Pay image whose running code is not the intended commit
+(`628ab4e`). Shop log: `upgrade 1.5.8 -> 1.5.9: safety backup taken` (12:48) and `upgraded 1.5.8 -> 1.5.9` (13:04).
+
+**Kit 1.5.10** (built 2026-11-21 10:16Z from `d599f143b`): `IntraForge-Local-1.5.10-d599f143b.zip` (SHA-256
+`0db1b810...`), `IntraForge-Setup-1.5.10-d599f143b.exe` (no embedded prerequisites; SHA-256 `a4a33725...`). Spare Parts
+and Pharmacy `f9b3f60` (part number on new products, red/amber/green stock status with minimum levels, smoother
+screens, server messages in four languages); Pay `4f72e0d`. **On the shop PC:** the quiet upgrade (14:28) stopped
+before changing anything, exit 194, because Windows was waiting for a restart. Separately, at 14:05 the shop had been
+removed with **option C** (data deleted; needs `DELETE-MY-SHOP-DATA` typed; not run by this session), and at 14:39 a
+fresh 1.5.10 was installed (`restored=False`). The owner chose to keep the fresh install; the 13:41 and 13:59 backups
+of the old shop stay in `C:\IntraForgeData\backups`. A new organization, Spare Parts and Pay were installed in it,
+10 real items and a warehouse added; the full sale flow was tested on the dev copy (10 Playwright specs pass, PO
+receive and a sale moving stock and stock status correctly).
+
+**Kit 1.5.11** (built 2026-11-21 23:03Z from `7b2da9e50`): `IntraForge-Local-1.5.11-7b2da9e50.zip` (SHA-256
+`9ba4f556e83bb0d14bb28548bcb9dd8a67f01035a7654ee60ca4c18ac63f71e4`), `IntraForge-Setup-1.5.11-7b2da9e50.exe` (SHA-256
+`1441245aa3ff8ee493b93742a925e288782ba00f8482a2ce282dd336fa301823`, no embedded prerequisites). Contents since 1.5.10:
+- IntraForge `c47e9f4` feature groups (ADR-0025): Setup's "Show these parts", the Super Administrator's Features page,
+  and the server refusing a switched-off group (migration system 0005);
+- IntraForge `7b2da9e` contact details for every person (migration accounts 0006, rollback-safe defaults) and the
+  Control Center's "Owner (Super Administrator)" card with `manage.py super_administrators`;
+- Spare Parts and Pharmacy `59fddb1`: one "needs ordering" rule for the Low stock tile, filter, report, badges and Stock
+  status (`9bc1519`); received goods set the product's weighted-average cost, and an overpayment shows money, not minor
+  units (`59fddb1`). Images built from `git archive` of that commit;
+- Pay `4f72e0d` unchanged (the build verified its running code tree).
+Tests before the build: backend 1440 OK; frontend 223 Vitest, tsc, eslint clean; Spare Parts 161; Setup and Control
+Center compile.
+
+**Shop PC upgraded 1.5.10 -> 1.5.11** (2026-11-22 03:17-03:21, exit 0, no pending restart): safety backup taken, every
+shop container on the 1.5.11 images, `readyz` 200, migrations system 0005 and accounts 0006 applied. Data kept:
+3 users, 2 organizations, 2 apps, 28 audit events; Spare Parts 11 products, 8 stock movements, 60 units on hand -- the
+same counts as before the upgrade. Checked inside the running containers: the new Spare Parts code is in the image
+and 7 items need ordering by the new rule (was 6 on the tile); as the shop's only person, sami reads the features (all
+four on: an installation from before the setting keeps everything) and is refused a change (403), and the account
+carries the new contact fields. **Not done:** the shop has no Super Administrator yet (Control Center > Settings >
+Owner, the owner's action); the screens were not looked at in a browser, because this PC does not trust the shop's
+certificate in the browser pane.
