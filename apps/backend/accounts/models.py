@@ -37,6 +37,12 @@ class User(AbstractBaseUser):
     email = models.EmailField(unique=True)
     first_name = models.CharField(max_length=150, blank=True)
     last_name = models.CharField(max_length=150, blank=True)
+    # Contact details (the person edits their own; an administrator of every organization they belong to may too --
+    # accounts.services.can_edit_profile). Optional, never needed to sign in.
+    phone = models.CharField(max_length=40, blank=True, default="", db_default="")
+    job_title = models.CharField(max_length=120, blank=True, default="", db_default="")
+    address = models.CharField(max_length=300, blank=True, default="", db_default="")
+    emergency_contact = models.CharField(max_length=200, blank=True, default="", db_default="")
     is_active = models.BooleanField(
         default=True,
         help_text="Platform-wide account lock, independent of any organization Membership status.",

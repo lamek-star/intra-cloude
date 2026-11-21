@@ -1481,11 +1481,49 @@ namespace IntraForge.ControlCenter
             AddToCard(keysCard, keysNote, keyButtons);
             Body.Controls.Add(keysCard);
 
+            Body.Controls.Add(OwnerSection(kit));
             Body.Controls.Add(ShopNetworkSection(kit));
             Body.Controls.Add(Para("Shop name, documents and people are set inside IntraForge (Apps > Settings, Organization > Members, where each person gets their role).", Ui.Muted));
             CancelButton = AddButton("Close", ButtonKind.Secondary, DialogResult.Cancel);
             ResumeLayout(true);
             FitToContent();
+        }
+
+        // The installation's Super Administrator (accounts/management/commands/super_administrators.py). Only someone at this
+        // PC can choose who it is: no web page hands out the top level.
+        Control OwnerSection(Kit kit)
+        {
+            Card box = SectionCard("Owner (Super Administrator)");
+            Label note = Ui.Label("The Super Administrator can do everything in IntraForge, including Backups, Health, Internet access and " +
+                                  "Features. Only someone at this PC can choose who it is: the person signs up in IntraForge first, then you pick them here.",
+                                  Ui.Regular, Ui.Muted, ContentWidth - 40);
+            note.Padding = Ui.Pad(0, 0, 0, 10);
+            UiButton choose = new UiButton("Choose the Super Administrator...", ButtonKind.Secondary, Ui.GKey) { Margin = Padding.Empty };
+            choose.Click += (s, e) =>
+            {
+                List<OwnerForm.Person> people;
+                Cursor = Cursors.WaitCursor;
+                try { people = OwnerForm.LoadPeople(kit); }
+                finally { Cursor = Cursors.Default; }
+                if (people == null)
+                {
+                    MessageBox.Show(this, "The accounts cannot be read while IntraForge is stopped. Start IntraForge, then try again.", "IntraForge");
+                    return;
+                }
+                using (OwnerForm f = new OwnerForm(people))
+                {
+                    if (f.ShowDialog(this) != DialogResult.OK || f.Chosen == null) return;
+                    if (!System.Text.RegularExpressions.Regex.IsMatch(f.Chosen, @"^[A-Za-z0-9@._+\-]+$")) return;
+                    ProcResult r = Proc.Run(Proc.Docker(), "exec " + Kit.Project + "-backend-1 python manage.py super_administrators " +
+                                            (f.RemoveChosen ? "revoke " : "grant ") + f.Chosen, kit.Dir, 30000, null);
+                    string[] lines = r.Output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                    string last = lines.Length > 0 ? lines[lines.Length - 1].Trim() : "";
+                    if (last.StartsWith("CommandError: ")) last = last.Substring("CommandError: ".Length);
+                    MessageBox.Show(this, r.ExitCode == 0 ? last : "Not changed. " + last, "IntraForge");
+                }
+            };
+            AddToCard(box, note, choose);
+            return box;
         }
 
         static Card SectionCard(string title)
@@ -1685,6 +1723,69 @@ namespace IntraForge.ControlCenter
                 hint.ForeColor = ok ? Ui.Muted : Ui.Danger;
             };
             AcceptButton = go;
+            ResumeLayout(true);
+            FitToContent();
+        }
+    }
+
+    // Who is the installation's Super Administrator: one person with an account, picked at the shop PC.
+    sealed class OwnerForm : UiDialog
+    {
+        public sealed class Person
+        {
+            public string Email = "", Name = "";
+            public bool Super;
+            public override string ToString()
+            {
+                return (Name.Length > 0 ? Name + "   " + Email : Email) + (Super ? "   (Super Administrator)" : "");
+            }
+        }
+
+        readonly ComboBox list;
+        public bool RemoveChosen;
+        public string Chosen { get { Person p = list.SelectedItem as Person; return p == null ? null : p.Email; } }
+
+        /// <summary>Every active person (super_administrators list --json), or null when IntraForge cannot be asked.</summary>
+        public static List<Person> LoadPeople(Kit kit)
+        {
+            ProcResult res = Proc.Run(Proc.Docker(), "exec " + Kit.Project + "-backend-1 python manage.py super_administrators list --json", kit.Dir, 30000, null);
+            if (res.ExitCode != 0) return null;
+            try
+            {
+                string json = res.Output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Last(l => l.TrimStart().StartsWith("["));
+                List<Person> people = new List<Person>();
+                foreach (object o in new JavaScriptSerializer().Deserialize<System.Collections.ArrayList>(json))
+                {
+                    Dictionary<string, object> d = (Dictionary<string, object>)o;
+                    people.Add(new Person { Email = Convert.ToString(d["email"]), Name = Convert.ToString(d["name"]), Super = Convert.ToBoolean(d["super_administrator"]) });
+                }
+                return people;
+            }
+            catch (Exception) { return null; }
+        }
+
+        public OwnerForm(List<Person> people) : base("The Super Administrator",
+            "Can do everything in IntraForge. Choose a person who already has an account.", Ui.GKey, Ui.Accent)
+        {
+            SuspendLayout();
+            List<string> now = people.Where(p => p.Super).Select(p => p.Email).ToList();
+            Body.Controls.Add(Para("Super Administrator now: " + (now.Count == 0 ? "nobody yet." : string.Join(", ", now.ToArray())), Ui.Text));
+            list = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Font = Ui.Regular, Width = Ui.Px(460), Margin = Ui.Pad(0, 8, 0, 4) };
+            foreach (Person p in people) list.Items.Add(p);
+            Body.Controls.Add(list);
+            Body.Controls.Add(Para("Someone missing? They sign up in IntraForge first (or an administrator adds them), then open this again. " +
+                                   "The last Super Administrator cannot be removed: make someone else one first.", Ui.Muted));
+            UiButton make = AddButton("Make Super Administrator", ButtonKind.Primary, DialogResult.OK);
+            UiButton remove = AddButton("Remove", ButtonKind.Secondary, DialogResult.OK);
+            remove.Click += (s, e) => RemoveChosen = true;
+            CancelButton = AddButton("Cancel", ButtonKind.Secondary, DialogResult.Cancel);
+            make.Enabled = remove.Enabled = false;
+            list.SelectedIndexChanged += (s, e) =>
+            {
+                Person p = list.SelectedItem as Person;
+                make.Enabled = p != null && !p.Super;
+                remove.Enabled = p != null && p.Super;
+            };
             ResumeLayout(true);
             FitToContent();
         }

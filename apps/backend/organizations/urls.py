@@ -8,6 +8,11 @@ urlpatterns = [
         views.MembershipPasswordResetView.as_view(),
         name="membership-password-reset",
     ),
+    path(
+        "organizations/<uuid:organization_id>/members/<uuid:membership_id>/profile/",
+        views.MembershipProfileView.as_view(),
+        name="membership-profile",
+    ),
     path("organizations/", views.OrganizationListCreateView.as_view(), name="organization-list-create"),
     path(
         "organizations/<uuid:organization_id>/",

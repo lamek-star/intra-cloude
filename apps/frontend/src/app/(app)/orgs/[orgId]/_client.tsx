@@ -23,6 +23,7 @@ import {
 } from "@/components/ui";
 import { MemberRoles, type OrganizationRoles } from "./MemberRoles";
 import { ResetPassword } from "./ResetPassword";
+import { EditMemberDetails } from "@/components/UserDetails";
 import { useFeatures } from "@/lib/features";
 
 export default function OrgDetailClient({ orgId }: { orgId: string }) {
@@ -186,6 +187,7 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
             <THead>
               <Th>Email</Th>
               <Th>Name</Th>
+              <Th>Phone</Th>
               <Th>Status</Th>
               <Th>Team</Th>
               {roles && <Th>Roles</Th>}
@@ -208,7 +210,9 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
                   )}
                   <Td className="text-text-muted">
                     {[m.user.first_name, m.user.last_name].filter(Boolean).join(" ") || "—"}
+                    {m.user.job_title && <span className="block text-xs text-slate-400">{m.user.job_title}</span>}
                   </Td>
+                  <Td className="text-text-muted">{m.user.phone || "—"}</Td>
                   <Td>
                     <Badge tone={m.status === "active" ? "success" : "warning"}>{m.status}</Badge>
                   </Td>
@@ -232,7 +236,17 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
                   )}
                   <Td>
                     {!m.application && m.status === "active" && (
-                      <ResetPassword orgId={orgId} membershipId={m.id} who={m.user.email} />
+                      <div className="flex flex-wrap gap-1">
+                        <EditMemberDetails
+                          orgId={orgId}
+                          membershipId={m.id}
+                          user={m.user}
+                          onSaved={(u) =>
+                            setMembers((list) => list?.map((x) => (x.id === m.id ? { ...x, user: u } : x)) ?? null)
+                          }
+                        />
+                        <ResetPassword orgId={orgId} membershipId={m.id} who={m.user.email} />
+                      </div>
                     )}
                   </Td>
                 </TRow>

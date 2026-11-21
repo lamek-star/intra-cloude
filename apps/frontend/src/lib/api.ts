@@ -180,6 +180,11 @@ export type User = {
   email: string;
   first_name: string;
   last_name: string;
+  /** Contact details: the person edits their own (Account), an administrator a member's (Members > Details). */
+  phone?: string;
+  job_title?: string;
+  address?: string;
+  emergency_contact?: string;
   date_joined: string;
   mfa_enabled: boolean;
   /** Password sign-in is off for this account: only a passkey signs in (ADR-0019). */

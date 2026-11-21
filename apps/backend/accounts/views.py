@@ -157,6 +157,15 @@ class MeView(APIView):
     def get(self, request):
         return Response(UserSerializer(request.user).data)
 
+    def patch(self, request):
+        """The person's own details (name, phone, job title, address, emergency contact)."""
+        from .serializers import ProfileSerializer
+
+        serializer = ProfileSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        user = services.update_profile(actor=request.user, target=request.user, data=serializer.validated_data)
+        return Response(UserSerializer(user).data)
+
 
 class MFAEnrollView(APIView):
     permission_classes = [IsAuthenticated]

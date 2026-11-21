@@ -230,3 +230,29 @@ def reset_password(*, actor: User, target: User, organization_id) -> str:
         resource_id=target.id,
     )
     return temporary
+
+
+def can_edit_profile(actor: User, target: User) -> bool:
+    """Who may change someone else's details: the same people who may reset their password
+    (can_reset_password). A person changes their own details through /auth/me/."""
+    return can_reset_password(actor, target)
+
+
+def update_profile(*, actor: User, target: User, data: dict, organization_id=None) -> User:
+    """Saves the validated details (accounts.serializers.ProfileSerializer). Audited with the names of the fields
+    that changed, never their values (a phone number or address is personal data)."""
+    changed = [k for k, v in data.items() if getattr(target, k) != v]
+    if not changed:
+        return target
+    for k in changed:
+        setattr(target, k, data[k])
+    target.save(update_fields=changed)
+    audit.record(
+        actor=actor,
+        organization_id=organization_id,
+        action="user.profile.update",
+        resource_type="user",
+        resource_id=target.id,
+        context={"fields": changed, "own": actor.pk == target.pk},
+    )
+    return target

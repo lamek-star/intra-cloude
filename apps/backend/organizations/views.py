@@ -286,3 +286,34 @@ class MembershipPasswordResetView(APIView):
         except account_services.PasswordError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
         return Response({"email": membership.user.email, "temporary_password": temporary})
+
+
+class MembershipProfileView(APIView):
+    """An administrator changes a member's details (name, phone, job title, address, emergency contact): users.manage
+    here and in every other organization the person belongs to, never the Super Administrator, a service account or
+    themselves (accounts.services.can_edit_profile; their own details are /auth/me/). The email stays: it is how the
+    person signs in."""
+
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, organization_id, membership_id):
+        from accounts import services as account_services
+        from accounts.serializers import ProfileSerializer, UserSerializer
+
+        org = _get_member_organization(request.user, organization_id)
+        if not has_permission(request.user, "users.manage", organization_id=org.id):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        try:
+            membership = Membership.objects.select_related("user").get(id=membership_id, organization=org)
+        except Membership.DoesNotExist as exc:
+            raise Http404 from exc
+        if not account_services.can_edit_profile(request.user, membership.user):
+            return Response(
+                {"detail": "You cannot change this person's details here."}, status=status.HTTP_403_FORBIDDEN
+            )
+        serializer = ProfileSerializer(membership.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        user = account_services.update_profile(
+            actor=request.user, target=membership.user, data=serializer.validated_data, organization_id=org.id
+        )
+        return Response(UserSerializer(user).data)

@@ -253,6 +253,25 @@ back on brings everything back as it was. People using an app that is switched o
 **Internet access** off before hiding Websites and Developer (IntraForge says so if you forget). Sign-in, organizations,
 members, teams, units, the audit log, backups and the licence are always there. Details: ADR-0025.
 
+### People, their details and the Super Administrator
+
+**Where people's information is.** Each person has one account: their **email** (how they sign in), **first and last
+name**, **phone**, **job title**, **address** and an **emergency contact**. Everyone fills in their own on **Your account**
+(the person icon at the bottom left). An Organization Administrator sees every member's name, job title and phone on the
+organization page under **Members**, and the **Details** button next to a person opens and edits all of them; they can
+edit someone only if they manage every organization that person belongs to, and never the Super Administrator. The
+email is not changed there. Changes go in the audit log by field name; the phone number or address itself is never
+written to the log.
+
+**Levels.** The **Super Administrator** can do everything, including Backups, Health, Internet access and Features. An
+**Organization Administrator** can do everything inside their organization. Narrower roles (Storage Administrator,
+Developer, Spare Parts Sales, Pay Cashier, Pharmacist...) are given per person under Members > Give a role.
+
+**Choosing the Super Administrator** is done only at the shop PC: Control Center > **Settings** > **Owner (Super
+Administrator)** > **Choose the Super Administrator...**, pick the person (they sign up in IntraForge first) and press
+**Make Super Administrator**. The same window removes one, but never the last. Nobody is made Super Administrator by
+signing up first, because anyone on the shop network could sign up before you.
+
 ## 8. Where to Find the Newer Screens
 
 Everything in IntraForge now has a page. The ones added most recently, and where they are:

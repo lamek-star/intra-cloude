@@ -16,8 +16,12 @@ NEW_COLUMNS = [
     (User, "must_change_password"),
     (Bucket, "trash_days"),
     (Bucket, "version_days"),
+    (User, "phone"),
+    (User, "job_title"),
+    (User, "address"),
+    (User, "emergency_contact"),
 ]
-NEW_USER_FIELDS = {"passkey_only", "must_change_password"}
+NEW_USER_FIELDS = {"passkey_only", "must_change_password", "phone", "job_title", "address", "emergency_contact"}
 
 
 class RollbackSafetyTests(TestCase):

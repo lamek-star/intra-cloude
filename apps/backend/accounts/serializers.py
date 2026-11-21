@@ -1,3 +1,5 @@
+import re
+
 from django.contrib.auth import password_validation
 from rest_framework import serializers
 
@@ -12,6 +14,10 @@ class UserSerializer(serializers.ModelSerializer):
             "email",
             "first_name",
             "last_name",
+            "phone",
+            "job_title",
+            "address",
+            "emergency_contact",
             "date_joined",
             "mfa_enabled",
             "passkey_only",
@@ -58,3 +64,24 @@ class MFAVerifySerializer(serializers.Serializer):
 class PasswordChangeSerializer(serializers.Serializer):
     current_password = serializers.CharField(max_length=256, trim_whitespace=False)
     new_password = serializers.CharField(max_length=256, trim_whitespace=False)
+
+
+PHONE = re.compile(r"^[0-9+()\-. ]{0,40}$")
+PROFILE_FIELDS = ["first_name", "last_name", "phone", "job_title", "address", "emergency_contact"]
+
+
+class ProfileSerializer(serializers.ModelSerializer):
+    """The details a person (or their administrator) may change. Not the email: it is how they sign in."""
+
+    class Meta:
+        model = User
+        fields = PROFILE_FIELDS
+
+    def validate(self, attrs):
+        return {k: (v.strip() if isinstance(v, str) else v) for k, v in attrs.items()}
+
+    def validate_phone(self, value):
+        value = (value or "").strip()
+        if value and (not PHONE.match(value) or sum(c.isdigit() for c in value) < 6):
+            raise serializers.ValidationError("Enter a phone number: digits, spaces, +, -, ( and ) only.")
+        return value

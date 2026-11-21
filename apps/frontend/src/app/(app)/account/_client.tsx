@@ -8,6 +8,7 @@ import { Badge, Button, Card, CopyButton, ErrorBanner, Input, Label, PageHeader,
 import { PasskeysCard } from "./passkeys-card";
 import { PasswordForm } from "@/components/PasswordForm";
 import { RecoveryCodesBox } from "@/components/RecoveryCodes";
+import { detailsOf, UserDetailsForm } from "@/components/UserDetails";
 
 type Enrollment = { secret: string; provisioning_uri: string };
 
@@ -22,7 +23,7 @@ export default function AccountClient() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <PageHeader title="Your account" description="Your sign-in details, passkeys and two-step sign-in." />
+      <PageHeader title="Your account" description="Your details, password, passkeys and two-step sign-in." />
 
       <Card>
         <dl className="grid gap-4 sm:grid-cols-2">
@@ -31,12 +32,21 @@ export default function AccountClient() {
             <dd className="mt-0.5 text-sm text-text-primary">{user.email}</dd>
           </div>
           <div>
-            <dt className="text-xs font-medium text-text-muted">Name</dt>
-            <dd className="mt-0.5 text-sm text-text-primary">
-              {[user.first_name, user.last_name].filter(Boolean).join(" ") || "—"}
-            </dd>
+            <dt className="text-xs font-medium text-text-muted">Account created</dt>
+            <dd className="mt-0.5 text-sm text-text-primary">{new Date(user.date_joined).toLocaleDateString()}</dd>
           </div>
         </dl>
+        <p className="mt-3 text-xs text-text-muted">Your email is how you sign in; an administrator can help you change it.</p>
+      </Card>
+
+      <Card className="space-y-3">
+        <h2 className="text-sm font-semibold text-text-primary">Your details</h2>
+        <p className="text-sm text-slate-500">Your administrators see these on the members list, so they can reach you.</p>
+        <UserDetailsForm
+          initial={detailsOf(user)}
+          save={(d) => api.patch<User>("/auth/me/", d)}
+          onSaved={() => void refresh()}
+        />
       </Card>
 
       <PasswordCard />
