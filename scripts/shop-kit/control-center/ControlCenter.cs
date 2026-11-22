@@ -1409,6 +1409,53 @@ namespace IntraForge.ControlCenter
     }
 
     // ------------------------------------------------------------------------------------------------------- settings
+    // IntraForge's own certificate authority (Caddy's local CA, kept in the proxy's certificates volume across upgrades;
+    // a removal that deletes the data makes a new one). Browsers on this PC stop warning once the signed-in Windows user
+    // trusts it. Adding a root makes Windows show its own confirmation, so nothing is ever trusted silently.
+    static class BrowserCertificate
+    {
+        public static X509Certificate2 Read(Kit kit)
+        {
+            ProcResult r = Proc.Run(Proc.Docker(), "exec " + Kit.Project + "-proxy-1 cat /data/caddy/pki/authorities/local/root.crt", kit.Dir, 15000, null);
+            if (r.ExitCode != 0) return null;
+            Match m = Regex.Match(r.Output, "-----BEGIN CERTIFICATE-----(.+?)-----END CERTIFICATE-----", RegexOptions.Singleline);
+            if (!m.Success) return null;
+            try
+            {
+                X509Certificate2 cert = new X509Certificate2(Convert.FromBase64String(Regex.Replace(m.Groups[1].Value, @"\s", "")));
+                // Only Caddy's self-signed local root, never anything else the container might print.
+                return cert.Subject == cert.Issuer && cert.Subject.Contains("Caddy Local Authority") ? cert : null;
+            }
+            catch (Exception) { return null; }
+        }
+
+        public static bool Trusted(X509Certificate2 cert)
+        {
+            X509Store store = new X509Store(StoreName.Root, StoreLocation.CurrentUser);
+            try
+            {
+                store.Open(OpenFlags.ReadOnly);
+                return store.Certificates.Find(X509FindType.FindByThumbprint, cert.Thumbprint, false).Count > 0;
+            }
+            catch (Exception) { return false; }
+            finally { store.Close(); }
+        }
+
+        // null when added; otherwise why not (a No to Windows' question ends here too).
+        public static string Trust(X509Certificate2 cert)
+        {
+            X509Store store = new X509Store(StoreName.Root, StoreLocation.CurrentUser);
+            try
+            {
+                store.Open(OpenFlags.ReadWrite);
+                store.Add(cert);
+                return null;
+            }
+            catch (Exception ex) { return ex.Message; }
+            finally { store.Close(); }
+        }
+    }
+
     sealed class SettingsForm : UiDialog
     {
         const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -1455,6 +1502,8 @@ namespace IntraForge.ControlCenter
             };
             AddToCard(start, autostart);
             Body.Controls.Add(start);
+
+            Body.Controls.Add(CertificateSection(kit));
 
             Card keysCard = SectionCard("Keys file and data");
             Label keysNote = Ui.Label("Without the keys file a backup cannot be read after this PC is lost. Keep one copy on a USB drive, apart from the backups.", Ui.Regular, Ui.Muted, ContentWidth - 40);
@@ -1523,6 +1572,50 @@ namespace IntraForge.ControlCenter
                 }
             };
             AddToCard(box, note, choose);
+            return box;
+        }
+
+        // "Your connection is not private": the browser on this PC does not yet trust IntraForge's own certificate. One
+        // button trusts it for the signed-in Windows user; Windows itself asks the person to confirm.
+        Control CertificateSection(Kit kit)
+        {
+            Card box = SectionCard("Browser certificate");
+            Label state = Ui.Label("", Ui.Regular, Ui.Text, ContentWidth - 40);
+            state.Padding = Ui.Pad(0, 0, 0, 10);
+            X509Certificate2 cert;
+            Cursor = Cursors.WaitCursor;
+            try { cert = BrowserCertificate.Read(kit); }
+            finally { Cursor = Cursors.Default; }
+            if (cert == null)
+            {
+                state.Text = "IntraForge's certificate cannot be read while IntraForge is stopped. Start IntraForge, then open Settings again.";
+                state.ForeColor = Ui.Muted;
+                AddToCard(box, state);
+                return box;
+            }
+            if (BrowserCertificate.Trusted(cert))
+            {
+                state.Text = "This PC's browsers trust IntraForge's certificate: no security warning.";
+                AddToCard(box, state);
+                return box;
+            }
+            state.Text = "The browser on this PC warns \"Your connection is not private\" because it does not know IntraForge's own " +
+                         "certificate yet. Trust it once for this Windows user: Windows asks you to confirm (choose Yes). Then close and " +
+                         "reopen the browser.";
+            state.ForeColor = Ui.Warn;
+            UiButton trust = new UiButton("Trust IntraForge on this PC...", ButtonKind.Primary, Ui.GKey) { Margin = Padding.Empty };
+            trust.Click += (s, e) =>
+            {
+                string error = BrowserCertificate.Trust(cert);
+                if (error == null && BrowserCertificate.Trusted(cert))
+                {
+                    state.Text = "Done. Close every browser window and open IntraForge again: the warning is gone.";
+                    state.ForeColor = Ui.Text;
+                    trust.Enabled = false;
+                }
+                else MessageBox.Show(this, "The certificate was not added" + (error != null ? ": " + error : ".") , "IntraForge");
+            };
+            AddToCard(box, state, trust);
             return box;
         }
 

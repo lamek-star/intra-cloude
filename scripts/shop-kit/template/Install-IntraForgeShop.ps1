@@ -264,7 +264,7 @@ Write-ShopLog "installed $(Get-ShopVersion) port=$Port data=$DataDir restored=$(
 Set-Content -Path $completeMarker -Value "installed $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $(Get-ShopVersion)"
 Write-Host "`nIntraForge is installed and running: https://localhost:$Port" -ForegroundColor Green
 Write-Host 'Everything is in the IntraForge Control Center (desktop shortcut "IntraForge"): open IntraForge, your apps, backup, restore.' -ForegroundColor Green
-Write-Host 'Your browser will warn about the certificate (it is this computer''s own): choose Advanced, then continue.'
+Write-Host 'If the browser warns "Your connection is not private": Control Center > Settings > Browser certificate > Trust IntraForge on this PC (once).'
 Write-Host ''
 Write-Host 'IMPORTANT - do this once, today:' -ForegroundColor Yellow
 Write-Host "  Copy  $keysCopy  to a USB drive (NOT the same one you keep backups on) and keep it safe."
