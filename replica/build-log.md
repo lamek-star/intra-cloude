@@ -666,3 +666,26 @@ the 1.5.12 images and healthy, `readyz` 200. Data unchanged: 3 users, 2 organiza
 11 products, 8 stock movements, 60 on hand. The shop serves the new stylesheet (`glow-field`, `sun-glow`) at
 `/apps/spare-parts`. **Not done:** the screens were not looked at in a browser on the shop (the browser pane does not
 trust the shop's certificate); they were checked on the dev copy.
+
+## 2026-11-22 -- kit 1.5.13: sign-out, certificate trust, names on this PC, feature tour
+
+**Kit 1.5.13** (built 2026-11-22 09:44Z from `e2cdf60ab`): `IntraForge-Local-1.5.13-e2cdf60ab.zip` (SHA-256
+`811f9c990885a504033950e08de4459c6aed4cedf8a92569fd11500a48a5bc7e`), `IntraForge-Setup-1.5.13-e2cdf60ab.exe` (SHA-256
+`18bbdf3711f8626b87a25b30af8922a909d9e7a85183e7d8214416c55fd3701b`, no embedded prerequisites). Since 1.5.12:
+- Spare Parts and Pharmacy `0625af3`: on IntraForge, sign-out goes straight to IntraForge's sign-in instead of
+  flashing this app's own form first (`65df7ae`, with a Playwright test that fails on the old code); "From"/"To" on
+  Reports and on a stock transfer translated in all four languages (`0625af3`);
+- IntraForge `a64c138`: Control Center > Settings > Browser certificate > Trust IntraForge on this PC (the shop PC had
+  only ever trusted an older test copy's Caddy root, so Chrome warned "not private");
+- IntraForge `e2cdf60`: `Set-IntraForgeNetwork.ps1 -Mode Names` and Settings > Shop network > Open by name on this PC
+  (https://intraforge.lan, https://spare-parts.lan ..., hosts file 127.0.0.1, loopback port 443); the visit-only
+  feature tour of the real shop, `docs/guide/FEATURE_TOUR.md`.
+Tests before the build: Spare Parts 161 server tests and 11 Playwright specs; shop-kit Pester 14; the Control Center
+compiles; the kit holds no key, `.pem` or `.env`.
+
+**Shop PC upgraded 1.5.12 -> 1.5.13** (2026-11-22 13:51-13:55, exit 0): safety backup taken, every shop container on
+the 1.5.13 images, `readyz` 200, data unchanged (3 users, 2 organizations, 2 apps, 40 audit events; 11 products,
+8 movements, 60 on hand). With names off, the proxy still publishes only 8443 and 8445 (the names port line merged
+away). The installed Control Center carries the Browser certificate and Open by name buttons. **Not done:** names
+and the certificate trust are the owner's steps (administrator rights / Windows' confirmation), so neither was
+switched on by this session.
