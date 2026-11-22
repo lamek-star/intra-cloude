@@ -689,3 +689,26 @@ the 1.5.13 images, `readyz` 200, data unchanged (3 users, 2 organizations, 2 app
 away). The installed Control Center carries the Browser certificate and Open by name buttons. **Not done:** names
 and the certificate trust are the owner's steps (administrator rights / Windows' confirmation), so neither was
 switched on by this session.
+
+## 2026-11-23 -- kit 1.5.14: access requests from each app, admin approval, the phone approver
+
+**Kit 1.5.14** (built 2026-11-22 20:38Z from `0165c23b5`): `IntraForge-Local-1.5.14-0165c23b5.zip` (SHA-256
+`0bbba8a3ea2cf17cbeca79c323a4c52c70fef536a3a62b92eac07cb1beb5c576`), `IntraForge-Setup-1.5.14-0165c23b5.exe` (SHA-256
+`d223a0339d84487a8dd1d9f0778fd0e09778cb3d0ed84b4b507fb81b180b8a26`, no embedded prerequisites). Since 1.5.13:
+- IntraForge `0165c23` (ADR-0026): Request access from each app's sign-in page (inactive account + pending request),
+  approval by someone with users.manage AND permissions.manage who chooses the role, a single-use 72-hour activation
+  link (SHA-256 stored, token in the URL fragment, e-mailed only if EMAIL_HOST is set), "who may register" on the
+  Features page (default: requests), the Control Center's "Create the phone approver" (passkey-only, no password,
+  Pay Supervisor); a malformed passkey answer is now refused instead of a 500. Migrations accounts 0007,
+  organizations 0003, system 0006;
+- Spare Parts and Pharmacy `b9c7147`: the Users page lists and decides this app's requests (platform mode).
+Tests before the build: backend 1455 OK (a first full run was spoiled by a second test run sharing the test
+database; the clean re-run passed); frontend 226 Vitest, tsc, eslint; Spare Parts 164 server tests and 11 Playwright
+specs; the Control Center compiles.
+
+**Shop PC upgraded 1.5.13 -> 1.5.14** (2026-11-23 00:51-00:54, exit 0): safety backup taken, every shop container on
+the 1.5.14 images, `readyz` 200, the three migrations applied, data unchanged (4 users, 2 organizations, 2 apps, 58
+audit events; 11 products, 8 movements, 60 on hand). Live: `registration` is `requests`, plain `/auth/register/`
+answers 403, Spare Parts' Request access lists only its four jobs, `/confirm` and `/request-access` load, the
+installed Control Center carries "Create the phone approver". **Not done:** a real phone passkey through the link
+(the owner's step), and a real Request access made by a person.
