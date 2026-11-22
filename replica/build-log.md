@@ -648,3 +648,21 @@ four on: an installation from before the setting keeps everything) and is refuse
 carries the new contact fields. **Not done:** the shop has no Super Administrator yet (Control Center > Settings >
 Owner, the owner's action); the screens were not looked at in a browser, because this PC does not trust the shop's
 certificate in the browser pane.
+
+## 2026-11-22 -- kit 1.5.12: Spare Parts' dark glass design
+
+**Kit 1.5.12** (built 2026-11-22 08:03Z from `3810bd0bc`): `IntraForge-Local-1.5.12-3810bd0bc.zip` (SHA-256
+`96338ec301ad077f0b0a27d7c880808d4b26131548513f3a7f1bb66e9baf438e`), `IntraForge-Setup-1.5.12-3810bd0bc.exe` (SHA-256
+`9eaa78c24c59f0089fd375bfc34c0c95110845f93af35058088fcc349f5df8bc`, no embedded prerequisites). The only change since
+1.5.11 is Spare Parts and Pharmacy `f7a408b`: a dark glass look by default (drifting glows, a floating blue sidebar, a
+greeting, glass cards and pill statuses) with a remembered light switch, KPIs that count up, rows that slide in, a
+Sales trend chart (7/30/90 days, 12 months), and a fix for a second quick photo upload wrongly becoming the main photo.
+Images built from `git archive` of that commit; both contain the new styles. Pay `4f72e0d` unchanged (code tree
+verified by the build). The kit holds no key, `.pem` or `.env`. Tests before the build: Spare Parts 161 server tests
+and 10 Playwright specs (two runs in a row).
+
+**Shop PC upgraded 1.5.11 -> 1.5.12** (2026-11-22 12:09-12:12, exit 0): safety backup taken, every shop container on
+the 1.5.12 images and healthy, `readyz` 200. Data unchanged: 3 users, 2 organizations, 2 apps, 30 audit events;
+11 products, 8 stock movements, 60 on hand. The shop serves the new stylesheet (`glow-field`, `sun-glow`) at
+`/apps/spare-parts`. **Not done:** the screens were not looked at in a browser on the shop (the browser pane does not
+trust the shop's certificate); they were checked on the dev copy.
