@@ -73,6 +73,9 @@ class AppAccessView(APIView):
 
 
 class OrganizationAccessRequestsView(APIView):
+    """The organization's access requests (?status=pending|approved|rejected), for someone who may add members AND
+    give roles (users.manage and permissions.manage); 403 for anyone else, 404 for a non-member."""
+
     permission_classes = [IsAuthenticated]
 
     def get(self, request, organization_id):
@@ -84,6 +87,9 @@ class OrganizationAccessRequestsView(APIView):
 
 
 class OrganizationAccessRequestDecisionView(APIView):
+    """approve (body: role_slug -- the administrator's choice -- and note), reject (note), or link (a new single-use
+    activation link for an approved account not activated yet). Approving a new account returns its link once."""
+
     permission_classes = [IsAuthenticated]
 
     def post(self, request, organization_id, request_id, decision):

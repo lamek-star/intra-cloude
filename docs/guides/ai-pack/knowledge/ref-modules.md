@@ -9,8 +9,12 @@ Every source file, with the first paragraph of its own description (docstring or
 | File | What it is |
 |---|---|
 | `crypto.py` | Encryption for MFA (TOTP) secrets at rest — same approach as `databases/crypto.py` (Fernet, keyed by `CREDENTIAL_ENCRYPTION_KEY`), but kept as its own small module rather than a shared import: `accounts` is the most foundational app (every other app depends on it via `settings.AUTH_USER_MODEL`), and having it import from a later, feature- specific app like `databases` would invert this codebase's  |
+| `links.py` | Single-use confirmation links (ADR-0026, step 3). |
+| `mail.py` | Sending a confirmation link by e-mail (ADR-0026). Optional: without EMAIL_HOST nothing is sent and the caller tells the administrator to hand the link over. A failure to send never fails the approval itself. |
+| `management/commands/approver_account.py` | The owner's phone approver (ADR-0026, decision 6), made from the shop PC (Control Center > Settings > Owner). |
 | `management/commands/bootstrap_super_administrator.py` | — |
 | `management/commands/passkey_reset.py` | — |
+| `management/commands/super_administrators.py` | The installation's Super Administrators, managed from the shop PC (the Control Center's "Owner" card). |
 | `middleware.py` | After an administrator reset someone's password, that person may do nothing through the API until they choose their own (accounts.services.reset_password sets must_change_password): only seeing who they are, changing the password, signing out and the CSRF cookie stay open. |
 | `models.py` | — |
 | `passkeys.py` | Passkeys (WebAuthn), ADR-0019. Kept apart from the HTTP layer like accounts/services.py. |
@@ -90,9 +94,11 @@ Every source file, with the first paragraph of its own description (docstring or
 
 | File | What it is |
 |---|---|
+| `activity.py` | Organization-wide views of what applications did with their credentials, built only from ApiRequestLog (method, path, status, duration, time -- never a query string, body or header). Used by the Developer section's API Logs and Usage tabs. The caller checks membership and application.read first. |
 | `authentication.py` | Service-account authentication for the API (Section 14 of the master prompt). A valid `Authorization: Bearer pdc_sk_...` resolves to the credential's ServiceAccount's `identity_user` — from that point on, every existing permission check, tenant-scoped lookup, and audit call treats it exactly like a human user's session, because it *is* the same `User` model (see applications/models.py:ServiceAccou |
 | `middleware.py` | Records each request an application makes with its bearer credential (ApiRequestLog), after the response. DRF authenticates inside the view and sets request.auth on the underlying request, so a request with no ApplicationCredential (every person's own session) is never recorded. Recording never changes or fails the response: a write that fails is logged and the response goes out as it was. |
 | `models.py` | — |
+| `quotas.py` | Per-application daily request limit (Application.daily_request_limit; empty = no limit). |
 | `serializers.py` | — |
 | `services.py` | Application/service-account lifecycle: register an Application (creates its ServiceAccount and the User row that identity resolves to), issue/ rotate/revoke credentials, and resolve a bearer token back to a ServiceAccount at request time (applications/authentication.py). |
 | `tasks.py` | — |
@@ -235,6 +241,8 @@ Every source file, with the first paragraph of its own description (docstring or
 
 | File | What it is |
 |---|---|
+| `access.py` | Access requests (ADR-0026): someone asks, from an installed application's Request access page, to work in an organization; an administrator approves (choosing the role) or rejects; a new account is then confirmed by a single-use link (accounts/links.py). |
+| `access_views.py` | HTTP layer for access requests (ADR-0026); the rules are in organizations/access.py. |
 | `models.py` | — |
 | `serializers.py` | — |
 | `services.py` | — |
@@ -317,6 +325,7 @@ Every source file, with the first paragraph of its own description (docstring or
 | `backup_views.py` | The Backups page (Super Administrator only, system.admin): every backup of this installation, whether its restore test passed, and "Back up now". Restoring replaces live data, so it stays in the Control Center on the shop PC (docs/operations/BACKUP_RESTORE.md); nothing here restores. |
 | `backups.py` | Real backup and restore-verification across every store the platform holds data in (Phase 11 added PostgreSQL via `pg_dump`/`pg_restore`; Phase 15 adds object storage and configuration). Restore verification always targets a throwaway, isolated target — a scratch database, a scratch object-storage key prefix — created immediately before and removed immediately after, never production data (Section |
 | `exceptions.py` | — |
+| `features.py` | Feature groups: which parts of IntraForge this installation shows and serves. |
 | `health.py` | Health history and alerts. Every 5 minutes (Celery Beat) the checks run and are kept HEALTH_HISTORY_DAYS days; a check failing twice in a row opens an alert, which closes by itself when the check passes again. Besides the dependencies /readyz checks, two things a shop would otherwise notice too late: the last good backup is older than a day and a half, and the backups' disk is nearly full. When no |
 | `management/commands/ensure_tenant_role.py` | — |
 | `management/commands/inspect_backup_set.py` | — |
@@ -348,6 +357,7 @@ Every source file, with the first paragraph of its own description (docstring or
 
 | File | What it is |
 |---|---|
+| `access.ts` | Access requests from each app and single-use confirmation links (ADR-0026). |
 | `analytics-operations.ts` | Mirrors analytics/data.py's NUMERIC_TYPES/CATEGORICAL_TYPES/TEMPORAL_TYPES exactly — the backend rejects a column of the wrong kind for a given operation with a 400, but filtering the dropdowns to only offer eligible columns up front means an operator only ever discovers that by reading this list once, not by trial and error against the API. |
 | `api.ts` | Talks to the Django/DRF backend at the same origin (Caddy routes /api/v1/* to it — see infrastructure/proxy/Caddyfile), so plain relative fetches with credentials:"include" work with no CORS setup needed, in this deployment or in `next dev` run behind the proxy. Session-cookie auth + Django's CSRF discipline (docs/api/API.md): every mutating request needs an X-CSRFToken header matching the csrftok |
 | `app-pay.ts` | — |
@@ -357,6 +367,7 @@ Every source file, with the first paragraph of its own description (docstring or
 | `built-in-apps.ts` | The customer application gallery's view of the backend catalog (app_platform/built_in_apps.py). The backend decides what is offered and what its release status is; the UI only presents that honestly. A preview is never dressed up as production-ready. |
 | `business.ts` | Customer-facing business screens over an installed App Platform application. |
 | `environment-type.ts` | — |
+| `features.ts` | Feature groups (backend system/features.py): which parts of IntraForge this installation shows. Chosen in Setup, changed by the Super Administrator on the Features page. The server refuses a switched-off group (403 feature_disabled), so hiding here is for a clean screen, never the protection itself. |
 | `format.ts` | Small, dependency-free display helpers for the business screens. |
 | `health.ts` | — |
 | `invoice.ts` | The printed invoice: a complete, self-contained HTML page (every value escaped) for a print window, on A4 paper or on an 80 mm / 58 mm receipt printer. Built from the sale's own records (SalesDocument.tsx); it changes nothing. |
@@ -385,6 +396,7 @@ Every source file, with the first paragraph of its own description (docstring or
 
 | File | What it is |
 |---|---|
+| `AccessRequests.tsx` | — |
 | `AnalyticsResult.tsx` | — |
 | `AppModelAccess.tsx` | — |
 | `AppShell.tsx` | — |
@@ -408,7 +420,6 @@ Every source file, with the first paragraph of its own description (docstring or
 | `CommandPalette.tsx` | — |
 | `ConfirmProvider.tsx` | — |
 | `DeveloperNav.tsx` | — |
-| `DeveloperStub.tsx` | — |
 | `home/DemoScenes.tsx` | The four scenes of the home page's product demo (ProductDemo.tsx). Drawn on a fixed 640 x 420 stage that the demo |
 | `home/ProductDemo.tsx` | — |
 | `home/Reveal.tsx` | — |
@@ -437,6 +448,7 @@ Every source file, with the first paragraph of its own description (docstring or
 | `tour/TourArt.tsx` | The welcome tour's five drawings (design: design-references/installer-mockups/tour.js). Decorative only: every fact |
 | `TourRequestCapture.tsx` | — |
 | `ui.tsx` | — |
+| `UserDetails.tsx` | — |
 | `WelcomeTour.tsx` | — |
 
 ## The shop kit (`scripts/shop-kit/`)

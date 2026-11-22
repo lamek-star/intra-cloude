@@ -7,9 +7,13 @@ Every endpoint, generated from the URL configuration and the views' own descript
 | Path | Methods | View | What it does |
 |---|---|---|---|
 | `/api/v1/auth/csrf/` | GET | `CSRFView` | `GET /auth/csrf/` — a browser SPA hits this once on load so Django actually sets the `csrftoken` cookie (it's otherwise only set as a side effect of `get_token()` running during some other request, e.g. the first authenticated mutation, which is too late — the |
+| `/api/v1/auth/links/confirm/` | POST | `LinkConfirmView` |  |
+| `/api/v1/auth/links/inspect/` | POST | `LinkInspectView` |  |
+| `/api/v1/auth/links/passkey/options/` | POST | `LinkPasskeyOptionsView` |  |
+| `/api/v1/auth/links/passkey/verify/` | POST | `LinkPasskeyVerifyView` |  |
 | `/api/v1/auth/login/` | POST | `LoginView` |  |
 | `/api/v1/auth/logout/` | POST | `LogoutView` |  |
-| `/api/v1/auth/me/` | GET | `MeView` |  |
+| `/api/v1/auth/me/` | GET, PATCH | `MeView` |  |
 | `/api/v1/auth/mfa/confirm/` | POST | `MFAConfirmView` |  |
 | `/api/v1/auth/mfa/disable/` | POST | `MFADisableView` |  |
 | `/api/v1/auth/mfa/enroll/` | POST | `MFAEnrollView` |  |
@@ -86,13 +90,15 @@ Every endpoint, generated from the URL configuration and the views' own descript
 
 | Path | Methods | View | What it does |
 |---|---|---|---|
-| `/api/v1/applications/<uuid:application_id>/` | GET | `ApplicationDetailView` |  |
+| `/api/v1/applications/<uuid:application_id>/` | GET, PATCH | `ApplicationDetailView` |  |
 | `/api/v1/applications/<uuid:application_id>/credentials/` | GET, POST | `ApplicationCredentialListCreateView` |  |
 | `/api/v1/applications/<uuid:application_id>/credentials/<uuid:credential_id>/revoke/` | POST | `ApplicationCredentialRevokeView` |  |
 | `/api/v1/applications/<uuid:application_id>/credentials/<uuid:credential_id>/rotate/` | POST | `ApplicationCredentialRotateView` |  |
 | `/api/v1/applications/<uuid:application_id>/requests/` | GET | `ApplicationRequestLogView` | The application's recent requests (application.read): newest first, paginated; ?errors=1 shows only the ones that did not succeed (status 400 and above). |
 | `/api/v1/applications/<uuid:application_id>/resource-grants/` | GET, POST | `ApplicationResourceGrantListCreateView` |  |
 | `/api/v1/applications/<uuid:application_id>/resource-grants/<uuid:grant_id>/` | DELETE | `ApplicationResourceGrantDetailView` | Revokes one of the application's own grants (e.g. taking IntraForge Pay away from a hosted app). |
+| `/api/v1/organizations/<uuid:organization_id>/api-requests/` | GET | `OrganizationRequestLogView` | ?application=<id>, ?errors=1, ?method=GET; newest first, paginated (limit/offset). |
+| `/api/v1/organizations/<uuid:organization_id>/api-usage/` | GET | `OrganizationUsageView` | ?days=1..30 (default 7, never more than the log keeps). |
 | `/api/v1/organizations/<uuid:organization_id>/applications/` | GET, POST | `ApplicationListCreateView` |  |
 
 ## audit
@@ -271,9 +277,13 @@ Every endpoint, generated from the URL configuration and the views' own descript
 
 | Path | Methods | View | What it does |
 |---|---|---|---|
+| `/api/v1/access/apps/<uuid:app_id>/` | GET, POST | `AppAccessView` | GET: what an application's Request access page shows (public: only what its sign-in page already shows, plus its job names). POST: ask for access -- signed in, for your own account; otherwise as a new person. |
 | `/api/v1/organizations/` | GET, POST | `OrganizationListCreateView` |  |
 | `/api/v1/organizations/<uuid:organization_id>/` | GET | `OrganizationDetailView` |  |
+| `/api/v1/organizations/<uuid:organization_id>/access-requests/` | GET | `OrganizationAccessRequestsView` | The organization's access requests (?status=pending/approved/rejected), for someone who may add members AND give roles (users.manage and permissions.manage); 403 for anyone else, 404 for a non-member. |
+| `/api/v1/organizations/<uuid:organization_id>/access-requests/<uuid:request_id>/<str:decision>/` | POST | `OrganizationAccessRequestDecisionView` | approve (body: role_slug -- the administrator's choice -- and note), reject (note), or link (a new single-use activation link for an approved account not activated yet). Approving a new account returns its link once. |
 | `/api/v1/organizations/<uuid:organization_id>/members/` | GET, POST | `MembershipListCreateView` |  |
+| `/api/v1/organizations/<uuid:organization_id>/members/<uuid:membership_id>/profile/` | PATCH | `MembershipProfileView` | An administrator changes a member's details (name, phone, job title, address, emergency contact): users.manage here and in every other organization the person belongs to, never the Super Administrator, a service account or themselves (accounts.services.can_edi |
 | `/api/v1/organizations/<uuid:organization_id>/members/<uuid:membership_id>/reset-password/` | POST | `MembershipPasswordResetView` | An administrator gives a staff member a temporary password (shown once) when they forgot theirs: users.manage here, and in every other organization the person belongs to (accounts.services.can_reset_password). The person is signed out everywhere and must choos |
 | `/api/v1/organizations/<uuid:organization_id>/members/<uuid:membership_id>/role/` | POST | `MembershipRoleAssignView` |  |
 | `/api/v1/organizations/<uuid:organization_id>/members/<uuid:membership_id>/roles/<slug:role_slug>/` | DELETE | `MembershipRoleRemoveView` |  |
@@ -286,6 +296,7 @@ Every endpoint, generated from the URL configuration and the views' own descript
 
 | Path | Methods | View | What it does |
 |---|---|---|---|
+| `/api/v1/internal/service-apps/access-requests/` | GET, POST | `InternalAccessRequestsView` | The application's own Requests list (ADR-0026), for the person signed in to it (`actorId`): only requests made from this application, and only for someone who may approve them in IntraForge (users.manage AND permissions.manage). Deciding goes through exactly t |
 | `/api/v1/internal/service-apps/audit-events/` | POST | `InternalAuditView` |  |
 | `/api/v1/internal/service-apps/config/` | GET, PATCH | `InternalConfigView` |  |
 | `/api/v1/internal/service-apps/files/` | POST | `InternalFilesView` |  |
@@ -363,6 +374,7 @@ Every endpoint, generated from the URL configuration and the views' own descript
 |---|---|---|---|
 | `/api/v1/system/backups/` | GET | `BackupListView` |  |
 | `/api/v1/system/backups/run/` | POST | `BackupRunView` |  |
+| `/api/v1/system/features/` | GET, PATCH | `FeaturesView` | Which feature groups are on (system/features.py). Any signed-in person may read it (the web app hides what is off); only the Super Administrator (system.admin, platform-wide) may change it. Browser sessions only. |
 | `/api/v1/system/health/` | GET | `HealthView` | Health history and alerts for this installation (Super Administrator only). |
 | `/api/v1/system/version/` | GET | `VersionView` | The installed IntraForge version (the repo-root VERSION file, as the portable export records it), for the web app's footer and welcome tour. Signed-in callers only: an anonymous caller is never told the version. |
 | `/healthz` | GET | `HealthzView` | Liveness: process is up and can respond. No dependency checks — used by the container runtime/orchestrator to know whether to restart the process, not whether it's ready to serve real traffic. |
@@ -377,4 +389,3 @@ Every endpoint, generated from the URL configuration and the views' own descript
 | `/api/v1/projects/<uuid:project_id>/` | GET | `ProjectDetailView` |  |
 | `/api/v1/workspaces/<uuid:workspace_id>/` | GET | `WorkspaceDetailView` |  |
 | `/api/v1/workspaces/<uuid:workspace_id>/projects/` | GET, POST | `ProjectListCreateView` |  |
-

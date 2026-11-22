@@ -17,6 +17,26 @@ The menu on the left: **Reference Catalogue**, **Import**, **My Products**, **St
 **Purchase Orders**, **Enquiries**, **Quotations**, **Orders**, **Invoices & Payments**, **Customers**, **Suppliers**,
 **Reports** and **Administration**.
 
+## Stock status: critical, low and OK
+
+Each product has a **minimum** and a **reorder level** (on the product: Edit). One rule decides its colour, everywhere
+(the Low stock tile, the Low stock only filter, the Stock status panel, the report and the badges):
+
+- **Critical** (red): on hand is 0, or at or below the minimum.
+- **Low** (amber): at or below the reorder level, but above the minimum.
+- **OK** (green): above the reorder level.
+
+Example: Air filter, 4 on hand, minimum 2, reorder level 6: **Low**. Brake pad set, 0 on hand: **Critical**.
+Headlight bulb, 25 on hand: **OK**. A product with no levels set shows "No levels set".
+
+## The look: dark glass, the Sales trend and your language
+
+Spare Parts opens in a dark "glass" look: a blue sidebar, a greeting with today's date, numbers that count up and a
+**Sales trend** chart (7 days, 30 days, 90 days or 12 months; point at the line to see a day's total). The **Dark mode**
+switch at the bottom of the sidebar brings back the light colours, and the choice is remembered on that computer. If
+Windows is set to reduce motion, everything simply appears without moving. Each person chooses their language
+(English, Arabic, Amharic, Tigrinya) on their account; Arabic mirrors the screen.
+
 ## Products
 
 **My Products** lists what the shop sells: name, part number (SKU), stock and price.
@@ -58,6 +78,12 @@ the product and its part number. **Print** opens a page sized for the paper; **D
 - **Purchase Orders**: order from a supplier, then **receive** the goods — the stock goes up.
 
 ![Purchase orders](../screenshots/web/76-spareparts-purchasing.png)
+
+## What receiving does to the cost price
+
+When a purchase order is received, the product's **cost** becomes the **weighted average** of the stock already there
+and the new goods. Example: 10 on hand at AED 20.00, 10 received at AED 30.00: the cost becomes AED 25.00. A line with
+no price, or in another currency, leaves the cost as it was. Every cost change is in the audit log.
 
 ## Invoices, customers, reports
 

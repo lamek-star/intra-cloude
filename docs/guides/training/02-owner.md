@@ -56,6 +56,63 @@ nothing can be changed).
 To activate: open **Licence** (the link in the banner at the top, or `/license`), send **this PC's code** (PC-....) and
 your **serial number** to your IntraForge supplier, and type the **activation code** they send back.
 
+## Opening IntraForge without a warning, and by name
+
+**"Your connection is not private"** means this PC does not trust IntraForge's own certificate yet. It is not a fault
+and not the network. Fix it once: **Control Center > Settings > Browser certificate > Trust IntraForge on this PC**,
+choose **Yes** in Windows' question, then close and reopen the browser. It comes back only if IntraForge was removed
+with its data and installed again (that makes a new certificate): trust it again. The shop's other PCs and phones use
+`Trust-IntraForge-on-this-PC.cmd` from the shop-network folder.
+
+**Opening by name instead of `https://localhost:8443`:** **Control Center > Settings > Shop network > Open by name on
+this PC**. Windows asks for administrator rights once. Then IntraForge opens at **https://intraforge.lan** and each app
+at its own name, such as **https://spare-parts.lan** and **https://pay.lan**, with no port number. The old address
+keeps working. Each name is its own address, so you sign in once on each. **Stop using the names** goes back.
+
+## Features: which parts IntraForge shows, and who may create an account
+
+**Features** (Dashboard > System health > Features) shows four parts: Business apps, Pay and Movie Shop, Websites and
+Developer, Files and data. Setup asks which ones you want; the **Super Administrator** can switch them later. A part
+that is off is hidden for everyone and the server refuses it; nothing is deleted, and switching it back brings
+everything back.
+
+On the same page, **Who may create an account**:
+
+- **Only administrators add people**: nobody can sign up.
+- **People ask from an app's Request access page** (the normal choice): new staff ask, you approve.
+- **Anyone can create an account**: the old open sign-up.
+
+The very first account of a new installation can always be made.
+
+## People's details and the Super Administrator
+
+Each person has one account with their **email** (how they sign in), name, **phone**, **job title**, **address** and an
+**emergency contact**. Everyone fills in their own under **Your account > Your details**. An Organization
+Administrator sees each member's phone on the organization page under **Members**, and **Details** opens and edits all
+of them.
+
+**The Super Administrator** can do everything, including Backups, Health, Internet access and Features. It is chosen
+only at the shop PC: **Control Center > Settings > Owner (Super Administrator) > Choose the Super Administrator...**,
+pick the person (they must have an account first) and confirm. The last one can never be removed. Nobody becomes
+Super Administrator by signing up first.
+
+## New staff: Request access, approval and the activation link
+
+1. The new person opens the app they will work in (for example Spare Parts) and, on its sign-in page, chooses
+   **New here? Request access**. They fill in their name, email, phone, a password they choose and the job they want,
+   then **Send request**. Their account exists but **cannot sign in** yet.
+2. You open the organization page: under **Requests** each request shows the person, the app and the job they asked
+   for. In Spare Parts the same list is on the **Users** page.
+3. **Approve**: choose the **Role to give**. You decide; what they asked for is only a suggestion. **Reject** records a
+   reason.
+4. After approving a new person, a **one-time activation link** appears (shown only then). Give it to them in person or
+   in a message only they read. If e-mail is set up, it is also e-mailed. It works **once, for 72 hours**.
+5. They open the link and press **Confirm and activate**, then sign in with the password they chose.
+6. Lost or expired link: press **New link** on the request (the old link stops working).
+
+Someone who already has an account (to use a second app) signs in first and then asks; no second account is made.
+Only someone who may add members *and* give roles sees the requests.
+
 ## Your organization and its people
 
 **Organizations** lists your company (or companies). Open it to see its workspaces, members, roles and links to every

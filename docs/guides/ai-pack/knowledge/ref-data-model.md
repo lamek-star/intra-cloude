@@ -14,6 +14,10 @@ Every model of IntraForge's own apps, generated from the models: table, fields (
 | `email` | EmailField | unique |
 | `first_name` | CharField |  |
 | `last_name` | CharField |  |
+| `phone` | CharField |  |
+| `job_title` | CharField |  |
+| `address` | CharField |  |
+| `emergency_contact` | CharField |  |
 | `is_active` | BooleanField |  |
 | `date_joined` | DateTimeField |  |
 | `mfa_enabled` | BooleanField |  |
@@ -21,6 +25,7 @@ Every model of IntraForge's own apps, generated from the models: table, fields (
 | `mfa_secret_encrypted` | BinaryField | null |
 | `mfa_confirmed_at` | DateTimeField | null |
 | `passkey_only` | BooleanField |  |
+| `email_confirmed_at` | DateTimeField | null |
 
 ### Passkey (`accounts_passkey`)
 
@@ -51,6 +56,22 @@ One of a person's one-time recovery codes for two-step sign-in, for when their a
 | `code_hash` | CharField |  |
 | `used_at` | DateTimeField | null |
 | `created_at` | DateTimeField |  |
+
+### AccountLink (`accounts_accountlink`)
+
+A single-use link that confirms a person's email and activates their account (ADR-0026). Only the SHA-256 of its token is kept; the token itself is shown once (to the administrator, and in the e-mail when one is sent).
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUIDField | primary key |
+| `user` | ForeignKey | → User |
+| `purpose` | CharField | choices: confirm |
+| `token_hash` | CharField | unique |
+| `created_by` | ForeignKey | null; → User |
+| `created_at` | DateTimeField |  |
+| `expires_at` | DateTimeField |  |
+| `used_at` | DateTimeField | null |
+| `revoked_at` | DateTimeField | null |
 
 ## analytics
 
@@ -370,6 +391,7 @@ A registered piece of software, owned by an Organization, with an owning User (d
 | `description` | TextField |  |
 | `owner` | ForeignKey | → User |
 | `created_at` | DateTimeField |  |
+| `daily_request_limit` | PositiveIntegerField | null |
 
 ### ServiceAccount (`applications_serviceaccount`)
 
@@ -542,7 +564,7 @@ An externally-hosted database reached in **connected mode**: the platform proxie
 | `id` | UUIDField | primary key |
 | `project` | ForeignKey | → Project |
 | `name` | CharField |  |
-| `engine` | CharField | choices: postgresql |
+| `engine` | CharField | choices: postgresql, mysql, sqlserver |
 | `host` | CharField |  |
 | `port` | PositiveIntegerField |  |
 | `database_name` | CharField |  |
@@ -1130,6 +1152,26 @@ A user's placement in a unit. Many-to-many by design (unlike organizations.Membe
 | `invited_by` | ForeignKey | null; → User |
 | `created_at` | DateTimeField |  |
 
+### AccessRequest (`organizations_accessrequest`)
+
+Someone asking to work in an organization, usually from one installed application's Request access page (ADR-0026). The role they ask for is only a suggestion: the administrator who approves chooses the real one.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUIDField | primary key |
+| `organization` | ForeignKey | → Organization |
+| `service_app` | ForeignKey | null; → ServiceApp |
+| `user` | ForeignKey | → User |
+| `requested_role` | CharField |  |
+| `message` | CharField |  |
+| `new_account` | BooleanField |  |
+| `status` | CharField | choices: pending, approved, rejected |
+| `granted_role` | CharField |  |
+| `decision_note` | CharField |  |
+| `decided_by` | ForeignKey | null; → User |
+| `decided_at` | DateTimeField | null |
+| `created_at` | DateTimeField |  |
+
 ## permissions
 
 ### Permission (`permissions_permission`)
@@ -1379,6 +1421,18 @@ A check that failed twice in a row; closed by itself when the check passes again
 | `opened_at` | DateTimeField |  |
 | `closed_at` | DateTimeField | null |
 
+### FeatureSettings (`system_featuresettings`)
+
+Which feature groups this installation shows and serves (system/features.py). One row (pk=1), seeded from INTRAFORGE_FEATURES the first time it is read, then changed only by the Super Administrator.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | BigAutoField | primary key |
+| `enabled` | JSONField |  |
+| `registration` | CharField |  |
+| `updated_at` | DateTimeField |  |
+| `updated_by` | ForeignKey | null; → User |
+
 ## workspaces
 
 ### Workspace (`workspaces_workspace`)
@@ -1400,4 +1454,3 @@ A check that failed twice in a row; closed by itself when the check passes again
 | `name` | CharField |  |
 | `created_at` | DateTimeField |  |
 | `created_by` | ForeignKey | → User |
-
