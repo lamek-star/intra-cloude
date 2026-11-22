@@ -11,6 +11,9 @@
     -Mode Hotspot  For a shop with no router: this PC hosts the shop's Wi-Fi itself (Windows Mobile Hotspot, name and
                    password shown at the end and kept in .env), Windows treats it as Private, and then everything -Mode Shop
                    does follows on that network (this PC is 192.168.137.1 on it). It comes back by itself at every start.
+    -Mode Names    This computer only, opened by name with no port: https://intraforge.lan, https://spare-parts.lan ...
+                   The names point at this PC itself (127.0.0.1, in its hosts file) and IntraForge also answers on the
+                   standard HTTPS port 443 of the loopback. No firewall rule: nothing is opened to the network.
     -Mode ThisPC   Back to this computer only: the firewall rules, the extra names and the shop-network folder are removed
                    (and this PC's hotspot is switched off).
     Names (ADR-0021): in both shop modes IntraForge and each app also get a name ending in the shop's domain (default
@@ -25,7 +28,7 @@
     The Control Center passes a file to receive this script's output (it runs elevated, in its own window).
 #>
 [CmdletBinding()]
-param([Parameter(Mandatory = $true)][ValidateSet('Shop', 'Hotspot', 'ThisPC')][string]$Mode, [string]$NameDomain, [string]$ResultFile)
+param([Parameter(Mandatory = $true)][ValidateSet('Shop', 'Hotspot', 'Names', 'ThisPC')][string]$Mode, [string]$NameDomain, [string]$ResultFile)
 
 Set-Location $PSScriptRoot
 . (Join-Path $PSScriptRoot 'IntraForgeShop.Common.ps1')
@@ -44,7 +47,7 @@ try {
 
     # The LAN settings live in .env (kept by upgrades); everything else in it is left exactly as it is.
     function Set-NetworkSettings([System.Collections.Specialized.OrderedDictionary]$Values) {
-        $names = 'SHOP_NETWORK|SHOP_HOTSPOT|SHOP_BIND_V4|SHOP_BIND_V6|SHOP_TLS_HOSTNAMES|SHOP_DEFAULT_SNI|SHOP_LAN_ADDRESS|SHOP_LAN_NAME|SHOP_PUBLIC_URLS|SHOP_SITES_ADDRESSES|ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS|SHOP_APP_NAMES|COMPOSE_PROFILES'
+        $names = 'SHOP_NETWORK|SHOP_HOTSPOT|SHOP_BIND_V4|SHOP_BIND_V6|SHOP_TLS_HOSTNAMES|SHOP_DEFAULT_SNI|SHOP_LAN_ADDRESS|SHOP_LAN_NAME|SHOP_PUBLIC_URLS|SHOP_SITES_ADDRESSES|ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS|SHOP_APP_NAMES|COMPOSE_PROFILES|SHOP_NAMES_PORT|SHOP_LOCAL_NAMES'
         $kept = [IO.File]::ReadAllLines($envPath) | Where-Object { $_ -notmatch "^($names)=" }
         $text = (($kept -join "`n").TrimEnd("`r", "`n")) + "`n" + (($Values.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join "`n") + "`n"
         [IO.File]::WriteAllText($envPath, $text, (New-Object System.Text.UTF8Encoding($false)))
@@ -70,7 +73,44 @@ try {
         & docker compose --profile names rm -s -f names 2>&1 | Out-Null
     }
 
-    if ($Mode -eq 'Shop' -or $Mode -eq 'Hotspot') {
+    if ($Mode -eq 'Names') {
+        $domain = if ($NameDomain) { $NameDomain.Trim().ToLowerInvariant().TrimStart('.') } else { Get-ShopSetting 'SHOP_NAME_DOMAIN' 'lan' }
+        if (-not (Test-ShopNameDomain $domain)) {
+            throw "'$domain' cannot be the ending of the names. Use lan, or a name under your own domain such as shop.example.com (never .local)."
+        }
+        $standard = 443
+        # Already IntraForge's (an earlier run) or free; any other program on 443 would make the restart fail.
+        if ((Get-ShopSetting 'SHOP_NAMES_PORT' '') -ne "$standard") {
+            $listener = Get-NetTCPConnection -LocalPort $standard -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($listener) { throw "Port $standard is used by another program (process $($listener.OwningProcess)). Close it, or keep using https://localhost:$port." }
+        }
+        if ((Get-ShopSetting 'SHOP_HOTSPOT' '') -eq '1') { Stop-ShopHotspot; Write-Host "This PC's shop Wi-Fi was switched off." }
+        Start-DockerIfNeeded
+        Stop-NamesService
+        # A shop-network folder from before (the certificate for the other PCs) no longer applies.
+        if (Test-Path $folder) { Remove-Item -Recurse -Force $folder }
+
+        Step "Names on this PC (ending in .$domain)"
+        $running = @(& docker compose ps --services --status running 2>$null)
+        $appNames = Get-ShopAppNames $running
+        $hostNames = @($appNames.Keys | ForEach-Object { "$_.$domain" })
+        New-Item -ItemType Directory -Force (Join-Path $namesFolder 'proxy') | Out-Null
+        [IO.File]::WriteAllText((Join-Path $namesFolder 'proxy\names.caddy'), (New-ShopNamesCaddy $domain $appNames), (New-Object System.Text.UTF8Encoding($false)))
+        Set-ShopHostsEntries '127.0.0.1' $hostNames
+        Write-Host ($hostNames -join '   ')
+
+        Step 'Saving the settings'
+        Set-NetworkSettings ([ordered]@{
+            SHOP_LOCAL_NAMES     = '1'
+            SHOP_NAMES_PORT      = "$standard"
+            SHOP_TLS_HOSTNAMES   = "localhost 127.0.0.1 $($hostNames -join ' ')"
+            ALLOWED_HOSTS        = "localhost,127.0.0.1,backend,.$domain"
+            CSRF_TRUSTED_ORIGINS = "https://localhost:$port,https://*.$domain"
+            SHOP_APP_NAMES       = (($appNames.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ',')
+        })
+        Set-EnvValues ([ordered]@{ SHOP_NAME_DOMAIN = $domain })
+    }
+    elseif ($Mode -eq 'Shop' -or $Mode -eq 'Hotspot') {
         $name = $env:COMPUTERNAME.ToLowerInvariant()
         $domain = if ($NameDomain) { $NameDomain.Trim().ToLowerInvariant().TrimStart('.') } else { Get-ShopSetting 'SHOP_NAME_DOMAIN' 'lan' }
         if (-not (Test-ShopNameDomain $domain)) {
@@ -191,6 +231,13 @@ try {
     $local = & curl.exe -sk -o NUL -w '%{http_code}' --max-time 15 "https://localhost:$port/healthz"
     if ($local -ne '200') { throw "IntraForge does not answer on this PC (https://localhost:$port answered '$local')." }
     Write-Host "This PC: https://localhost:$port  OK"
+    if ($Mode -eq 'Names') {
+        foreach ($h in $hostNames) {
+            $code = & curl.exe -sk -o NUL -w '%{http_code}' --max-time 15 "https://$h/healthz"
+            if ($code -ne '200') { throw "IntraForge does not answer at https://$h (answered '$code')." }
+            Write-Host "https://$h  OK"
+        }
+    }
 
     if ($Mode -eq 'Shop' -or $Mode -eq 'Hotspot') {
         foreach ($host_ in $address, $name) {
@@ -269,6 +316,13 @@ Keep in mind
             Write-Host "It is switched on again at every start of IntraForge. Keep this PC plugged in." -ForegroundColor Green
             Write-ShopLog "shop Wi-Fi ON: $ssid"
         }
+    }
+    elseif ($Mode -eq 'Names') {
+        Write-ShopLog "names on this PC ON: $($hostNames -join ' ')"
+        Write-Host ''
+        Write-Host "Open IntraForge on this PC at:  https://intraforge.$domain" -ForegroundColor Green
+        Write-Host "Apps: $(($hostNames | Where-Object { $_ -ne "intraforge.$domain" } | ForEach-Object { "https://$_" }) -join '  ')" -ForegroundColor Green
+        Write-Host "https://localhost:$port keeps working too. Each name is its own address: sign in once on each." -ForegroundColor Green
     }
     else {
         Write-ShopLog 'shop network OFF (this computer only)'

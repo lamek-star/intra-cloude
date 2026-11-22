@@ -94,6 +94,9 @@ namespace IntraForge.ControlCenter
         // The shop's own names (ADR-0021): their ending ("lan"), the apps that have one ("pharmacy=/apps/pharmacy/,..."),
         // and whether this PC runs the name server for a router network.
         public string NameDomain = "lan", AppNames = "", Profiles = "";
+        // "Names on this PC" (-Mode Names): IntraForge opens at https://intraforge.lan on this computer, port 443.
+        public bool LocalNames;
+        public int NamesPort;
         // The kit's docker-compose.yml names its project "intraforge-shop"; the override exists only to rehearse the
         // Control Center against another stack.
         public static readonly string Project = Environment.GetEnvironmentVariable("INTRAFORGE_CC_PROJECT") ?? "intraforge-shop";
@@ -119,6 +122,8 @@ namespace IntraForge.ControlCenter
                     if (line.StartsWith("SHOP_NAME_DOMAIN=") && line.Length > 17) k.NameDomain = line.Substring(17).Trim();
                     if (line.StartsWith("SHOP_APP_NAMES=")) k.AppNames = line.Substring(15).Trim();
                     if (line.StartsWith("COMPOSE_PROFILES=")) k.Profiles = line.Substring(17).Trim();
+                    if (line.StartsWith("SHOP_LOCAL_NAMES=")) k.LocalNames = line.Substring(17).Trim() == "1";
+                    if (line.StartsWith("SHOP_NAMES_PORT=")) { int p; if (int.TryParse(line.Substring(16).Trim(), out p)) k.NamesPort = p; }
                 }
             }
             string ver = Path.Combine(k.Dir, "VERSION");
@@ -129,6 +134,12 @@ namespace IntraForge.ControlCenter
         public bool Installed { get { return File.Exists(Path.Combine(Dir, ".install-complete")); } }
         // "localhost", not 127.0.0.1: the proxy's certificate (and so the TLS handshake) is for that name.
         public string Url(string path) { return "https://localhost:" + Port + path; }
+        // What the person's browser opens: the name when "Names on this PC" is on (checks keep using Url).
+        public string BrowserUrl(string path)
+        {
+            if (!LocalNames || !IsNameDomain(NameDomain)) return Url(path);
+            return "https://intraforge." + NameDomain + (NamesPort == 443 ? "" : ":" + (NamesPort > 0 ? NamesPort : Port)) + path;
+        }
         public string BackupsDir { get { return Path.Combine(DataDir, "backups"); } }
         public string LogsDir { get { return Path.Combine(DataDir, "logs"); } }
         public string KeysFile { get { return Path.Combine(DataDir, @"keys\intraforge-keys.env"); } }
@@ -734,7 +745,7 @@ namespace IntraForge.ControlCenter
             };
             Action<UiButton, EventHandler> add = (b, click) => { b.Width = w; b.Click += click; actionButtons.Add(b); nav.Controls.Add(b); };
 
-            add(new UiButton("Open IntraForge", ButtonKind.NavPrimary, Ui.GOpen), (s, e) => Proc.OpenInBrowser(kit.Url("/")));
+            add(new UiButton("Open IntraForge", ButtonKind.NavPrimary, Ui.GOpen), (s, e) => Proc.OpenInBrowser(kit.BrowserUrl("/")));
             group("Shop");
             add(new UiButton("Start", ButtonKind.Nav, Ui.GPlay), (s, e) => RunAction("Starting IntraForge", "Start-IntraForgeShop.ps1", "-NoBrowser", 20 * 60000));
             add(new UiButton("Restart services", ButtonKind.Nav, Ui.GRestart), (s, e) => RestartServices());
@@ -968,7 +979,7 @@ namespace IntraForge.ControlCenter
             open.Width = Ui.Px(76);
             open.Margin = Padding.Empty;
             string path = app.OpenPath;
-            open.Click += (s, e) => Proc.OpenInBrowser(kit.Url(path));
+            open.Click += (s, e) => Proc.OpenInBrowser(kit.BrowserUrl(path));
             t.Controls.Add(open, 1, 2);
             card.Controls.Add(t);
             return card;
@@ -1475,7 +1486,7 @@ namespace IntraForge.ControlCenter
                 facts.Controls.Add(key);
                 facts.Controls.Add(val);
             };
-            fact("Address", kit.Url("/"));
+            fact("Address", kit.BrowserUrl("/"));
             fact("Access", kit.ShopNetwork ? "this PC and the shop network (" + kit.LanUrl + ")" : "this computer only");
             fact("Version", kit.Version);
             fact("Program folder", kit.Dir);
@@ -1663,6 +1674,30 @@ namespace IntraForge.ControlCenter
                     Apply(kit, "Hotspot", "Creating the shop's Wi-Fi on this PC");
                 };
                 buttons.Controls.Add(wifi);
+                string named = "https://intraforge." + kit.NameDomain;
+                if (kit.LocalNames)
+                {
+                    state.Text += Environment.NewLine + Environment.NewLine + "On this PC IntraForge opens by name: " + kit.BrowserUrl("/") +
+                                  (kit.NameUrls().Count > 1 ? "  (apps: " + string.Join("  ", kit.NameUrls().Skip(1).Select(u => u.Replace(":" + kit.Port, "")).ToArray()) + ")" : "") +
+                                  ". https://localhost:" + kit.Port + " keeps working.";
+                    UiButton back = new UiButton("Stop using the names", ButtonKind.Secondary, Ui.GStop) { Margin = Ui.Pad(0, 0, 8, 6) };
+                    back.Click += (s, e) => Apply(kit, "ThisPC", "Back to https://localhost:" + kit.Port);
+                    buttons.Controls.Add(back);
+                }
+                else
+                {
+                    UiButton names = new UiButton("Open by name on this PC (" + named + ")...", ButtonKind.Secondary, Ui.GSettings) { Margin = Ui.Pad(0, 0, 8, 6) };
+                    names.Click += (s, e) =>
+                    {
+                        if (MessageBox.Show(this, "Open IntraForge on this PC at " + named + " (and each app at its own name, e.g. https://spare-parts." +
+                                            kit.NameDomain + "), with no port number?" + Environment.NewLine + Environment.NewLine +
+                                            "Windows asks for administrator rights: the names are written to this PC's hosts file and IntraForge also " +
+                                            "answers on port 443 of this computer. Nothing is opened to the network. IntraForge restarts (about a minute).",
+                                            "IntraForge", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
+                        Apply(kit, "Names", "Opening IntraForge by name on this PC");
+                    };
+                    buttons.Controls.Add(names);
+                }
             }
             else if (kit.Hotspot)
             {

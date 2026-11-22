@@ -225,7 +225,7 @@ files in Docker volumes; backups, keys copy and logs in `C:\IntraForgeData`. The
 * Security and permissions: `docs/security/THREAT_MODEL.md`, `docs/security/PERMISSIONS.md`.
 * Operations: `docs/operations/` (backup and restore, customer backup policy, update policy, diagnostics, licences).
 * Current state and evidence: `docs/implementation/CURRENT_STATE.md`, `docs/LOCAL_EDITION_V1_FINAL_QUALIFICATION.md`.
-* Using it: `docs/guide/USER_GUIDE.md`, `docs/OWN_SHOP_PILOT_QUICKSTART.md`, `docs/LOCAL_EDITION_PILOT.md`, `docs/INVESTOR_DEMO.md`,
+* Using it: `docs/guide/FEATURE_TOUR.md` (every screen, with the shop's examples, for users and developers), `docs/guide/USER_GUIDE.md`, `docs/OWN_SHOP_PILOT_QUICKSTART.md`, `docs/LOCAL_EDITION_PILOT.md`, `docs/INVESTOR_DEMO.md`,
   `docs/pilot/TEST_ON_ANOTHER_PC.md`, `docs/implementation/OWN_SHOP_PILOT_READINESS.md`.
 
 ## 14. What is and is not proven (honest status)

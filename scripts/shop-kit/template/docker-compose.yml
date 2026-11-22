@@ -162,6 +162,10 @@ services:
       # Also the IPv6 loopback: "localhost" resolves to ::1 first, and a client that does not fall back quickly
       # (Windows retries a refused connection for ~2 s) would otherwise wait on every new connection.
       - "[${SHOP_BIND_V6:-::1}]:${SHOP_HTTPS_PORT:-8443}:443"
+      # "Names on this PC" (Set-IntraForgeNetwork.ps1 -Mode Names): https://intraforge.lan with no port, so IntraForge
+      # also answers on the standard port 443 of the loopback. Unset, this line is the same as the first one, and
+      # compose merges identical lines: nothing extra is published.
+      - "${SHOP_BIND_V4:-127.0.0.1}:${SHOP_NAMES_PORT:-8443}:443"
       # Hosted websites (Organization > Websites, ADR-0019) on their own port: a separate origin from IntraForge.
       - "${SHOP_BIND_V4:-127.0.0.1}:8445:8445"
       - "[${SHOP_BIND_V6:-::1}]:8445:8445"

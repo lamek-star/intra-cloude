@@ -5,7 +5,10 @@ this guide were driven end-to-end against the real backend through the
 live Caddy proxy — session-cookie login, CSRF-protected mutations, file
 upload/download, and the database builder's row API all confirmed
 working, not just assumed from the code)
-Last updated: 2026-08-10
+Last updated: 2026-11-22
+
+A walk through every screen with the real shop's examples, for users and developers:
+[FEATURE_TOUR.md](FEATURE_TOUR.md).
 
 This is the end-user companion to
 [docs/deployment/LOCAL_DEPLOYMENT.md](../deployment/LOCAL_DEPLOYMENT.md)
@@ -297,6 +300,8 @@ Everything in IntraForge now has a page. The ones added most recently, and where
 | Repair Shop and Rentals | **Apps**: two more built-in applications, offered as Experimental previews | Administrators who install apps |
 | A portal customer at the counter | Movie Shop > the cart > **Portal customer**: type their phone number (6 digits or more) to pick them; their free titles and, if ticked, their points apply | Staff who sell |
 | MySQL, MariaDB and SQL Server databases | A project > **Connect a database** > Database type: read an outside database's tables live, without copying them (PostgreSQL as before, now MySQL/MariaDB and SQL Server). Use a database user that may only read | Administrators who manage connections |
+| Opening IntraForge by name, without a port | Control Center > Settings > Shop network > **Open by name on this PC**: https://intraforge.lan, and each app at its own name (https://spare-parts.lan, https://pay.lan). Windows asks for administrator rights once; https://localhost:8443 keeps working; **Stop using the names** goes back. Each name is its own address, so you sign in once on each | The person at the shop PC |
+| No certificate warning on the shop PC | Control Center > Settings > **Browser certificate** > **Trust IntraForge on this PC**, then Yes in Windows' question; reopen the browser. The shop's other PCs use `Trust-IntraForge-on-this-PC.cmd` from the shop-network folder | The person at the shop PC |
 | More than one IF Pay counter | IF Pay > Simulated sales > **Counters** (Pay Manager) names them; each cashier chooses theirs above the amount; the day's total is shown per counter and for the shop, in the shop's own time zone | Pay staff |
 
 Everything here is also reachable through the API at `/api/v1/` (Django REST Framework's browsable interface once
@@ -306,7 +311,7 @@ you are signed in).
 
 | What you see | What it means |
 |---|---|
-| Browser refuses to load the page at all | The self-signed certificate warning wasn't accepted yet — reopen the URL and click through it. |
+| "Your connection is not private" | This PC does not trust IntraForge's own certificate yet: Control Center > Settings > Browser certificate > **Trust IntraForge on this PC**. It also happens after IntraForge was removed with its data and installed again (a new certificate): trust it again. |
 | "You don't have permission to do that" | Correct behavior, not a bug — your account lacks the required role in that organization. |
 | A page stays on its loading spinner | The backend stack isn't running — start it per `docs/deployment/LOCAL_DEPLOYMENT.md` Section 4. |
 | Data from an earlier session is missing | The stack's volumes were reset (`docker compose down -v`). Nothing survives a full data wipe; day-to-day restarts (`docker compose down` / `up -d`) keep everything. |
