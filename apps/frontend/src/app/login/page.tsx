@@ -204,12 +204,25 @@ function LoginPageInner() {
         {branding && (
           <p className="mt-4 text-center text-xs text-text-muted">Staff accounts are managed in IntraForge.</p>
         )}
-        <p className="mt-5 text-center text-sm text-slate-500">
-          Don&apos;t have an account?{" "}
-          <Link href={registerHref} className="text-brand-600 underline underline-offset-4 hover:text-brand-500">
-            Create one
-          </Link>
-        </p>
+        {appId && branding ? (
+          // An application's own sign-in (ADR-0026): new staff ask for access; an administrator approves them.
+          <p className="mt-5 text-center text-sm text-slate-500">
+            New here?{" "}
+            <Link
+              href={`/request-access?app=${encodeURIComponent(appId)}${next ? `&next=${encodeURIComponent(next)}` : ""}`}
+              className="text-brand-600 underline underline-offset-4 hover:text-brand-500"
+            >
+              Request access
+            </Link>
+          </p>
+        ) : (
+          <p className="mt-5 text-center text-sm text-slate-500">
+            Don&apos;t have an account?{" "}
+            <Link href={registerHref} className="text-brand-600 underline underline-offset-4 hover:text-brand-500">
+              Create one
+            </Link>
+          </p>
+        )}
       </div>
     </div>
   );

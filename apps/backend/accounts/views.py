@@ -52,6 +52,20 @@ class RegisterView(APIView):
     throttle_scope = "auth"
 
     def post(self, request):
+        from system import features
+
+        # ADR-0026: after the first run, accounts come from an application's Request access unless the Super
+        # Administrator opened registration.
+        if not features.may_register_freely():
+            return Response(
+                {
+                    "detail": "New accounts are made by asking for access from an app's sign-in page. "
+                    "Ask the shop's administrator.",
+                    "code": "registration_closed",
+                    "registration": features.registration_policy(),
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
@@ -401,3 +415,68 @@ class PasswordChangeView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         update_session_auth_hash(request, request.user)
         return Response(UserSerializer(request.user).data)
+
+
+# ------------------------------------------------------------------ confirmation links (ADR-0026, accounts/links.py)
+class _LinkView(APIView):
+    """Public: the token is the proof. No session authentication (so no CSRF dance for a person who is not signed in);
+    the server-side session still carries the passkey ceremony's challenge."""
+
+    authentication_classes: list[type[BaseAuthentication]] = []
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth"
+
+    def token(self, request) -> str:
+        value = request.data.get("token") if isinstance(request.data, dict) else None
+        return value if isinstance(value, str) else ""
+
+
+def _link_error(exc) -> Response:
+    return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class LinkInspectView(_LinkView):
+    def post(self, request):
+        from . import links
+
+        try:
+            return Response(links.inspect(self.token(request)))
+        except links.LinkError as exc:
+            return _link_error(exc)
+
+
+class LinkConfirmView(_LinkView):
+    def post(self, request):
+        from . import links
+
+        password = request.data.get("password") if isinstance(request.data, dict) else None
+        try:
+            user = links.confirm(self.token(request), password=password if isinstance(password, str) else None)
+        except links.LinkError as exc:
+            return _link_error(exc)
+        return Response({"email": user.email, "activated": True})
+
+
+class LinkPasskeyOptionsView(_LinkView):
+    def post(self, request):
+        from . import links
+
+        try:
+            return Response(links.begin_passkey(request, self.token(request), _text(request, "where", 20)))
+        except (links.LinkError, passkeys.PasskeyError) as exc:
+            return _link_error(exc)
+
+
+class LinkPasskeyVerifyView(_LinkView):
+    def post(self, request):
+        from . import links
+
+        try:
+            user = links.finish_passkey(
+                request, self.token(request), _credential(request), _text(request, "name", 80)
+            )
+        except (links.LinkError, passkeys.PasskeyError) as exc:
+            return _link_error(exc)
+        return Response({"email": user.email, "activated": True, "passkey_only": True})
+

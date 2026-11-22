@@ -275,6 +275,41 @@ Administrator)** > **Choose the Super Administrator...**, pick the person (they 
 **Make Super Administrator**. The same window removes one, but never the last. Nobody is made Super Administrator by
 signing up first, because anyone on the shop network could sign up before you.
 
+### New staff: Request access, approval and the activation link
+
+Each app (Spare Parts, IntraForge Pay, Pharmacy) has its own sign-in page with **New here? Request access**. The new
+person fills in their name, email, phone, a password they choose and the job they will do, then waits. Their account
+exists but **cannot sign in** yet.
+
+1. **You decide.** The request appears under the organization page's **Requests** (and in Spare Parts under **Users**).
+   **Approve** asks which **role** to give: you choose it, what they asked for is only a suggestion. **Reject** records
+   a reason. Only someone who may add members *and* give roles sees requests.
+2. **The activation link.** Approving a new person shows a **one-time link** (shown only then). Give it to them in
+   person or by a message only they read; if e-mail is set up on this installation it is also e-mailed. It works
+   **once, for 72 hours**. Opening it confirms their email and activates the account; then they sign in with the
+   password they chose. Lost or expired? Press **New link** on the request (the old one stops working).
+3. **Someone who already has an account** (for example to use a second app) signs in and presses Request access; no
+   second account is made, and approving gives the new role straight away.
+
+**Who may create an account** is on the **Features** page (Super Administrator): *Only administrators add people*,
+*People ask from an app's Request access page* (the default) or *Anyone can create an account*. Before this, anyone
+on the shop network could make an account at "Create one"; that now needs *Anyone*. The very first account of a new
+installation can always be made.
+
+### Approving Pay credits from your phone (the phone approver)
+
+IntraForge Pay never lets the person who asked for credits approve them. In a shop with one owner, make a second,
+separate account for approving: Control Center > **Settings** > **Owner** > **Create the phone approver...** Give it a
+name written like an email (nothing is sent to it; `approver@shop` is fine). It is made with the **Pay Supervisor**
+role and **no password**, and its one-time link opens. On that page choose **Add a passkey on my phone**: the browser
+shows a QR code, scan it with your phone (the passkey is kept in the phone's password manager, for example Google
+Password Manager) and confirm with your fingerprint or face. From then on that account signs in **only with your
+phone**: on the sign-in page choose **Sign in with a passkey** and scan the QR code. To approve credits, sign in as the
+approver and open Pay > Admin > Credits.
+
+This is two devices, not two people: the audit log shows both accounts. When the shop has a second trusted person,
+give them Pay Supervisor instead and remove the approver's role. Design: ADR-0026.
+
 ## 8. Where to Find the Newer Screens
 
 Everything in IntraForge now has a page. The ones added most recently, and where they are:
@@ -301,6 +336,7 @@ Everything in IntraForge now has a page. The ones added most recently, and where
 | A portal customer at the counter | Movie Shop > the cart > **Portal customer**: type their phone number (6 digits or more) to pick them; their free titles and, if ticked, their points apply | Staff who sell |
 | MySQL, MariaDB and SQL Server databases | A project > **Connect a database** > Database type: read an outside database's tables live, without copying them (PostgreSQL as before, now MySQL/MariaDB and SQL Server). Use a database user that may only read | Administrators who manage connections |
 | Opening IntraForge by name, without a port | Control Center > Settings > Shop network > **Open by name on this PC**: https://intraforge.lan, and each app at its own name (https://spare-parts.lan, https://pay.lan). Windows asks for administrator rights once; https://localhost:8443 keeps working; **Stop using the names** goes back. Each name is its own address, so you sign in once on each | The person at the shop PC |
+| New staff asking for access | Organization page > **Requests**: approve (you choose the role) or reject; a new person gets a one-time activation link to hand over. In Spare Parts the same list is under **Users** | Administrators who add members and give roles |
 | No certificate warning on the shop PC | Control Center > Settings > **Browser certificate** > **Trust IntraForge on this PC**, then Yes in Windows' question; reopen the browser. The shop's other PCs use `Trust-IntraForge-on-this-PC.cmd` from the shop-network folder | The person at the shop PC |
 | More than one IF Pay counter | IF Pay > Simulated sales > **Counters** (Pay Manager) names them; each cashier chooses theirs above the amount; the day's total is shown per counter and for the shop, in the shop's own time zone | Pay staff |
 

@@ -110,10 +110,71 @@ def require_app_type(app_type: str) -> None:
         require(group)
 
 
+# Who may create an account (ADR-0026).
+REGISTRATION_CLOSED = "closed"
+REGISTRATION_REQUESTS = "requests"
+REGISTRATION_OPEN = "open"
+REGISTRATION_CHOICES = {
+    REGISTRATION_CLOSED: "Only administrators add people",
+    REGISTRATION_REQUESTS: "People ask from an app's Request access page; an administrator approves",
+    REGISTRATION_OPEN: "Anyone can create an account",
+}
+
+
+def registration_policy() -> str:
+    value = _settings_row().registration
+    return value if value in REGISTRATION_CHOICES else REGISTRATION_REQUESTS
+
+
+def first_run() -> bool:
+    """No organization yet: the installation's first account must be creatable, whatever the policy."""
+    from organizations.models import Organization
+
+    # Organizations made by IntraForge's own service identities (the built-in catalogue's, created by a migration on
+    # every installation) do not count: only one a person made ends the first run.
+    return not Organization.objects.exclude(created_by__email__iendswith="@service.internal").exists()
+
+
+def may_register_freely() -> bool:
+    return registration_policy() == REGISTRATION_OPEN or first_run()
+
+
+def may_request_access() -> bool:
+    return registration_policy() in (REGISTRATION_REQUESTS, REGISTRATION_OPEN)
+
+
+def set_registration(actor, value: str) -> dict:
+    """Super Administrator only (checked by the view)."""
+    from audit import services as audit
+
+    from .models import FeatureSettings
+
+    if value not in REGISTRATION_CHOICES:
+        raise ValueError("Choose closed, requests or open.")
+    with transaction.atomic():
+        _settings_row()
+        row = FeatureSettings.objects.select_for_update().get(pk=1)
+        before = row.registration
+        row.registration = value
+        row.updated_by = actor
+        row.save(update_fields=["registration", "updated_by", "updated_at"])
+        audit.record(
+            actor=actor,
+            organization_id=None,
+            action="system.registration.update",
+            resource_type="system",
+            resource_id="registration",
+            context={"before": before, "after": value},
+        )
+    return describe()
+
+
 def describe() -> dict:
     row = _settings_row()
     on = set(row.enabled)
     return {
+        "registration": registration_policy(),
+        "registration_choices": [{"key": k, "label": v} for k, v in REGISTRATION_CHOICES.items()],
         "groups": [{"key": k, "label": label, "enabled": k in on} for k, label in GROUPS.items()],
         "app_types": {t: (g in on) for t, g in APP_TYPE_GROUP.items()},
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,

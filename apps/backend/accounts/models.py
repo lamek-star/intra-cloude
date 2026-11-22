@@ -65,6 +65,9 @@ class User(AbstractBaseUser):
     # in; it can only be True while the account has at least one passkey (accounts/passkeys.py).
     # db_default: the previous release, run on this data after a failed upgrade rolls back, leaves it out.
     passkey_only = models.BooleanField(default=False, db_default=False)
+    # When this person confirmed their email through a single-use link (ADR-0026). Empty for accounts from before it,
+    # and for accounts an administrator added directly.
+    email_confirmed_at = models.DateTimeField(null=True, blank=True)
 
     objects = UserManager()
 
@@ -120,3 +123,31 @@ class MFARecoveryCode(models.Model):
 
     def __str__(self):
         return f"recovery code of {self.user_id}{' (used)' if self.used_at else ''}"
+
+
+class AccountLink(models.Model):
+    """A single-use link that confirms a person's email and activates their account (ADR-0026). Only the SHA-256 of
+    its token is kept; the token itself is shown once (to the administrator, and in the e-mail when one is sent)."""
+
+    class Purpose(models.TextChoices):
+        CONFIRM = "confirm", "Confirm the email and activate"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="account_links")
+    purpose = models.CharField(max_length=20, choices=Purpose.choices, default=Purpose.CONFIRM)
+    token_hash = models.CharField(max_length=64, unique=True)
+    created_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="account_links_created"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+    # Ended without being used: a newer link replaced it.
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.purpose} link for {self.user_id}"
+

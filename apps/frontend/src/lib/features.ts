@@ -13,6 +13,9 @@ export type Features = {
   groups: { key: FeatureGroup; label: string; enabled: boolean }[];
   app_types: Record<string, boolean>;
   updated_at: string | null;
+  /** Who may create an account (ADR-0026). */
+  registration: "closed" | "requests" | "open";
+  registration_choices: { key: "closed" | "requests" | "open"; label: string }[];
   /** Only the Super Administrator may change the groups. */
   can_change: boolean;
 };
@@ -33,6 +36,8 @@ export const featuresApi = {
   get: () => api.get<Features>("/system/features/"),
   set: (enabled: FeatureGroup[]) =>
     api.patch<Features>("/system/features/", { enabled }),
+  setRegistration: (registration: Features["registration"]) =>
+    api.patch<Features>("/system/features/", { registration }),
 };
 
 export const featuresQueryKey = ["system", "features"] as const;

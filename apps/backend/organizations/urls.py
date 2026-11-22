@@ -1,8 +1,20 @@
 from django.urls import path
 
-from . import views
+from . import access_views, views
 
 urlpatterns = [
+    # Access requests (ADR-0026).
+    path("access/apps/<uuid:app_id>/", access_views.AppAccessView.as_view(), name="app-access"),
+    path(
+        "organizations/<uuid:organization_id>/access-requests/",
+        access_views.OrganizationAccessRequestsView.as_view(),
+        name="organization-access-requests",
+    ),
+    path(
+        "organizations/<uuid:organization_id>/access-requests/<uuid:request_id>/<str:decision>/",
+        access_views.OrganizationAccessRequestDecisionView.as_view(),
+        name="organization-access-request-decision",
+    ),
     path(
         "organizations/<uuid:organization_id>/members/<uuid:membership_id>/reset-password/",
         views.MembershipPasswordResetView.as_view(),

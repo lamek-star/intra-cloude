@@ -1582,7 +1582,46 @@ namespace IntraForge.ControlCenter
                     MessageBox.Show(this, r.ExitCode == 0 ? last : "Not changed. " + last, "IntraForge");
                 }
             };
-            AddToCard(box, note, choose);
+            // The owner's phone approver (ADR-0026): a separate, passkey-only account for approving Pay credits from the
+            // phone. Made here, at the PC, with no password; the printed link lets the owner add the phone's passkey.
+            UiButton approver = new UiButton("Create the phone approver...", ButtonKind.Secondary, Ui.GKey) { Margin = Ui.Pad(8, 0, 0, 0) };
+            approver.Click += (s, e) =>
+            {
+                string email;
+                using (ApproverForm f = new ApproverForm())
+                {
+                    if (f.ShowDialog(this) != DialogResult.OK) return;
+                    email = f.Email;
+                }
+                if (!ApproverForm.IsName(email)) return;
+                string baseUrl = kit.BrowserUrl("").TrimEnd('/');
+                Cursor = Cursors.WaitCursor;
+                ProcResult r;
+                try
+                {
+                    r = Proc.Run(Proc.Docker(), "exec " + Kit.Project + "-backend-1 python manage.py approver_account create --email " + email +
+                                 " --role pay-supervisor --base-url " + baseUrl, kit.Dir, 30000, null);
+                }
+                finally { Cursor = Cursors.Default; }
+                string[] lines = r.Output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                string last = lines.Length > 0 ? lines[lines.Length - 1].Trim() : "";
+                if (r.ExitCode != 0 || !last.StartsWith("https://"))
+                {
+                    if (last.StartsWith("CommandError: ")) last = last.Substring("CommandError: ".Length);
+                    MessageBox.Show(this, "Not created. " + last, "IntraForge");
+                    return;
+                }
+                try { Clipboard.SetText(last); } catch (Exception) { }
+                if (MessageBox.Show(this, "The phone approver " + email + " is made (Pay Supervisor, no password).\n\n" +
+                                    "Open its one-time link now? On the page choose \"Add a passkey on my phone\", scan the QR code with " +
+                                    "your phone and confirm with your fingerprint. The link is also copied, and works once, for 72 hours.",
+                                    "IntraForge", MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
+                    Proc.OpenInBrowser(last);
+            };
+            FlowLayoutPanel ownerButtons = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Margin = Padding.Empty };
+            ownerButtons.Controls.Add(choose);
+            ownerButtons.Controls.Add(approver);
+            AddToCard(box, note, ownerButtons);
             return box;
         }
 
@@ -1847,6 +1886,42 @@ namespace IntraForge.ControlCenter
             box.TextChanged += (s, e) =>
             {
                 bool ok = Kit.IsNameDomain(Domain);
+                go.Enabled = ok;
+                hint.ForeColor = ok ? Ui.Muted : Ui.Danger;
+            };
+            AcceptButton = go;
+            ResumeLayout(true);
+            FitToContent();
+        }
+    }
+
+    // The name of the owner's phone approver account (ADR-0026). Email-like, but nothing is ever sent to it.
+    sealed class ApproverForm : UiDialog
+    {
+        readonly TextBox box;
+        public string Email { get { return box.Text.Trim().ToLowerInvariant(); } }
+        // Also keeps the value safe on the docker command line.
+        public static bool IsName(string value)
+        {
+            return value != null && value.Length <= 120 && Regex.IsMatch(value, @"^[a-z0-9._+\-]+@[a-z0-9.\-]+\z");
+        }
+
+        public ApproverForm() : base("The phone approver",
+            "A separate account that approves IntraForge Pay credit requests, signed in only with your phone.", Ui.GKey, Ui.Accent)
+        {
+            SuspendLayout();
+            Body.Controls.Add(Para("Pay never lets the person who asked for credits approve them. With one owner, this second account is the " +
+                                   "approver: it has no password and signs in only with a passkey on your phone. The audit log shows both " +
+                                   "accounts. When the shop has a second trusted person, give them Pay Supervisor instead.", Ui.Text));
+            box = new TextBox { Text = "approver@shop", Font = Ui.Regular, Width = Ui.Px(320), Margin = Ui.Pad(0, 8, 0, 4) };
+            Body.Controls.Add(box);
+            Label hint = Para("Its sign-in name, written like an email (nothing is sent to it).", Ui.Muted);
+            Body.Controls.Add(hint);
+            UiButton go = AddButton("Create", ButtonKind.Primary, DialogResult.OK);
+            CancelButton = AddButton("Cancel", ButtonKind.Secondary, DialogResult.Cancel);
+            box.TextChanged += (s, e) =>
+            {
+                bool ok = IsName(Email);
                 go.Enabled = ok;
                 hint.ForeColor = ok ? Ui.Muted : Ui.Danger;
             };

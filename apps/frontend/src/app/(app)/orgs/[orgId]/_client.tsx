@@ -24,6 +24,7 @@ import {
 import { MemberRoles, type OrganizationRoles } from "./MemberRoles";
 import { ResetPassword } from "./ResetPassword";
 import { EditMemberDetails } from "@/components/UserDetails";
+import { AccessRequests } from "@/components/AccessRequests";
 import { useFeatures } from "@/lib/features";
 
 export default function OrgDetailClient({ orgId }: { orgId: string }) {
@@ -260,6 +261,8 @@ export default function OrgDetailClient({ orgId }: { orgId: string }) {
           </p>
         )}
       </div>
+
+      {roles && <AccessRequests orgId={orgId} roles={roles.roles} onApproved={() => void load()} />}
 
       <CreateWorkspaceModal
         open={wsModalOpen}

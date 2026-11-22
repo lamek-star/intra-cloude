@@ -37,6 +37,14 @@ class FeaturesView(APIView):
                 {"error": {"code": "permission_denied", "message": "Only the Super Administrator can change this."}},
                 status=403,
             )
+        registration = request.data.get("registration") if isinstance(request.data, dict) else None
+        if registration is not None:
+            try:
+                result = features.set_registration(request.user, str(registration))
+            except ValueError as exc:
+                return Response({"error": {"code": "invalid", "message": str(exc)}}, status=400)
+            if "enabled" not in request.data:
+                return Response({**result, "can_change": True})
         enabled = request.data.get("enabled") if isinstance(request.data, dict) else None
         if not isinstance(enabled, list) or not all(isinstance(g, str) for g in enabled):
             return Response(

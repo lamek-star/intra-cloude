@@ -27,6 +27,10 @@ urlpatterns = [
     ),
     path("auth/passkeys/<uuid:passkey_id>/remove/", views.PasskeyRemoveView.as_view(), name="passkey-remove"),
     path("auth/passkeys/only/", views.PasskeyOnlyView.as_view(), name="passkey-only"),
+    path("auth/links/inspect/", views.LinkInspectView.as_view(), name="link-inspect"),
+    path("auth/links/confirm/", views.LinkConfirmView.as_view(), name="link-confirm"),
+    path("auth/links/passkey/options/", views.LinkPasskeyOptionsView.as_view(), name="link-passkey-options"),
+    path("auth/links/passkey/verify/", views.LinkPasskeyVerifyView.as_view(), name="link-passkey-verify"),
     path(
         "auth/passkeys/check/options/", views.PasskeyCheckOptionsView.as_view(), name="passkey-check-options"
     ),

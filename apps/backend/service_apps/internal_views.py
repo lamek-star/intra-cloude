@@ -219,3 +219,77 @@ class InternalFileDetailView(_Internal):
         actor = services._member_user(app, request.data.get("actorId")) or app.created_by
         storage.delete_file(f, actor=actor)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class InternalAccessRequestsView(_Internal):
+    """The application's own Requests list (ADR-0026), for the person signed in to it (`actorId`): only requests made
+    from this application, and only for someone who may approve them in IntraForge (users.manage AND
+    permissions.manage). Deciding goes through exactly the same service as IntraForge's own page."""
+
+    def _actor(self, request, app, actor_id):
+        from organizations import access
+
+        actor = services._member_user(app, actor_id)
+        if actor is None or not actor.is_active or not access.can_decide(actor, app.organization):
+            return None
+        return actor
+
+    def get(self, request):
+        from organizations import access
+
+        app = self.instance(request)
+        actor = self._actor(request, app, request.query_params.get("actorId"))
+        if actor is None:
+            return Response({"detail": "Only an administrator who may give roles sees requests."}, status=403)
+        qs = access.for_organization(app.organization, status=request.query_params.get("status"), app=app)
+        return Response(
+            {
+                "results": [access.describe(r) for r in qs[:200]],
+                "roles": access.requestable_roles(app),
+            }
+        )
+
+    def post(self, request):
+        from django.conf import settings
+        from django.http.request import validate_host
+
+        from organizations import access
+
+        app = self.instance(request)
+        data = request.data if isinstance(request.data, dict) else {}
+        actor = self._actor(request, app, data.get("actorId"))
+        if actor is None:
+            return Response({"detail": "Only an administrator who may give roles decides requests."}, status=403)
+        # Where the person's browser reached IntraForge, for the confirmation link: only a host IntraForge serves.
+        origin = data.get("origin") if isinstance(data.get("origin"), str) else ""
+        scheme, _, host = origin.partition("://")
+        if scheme != "https" or not host or not validate_host(host.split("/")[0], settings.ALLOWED_HOSTS):
+            return Response({"detail": "Unknown address for the confirmation link."}, status=400)
+        base = f"https://{host.split('/')[0]}"
+        decision = data.get("decision")
+        request_id = data.get("requestId")
+        if not app.access_requests.filter(pk=request_id).exists():
+            return Response({"detail": "No such request."}, status=404)
+        try:
+            if decision == "approve":
+                result = access.approve(
+                    request_id=request_id,
+                    organization=app.organization,
+                    actor=actor,
+                    role_slug=data.get("roleSlug"),
+                    note=data.get("note"),
+                    base_url=base,
+                )
+            elif decision == "reject":
+                result = access.reject(
+                    request_id=request_id, organization=app.organization, actor=actor, note=data.get("note")
+                )
+            elif decision == "link":
+                result = access.new_link(
+                    request_id=request_id, organization=app.organization, actor=actor, base_url=base
+                )
+            else:
+                return Response({"detail": "Unknown decision."}, status=400)
+        except access.AccessError as exc:
+            return Response({"detail": str(exc)}, status=exc.status)
+        return Response(result)

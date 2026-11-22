@@ -73,3 +73,46 @@ class Membership(models.Model):
 
     def __str__(self):
         return f"{self.user} @ {self.organization} ({self.status})"
+
+
+class AccessRequest(models.Model):
+    """Someone asking to work in an organization, usually from one installed application's Request access page
+    (ADR-0026). The role they ask for is only a suggestion: the administrator who approves chooses the real one."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="access_requests")
+    service_app = models.ForeignKey(
+        "service_apps.ServiceApp", null=True, blank=True, on_delete=models.CASCADE, related_name="access_requests"
+    )
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="access_requests")
+    requested_role = models.CharField(max_length=80, blank=True, default="")
+    message = models.CharField(max_length=500, blank=True, default="")
+    # True when the account was made by this request (it stays inactive until its confirmation link is used).
+    new_account = models.BooleanField(default=False)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    granted_role = models.CharField(max_length=80, blank=True, default="")
+    decision_note = models.CharField(max_length=500, blank=True, default="")
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "organization", "service_app"],
+                condition=models.Q(status="pending"),
+                name="one_pending_access_request",
+                nulls_distinct=False,
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user} -> {self.organization} ({self.status})"

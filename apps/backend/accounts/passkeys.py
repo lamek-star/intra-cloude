@@ -22,7 +22,11 @@ from webauthn import (
     verify_registration_response,
 )
 from webauthn.helpers import base64url_to_bytes, bytes_to_base64url, options_to_json_dict
-from webauthn.helpers.exceptions import InvalidAuthenticationResponse, InvalidRegistrationResponse
+from webauthn.helpers.exceptions import (
+    InvalidAuthenticationResponse,
+    InvalidJSONStructure,
+    InvalidRegistrationResponse,
+)
 from webauthn.helpers.structs import (
     AuthenticatorSelectionCriteria,
     AuthenticatorTransport,
@@ -124,6 +128,12 @@ def _credential_id(credential: dict) -> bytes:
 # ----------------------------------------------------------------------------------------- adding a passkey
 def begin_registration(request, *, user: User, password: str, code: str | None, where: str | None) -> dict:
     _check_password_again(user, password, code)
+    return registration_options(request, user=user, where=where)
+
+
+def registration_options(request, *, user: User, where: str | None) -> dict:
+    """The registration ceremony's options. Callers prove who may add a passkey first: `begin_registration` by the
+    password again, accounts/links.py by a valid single-use confirmation link."""
     rp_id, origin = relying_party(request)
     existing = [
         PublicKeyCredentialDescriptor(id=bytes(p.credential_id)) for p in user.passkeys.filter(rp_id=rp_id)
@@ -155,7 +165,7 @@ def finish_registration(request, *, user: User, credential: dict, name: str) -> 
             expected_origin=pending["origin"],
             require_user_verification=True,
         )
-    except (InvalidRegistrationResponse, ValueError, KeyError, TypeError) as exc:
+    except (InvalidRegistrationResponse, InvalidJSONStructure, ValueError, KeyError, TypeError) as exc:
         audit.record(
             actor=user,
             organization_id=None,
@@ -256,7 +266,7 @@ def finish_check(request, *, credential: dict, user: User | None) -> User:
             credential_current_sign_count=passkey.sign_count,
             require_user_verification=True,
         )
-    except (InvalidAuthenticationResponse, ValueError, KeyError, TypeError) as exc:
+    except (InvalidAuthenticationResponse, InvalidJSONStructure, ValueError, KeyError, TypeError) as exc:
         audit.record(
             actor=owner,
             organization_id=None,

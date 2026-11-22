@@ -85,6 +85,8 @@ class FeatureSettings(models.Model):
     INTRAFORGE_FEATURES the first time it is read, then changed only by the Super Administrator."""
 
     enabled = models.JSONField(default=list)
+    # Who may create an account (ADR-0026): closed, requests (only through an application's Request access) or open.
+    registration = models.CharField(max_length=20, default="requests", db_default="requests")
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(
         "accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"

@@ -22,6 +22,7 @@ urlpatterns = [
     path("internal/service-apps/sessions/introspect/", internal_views.InternalIntrospectView.as_view()),
     path("internal/service-apps/sessions/revoke/", internal_views.InternalRevokeView.as_view()),
     path("internal/service-apps/users/", internal_views.InternalUsersView.as_view()),
+    path("internal/service-apps/access-requests/", internal_views.InternalAccessRequestsView.as_view()),
     path("internal/service-apps/audit-events/", internal_views.InternalAuditView.as_view()),
     path("internal/service-apps/config/", internal_views.InternalConfigView.as_view()),
     path("internal/service-apps/files/", internal_views.InternalFilesView.as_view()),

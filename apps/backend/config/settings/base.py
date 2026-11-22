@@ -122,6 +122,16 @@ SERVICE_APP_DEPLOYMENTS = {
 # How long a service-application browser session lives without use (absolute cap below).
 SERVICE_APP_SESSION_HOURS = int(env("SERVICE_APP_SESSION_HOURS", "12"))
 
+# Outgoing e-mail, optional and off by default (local-first): only used to send access-request confirmation links
+# (ADR-0026). With EMAIL_HOST empty nothing is sent and the administrator hands the link over.
+EMAIL_HOST = env("EMAIL_HOST", "")
+EMAIL_PORT = int(env("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
+EMAIL_TIMEOUT = 15
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "IntraForge <no-reply@intraforge.local>")
+
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 MIDDLEWARE = [

@@ -111,6 +111,58 @@ export default function FeaturesPage() {
           <p className="text-sm text-slate-500">Only the Super Administrator can change which parts are shown.</p>
         )}
       </Card>
+      <RegistrationCard />
     </div>
   );
 }
+
+/** Who may create an account (ADR-0026): only administrators, through an app's Request access (approved by an
+ * administrator), or anyone. The first account of a new installation can always be made. */
+function RegistrationCard() {
+  const qc = useQueryClient();
+  const features = useFeatures();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!features.data?.registration_choices) return null;
+  const data = features.data;
+
+  async function choose(value: typeof data.registration) {
+    setBusy(true);
+    setError(null);
+    try {
+      qc.setQueryData(featuresQueryKey, await featuresApi.setRegistration(value));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Not saved.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="mt-6 flex flex-col gap-3">
+      <div>
+        <h2 className="font-semibold text-slate-900">Who may create an account</h2>
+        <p className="mt-0.5 text-sm text-slate-500">
+          With requests, a new person asks from an app&apos;s sign-in page; an administrator approves them, chooses their
+          role and hands over a one-time activation link.
+        </p>
+      </div>
+      <div className="flex flex-col gap-2">
+        {data.registration_choices.map((c) => (
+          <label key={c.key} className="flex items-center gap-3 rounded-lg border border-slate-200 p-3 text-sm">
+            <input
+              type="radio"
+              name="registration"
+              checked={data.registration === c.key}
+              disabled={!data.can_change || busy}
+              onChange={() => void choose(c.key)}
+            />
+            {c.label}
+          </label>
+        ))}
+      </div>
+      {error && <ErrorBanner message={error} />}
+    </Card>
+  );
+}
+
